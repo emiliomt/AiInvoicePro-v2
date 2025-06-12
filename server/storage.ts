@@ -592,23 +592,18 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUnresolvedMatches(): Promise<(InvoicePoMatch & { invoice: Invoice; purchaseOrder: PurchaseOrder })[]> {
-    return await db
-      .select({
-        id: invoicePoMatches.id,
-        invoiceId: invoicePoMatches.invoiceId,
-        poId: invoicePoMatches.poId,
-        matchScore: invoicePoMatches.matchScore,
-        status: invoicePoMatches.status,
-        matchDetails: invoicePoMatches.matchDetails,
-        createdAt: invoicePoMatches.createdAt,
-        updatedAt: invoicePoMatches.updatedAt,
-        invoice: invoices,
-        purchaseOrder: purchaseOrders,
-      })
+    const results = await db
+      .select()
       .from(invoicePoMatches)
       .innerJoin(invoices, eq(invoicePoMatches.invoiceId, invoices.id))
       .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
       .where(eq(invoicePoMatches.status, 'unresolved'));
+
+    return results.map(result => ({
+      ...result.invoice_po_matches,
+      invoice: result.invoices,
+      purchaseOrder: result.purchase_orders,
+    }));
   }
 
   async findPotentialMatches(invoice: Invoice, lineItems: LineItem[]): Promise<{

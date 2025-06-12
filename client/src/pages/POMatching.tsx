@@ -32,7 +32,7 @@ interface UnresolvedMatch {
     currency: string;
     items: any[];
     status: string;
-  };
+  } | null;
 }
 
 export default function POMatching() {
@@ -205,15 +205,21 @@ export default function POMatching() {
                           <Target className="text-purple-600" size={16} />
                           <h4 className="font-medium text-purple-900">Purchase Order</h4>
                         </div>
-                        <div className="text-sm space-y-1">
-                          <p><span className="font-medium">PO ID:</span> {match.purchaseOrder.poId}</p>
-                          <p><span className="font-medium">Vendor:</span> {match.purchaseOrder.vendorName}</p>
-                          <p><span className="font-medium">Amount:</span> {match.purchaseOrder.currency} {match.purchaseOrder.amount}</p>
-                          <p><span className="font-medium">Project:</span> {match.purchaseOrder.projectId || "Unassigned"}</p>
-                          <Badge variant="outline" className="text-xs">
-                            {match.purchaseOrder.status}
-                          </Badge>
-                        </div>
+                        {match.purchaseOrder ? (
+                          <div className="text-sm space-y-1">
+                            <p><span className="font-medium">PO ID:</span> {match.purchaseOrder?.poId}</p>
+                            <p><span className="font-medium">Vendor:</span> {match.purchaseOrder?.vendorName}</p>
+                            <p><span className="font-medium">Amount:</span> {match.purchaseOrder?.currency} {match.purchaseOrder?.amount}</p>
+                            <p><span className="font-medium">Project:</span> {match.purchaseOrder?.projectId || "Unassigned"}</p>
+                            <Badge variant="outline" className="text-xs">
+                              {match.purchaseOrder?.status}
+                            </Badge>
+                          </div>
+                        ) : (
+                          <div className="text-sm text-gray-500">
+                            <p>Purchase order data not available</p>
+                          </div>
+                        )}
                       </div>
                     </div>
 
