@@ -205,6 +205,7 @@ export default function Sidebar() {
             <Button
               variant="ghost"
               className="w-full justify-start text-left hover:bg-gray-50"
+              onClick={() => window.location.href = '/validation-rules'}
             >
               <div className="w-8 h-8 bg-warning-50 rounded-lg flex items-center justify-center mr-3">
                 <Settings className="text-warning-600" size={16} />
