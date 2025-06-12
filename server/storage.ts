@@ -692,8 +692,9 @@ export class DatabaseStorage implements IStorage {
     // In a more complete implementation, you might add a projectId field to the invoices table
     const invoice = await this.getInvoice(invoiceId);
     if (invoice) {
+      const currentData = invoice.extractedData || {};
       const updatedData = {
-        ...invoice.extractedData,
+        ...(typeof currentData === 'object' ? currentData : {}),
         assignedProject: projectId,
       };
       

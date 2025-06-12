@@ -9,6 +9,7 @@ import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import ValidationRules from "@/pages/ValidationRules";
 import PettyCash from "@/pages/PettyCash";
+import POMatching from "@/pages/POMatching";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -23,6 +24,7 @@ function Router() {
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />
+          <Route path="/po-matching" component={POMatching} />
         </>
       )}
       <Route component={NotFound} />

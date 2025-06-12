@@ -126,6 +126,110 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project management routes
+  app.get('/api/projects', isAuthenticated, async (req, res) => {
+    try {
+      const projects = await storage.getProjects();
+      res.json(projects);
+    } catch (error) {
+      console.error("Error fetching projects:", error);
+      res.status(500).json({ message: "Failed to fetch projects" });
+    }
+  });
+
+  app.get('/api/projects/:projectId', isAuthenticated, async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const project = await storage.getProject(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+      res.json(project);
+    } catch (error) {
+      console.error("Error fetching project:", error);
+      res.status(500).json({ message: "Failed to fetch project" });
+    }
+  });
+
+  app.post('/api/projects', isAuthenticated, async (req, res) => {
+    try {
+      const projectData = req.body;
+      const project = await storage.createProject(projectData);
+      res.json(project);
+    } catch (error) {
+      console.error("Error creating project:", error);
+      res.status(500).json({ message: "Failed to create project" });
+    }
+  });
+
+  // Purchase order routes
+  app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
+    try {
+      const purchaseOrders = await storage.getPurchaseOrders();
+      res.json(purchaseOrders);
+    } catch (error) {
+      console.error("Error fetching purchase orders:", error);
+      res.status(500).json({ message: "Failed to fetch purchase orders" });
+    }
+  });
+
+  app.post('/api/purchase-orders', isAuthenticated, async (req, res) => {
+    try {
+      const poData = req.body;
+      const purchaseOrder = await storage.createPurchaseOrder(poData);
+      res.json(purchaseOrder);
+    } catch (error) {
+      console.error("Error creating purchase order:", error);
+      res.status(500).json({ message: "Failed to create purchase order" });
+    }
+  });
+
+  // Invoice-PO matching routes
+  app.get('/api/invoices/:id/matches', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const matches = await storage.getInvoicePoMatches(invoiceId);
+      res.json(matches);
+    } catch (error) {
+      console.error("Error fetching invoice matches:", error);
+      res.status(500).json({ message: "Failed to fetch invoice matches" });
+    }
+  });
+
+  app.post('/api/invoices/:id/assign-project', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { projectId } = req.body;
+      await storage.assignProjectToInvoice(invoiceId, projectId);
+      res.json({ message: "Project assigned successfully" });
+    } catch (error) {
+      console.error("Error assigning project:", error);
+      res.status(500).json({ message: "Failed to assign project" });
+    }
+  });
+
+  app.put('/api/invoice-matches/:id', isAuthenticated, async (req, res) => {
+    try {
+      const matchId = parseInt(req.params.id);
+      const updates = req.body;
+      const match = await storage.updateInvoicePoMatch(matchId, updates);
+      res.json(match);
+    } catch (error) {
+      console.error("Error updating invoice match:", error);
+      res.status(500).json({ message: "Failed to update invoice match" });
+    }
+  });
+
+  app.get('/api/matches/unresolved', isAuthenticated, async (req, res) => {
+    try {
+      const unresolvedMatches = await storage.getUnresolvedMatches();
+      res.json(unresolvedMatches);
+    } catch (error) {
+      console.error("Error fetching unresolved matches:", error);
+      res.status(500).json({ message: "Failed to fetch unresolved matches" });
+    }
+  });
+
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, upload.single('invoice'), async (req: any, res) => {
     try {

@@ -66,6 +66,9 @@ export default function Header() {
             <a href="/petty-cash" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Petty Cash
             </a>
+            <a href="/po-matching" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+              PO Matching
+            </a>
             <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Reports
             </a>

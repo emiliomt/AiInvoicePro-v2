@@ -11,6 +11,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
+import ProjectAssignment from "@/components/ProjectAssignment";
 import { InfoIcon, DollarSign } from "lucide-react";
 
 interface Invoice {
@@ -325,6 +326,14 @@ export default function ExtractedData() {
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
+      
+      {/* Project Assignment and PO Matching for regular invoices */}
+      {!isPettyCash && (
+        <ProjectAssignment 
+          invoiceId={invoice.id} 
+          currentProject={(invoice.extractedData as any)?.assignedProject}
+        />
+      )}
     </div>
   );
 }
