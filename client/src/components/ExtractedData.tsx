@@ -331,7 +331,7 @@ export default function ExtractedData() {
       {!isPettyCash && (
         <ProjectAssignment 
           invoiceId={invoice.id} 
-          currentProject={(invoice.extractedData as any)?.assignedProject}
+          currentProject={(invoice as any).extractedData?.assignedProject}
         />
       )}
     </div>
