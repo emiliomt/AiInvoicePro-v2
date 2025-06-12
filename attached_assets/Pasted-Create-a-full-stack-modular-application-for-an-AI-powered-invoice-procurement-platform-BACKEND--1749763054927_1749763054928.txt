@@ -1,0 +1,68 @@
+Create a full-stack modular application for an AI-powered invoice procurement platform.
+
+🔹 BACKEND:
+- Use **Python with FastAPI** as the backend framework.
+- Install and configure:
+  - `FastAPI`, `Uvicorn`, `SQLAlchemy`, `asyncpg`, `Pydantic`, `Celery`, `Redis`, `python-multipart`
+  - `Tesseract` OCR (via `pytesseract`) for PDF parsing
+  - `OpenAI` Python SDK for ChatGPT integration
+  - `Casbin` for RBAC
+  - `passlib[bcrypt]`, `OAuth2`, and `PyJWT` for authentication
+
+🔹 FRONTEND:
+- Use **React** with **Next.js** for frontend
+- Set up routing, state management, and install:
+  - `Material UI` (or Ant Design), `Axios`, `React Hook Form`
+  - `i18next` for localization support
+
+🔹 DATABASE:
+- Use **PostgreSQL**
+  - Enable support for JSON fields
+  - Include schema setup for:
+    - `users`, `invoices`, `purchase_orders`, `validation_rules`, `projects`, `approvals`, `petty_cash_log`, `alerts`, `workflow_steps`
+
+🔹 FILE STORAGE:
+- Use **Amazon S3** (or mock equivalent)
+  - Include signed URL generation logic and `boto3` setup (with env var placeholders)
+
+🔹 STRUCTURE:
+Set up the following folder structure (backend):
+
+/app
+/api
+/routes # All FastAPI endpoints
+/schemas # Pydantic request/response models
+/services # Business logic (OCR, validation, PO matching)
+/core # Configs, DB session, JWT, Celery setup
+/models # SQLAlchemy ORM models
+/auth # OAuth2, JWT, RBAC policies
+/rpa # Stubs for ERP and Robocorp integration
+/chatbot # ChatGPT API call handlers
+/tasks # Celery task queue jobs
+
+
+Set up the following folder structure (frontend):
+
+/web
+/components # Reusable UI components (cards, forms)
+/pages # Invoice table, dashboard, approval views
+/services # Axios API calls
+/contexts # Auth, language, alert state
+/utils # Date formatters, filters
+/i18n # Localization support
+
+
+🔹 DEPLOYMENT:
+- Set up `.env.example` files for frontend and backend
+- Include `Procfile` and Replit-compatible start scripts
+- Install and configure Redis, PostgreSQL, and background workers
+- Add a `README.md` that explains:
+  - How to run frontend and backend
+  - How to define validation rules
+  - How to upload invoices and test OCR
+  - How to simulate PO matching
+
+Finally, build a simple test UI that:
+- Authenticates user
+- Lets user upload PDF invoice
+- Displays extracted invoice data from backend
