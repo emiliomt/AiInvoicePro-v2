@@ -1,18 +1,4 @@
 import { useState } from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Badge } from "@/components/ui/badge";
-import { useToast } from "@/hooks/use-toast";
-import { Building2, Plus, Download, Upload, Edit, Trash2, CheckCircle, XCircle } from "lucide-react";
-import Header from "@/components/Header";
-import { apiRequest } from "@/lib/queryClient";
-import { isUnauthorizedError } from "@/lib/authUtils";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -224,7 +210,7 @@ export default function ProjectValidation() {
       if (data.message) {
         toast({ title: "Import Complete", description: data.message });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-
+        
         if (data.errorDetails && data.errorDetails.length > 0) {
           console.log('Import errors:', data.errorDetails);
           toast({ 
@@ -483,7 +469,7 @@ export default function ProjectValidation() {
                   </Form>
                 </DialogContent>
               </Dialog>
-
+              
               {/* Edit Project Dialog */}
               <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                 <DialogContent className="max-w-2xl">
