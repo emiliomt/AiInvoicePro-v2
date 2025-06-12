@@ -4,6 +4,8 @@ import {
   lineItems,
   approvals,
   validationRules,
+  settings,
+  pettyCashLog,
   type User,
   type UpsertUser,
   type Invoice,
@@ -14,6 +16,10 @@ import {
   type InsertApproval,
   type ValidationRule,
   type InsertValidationRule,
+  type Setting,
+  type InsertSetting,
+  type PettyCashLog,
+  type InsertPettyCashLog,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, count, sum, sql } from "drizzle-orm";

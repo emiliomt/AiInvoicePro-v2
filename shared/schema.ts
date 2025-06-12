@@ -132,6 +132,49 @@ export const validationRules = pgTable("validation_rules", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Settings table for configuration
+export const settings = pgTable("settings", {
+  id: serial("id").primaryKey(),
+  key: varchar("key", { length: 100 }).unique().notNull(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Petty cash status enum
+export const pettyCashStatusEnum = pgEnum("petty_cash_status", [
+  "pending_approval",
+  "approved", 
+  "rejected"
+]);
+
+// Petty cash log table
+export const pettyCashLog = pgTable("petty_cash_log", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  projectId: varchar("project_id", { length: 100 }),
+  costCenter: varchar("cost_center", { length: 100 }),
+  approvedBy: varchar("approved_by"),
+  approvalFileUrl: text("approval_file_url"),
+  status: pettyCashStatusEnum("status").default("pending_approval"),
+  approvalNotes: text("approval_notes"),
+  approvedAt: timestamp("approved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Add isPettyCash field to invoices
+export const invoiceStatusEnumUpdated = pgEnum("invoice_status_updated", [
+  "draft",
+  "processing", 
+  "processed",
+  "approved",
+  "rejected",
+  "petty_cash_pending",
+  "petty_cash_approved",
+  "petty_cash_rejected"
+]);
+
 // Relations
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   user: one(users, {
@@ -140,6 +183,10 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   }),
   lineItems: many(lineItems),
   approvals: many(approvals),
+  pettyCash: one(pettyCashLog, {
+    fields: [invoices.id],
+    references: [pettyCashLog.invoiceId],
+  }),
 }));
 
 export const lineItemsRelations = relations(lineItems, ({ one }) => ({
@@ -160,6 +207,13 @@ export const approvalsRelations = relations(approvals, ({ one }) => ({
   }),
 }));
 
+export const pettyCashLogRelations = relations(pettyCashLog, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [pettyCashLog.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -175,6 +229,12 @@ export type Approval = typeof approvals.$inferSelect;
 
 export type InsertValidationRule = typeof validationRules.$inferInsert;
 export type ValidationRule = typeof validationRules.$inferSelect;
+
+export type InsertSetting = typeof settings.$inferInsert;
+export type Setting = typeof settings.$inferSelect;
+
+export type InsertPettyCashLog = typeof pettyCashLog.$inferInsert;
+export type PettyCashLog = typeof pettyCashLog.$inferSelect;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
@@ -195,6 +255,17 @@ export const insertApprovalSchema = createInsertSchema(approvals).omit({
 });
 
 export const insertValidationRuleSchema = createInsertSchema(validationRules).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertSettingSchema = createInsertSchema(settings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertPettyCashLogSchema = createInsertSchema(pettyCashLog).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
