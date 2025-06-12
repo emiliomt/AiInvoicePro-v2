@@ -6,6 +6,9 @@ import {
   validationRules,
   settings,
   pettyCashLog,
+  projects,
+  purchaseOrders,
+  invoicePoMatches,
   type User,
   type UpsertUser,
   type Invoice,
@@ -20,6 +23,12 @@ import {
   type InsertSetting,
   type PettyCashLog,
   type InsertPettyCashLog,
+  type Project,
+  type InsertProject,
+  type PurchaseOrder,
+  type InsertPurchaseOrder,
+  type InvoicePoMatch,
+  type InsertInvoicePoMatch,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, count, sum, sql } from "drizzle-orm";
@@ -82,6 +91,31 @@ export interface IStorage {
   getPettyCashLogByInvoiceId(invoiceId: number): Promise<PettyCashLog | undefined>;
   getPettyCashLogs(status?: string): Promise<(PettyCashLog & { invoice: Invoice })[]>;
   isPettyCashInvoice(totalAmount: string): Promise<boolean>;
+
+  // Project operations
+  getProjects(): Promise<Project[]>;
+  getProject(projectId: string): Promise<Project | undefined>;
+  createProject(project: InsertProject): Promise<Project>;
+  updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project>;
+
+  // Purchase order operations
+  getPurchaseOrders(): Promise<PurchaseOrder[]>;
+  getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
+  getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | undefined>;
+  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  updatePurchaseOrder(id: number, updates: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder>;
+
+  // Invoice-PO matching operations
+  createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch>;
+  updateInvoicePoMatch(id: number, updates: Partial<InsertInvoicePoMatch>): Promise<InvoicePoMatch>;
+  getInvoicePoMatches(invoiceId: number): Promise<(InvoicePoMatch & { purchaseOrder: PurchaseOrder })[]>;
+  getUnresolvedMatches(): Promise<(InvoicePoMatch & { invoice: Invoice; purchaseOrder: PurchaseOrder })[]>;
+  findPotentialMatches(invoice: Invoice, lineItems: LineItem[]): Promise<{
+    purchaseOrder: PurchaseOrder;
+    matchScore: number;
+    matchDetails: any;
+  }[]>;
+  assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -452,6 +486,259 @@ export class DatabaseStorage implements IStorage {
     
     const threshold = parseFloat(thresholdSetting.value);
     return parseFloat(totalAmount) < threshold;
+  }
+
+  // Project operations
+  async getProjects(): Promise<Project[]> {
+    return await db.select().from(projects).orderBy(desc(projects.createdAt));
+  }
+
+  async getProject(projectId: string): Promise<Project | undefined> {
+    const [project] = await db.select().from(projects).where(eq(projects.projectId, projectId));
+    return project;
+  }
+
+  async createProject(project: InsertProject): Promise<Project> {
+    const [newProject] = await db.insert(projects).values(project).returning();
+    return newProject;
+  }
+
+  async updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project> {
+    const [updatedProject] = await db
+      .update(projects)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projects.projectId, projectId))
+      .returning();
+    return updatedProject;
+  }
+
+  // Purchase order operations
+  async getPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+  }
+
+  async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
+    const [po] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.id, id));
+    return po;
+  }
+
+  async getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | undefined> {
+    const [po] = await db.select().from(purchaseOrders).where(eq(purchaseOrders.poId, poId));
+    return po;
+  }
+
+  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
+    const [newPo] = await db.insert(purchaseOrders).values(po).returning();
+    return newPo;
+  }
+
+  async updatePurchaseOrder(id: number, updates: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder> {
+    const [updatedPo] = await db
+      .update(purchaseOrders)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, id))
+      .returning();
+    return updatedPo;
+  }
+
+  // Invoice-PO matching operations
+  async createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch> {
+    const [newMatch] = await db.insert(invoicePoMatches).values(match).returning();
+    return newMatch;
+  }
+
+  async updateInvoicePoMatch(id: number, updates: Partial<InsertInvoicePoMatch>): Promise<InvoicePoMatch> {
+    const [updatedMatch] = await db
+      .update(invoicePoMatches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(invoicePoMatches.id, id))
+      .returning();
+    return updatedMatch;
+  }
+
+  async getInvoicePoMatches(invoiceId: number): Promise<(InvoicePoMatch & { purchaseOrder: PurchaseOrder })[]> {
+    return await db
+      .select({
+        id: invoicePoMatches.id,
+        invoiceId: invoicePoMatches.invoiceId,
+        poId: invoicePoMatches.poId,
+        matchScore: invoicePoMatches.matchScore,
+        status: invoicePoMatches.status,
+        matchDetails: invoicePoMatches.matchDetails,
+        createdAt: invoicePoMatches.createdAt,
+        updatedAt: invoicePoMatches.updatedAt,
+        purchaseOrder: purchaseOrders,
+      })
+      .from(invoicePoMatches)
+      .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
+      .where(eq(invoicePoMatches.invoiceId, invoiceId));
+  }
+
+  async getUnresolvedMatches(): Promise<(InvoicePoMatch & { invoice: Invoice; purchaseOrder: PurchaseOrder })[]> {
+    return await db
+      .select({
+        id: invoicePoMatches.id,
+        invoiceId: invoicePoMatches.invoiceId,
+        poId: invoicePoMatches.poId,
+        matchScore: invoicePoMatches.matchScore,
+        status: invoicePoMatches.status,
+        matchDetails: invoicePoMatches.matchDetails,
+        createdAt: invoicePoMatches.createdAt,
+        updatedAt: invoicePoMatches.updatedAt,
+        invoice: invoices,
+        purchaseOrder: purchaseOrders,
+      })
+      .from(invoicePoMatches)
+      .innerJoin(invoices, eq(invoicePoMatches.invoiceId, invoices.id))
+      .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
+      .where(eq(invoicePoMatches.status, 'unresolved'));
+  }
+
+  async findPotentialMatches(invoice: Invoice, lineItems: LineItem[]): Promise<{
+    purchaseOrder: PurchaseOrder;
+    matchScore: number;
+    matchDetails: any;
+  }[]> {
+    // Get all open purchase orders
+    const openPOs = await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.status, 'open'));
+
+    const matches = [];
+
+    for (const po of openPOs) {
+      let matchScore = 0;
+      const matchDetails: any = {
+        vendorMatch: false,
+        amountMatch: false,
+        itemMatches: [],
+        totalItemsMatched: 0,
+      };
+
+      // 1. Vendor name matching (40% weight)
+      if (invoice.vendorName && po.vendorName) {
+        const vendorSimilarity = this.calculateStringSimilarity(
+          invoice.vendorName.toLowerCase(),
+          po.vendorName.toLowerCase()
+        );
+        if (vendorSimilarity > 0.8) {
+          matchScore += 40;
+          matchDetails.vendorMatch = true;
+        }
+      }
+
+      // 2. Amount matching (30% weight)
+      if (invoice.totalAmount && po.amount) {
+        const invoiceAmount = parseFloat(invoice.totalAmount.toString());
+        const poAmount = parseFloat(po.amount.toString());
+        const amountDifference = Math.abs(invoiceAmount - poAmount) / poAmount;
+        
+        if (amountDifference <= 0.05) { // Exact match (within 5%)
+          matchScore += 30;
+          matchDetails.amountMatch = true;
+        } else if (amountDifference <= 0.10) { // Fuzzy match (within 10%)
+          matchScore += 15;
+          matchDetails.amountMatch = 'fuzzy';
+        }
+      }
+
+      // 3. Line item matching (30% weight)
+      if (lineItems.length > 0 && po.items) {
+        const poItems = Array.isArray(po.items) ? po.items : [];
+        let itemMatchScore = 0;
+        
+        for (const lineItem of lineItems) {
+          for (const poItem of poItems) {
+            const descriptionSimilarity = this.calculateStringSimilarity(
+              lineItem.description.toLowerCase(),
+              poItem.description?.toLowerCase() || ''
+            );
+            
+            if (descriptionSimilarity > 0.7) {
+              itemMatchScore += descriptionSimilarity;
+              matchDetails.itemMatches.push({
+                invoiceItem: lineItem.description,
+                poItem: poItem.description,
+                similarity: descriptionSimilarity,
+              });
+              matchDetails.totalItemsMatched++;
+            }
+          }
+        }
+        
+        // Normalize item match score
+        if (matchDetails.totalItemsMatched > 0) {
+          matchScore += (itemMatchScore / lineItems.length) * 30;
+        }
+      }
+
+      // Only include matches with a minimum score
+      if (matchScore >= 40) {
+        matches.push({
+          purchaseOrder: po,
+          matchScore: Math.round(matchScore),
+          matchDetails,
+        });
+      }
+    }
+
+    // Sort by match score descending
+    return matches.sort((a, b) => b.matchScore - a.matchScore);
+  }
+
+  async assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void> {
+    // For now, we'll store the project assignment in the extractedData field
+    // In a more complete implementation, you might add a projectId field to the invoices table
+    const invoice = await this.getInvoice(invoiceId);
+    if (invoice) {
+      const updatedData = {
+        ...invoice.extractedData,
+        assignedProject: projectId,
+      };
+      
+      await db
+        .update(invoices)
+        .set({ extractedData: updatedData })
+        .where(eq(invoices.id, invoiceId));
+    }
+  }
+
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    // Simple Levenshtein distance-based similarity
+    const maxLength = Math.max(str1.length, str2.length);
+    if (maxLength === 0) return 1;
+    
+    const distance = this.levenshteinDistance(str1, str2);
+    return (maxLength - distance) / maxLength;
+  }
+
+  private levenshteinDistance(str1: string, str2: string): number {
+    const matrix = [];
+
+    for (let i = 0; i <= str2.length; i++) {
+      matrix[i] = [i];
+    }
+
+    for (let j = 0; j <= str1.length; j++) {
+      matrix[0][j] = j;
+    }
+
+    for (let i = 1; i <= str2.length; i++) {
+      for (let j = 1; j <= str1.length; j++) {
+        if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
+          matrix[i][j] = matrix[i - 1][j - 1];
+        } else {
+          matrix[i][j] = Math.min(
+            matrix[i - 1][j - 1] + 1,
+            matrix[i][j - 1] + 1,
+            matrix[i - 1][j] + 1
+          );
+        }
+      }
+    }
+
+    return matrix[str2.length][str1.length];
   }
 }
 

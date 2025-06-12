@@ -176,8 +176,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
             
             // Update invoice status to indicate petty cash
             await storage.updateInvoice(invoice.id, {
-              status: "petty_cash_pending",
+              status: "petty_cash_pending" as any,
             });
+          } else {
+            // For non-petty cash invoices, perform PO matching
+            const lineItems = extractedData.lineItems && extractedData.lineItems.length > 0 
+              ? extractedData.lineItems.map((item: any) => ({
+                  id: 0,
+                  invoiceId: invoice.id,
+                  description: item.description,
+                  quantity: item.quantity,
+                  unitPrice: item.unitPrice,
+                  totalPrice: item.totalPrice,
+                  createdAt: new Date(),
+                }))
+              : [];
+
+            // Find potential PO matches
+            const potentialMatches = await storage.findPotentialMatches(invoice, lineItems);
+            
+            if (potentialMatches.length > 0) {
+              // Create match records for all potential matches
+              for (const match of potentialMatches) {
+                const matchStatus = match.matchScore >= 80 ? 'auto' : 'unresolved';
+                
+                await storage.createInvoicePoMatch({
+                  invoiceId: invoice.id,
+                  poId: match.purchaseOrder.id,
+                  matchScore: match.matchScore.toString(),
+                  status: matchStatus as any,
+                  matchDetails: match.matchDetails,
+                });
+              }
+              
+              // If we have a high-confidence match, assign the project automatically
+              const bestMatch = potentialMatches[0];
+              if (bestMatch.matchScore >= 80 && bestMatch.purchaseOrder.projectId) {
+                await storage.assignProjectToInvoice(invoice.id, bestMatch.purchaseOrder.projectId);
+              }
+            }
           }
 
           // Create line items if present

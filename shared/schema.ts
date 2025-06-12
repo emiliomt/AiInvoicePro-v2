@@ -163,17 +163,63 @@ export const pettyCashLog = pgTable("petty_cash_log", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
-// Add isPettyCash field to invoices
-export const invoiceStatusEnumUpdated = pgEnum("invoice_status_updated", [
-  "draft",
-  "processing", 
-  "processed",
-  "approved",
-  "rejected",
-  "petty_cash_pending",
-  "petty_cash_approved",
-  "petty_cash_rejected"
+// PO status enum
+export const poStatusEnum = pgEnum("po_status", [
+  "open",
+  "partial",
+  "closed",
+  "cancelled"
 ]);
+
+// Match status enum
+export const matchStatusEnum = pgEnum("match_status", [
+  "auto",
+  "manual", 
+  "unresolved"
+]);
+
+// Projects table
+export const projects = pgTable("projects", {
+  id: serial("id").primaryKey(),
+  projectId: varchar("project_id", { length: 100 }).unique().notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description"),
+  budget: decimal("budget", { precision: 12, scale: 2 }),
+  currency: varchar("currency", { length: 3 }).default("USD"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  status: varchar("status", { length: 50 }).default("active"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Purchase orders table
+export const purchaseOrders = pgTable("purchase_orders", {
+  id: serial("id").primaryKey(),
+  poId: varchar("po_id", { length: 100 }).unique().notNull(),
+  vendorName: varchar("vendor_name", { length: 255 }).notNull(),
+  projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId),
+  amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("USD"),
+  items: jsonb("items").notNull(), // Array of line items
+  issueDate: timestamp("issue_date").notNull(),
+  expectedDeliveryDate: timestamp("expected_delivery_date"),
+  status: poStatusEnum("status").default("open"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Invoice-PO matches table
+export const invoicePoMatches = pgTable("invoice_po_matches", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  poId: integer("po_id").references(() => purchaseOrders.id).notNull(),
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
+  status: matchStatusEnum("status").default("auto"),
+  matchDetails: jsonb("match_details"), // Details about what matched
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
 
 // Relations
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
@@ -187,6 +233,7 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     fields: [invoices.id],
     references: [pettyCashLog.invoiceId],
   }),
+  poMatches: many(invoicePoMatches),
 }));
 
 export const lineItemsRelations = relations(lineItems, ({ one }) => ({
@@ -214,6 +261,29 @@ export const pettyCashLogRelations = relations(pettyCashLog, ({ one }) => ({
   }),
 }));
 
+export const projectsRelations = relations(projects, ({ many }) => ({
+  purchaseOrders: many(purchaseOrders),
+}));
+
+export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
+  project: one(projects, {
+    fields: [purchaseOrders.projectId],
+    references: [projects.projectId],
+  }),
+  invoiceMatches: many(invoicePoMatches),
+}));
+
+export const invoicePoMatchesRelations = relations(invoicePoMatches, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoicePoMatches.invoiceId],
+    references: [invoices.id],
+  }),
+  purchaseOrder: one(purchaseOrders, {
+    fields: [invoicePoMatches.poId],
+    references: [purchaseOrders.id],
+  }),
+}));
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -235,6 +305,15 @@ export type Setting = typeof settings.$inferSelect;
 
 export type InsertPettyCashLog = typeof pettyCashLog.$inferInsert;
 export type PettyCashLog = typeof pettyCashLog.$inferSelect;
+
+export type InsertProject = typeof projects.$inferInsert;
+export type Project = typeof projects.$inferSelect;
+
+export type InsertPurchaseOrder = typeof purchaseOrders.$inferInsert;
+export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
+
+export type InsertInvoicePoMatch = typeof invoicePoMatches.$inferInsert;
+export type InvoicePoMatch = typeof invoicePoMatches.$inferSelect;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
@@ -266,6 +345,24 @@ export const insertSettingSchema = createInsertSchema(settings).omit({
 });
 
 export const insertPettyCashLogSchema = createInsertSchema(pettyCashLog).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProjectSchema = createInsertSchema(projects).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
