@@ -279,14 +279,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice upload and processing
-  app.post('/api/invoices/upload', isAuthenticated, upload.single('invoice'), async (req: any, res) => {
-    try {
-      const userId = req.user.claims.sub;
-      const file = req.file;
-      
-      if (!file) {
-        return res.status(400).json({ message: "No file uploaded" });
+  app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
+    upload.single('invoice')(req, res, async (err) => {
+      if (err) {
+        console.error("Multer error:", err);
+        return res.status(400).json({ message: err.message });
       }
+      
+      try {
+        const userId = req.user.claims.sub;
+        const file = req.file;
+        
+        console.log("Upload request received:", { 
+          hasFile: !!file, 
+          fieldname: file?.fieldname,
+          originalname: file?.originalname,
+          mimetype: file?.mimetype,
+          size: file?.size 
+        });
+        
+        if (!file) {
+          return res.status(400).json({ message: "No file uploaded" });
+        }
 
       // Create initial invoice record
       const invoice = await storage.createInvoice({
@@ -408,10 +422,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
 
       res.json({ invoiceId: invoice.id, message: "Invoice uploaded and processing started" });
-    } catch (error) {
-      console.error("Error uploading invoice:", error);
-      res.status(500).json({ message: "Failed to upload invoice" });
-    }
+      } catch (error) {
+        console.error("Error uploading invoice:", error);
+        res.status(500).json({ message: "Failed to upload invoice" });
+      }
+    });
   });
 
   // Get invoice by ID
