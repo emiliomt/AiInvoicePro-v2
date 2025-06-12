@@ -93,27 +93,32 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
         height: 2048
       });
       
-      // Process first page only
-      const result = await convert(1);
-      
-      if (result.path) {
-        // Read the converted image file
-        const imageBuffer = fs.readFileSync(result.path);
-        const { data } = await Tesseract.recognize(imageBuffer, 'eng');
+      try {
+        // Process first page only
+        const result = await convert(1) as PDFConvertResult;
         
-        // Clean up temporary file
-        try {
-          fs.unlinkSync(result.path);
-        } catch (cleanupError) {
-          console.warn(`Failed to cleanup temp file: ${result.path}`);
+        if (result && result.path) {
+          // Read the converted image file
+          const imageBuffer = fs.readFileSync(result.path);
+          const { data } = await Tesseract.recognize(imageBuffer, 'eng');
+          
+          // Clean up temporary file
+          try {
+            fs.unlinkSync(result.path);
+          } catch (cleanupError) {
+            console.warn(`Failed to cleanup temp file: ${result.path}`);
+          }
+          
+          return {
+            text: data.text,
+            confidence: data.confidence / 100, // Convert to 0-1 scale
+          };
+        } else {
+          throw new Error('PDF conversion failed - no image path returned');
         }
-        
-        return {
-          text: data.text,
-          confidence: data.confidence / 100, // Convert to 0-1 scale
-        };
-      } else {
-        throw new Error('Failed to convert PDF to image');
+      } catch (pdfError: any) {
+        console.error('PDF conversion failed:', pdfError);
+        throw new Error(`PDF conversion failed: ${pdfError?.message || 'Unknown PDF error'}`);
       }
     } else {
       // Process as image directly
