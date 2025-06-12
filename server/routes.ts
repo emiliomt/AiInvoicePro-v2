@@ -5,6 +5,8 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
+import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
+import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -230,6 +232,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Discrepancy detection routes
+  app.get("/api/flags/:invoiceId", isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const flags = await storage.getInvoiceFlags(invoiceId);
+      res.json(flags);
+    } catch (error) {
+      console.error("Error fetching invoice flags:", error);
+      res.status(500).json({ message: "Failed to fetch invoice flags" });
+    }
+  });
+
+  app.post("/api/flags/:flagId/resolve", isAuthenticated, async (req, res) => {
+    try {
+      const flagId = parseInt(req.params.flagId);
+      const userId = req.user.claims.sub;
+      const flag = await storage.resolveInvoiceFlag(flagId, userId);
+      res.json(flag);
+    } catch (error) {
+      console.error("Error resolving flag:", error);
+      res.status(500).json({ message: "Failed to resolve flag" });
+    }
+  });
+
+  // Predictive alerts routes
+  app.get("/api/predictive-alerts/:invoiceId", isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const alerts = await storage.getPredictiveAlerts(invoiceId);
+      res.json(alerts);
+    } catch (error) {
+      console.error("Error fetching predictive alerts:", error);
+      res.status(500).json({ message: "Failed to fetch predictive alerts" });
+    }
+  });
+
+  app.get("/api/dashboard/top-issues", isAuthenticated, async (req, res) => {
+    try {
+      const issues = await storage.getTopIssuesThisMonth();
+      res.json(issues);
+    } catch (error) {
+      console.error("Error fetching top issues:", error);
+      res.status(500).json({ message: "Failed to fetch top issues" });
+    }
+  });
+
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, upload.single('invoice'), async (req: any, res) => {
     try {
@@ -322,6 +370,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           // Create line items if present
+          let createdLineItems: any[] = [];
           if (extractedData.lineItems && extractedData.lineItems.length > 0) {
             const lineItemsData = extractedData.lineItems.map((item: any) => ({
               invoiceId: invoice.id,
@@ -330,7 +379,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
               unitPrice: item.unitPrice,
               totalPrice: item.totalPrice,
             }));
-            await storage.createLineItems(lineItemsData);
+            createdLineItems = await storage.createLineItems(lineItemsData);
+          }
+
+          // Get the updated invoice for discrepancy detection
+          const updatedInvoice = await storage.getInvoice(invoice.id);
+          
+          if (updatedInvoice) {
+            // Run discrepancy detection
+            const discrepancyResult = await checkInvoiceDiscrepancies(updatedInvoice, createdLineItems);
+            if (discrepancyResult.hasDiscrepancies) {
+              await storeInvoiceFlags(discrepancyResult.flags);
+            }
+
+            // Run predictive analysis
+            const predictions = await predictInvoiceIssues(updatedInvoice, createdLineItems);
+            if (predictions.length > 0) {
+              await storePredictiveAlerts(invoice.id, predictions);
+            }
           }
         })
         .catch(async (error) => {
