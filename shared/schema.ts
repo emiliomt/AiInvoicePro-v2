@@ -221,6 +221,50 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Flag types and severity enums
+export const flagTypeEnum = pgEnum("flag_type", [
+  "duplicate_invoice",
+  "amount_mismatch",
+  "missing_po_match",
+  "tax_id_mismatch",
+  "vendor_mismatch",
+  "date_discrepancy"
+]);
+
+export const flagSeverityEnum = pgEnum("flag_severity", [
+  "low",
+  "medium",
+  "high",
+  "critical"
+]);
+
+// Invoice flags table for discrepancy detection
+export const invoiceFlags = pgTable("invoice_flags", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  flagType: flagTypeEnum("flag_type").notNull(),
+  severity: flagSeverityEnum("severity").notNull(),
+  message: text("message").notNull(),
+  details: jsonb("details"), // Additional details about the discrepancy
+  isResolved: boolean("is_resolved").default(false),
+  resolvedBy: varchar("resolved_by"),
+  resolvedAt: timestamp("resolved_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Predictive alerts table
+export const predictiveAlerts = pgTable("predictive_alerts", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  prediction: text("prediction").notNull(),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }).notNull(), // 0-1
+  alertType: varchar("alert_type", { length: 100 }).notNull(),
+  details: jsonb("details"),
+  isActioned: boolean("is_actioned").default(false),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   user: one(users, {
@@ -234,6 +278,8 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     references: [pettyCashLog.invoiceId],
   }),
   poMatches: many(invoicePoMatches),
+  flags: many(invoiceFlags),
+  predictiveAlerts: many(predictiveAlerts),
 }));
 
 export const lineItemsRelations = relations(lineItems, ({ one }) => ({
@@ -284,6 +330,20 @@ export const invoicePoMatchesRelations = relations(invoicePoMatches, ({ one }) =
   }),
 }));
 
+export const invoiceFlagsRelations = relations(invoiceFlags, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceFlags.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const predictiveAlertsRelations = relations(predictiveAlerts, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [predictiveAlerts.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -314,6 +374,12 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 
 export type InsertInvoicePoMatch = typeof invoicePoMatches.$inferInsert;
 export type InvoicePoMatch = typeof invoicePoMatches.$inferSelect;
+
+export type InsertInvoiceFlag = typeof invoiceFlags.$inferInsert;
+export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
+
+export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
+export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({

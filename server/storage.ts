@@ -116,6 +116,17 @@ export interface IStorage {
     matchDetails: any;
   }[]>;
   assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void>;
+
+  // Discrepancy detection operations
+  createInvoiceFlags(flags: InsertInvoiceFlag[]): Promise<InvoiceFlag[]>;
+  getInvoiceFlags(invoiceId: number): Promise<InvoiceFlag[]>;
+  resolveInvoiceFlag(flagId: number, resolvedBy: string): Promise<InvoiceFlag>;
+  getAllUnresolvedFlags(): Promise<(InvoiceFlag & { invoice: Invoice })[]>;
+
+  // Predictive alerts operations
+  createPredictiveAlerts(alerts: InsertPredictiveAlert[]): Promise<PredictiveAlert[]>;
+  getPredictiveAlerts(invoiceId: number): Promise<PredictiveAlert[]>;
+  getTopIssuesThisMonth(): Promise<any[]>;
 }
 
 export class DatabaseStorage implements IStorage {
