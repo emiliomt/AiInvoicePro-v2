@@ -372,7 +372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        const XLSX = require('xlsx');
+        const XLSX = await import('xlsx');
         const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
@@ -424,9 +424,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Download template endpoint
-  app.get('/api/projects/template', isAuthenticated, (req, res) => {
+  app.get('/api/projects/template', isAuthenticated, async (req, res) => {
     try {
-      const XLSX = require('xlsx');
+      const XLSX = await import('xlsx');
       
       const templateData = [
         {
