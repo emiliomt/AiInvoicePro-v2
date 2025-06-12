@@ -76,21 +76,19 @@ export default function DiscrepancyDisplay({ invoiceId }: DiscrepancyDisplayProp
   const [showDetails, setShowDetails] = useState<{[key: number]: boolean}>({});
   const { toast } = useToast();
 
-  const { data: flags = [], isLoading: flagsLoading } = useQuery({
+  const { data: flags = [], isLoading: flagsLoading } = useQuery<InvoiceFlag[]>({
     queryKey: ["/api/flags", invoiceId],
     enabled: !!invoiceId,
   });
 
-  const { data: alerts = [], isLoading: alertsLoading } = useQuery({
+  const { data: alerts = [], isLoading: alertsLoading } = useQuery<PredictiveAlert[]>({
     queryKey: ["/api/predictive-alerts", invoiceId],
     enabled: !!invoiceId,
   });
 
   const resolveFlagMutation = useMutation({
     mutationFn: async (flagId: number) => {
-      await apiRequest(`/api/flags/${flagId}/resolve`, {
-        method: "POST",
-      });
+      return await apiRequest(`/api/flags/${flagId}/resolve`, "POST");
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/flags", invoiceId] });
@@ -121,7 +119,7 @@ export default function DiscrepancyDisplay({ invoiceId }: DiscrepancyDisplayProp
     );
   }
 
-  const unresolvedFlags = flags.filter((flag: InvoiceFlag) => !flag.isResolved);
+  const unresolvedFlags = flags.filter(flag => !flag.isResolved);
   const hasIssues = unresolvedFlags.length > 0 || alerts.length > 0;
 
   if (!hasIssues) {

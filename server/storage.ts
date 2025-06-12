@@ -749,12 +749,17 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getAllUnresolvedFlags(): Promise<(InvoiceFlag & { invoice: Invoice })[]> {
-    return await db
+    const results = await db
       .select()
       .from(invoiceFlags)
       .leftJoin(invoices, eq(invoiceFlags.invoiceId, invoices.id))
       .where(eq(invoiceFlags.isResolved, false))
       .orderBy(desc(invoiceFlags.createdAt));
+
+    return results.map(result => ({
+      ...result.invoice_flags,
+      invoice: result.invoices!
+    }));
   }
 
   // Predictive alerts operations
