@@ -184,6 +184,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.put('/api/projects/:projectId', isAuthenticated, async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      const updates = req.body;
+      const project = await storage.updateProject(projectId, updates);
+      res.json(project);
+    } catch (error) {
+      console.error("Error updating project:", error);
+      res.status(500).json({ message: "Failed to update project" });
+    }
+  });
+
+  app.delete('/api/projects/:projectId', isAuthenticated, async (req, res) => {
+    try {
+      const projectId = req.params.projectId;
+      await storage.deleteProject(projectId);
+      res.json({ message: "Project deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting project:", error);
+      res.status(500).json({ message: "Failed to delete project" });
+    }
+  });
+
   // Purchase order routes
   app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {

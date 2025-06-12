@@ -67,6 +67,8 @@ interface Project {
 
 export default function ProjectValidation() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
+  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
+  const [editingProject, setEditingProject] = useState<Project | null>(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [isImporting, setIsImporting] = useState(false);
   const { toast } = useToast();
@@ -107,6 +109,45 @@ export default function ProjectValidation() {
       toast({ title: "Success", description: "Project created successfully" });
       setIsAddDialogOpen(false);
       form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const updateProjectMutation = useMutation({
+    mutationFn: async (data: any) => {
+      const response = await fetch(`/api/projects/${data.projectId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
+      });
+      if (!response.ok) throw new Error("Failed to update project");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Success", description: "Project updated successfully" });
+      setIsEditDialogOpen(false);
+      setEditingProject(null);
+      form.reset();
+    },
+    onError: (error: Error) => {
+      toast({ title: "Error", description: error.message, variant: "destructive" });
+    },
+  });
+
+  const deleteProjectMutation = useMutation({
+    mutationFn: async (projectId: string) => {
+      const response = await fetch(`/api/projects/${projectId}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error("Failed to delete project");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Success", description: "Project deleted successfully" });
     },
     onError: (error: Error) => {
       toast({ title: "Error", description: error.message, variant: "destructive" });
@@ -184,7 +225,33 @@ export default function ProjectValidation() {
   };
 
   const onSubmit = (data: any) => {
-    createProjectMutation.mutate(data);
+    if (editingProject) {
+      updateProjectMutation.mutate(data);
+    } else {
+      createProjectMutation.mutate(data);
+    }
+  };
+
+  const handleEdit = (project: Project) => {
+    setEditingProject(project);
+    form.reset({
+      projectId: project.projectId,
+      name: project.name,
+      description: project.description || "",
+      address: project.address || "",
+      city: project.city || "",
+      vatNumber: project.vatNumber || "",
+      supervisor: project.supervisor || "",
+      budget: project.budget || "",
+      currency: project.currency,
+    });
+    setIsEditDialogOpen(true);
+  };
+
+  const handleDelete = (projectId: string) => {
+    if (confirm("Are you sure you want to delete this project? This action cannot be undone.")) {
+      deleteProjectMutation.mutate(projectId);
+    }
   };
 
   const getValidationStatusBadge = (status: string) => {
@@ -395,6 +462,140 @@ export default function ProjectValidation() {
                   </Form>
                 </DialogContent>
               </Dialog>
+              
+              {/* Edit Project Dialog */}
+              <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
+                <DialogContent className="max-w-2xl">
+                  <DialogHeader>
+                    <DialogTitle>Edit Project Validation Criteria</DialogTitle>
+                  </DialogHeader>
+                  <Form {...form}>
+                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="projectId"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Project ID</FormLabel>
+                              <FormControl>
+                                <Input placeholder="PROJ-2024-001" {...field} disabled />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="name"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Project Name</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Project name" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="address"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Address</FormLabel>
+                            <FormControl>
+                              <Input placeholder="Project address" {...field} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="city"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>City</FormLabel>
+                              <FormControl>
+                                <Input placeholder="City" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="vatNumber"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>VAT Number</FormLabel>
+                              <FormControl>
+                                <Input placeholder="VAT Number" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="supervisor"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Supervisor</FormLabel>
+                              <FormControl>
+                                <Input placeholder="Project supervisor" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="budget"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Budget</FormLabel>
+                              <FormControl>
+                                <Input placeholder="0.00" {...field} />
+                              </FormControl>
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
+                      <FormField
+                        control={form.control}
+                        name="description"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>Description</FormLabel>
+                            <FormControl>
+                              <Textarea placeholder="Project description" {...field} />
+                            </FormControl>
+                          </FormItem>
+                        )}
+                      />
+
+                      <div className="flex justify-end space-x-2 pt-4">
+                        <Button type="button" variant="outline" onClick={() => {
+                          setIsEditDialogOpen(false);
+                          setEditingProject(null);
+                          form.reset();
+                        }}>
+                          Cancel
+                        </Button>
+                        <Button type="submit" disabled={updateProjectMutation.isPending}>
+                          {updateProjectMutation.isPending ? "Updating..." : "Update Project"}
+                        </Button>
+                      </div>
+                    </form>
+                  </Form>
+                </DialogContent>
+              </Dialog>
             </div>
           </div>
         </div>
@@ -519,9 +720,22 @@ export default function ProjectValidation() {
                                 Validate
                               </Button>
                             )}
-                            <Button size="sm" variant="outline">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => handleEdit(project)}
+                            >
                               <Settings size={14} className="mr-1" />
                               Edit
+                            </Button>
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              className="text-red-600 hover:text-red-700"
+                              onClick={() => handleDelete(project.projectId)}
+                              disabled={deleteProjectMutation.isPending}
+                            >
+                              Delete
                             </Button>
                           </div>
                         </td>

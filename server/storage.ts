@@ -45,23 +45,23 @@ export interface IStorage {
   // (IMPORTANT) these user operations are mandatory for Replit Auth.
   getUser(id: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
-  
+
   // Invoice operations
   createInvoice(invoice: InsertInvoice): Promise<Invoice>;
   getInvoice(id: number): Promise<Invoice | undefined>;
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
   updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<Invoice>;
-  
+
   // Line item operations
   createLineItems(items: InsertLineItem[]): Promise<LineItem[]>;
   getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]>;
-  
+
   // Approval operations
   createApproval(approval: InsertApproval): Promise<Approval>;
   getApprovalsByInvoiceId(invoiceId: number): Promise<Approval[]>;
   updateApproval(id: number, updates: Partial<InsertApproval>): Promise<Approval>;
   getPendingApprovals(): Promise<(Approval & { invoice: Invoice })[]>;
-  
+
   // Validation rules
   getValidationRules(): Promise<ValidationRule[]>;
   getValidationRule(id: number): Promise<ValidationRule | undefined>;
@@ -77,7 +77,7 @@ export interface IStorage {
       message: string;
     }>;
   }>;
-  
+
   // Dashboard stats
   getDashboardStats(userId?: string): Promise<{
     totalInvoices: number;
@@ -85,12 +85,12 @@ export interface IStorage {
     processedToday: number;
     totalValue: string;
   }>;
-  
+
   // Settings operations
   getSetting(key: string): Promise<Setting | undefined>;
   setSetting(setting: InsertSetting): Promise<Setting>;
   updateSetting(key: string, value: string): Promise<Setting>;
-  
+
   // Petty cash operations
   createPettyCashLog(log: InsertPettyCashLog): Promise<PettyCashLog>;
   updatePettyCashLog(id: number, updates: Partial<InsertPettyCashLog>): Promise<PettyCashLog>;
@@ -103,6 +103,7 @@ export interface IStorage {
   getProject(projectId: string): Promise<Project | undefined>;
   createProject(project: InsertProject): Promise<Project>;
   updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project>;
+  deleteProject(projectId: string): Promise<void>;
 
   // Purchase order operations
   getPurchaseOrders(): Promise<PurchaseOrder[]>;
@@ -500,7 +501,7 @@ export class DatabaseStorage implements IStorage {
       });
       return parseFloat(totalAmount) < 1000;
     }
-    
+
     const threshold = parseFloat(thresholdSetting.value);
     return parseFloat(totalAmount) < threshold;
   }
@@ -527,6 +528,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(projects.projectId, projectId))
       .returning();
     return updatedProject;
+  }
+
+  async deleteProject(projectId: string): Promise<void> {
+    await db.delete(projects).where(eq(projects.projectId, projectId));
   }
 
   // Purchase order operations
@@ -645,7 +650,7 @@ export class DatabaseStorage implements IStorage {
         const invoiceAmount = parseFloat(invoice.totalAmount.toString());
         const poAmount = parseFloat(po.amount.toString());
         const amountDifference = Math.abs(invoiceAmount - poAmount) / poAmount;
-        
+
         if (amountDifference <= 0.05) { // Exact match (within 5%)
           matchScore += 30;
           matchDetails.amountMatch = true;
@@ -659,14 +664,14 @@ export class DatabaseStorage implements IStorage {
       if (lineItems.length > 0 && po.items) {
         const poItems = Array.isArray(po.items) ? po.items : [];
         let itemMatchScore = 0;
-        
+
         for (const lineItem of lineItems) {
           for (const poItem of poItems) {
             const descriptionSimilarity = this.calculateStringSimilarity(
               lineItem.description.toLowerCase(),
               poItem.description?.toLowerCase() || ''
             );
-            
+
             if (descriptionSimilarity > 0.7) {
               itemMatchScore += descriptionSimilarity;
               matchDetails.itemMatches.push({
@@ -678,7 +683,7 @@ export class DatabaseStorage implements IStorage {
             }
           }
         }
-        
+
         // Normalize item match score
         if (matchDetails.totalItemsMatched > 0) {
           matchScore += (itemMatchScore / lineItems.length) * 30;
@@ -707,7 +712,7 @@ export class DatabaseStorage implements IStorage {
         ...(typeof currentData === 'object' ? currentData : {}),
         assignedProject: projectId,
       };
-      
+
       await db
         .update(invoices)
         .set({ extractedData: updatedData })
@@ -774,7 +779,7 @@ export class DatabaseStorage implements IStorage {
   async getTopIssuesThisMonth(): Promise<any[]> {
     const currentMonth = new Date();
     currentMonth.setDate(1);
-    
+
     // Get actual flag data for this month
     const flagStats = await db
       .select({
@@ -799,7 +804,7 @@ export class DatabaseStorage implements IStorage {
     // Simple Levenshtein distance-based similarity
     const maxLength = Math.max(str1.length, str2.length);
     if (maxLength === 0) return 1;
-    
+
     const distance = this.levenshteinDistance(str1, str2);
     return (maxLength - distance) / maxLength;
   }
