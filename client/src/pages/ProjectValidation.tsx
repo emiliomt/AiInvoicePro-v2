@@ -180,30 +180,6 @@ export default function ProjectValidation() {
     },
   });
 
-  const deleteAllMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/projects/delete-all", {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to delete all projects");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "All projects deleted successfully" });
-    },
-    onError: (error: Error) => {
-      toast({ 
-        title: "Error", 
-        description: error.message,
-        variant: "destructive" 
-      });
-    },
-  });
-
   const handleDownloadTemplate = () => {
     const link = document.createElement('a');
     link.href = '/api/projects/template';
@@ -285,12 +261,6 @@ export default function ProjectValidation() {
     }
   };
 
-  const handleDeleteAll = () => {
-    if (confirm("Are you sure you want to delete ALL projects? This action cannot be undone and will remove all project validation criteria.")) {
-      deleteAllMutation.mutate();
-    }
-  };
-
   const getValidationStatusBadge = (status: string) => {
     switch (status) {
       case "validated":
@@ -365,17 +335,6 @@ export default function ProjectValidation() {
                   {isImporting ? 'Importing...' : 'Import Excel'}
                 </Button>
               </div>
-              {projects.length > 0 && (
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
-                  onClick={handleDeleteAll}
-                  disabled={deleteAllMutation.isPending}
-                >
-                  {deleteAllMutation.isPending ? 'Deleting...' : 'Delete All'}
-                </Button>
-              )}</div>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-blue-600 hover:bg-blue-700">
