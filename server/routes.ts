@@ -56,6 +56,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Petty cash routes
+  app.post('/api/petty-cash', isAuthenticated, async (req, res) => {
+    try {
+      const pettyCashData = req.body;
+      const pettyCash = await storage.createPettyCashLog(pettyCashData);
+      res.json(pettyCash);
+    } catch (error) {
+      console.error("Error creating petty cash log:", error);
+      res.status(500).json({ message: "Failed to create petty cash log" });
+    }
+  });
+
+  app.put('/api/petty-cash/:id', isAuthenticated, async (req, res) => {
+    try {
+      const id = parseInt(req.params.id);
+      const updates = req.body;
+      const pettyCash = await storage.updatePettyCashLog(id, updates);
+      res.json(pettyCash);
+    } catch (error) {
+      console.error("Error updating petty cash log:", error);
+      res.status(500).json({ message: "Failed to update petty cash log" });
+    }
+  });
+
+  app.get('/api/petty-cash', isAuthenticated, async (req, res) => {
+    try {
+      const status = req.query.status as string;
+      const pettyCashLogs = await storage.getPettyCashLogs(status);
+      res.json(pettyCashLogs);
+    } catch (error) {
+      console.error("Error fetching petty cash logs:", error);
+      res.status(500).json({ message: "Failed to fetch petty cash logs" });
+    }
+  });
+
+  app.get('/api/petty-cash/invoice/:invoiceId', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const pettyCash = await storage.getPettyCashLogByInvoiceId(invoiceId);
+      res.json(pettyCash);
+    } catch (error) {
+      console.error("Error fetching petty cash by invoice:", error);
+      res.status(500).json({ message: "Failed to fetch petty cash log" });
+    }
+  });
+
+  // Settings routes
+  app.get('/api/settings/:key', isAuthenticated, async (req, res) => {
+    try {
+      const key = req.params.key;
+      const setting = await storage.getSetting(key);
+      res.json(setting);
+    } catch (error) {
+      console.error("Error fetching setting:", error);
+      res.status(500).json({ message: "Failed to fetch setting" });
+    }
+  });
+
+  app.put('/api/settings/:key', isAuthenticated, async (req, res) => {
+    try {
+      const key = req.params.key;
+      const { value } = req.body;
+      const setting = await storage.updateSetting(key, value);
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating setting:", error);
+      res.status(500).json({ message: "Failed to update setting" });
+    }
+  });
+
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, upload.single('invoice'), async (req: any, res) => {
     try {
@@ -93,6 +163,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             subtotal: extractedData.subtotal,
             confidenceScore: extractedData.confidenceScore,
           });
+
+          // Check if this is a petty cash invoice
+          const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
+          
+          if (isPettyCash) {
+            // Create petty cash log entry
+            await storage.createPettyCashLog({
+              invoiceId: invoice.id,
+              status: "pending_approval",
+            });
+            
+            // Update invoice status to indicate petty cash
+            await storage.updateInvoice(invoice.id, {
+              status: "petty_cash_pending",
+            });
+          }
 
           // Create line items if present
           if (extractedData.lineItems && extractedData.lineItems.length > 0) {

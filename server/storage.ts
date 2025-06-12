@@ -70,6 +70,18 @@ export interface IStorage {
     processedToday: number;
     totalValue: string;
   }>;
+  
+  // Settings operations
+  getSetting(key: string): Promise<Setting | undefined>;
+  setSetting(setting: InsertSetting): Promise<Setting>;
+  updateSetting(key: string, value: string): Promise<Setting>;
+  
+  // Petty cash operations
+  createPettyCashLog(log: InsertPettyCashLog): Promise<PettyCashLog>;
+  updatePettyCashLog(id: number, updates: Partial<InsertPettyCashLog>): Promise<PettyCashLog>;
+  getPettyCashLogByInvoiceId(invoiceId: number): Promise<PettyCashLog | undefined>;
+  getPettyCashLogs(status?: string): Promise<(PettyCashLog & { invoice: Invoice })[]>;
+  isPettyCashInvoice(totalAmount: string): Promise<boolean>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -341,6 +353,105 @@ export class DatabaseStorage implements IStorage {
       processedToday: processedTodayResult.count,
       totalValue: totalValueResult.sum || "0",
     };
+  }
+
+  // Settings operations
+  async getSetting(key: string): Promise<Setting | undefined> {
+    const [setting] = await db.select().from(settings).where(eq(settings.key, key));
+    return setting;
+  }
+
+  async setSetting(setting: InsertSetting): Promise<Setting> {
+    const [newSetting] = await db
+      .insert(settings)
+      .values(setting)
+      .onConflictDoUpdate({
+        target: settings.key,
+        set: {
+          value: setting.value,
+          description: setting.description,
+          updatedAt: new Date(),
+        },
+      })
+      .returning();
+    return newSetting;
+  }
+
+  async updateSetting(key: string, value: string): Promise<Setting> {
+    const [updatedSetting] = await db
+      .update(settings)
+      .set({ value, updatedAt: new Date() })
+      .where(eq(settings.key, key))
+      .returning();
+    return updatedSetting;
+  }
+
+  // Petty cash operations
+  async createPettyCashLog(log: InsertPettyCashLog): Promise<PettyCashLog> {
+    const [newLog] = await db
+      .insert(pettyCashLog)
+      .values(log)
+      .returning();
+    return newLog;
+  }
+
+  async updatePettyCashLog(id: number, updates: Partial<InsertPettyCashLog>): Promise<PettyCashLog> {
+    const [updatedLog] = await db
+      .update(pettyCashLog)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(pettyCashLog.id, id))
+      .returning();
+    return updatedLog;
+  }
+
+  async getPettyCashLogByInvoiceId(invoiceId: number): Promise<PettyCashLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(pettyCashLog)
+      .where(eq(pettyCashLog.invoiceId, invoiceId));
+    return log;
+  }
+
+  async getPettyCashLogs(status?: string): Promise<(PettyCashLog & { invoice: Invoice })[]> {
+    const query = db
+      .select({
+        id: pettyCashLog.id,
+        invoiceId: pettyCashLog.invoiceId,
+        projectId: pettyCashLog.projectId,
+        costCenter: pettyCashLog.costCenter,
+        approvedBy: pettyCashLog.approvedBy,
+        approvalFileUrl: pettyCashLog.approvalFileUrl,
+        status: pettyCashLog.status,
+        approvalNotes: pettyCashLog.approvalNotes,
+        approvedAt: pettyCashLog.approvedAt,
+        createdAt: pettyCashLog.createdAt,
+        updatedAt: pettyCashLog.updatedAt,
+        invoice: invoices,
+      })
+      .from(pettyCashLog)
+      .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id));
+
+    if (status) {
+      query.where(eq(pettyCashLog.status, status as any));
+    }
+
+    return query.orderBy(desc(pettyCashLog.createdAt));
+  }
+
+  async isPettyCashInvoice(totalAmount: string): Promise<boolean> {
+    const thresholdSetting = await this.getSetting('petty_cash_threshold');
+    if (!thresholdSetting) {
+      // Default threshold: 1000 MXN
+      await this.setSetting({
+        key: 'petty_cash_threshold',
+        value: '1000',
+        description: 'Threshold amount for petty cash invoices in MXN',
+      });
+      return parseFloat(totalAmount) < 1000;
+    }
+    
+    const threshold = parseFloat(thresholdSetting.value);
+    return parseFloat(totalAmount) < threshold;
   }
 }
 
