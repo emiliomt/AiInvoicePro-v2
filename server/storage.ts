@@ -266,9 +266,9 @@ export class DatabaseStorage implements IStorage {
 
       if (isViolation) {
         violations.push({
-          fieldName: rule.fieldName,
+          fieldName: rule.fieldName || '',
           ruleName: rule.name,
-          severity: rule.severity,
+          severity: (rule.severity || 'medium') as string,
           message: errorMessage,
         });
       }

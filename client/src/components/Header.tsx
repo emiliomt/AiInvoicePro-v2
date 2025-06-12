@@ -11,6 +11,9 @@ import { FileText, Bell, ChevronDown, LogOut, User, Settings } from "lucide-reac
 
 export default function Header() {
   const { user } = useAuth();
+  
+  // Type the user object properly
+  const typedUser = user as any;
 
   const getInitials = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
@@ -75,13 +78,13 @@ export default function Header() {
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-3 hover:bg-gray-50">
                   <Avatar className="w-8 h-8">
-                    <AvatarImage src={user?.profileImageUrl || undefined} />
+                    <AvatarImage src={typedUser?.profileImageUrl || undefined} />
                     <AvatarFallback className="bg-gray-300 text-gray-600 text-sm">
-                      {getInitials(user?.firstName, user?.lastName)}
+                      {getInitials(typedUser?.firstName, typedUser?.lastName)}
                     </AvatarFallback>
                   </Avatar>
                   <span className="hidden sm:block text-sm font-medium text-gray-900">
-                    {getDisplayName(user?.firstName, user?.lastName)}
+                    {getDisplayName(typedUser?.firstName, typedUser?.lastName)}
                   </span>
                   <ChevronDown className="text-gray-400" size={16} />
                 </Button>
