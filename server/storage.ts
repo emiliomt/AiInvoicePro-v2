@@ -105,6 +105,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project>;
   deleteProject(projectId: string): Promise<void>;
+  deleteAllProjects(): Promise<number>;
 
   // Purchase order operations
   getPurchaseOrders(): Promise<PurchaseOrder[]>;
@@ -190,25 +191,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInvoice(id: number): Promise<void> {
     // Delete related records first to maintain referential integrity
-    
+
     // Delete line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
-    
+
     // Delete approvals
     await db.delete(approvals).where(eq(approvals.invoiceId, id));
-    
+
     // Delete invoice-PO matches
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
-    
+
     // Delete invoice flags
     await db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id));
-    
+
     // Delete predictive alerts
     await db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id));
-    
+
     // Delete petty cash logs
     await db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id));
-    
+
     // Finally delete the invoice
     await db.delete(invoices).where(eq(invoices.id, id));
   }
@@ -581,6 +582,24 @@ export class DatabaseStorage implements IStorage {
     await db.delete(projects).where(eq(projects.projectId, projectId));
   }
 
+  async deleteAllProjects(): Promise<number> {
+    try {
+      // Get count of projects before deletion
+      const allProjects = await db.select().from(projects);
+      const count = allProjects.length;
+
+      // Delete all projects
+      await db.delete(projects);
+
+      return count;
+    } catch (error) {
+      if (error instanceof Error && error.message.includes("foreign key constraint")) {
+        throw new Error("Cannot delete some projects because they have associated invoices or purchase orders. Please remove dependencies first.");
+      }
+      throw error;
+    }
+  }
+
   // Purchase order operations
   async getPurchaseOrders(): Promise<PurchaseOrder[]> {
     return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
@@ -873,8 +892,7 @@ export class DatabaseStorage implements IStorage {
           matrix[i][j] = matrix[i - 1][j - 1];
         } else {
           matrix[i][j] = Math.min(
-            matrix[i - 1][j - 1] + 1,
-            matrix[i][j - 1] + 1,
+            matrix[i - 1][j - 1] + 1,            matrix[i][j - 1] + 1,
             matrix[i - 1][j] + 1
           );
         }

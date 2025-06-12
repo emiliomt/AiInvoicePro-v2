@@ -220,6 +220,32 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete all projects endpoint
+  app.delete('/api/projects/delete-all', isAuthenticated, async (req, res) => {
+    try {
+      const deletedCount = await storage.deleteAllProjects();
+      res.json({ 
+        message: `Successfully deleted ${deletedCount} projects`,
+        deletedCount 
+      });
+    } catch (error) {
+      console.error("Error deleting all projects:", error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes("Cannot delete projects")) {
+          return res.status(400).json({ message: error.message });
+        }
+        if (error.message.includes("foreign key constraint")) {
+          return res.status(400).json({ 
+            message: "Cannot delete some projects because they have associated records. Please remove dependencies first." 
+          });
+        }
+      }
+      
+      res.status(500).json({ message: "Failed to delete all projects" });
+    }
+  });
+
   // Purchase order routes
   app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
@@ -384,20 +410,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (let i = 0; i < data.length; i++) {
           const row = data[i] as any;
           try {
+            // Skip empty rows
+            if (!row || Object.keys(row).length === 0) continue;
+            
+            // More comprehensive column mapping
             const projectData = {
-              projectId: row['Project ID'] || row['projectId'] || `PROJ-${Date.now()}-${i}`,
-              name: row['Project Name'] || row['name'] || 'Imported Project',
-              description: row['Description'] || row['description'] || '',
-              address: row['Address'] || row['address'] || '',
-              city: row['City'] || row['city'] || '',
-              vatNumber: row['VAT Number'] || row['vatNumber'] || '',
-              supervisor: row['Supervisor'] || row['supervisor'] || '',
-              budget: row['Budget'] || row['budget'] || '0',
-              currency: row['Currency'] || row['currency'] || 'USD',
+              projectId: row['Project ID'] || row['projectId'] || row['ProjectID'] || row['ID'] || `PROJ-${Date.now()}-${i}`,
+              name: row['Project Name'] || row['name'] || row['Name'] || row['ProjectName'] || 'Imported Project',
+              description: row['Description'] || row['description'] || row['Desc'] || '',
+              address: row['Address'] || row['address'] || row['Location'] || '',
+              city: row['City'] || row['city'] || row['Town'] || '',
+              vatNumber: row['VAT Number'] || row['vatNumber'] || row['VAT'] || row['TaxNumber'] || '',
+              supervisor: row['Supervisor'] || row['supervisor'] || row['Manager'] || row['ProjectManager'] || '',
+              budget: (row['Budget'] || row['budget'] || row['Amount'] || '0').toString(),
+              currency: row['Currency'] || row['currency'] || row['Curr'] || 'USD',
               status: 'active',
               validationStatus: 'pending',
               isValidated: false
             };
+
+            // Validate required fields
+            if (!projectData.projectId || !projectData.name) {
+              throw new Error(`Missing required fields: Project ID or Name`);
+            }
 
             const project = await storage.createProject(projectData);
             importedProjects.push(project);
