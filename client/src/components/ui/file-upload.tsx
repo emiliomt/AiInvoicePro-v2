@@ -3,11 +3,6 @@ import { useDropzone } from "react-dropzone";
 import { Upload, File, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-import React, { useCallback, useState } from 'react';
-import { useDropzone } from 'react-dropzone';
-import { File, Upload, X } from 'lucide-react';
-import { cn } from '@/lib/utils';
-
 interface FileUploadProps {
   onFileSelect: (file: File) => void;
   accept?: Record<string, string[]>;
