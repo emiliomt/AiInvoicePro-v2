@@ -12,6 +12,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
 import ProjectAssignment from "@/components/ProjectAssignment";
+import DiscrepancyDisplay from "@/components/DiscrepancyDisplay";
 import { InfoIcon, DollarSign } from "lucide-react";
 
 interface Invoice {
@@ -334,6 +335,9 @@ export default function ExtractedData() {
           currentProject={(invoice as any).extractedData?.assignedProject}
         />
       )}
+
+      {/* Discrepancy Detection Display */}
+      <DiscrepancyDisplay invoiceId={invoice.id} />
     </div>
   );
 }

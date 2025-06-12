@@ -9,6 +9,8 @@ import {
   projects,
   purchaseOrders,
   invoicePoMatches,
+  invoiceFlags,
+  predictiveAlerts,
   type User,
   type UpsertUser,
   type Invoice,
@@ -29,6 +31,10 @@ import {
   type InsertPurchaseOrder,
   type InvoicePoMatch,
   type InsertInvoicePoMatch,
+  type InvoiceFlag,
+  type InsertInvoiceFlag,
+  type PredictiveAlert,
+  type InsertPredictiveAlert,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, count, sum, sql } from "drizzle-orm";
@@ -699,8 +705,6 @@ export class DatabaseStorage implements IStorage {
   }
 
   async assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void> {
-    // For now, we'll store the project assignment in the extractedData field
-    // In a more complete implementation, you might add a projectId field to the invoices table
     const invoice = await this.getInvoice(invoiceId);
     if (invoice) {
       const currentData = invoice.extractedData || {};
@@ -714,6 +718,81 @@ export class DatabaseStorage implements IStorage {
         .set({ extractedData: updatedData })
         .where(eq(invoices.id, invoiceId));
     }
+  }
+
+  // Discrepancy detection operations
+  async createInvoiceFlags(flags: InsertInvoiceFlag[]): Promise<InvoiceFlag[]> {
+    if (flags.length === 0) return [];
+    return await db.insert(invoiceFlags).values(flags).returning();
+  }
+
+  async getInvoiceFlags(invoiceId: number): Promise<InvoiceFlag[]> {
+    return await db
+      .select()
+      .from(invoiceFlags)
+      .where(eq(invoiceFlags.invoiceId, invoiceId))
+      .orderBy(desc(invoiceFlags.createdAt));
+  }
+
+  async resolveInvoiceFlag(flagId: number, resolvedBy: string): Promise<InvoiceFlag> {
+    const [flag] = await db
+      .update(invoiceFlags)
+      .set({
+        isResolved: true,
+        resolvedBy,
+        resolvedAt: new Date(),
+        updatedAt: new Date()
+      })
+      .where(eq(invoiceFlags.id, flagId))
+      .returning();
+    return flag;
+  }
+
+  async getAllUnresolvedFlags(): Promise<(InvoiceFlag & { invoice: Invoice })[]> {
+    return await db
+      .select()
+      .from(invoiceFlags)
+      .leftJoin(invoices, eq(invoiceFlags.invoiceId, invoices.id))
+      .where(eq(invoiceFlags.isResolved, false))
+      .orderBy(desc(invoiceFlags.createdAt));
+  }
+
+  // Predictive alerts operations
+  async createPredictiveAlerts(alerts: InsertPredictiveAlert[]): Promise<PredictiveAlert[]> {
+    if (alerts.length === 0) return [];
+    return await db.insert(predictiveAlerts).values(alerts).returning();
+  }
+
+  async getPredictiveAlerts(invoiceId: number): Promise<PredictiveAlert[]> {
+    return await db
+      .select()
+      .from(predictiveAlerts)
+      .where(eq(predictiveAlerts.invoiceId, invoiceId))
+      .orderBy(desc(predictiveAlerts.createdAt));
+  }
+
+  async getTopIssuesThisMonth(): Promise<any[]> {
+    const currentMonth = new Date();
+    currentMonth.setDate(1);
+    
+    // Get actual flag data for this month
+    const flagStats = await db
+      .select({
+        flagType: invoiceFlags.flagType,
+        severity: invoiceFlags.severity,
+        count: count()
+      })
+      .from(invoiceFlags)
+      .where(sql`${invoiceFlags.createdAt} >= ${currentMonth}`)
+      .groupBy(invoiceFlags.flagType, invoiceFlags.severity)
+      .orderBy(desc(count()));
+
+    return flagStats.map(stat => ({
+      issueType: stat.flagType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
+      count: stat.count,
+      severity: stat.severity,
+      trend: "0%" // Would need historical data for actual trends
+    }));
   }
 
   private calculateStringSimilarity(str1: string, str2: string): number {
