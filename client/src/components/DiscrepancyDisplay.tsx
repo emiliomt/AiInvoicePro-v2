@@ -147,7 +147,7 @@ export default function DiscrepancyDisplay({ invoiceId }: DiscrepancyDisplayProp
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {unresolvedFlags.map((flag: InvoiceFlag) => (
+            {unresolvedFlags.map((flag) => (
               <div key={flag.id} className="p-3 border rounded-lg bg-white">
                 <div className="flex items-start justify-between">
                   <div className="flex items-start space-x-3 flex-1">
@@ -204,7 +204,7 @@ export default function DiscrepancyDisplay({ invoiceId }: DiscrepancyDisplayProp
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            {alerts.map((alert: PredictiveAlert) => {
+            {alerts.map((alert) => {
               const confidence = parseFloat(alert.confidence);
               return (
                 <div key={alert.id} className="p-3 border rounded-lg bg-white">
