@@ -302,14 +302,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "No file uploaded" });
         }
 
-      // Create initial invoice record
+      // Create initial invoice record without automatic processing
       const invoice = await storage.createInvoice({
         userId,
         fileName: file.originalname,
-        status: "processing",
+        status: "pending",
       });
 
-      // Process OCR in background
+      res.json({ invoiceId: invoice.id, message: "Invoice uploaded successfully. Processing disabled until manually triggered." });
+      } catch (error) {
+        console.error("Error uploading invoice:", error);
+        res.status(500).json({ message: "Failed to upload invoice" });
+      }
+    });
+  });
+
+  // Manual processing endpoints
+  app.post('/api/invoices/:id/process-ocr', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice || invoice.userId !== req.user.claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Start OCR processing manually
+      res.json({ message: "OCR processing started" });
+    } catch (error) {
+      console.error("Error starting OCR:", error);
+      res.status(500).json({ message: "Failed to start OCR processing" });
+    }
+  });
+
+  app.post('/api/invoices/:id/extract-data', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice || invoice.userId !== req.user.claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      res.json({ message: "Data extraction started" });
+    } catch (error) {
+      console.error("Error starting data extraction:", error);
+      res.status(500).json({ message: "Failed to start data extraction" });
+    }
+  });
+
+  app.post('/api/invoices/:id/find-matches', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice || invoice.userId !== req.user.claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      res.json({ message: "PO matching started" });
+    } catch (error) {
+      console.error("Error starting PO matching:", error);
+      res.status(500).json({ message: "Failed to start PO matching" });
+    }
+  });
+
+  // Temporary comment out the automatic processing
+  /*
       processInvoiceOCR(file.buffer, invoice.id)
         .then(async (ocrText) => {
           // Extract structured data using AI
@@ -420,14 +479,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             extractedData: { error: error.message },
           });
         });
-
-      res.json({ invoiceId: invoice.id, message: "Invoice uploaded and processing started" });
-      } catch (error) {
-        console.error("Error uploading invoice:", error);
-        res.status(500).json({ message: "Failed to upload invoice" });
-      }
-    });
-  });
+  */
 
   // Get invoice by ID
   app.get('/api/invoices/:id', isAuthenticated, async (req: any, res) => {

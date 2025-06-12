@@ -110,8 +110,8 @@ export default function InvoiceUpload() {
             <div className="flex items-center space-x-3">
               <Loader2 className="animate-spin h-5 w-5 text-primary-600" />
               <div>
-                <p className="text-sm font-medium text-primary-900">Processing invoice...</p>
-                <p className="text-xs text-primary-700">Extracting text using OCR and analyzing with AI</p>
+                <p className="text-sm font-medium text-primary-900">Uploading invoice...</p>
+                <p className="text-xs text-primary-700">Automatic processing is disabled</p>
               </div>
             </div>
           </div>
@@ -123,7 +123,7 @@ export default function InvoiceUpload() {
               onClick={handleUpload}
               className="bg-primary-600 hover:bg-primary-700"
             >
-              Upload and Process
+              Upload Only
             </Button>
           </div>
         )}
