@@ -163,7 +163,7 @@ export default function ExtractedData() {
   const isPettyCash = invoice.totalAmount && parseFloat(invoice.totalAmount) < 1000;
 
   return (
-    <>
+    <div className="space-y-4">
       <Card className="bg-white shadow-sm border border-gray-200">
         <CardHeader>
           <div className="flex items-center justify-between">
@@ -321,10 +321,10 @@ export default function ExtractedData() {
           </div>
         )}
       </CardContent>
-    </Card>
+      </Card>
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
-    </>
+    </div>
   );
 }
