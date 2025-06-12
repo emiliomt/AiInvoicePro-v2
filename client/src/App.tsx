@@ -13,6 +13,7 @@ import ValidationRules from "@/pages/ValidationRules";
 import PettyCash from "@/pages/PettyCash";
 import POMatching from "@/pages/POMatching";
 import Reports from "@/pages/Reports";
+import ProjectValidation from "@/pages/ProjectValidation";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -31,6 +32,7 @@ function Router() {
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
           <Route path="/reports" component={Reports} />
+          <Route path="/project-validation" component={ProjectValidation} />
         </>
       )}
       <Route component={NotFound} />

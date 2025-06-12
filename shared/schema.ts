@@ -178,17 +178,25 @@ export const matchStatusEnum = pgEnum("match_status", [
   "unresolved"
 ]);
 
-// Projects table
+// Projects table with validation criteria
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
   projectId: varchar("project_id", { length: 100 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
+  address: varchar("address", { length: 500 }),
+  city: varchar("city", { length: 100 }),
+  vatNumber: varchar("vat_number", { length: 50 }),
+  supervisor: varchar("supervisor", { length: 255 }),
   budget: decimal("budget", { precision: 12, scale: 2 }),
   currency: varchar("currency", { length: 3 }).default("USD"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   status: varchar("status", { length: 50 }).default("active"),
+  validationStatus: varchar("validation_status", { length: 50 }).default("pending"),
+  isValidated: boolean("is_validated").default(false),
+  validatedAt: timestamp("validated_at"),
+  validatedBy: varchar("validated_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -278,6 +278,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project validation routes
+  app.post("/api/projects/:projectId/validate", isAuthenticated, async (req, res) => {
+    try {
+      const { projectId } = req.params;
+      const { action } = req.body;
+      const userId = req.user?.id || "unknown";
+      
+      const validationStatus = action === "validate" ? "validated" : "rejected";
+      const isValidated = action === "validate";
+      
+      const updates = {
+        validationStatus,
+        isValidated,
+        validatedAt: new Date().toISOString(),
+        validatedBy: userId,
+      };
+      
+      const project = await storage.updateProject(projectId, updates);
+      res.json(project);
+    } catch (error) {
+      console.error("Error updating project validation:", error);
+      res.status(500).json({ message: "Failed to update project validation" });
+    }
+  });
+
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
     upload.single('invoice')(req, res, async (err) => {
