@@ -804,6 +804,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete invoice
+  app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteInvoice(invoiceId);
+      res.json({ message: "Invoice deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ message: "Failed to delete invoice" });
+    }
+  });
+
   // Get pending approvals
   app.get('/api/approvals/pending', isAuthenticated, async (req: any, res) => {
     try {

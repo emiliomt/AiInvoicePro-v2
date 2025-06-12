@@ -51,6 +51,7 @@ export interface IStorage {
   getInvoice(id: number): Promise<Invoice | undefined>;
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
   updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<Invoice>;
+  deleteInvoice(id: number): Promise<void>;
 
   // Line item operations
   createLineItems(items: InsertLineItem[]): Promise<LineItem[]>;
@@ -185,6 +186,31 @@ export class DatabaseStorage implements IStorage {
       .where(eq(invoices.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteInvoice(id: number): Promise<void> {
+    // Delete related records first to maintain referential integrity
+    
+    // Delete line items
+    await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
+    
+    // Delete approvals
+    await db.delete(approvals).where(eq(approvals.invoiceId, id));
+    
+    // Delete invoice-PO matches
+    await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
+    
+    // Delete invoice flags
+    await db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id));
+    
+    // Delete predictive alerts
+    await db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id));
+    
+    // Delete petty cash logs
+    await db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id));
+    
+    // Finally delete the invoice
+    await db.delete(invoices).where(eq(invoices.id, id));
   }
 
   // Line item operations
