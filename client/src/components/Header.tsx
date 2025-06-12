@@ -63,6 +63,9 @@ export default function Header() {
             <a href="/validation-rules" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Validation Rules
             </a>
+            <a href="/petty-cash" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+              Petty Cash
+            </a>
             <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Reports
             </a>

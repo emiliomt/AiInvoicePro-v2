@@ -8,6 +8,7 @@ import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
 import ValidationRules from "@/pages/ValidationRules";
+import PettyCash from "@/pages/PettyCash";
 
 function Router() {
   const { isAuthenticated, isLoading } = useAuth();
@@ -21,6 +22,7 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/validation-rules" component={ValidationRules} />
+          <Route path="/petty-cash" component={PettyCash} />
         </>
       )}
       <Route component={NotFound} />
