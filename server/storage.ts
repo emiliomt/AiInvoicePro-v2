@@ -531,6 +531,27 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteProject(projectId: string): Promise<void> {
+    // Check if project has associated purchase orders
+    const [associatedPOs] = await db
+      .select({ count: count() })
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.projectId, projectId));
+
+    if (associatedPOs.count > 0) {
+      throw new Error(`Cannot delete project ${projectId} because it has ${associatedPOs.count} associated purchase order(s). Please remove or reassign the purchase orders first.`);
+    }
+
+    // Check if project has associated invoice matches through purchase orders
+    const associatedInvoiceMatches = await db
+      .select({ count: count() })
+      .from(invoicePoMatches)
+      .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
+      .where(eq(purchaseOrders.projectId, projectId));
+
+    if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
+      throw new Error(`Cannot delete project ${projectId} because it has associated invoice-PO matches. Please resolve these matches first.`);
+    }
+
     await db.delete(projects).where(eq(projects.projectId, projectId));
   }
 

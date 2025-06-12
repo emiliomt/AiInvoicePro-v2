@@ -203,6 +203,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Project deleted successfully" });
     } catch (error) {
       console.error("Error deleting project:", error);
+      
+      // Handle specific constraint violation errors
+      if (error instanceof Error) {
+        if (error.message.includes("Cannot delete project")) {
+          return res.status(400).json({ message: error.message });
+        }
+        if (error.message.includes("foreign key constraint")) {
+          return res.status(400).json({ 
+            message: "Cannot delete project because it has associated records. Please remove dependencies first." 
+          });
+        }
+      }
+      
       res.status(500).json({ message: "Failed to delete project" });
     }
   });
