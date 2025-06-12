@@ -8,12 +8,24 @@ import {
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
 import { FileText, Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
+import { Link, useLocation } from "wouter";
 
 export default function Header() {
   const { user } = useAuth();
+  const [location] = useLocation();
   
   // Type the user object properly
   const typedUser = user as any;
+
+  const isActiveRoute = (path: string) => {
+    return location === path;
+  };
+
+  const getLinkClassName = (path: string) => {
+    return isActiveRoute(path) 
+      ? "text-primary-600 font-medium border-b-2 border-primary-600 pb-4 -mb-[1px]"
+      : "text-gray-600 hover:text-gray-900 pb-4 transition-colors";
+  };
 
   const getInitials = (firstName?: string, lastName?: string) => {
     if (firstName && lastName) {
@@ -51,27 +63,27 @@ export default function Header() {
 
           {/* Navigation */}
           <nav className="hidden md:flex space-x-8">
-            <a href="/" className="text-primary-600 font-medium border-b-2 border-primary-600 pb-4 -mb-[1px]">
+            <Link href="/" className={getLinkClassName("/")}>
               Dashboard
-            </a>
-            <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
-            </a>
-            <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/approvals" className={getLinkClassName("/approvals")}>
               Approvals
-            </a>
-            <a href="/validation-rules" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
               Validation Rules
-            </a>
-            <a href="/petty-cash" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
               Petty Cash
-            </a>
-            <a href="/po-matching" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
               PO Matching
-            </a>
-            <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+            </Link>
+            <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
-            </a>
+            </Link>
           </nav>
 
           {/* User Menu */}
