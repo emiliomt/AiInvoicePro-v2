@@ -75,6 +75,9 @@ export default function Header() {
             <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
               Validation Rules
             </Link>
+            <Link href="/project-validation" className={getLinkClassName("/project-validation")}>
+              Project Validation
+            </Link>
             <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
               Petty Cash
             </Link>

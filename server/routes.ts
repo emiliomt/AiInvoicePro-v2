@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates = {
         validationStatus,
         isValidated,
-        validatedAt: new Date().toISOString(),
+        validatedAt: new Date(),
         validatedBy: userId,
       };
       
