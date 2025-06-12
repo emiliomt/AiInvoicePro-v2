@@ -36,7 +36,7 @@ interface InvoiceMatch {
   matchScore: string;
   status: "auto" | "manual" | "unresolved";
   matchDetails: any;
-  purchaseOrder: PurchaseOrder;
+  purchaseOrder: PurchaseOrder | null;
 }
 
 interface ProjectAssignmentProps {
@@ -220,17 +220,26 @@ export default function ProjectAssignment({ invoiceId, currentProject }: Project
                 <div key={match.id} className="border rounded-lg p-4 space-y-3">
                   <div className="flex justify-between items-start">
                     <div className="space-y-1">
-                      <h4 className="font-medium">{match.purchaseOrder.poId}</h4>
-                      <p className="text-sm text-gray-600">
-                        Vendor: {match.purchaseOrder.vendorName}
-                      </p>
-                      <p className="text-sm text-gray-600">
-                        Amount: {match.purchaseOrder.currency} {match.purchaseOrder.amount}
-                      </p>
-                      {match.purchaseOrder.projectId && (
-                        <p className="text-sm text-gray-600">
-                          Project: {match.purchaseOrder.projectId}
-                        </p>
+                      {match.purchaseOrder ? (
+                        <>
+                          <h4 className="font-medium">{match.purchaseOrder?.poId}</h4>
+                          <p className="text-sm text-gray-600">
+                            Vendor: {match.purchaseOrder?.vendorName}
+                          </p>
+                          <p className="text-sm text-gray-600">
+                            Amount: {match.purchaseOrder?.currency} {match.purchaseOrder?.amount}
+                          </p>
+                          {match.purchaseOrder?.projectId && (
+                            <p className="text-sm text-gray-600">
+                              Project: {match.purchaseOrder?.projectId}
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <>
+                          <h4 className="font-medium text-gray-500">PO Data Unavailable</h4>
+                          <p className="text-sm text-gray-400">Purchase order information could not be loaded</p>
+                        </>
                       )}
                     </div>
                     <div className="text-right space-y-2">
