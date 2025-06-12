@@ -6,10 +6,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { InfoIcon } from "lucide-react";
+import PettyCashManager from "@/components/PettyCashManager";
+import { InfoIcon, DollarSign } from "lucide-react";
 
 interface Invoice {
   id: number;
@@ -158,13 +160,23 @@ export default function ExtractedData() {
 
   const invoice = invoiceDetails || invoiceToShow;
   const confidenceScore = invoice.confidenceScore ? parseFloat(invoice.confidenceScore) * 100 : 0;
+  const isPettyCash = invoice.totalAmount && parseFloat(invoice.totalAmount) < 1000;
 
   return (
-    <Card className="bg-white shadow-sm border border-gray-200">
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold text-gray-900">Extracted Invoice Data</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
+    <>
+      <Card className="bg-white shadow-sm border border-gray-200">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-lg font-semibold text-gray-900">Extracted Invoice Data</CardTitle>
+            {isPettyCash && (
+              <Badge variant="secondary" className="bg-green-100 text-green-800">
+                <DollarSign size={14} className="mr-1" />
+                Petty Cash
+              </Badge>
+            )}
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           <div className="space-y-4">
             <div>
@@ -310,5 +322,9 @@ export default function ExtractedData() {
         )}
       </CardContent>
     </Card>
+
+      {/* Petty Cash Manager for petty cash invoices */}
+      {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
+    </>
   );
 }

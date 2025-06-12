@@ -58,10 +58,19 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
   // Update petty cash log mutation
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: number; updates: any }) => {
-      return apiRequest(`/api/petty-cash/${id}`, {
+      const response = await fetch(`/api/petty-cash/${id}`, {
         method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+        },
         body: JSON.stringify(updates),
       });
+      
+      if (!response.ok) {
+        throw new Error("Failed to update petty cash log");
+      }
+      
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
