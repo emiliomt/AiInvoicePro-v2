@@ -30,6 +30,26 @@ const upload = multer({
   },
 });
 
+const excelUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 5 * 1024 * 1024, // 5MB limit for Excel files
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /xlsx|xls/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
+                    file.mimetype === 'application/vnd.ms-excel' ||
+                    file.mimetype === 'application/octet-stream';
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only Excel files (.xlsx, .xls) are allowed'));
+    }
+  },
+});
+
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
@@ -305,7 +325,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Excel import endpoint for projects
   app.post('/api/projects/import', isAuthenticated, (req: any, res) => {
-    upload.single('excel')(req, res, async (err) => {
+    excelUpload.single('excel')(req, res, async (err) => {
       if (err) {
         console.error('Upload error:', err);
         return res.status(400).json({ message: 'File upload failed' });
