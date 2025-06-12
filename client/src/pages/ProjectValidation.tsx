@@ -142,7 +142,10 @@ export default function ProjectValidation() {
       const response = await fetch(`/api/projects/${projectId}`, {
         method: "DELETE",
       });
-      if (!response.ok) throw new Error("Failed to delete project");
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete project");
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -150,7 +153,11 @@ export default function ProjectValidation() {
       toast({ title: "Success", description: "Project deleted successfully" });
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({ 
+        title: "Cannot Delete Project", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
