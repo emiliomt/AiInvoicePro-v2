@@ -48,7 +48,7 @@ export default function Header() {
 
           {/* Navigation */}
           <nav className="hidden md:flex space-x-8">
-            <a href="#" className="text-primary-600 font-medium border-b-2 border-primary-600 pb-4 -mb-[1px]">
+            <a href="/" className="text-primary-600 font-medium border-b-2 border-primary-600 pb-4 -mb-[1px]">
               Dashboard
             </a>
             <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
@@ -56,6 +56,9 @@ export default function Header() {
             </a>
             <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Approvals
+            </a>
+            <a href="/validation-rules" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
+              Validation Rules
             </a>
             <a href="#" className="text-gray-600 hover:text-gray-900 pb-4 transition-colors">
               Reports

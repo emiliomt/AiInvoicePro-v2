@@ -100,13 +100,33 @@ export const approvals = pgTable("approvals", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Validation rule severity enum
+export const validationSeverityEnum = pgEnum("validation_severity", [
+  "low",
+  "medium", 
+  "high",
+  "critical",
+]);
+
+// Validation rule type enum
+export const validationRuleTypeEnum = pgEnum("validation_rule_type", [
+  "required",
+  "regex",
+  "range",
+  "enum",
+  "format",
+]);
+
 // Validation rules table
 export const validationRules = pgTable("validation_rules", {
   id: serial("id").primaryKey(),
   name: varchar("name").notNull(),
   description: text("description"),
-  ruleType: varchar("rule_type").notNull(), // 'amount_limit', 'vendor_whitelist', etc.
-  ruleData: jsonb("rule_data").notNull(),
+  fieldName: varchar("field_name").notNull(), // e.g., 'vendorName', 'totalAmount', 'taxId'
+  ruleType: validationRuleTypeEnum("rule_type").notNull(),
+  ruleValue: text("rule_value").notNull(), // regex pattern, min/max values, etc.
+  severity: validationSeverityEnum("severity").default("medium"),
+  errorMessage: text("error_message"), // Custom error message
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),

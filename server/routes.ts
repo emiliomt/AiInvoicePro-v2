@@ -265,7 +265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get validation rules
+  // Validation rules CRUD endpoints
   app.get('/api/validation-rules', isAuthenticated, async (req: any, res) => {
     try {
       const rules = await storage.getValidationRules();
@@ -273,6 +273,88 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching validation rules:", error);
       res.status(500).json({ message: "Failed to fetch validation rules" });
+    }
+  });
+
+  app.get('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const rule = await storage.getValidationRule(ruleId);
+      
+      if (!rule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      res.json(rule);
+    } catch (error) {
+      console.error("Error fetching validation rule:", error);
+      res.status(500).json({ message: "Failed to fetch validation rule" });
+    }
+  });
+
+  app.post('/api/validation-rules', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleData = req.body;
+      
+      // Validate required fields
+      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
+        return res.status(400).json({ 
+          message: "Missing required fields: name, fieldName, ruleType, ruleValue" 
+        });
+      }
+
+      const rule = await storage.createValidationRule(ruleData);
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("Error creating validation rule:", error);
+      res.status(500).json({ message: "Failed to create validation rule" });
+    }
+  });
+
+  app.put('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const updates = req.body;
+
+      const existingRule = await storage.getValidationRule(ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      const updatedRule = await storage.updateValidationRule(ruleId, updates);
+      res.json(updatedRule);
+    } catch (error) {
+      console.error("Error updating validation rule:", error);
+      res.status(500).json({ message: "Failed to update validation rule" });
+    }
+  });
+
+  app.delete('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+
+      const existingRule = await storage.getValidationRule(ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      await storage.deleteValidationRule(ruleId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting validation rule:", error);
+      res.status(500).json({ message: "Failed to delete validation rule" });
+    }
+  });
+
+  // Validate invoice data endpoint
+  app.post('/api/validation-rules/validate', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceData = req.body;
+      const validationResult = await storage.validateInvoiceData(invoiceData);
+      res.json(validationResult);
+    } catch (error) {
+      console.error("Error validating invoice data:", error);
+      res.status(500).json({ message: "Failed to validate invoice data" });
     }
   });
 

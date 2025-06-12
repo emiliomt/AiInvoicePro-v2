@@ -43,7 +43,19 @@ export interface IStorage {
   
   // Validation rules
   getValidationRules(): Promise<ValidationRule[]>;
+  getValidationRule(id: number): Promise<ValidationRule | undefined>;
   createValidationRule(rule: InsertValidationRule): Promise<ValidationRule>;
+  updateValidationRule(id: number, updates: Partial<InsertValidationRule>): Promise<ValidationRule>;
+  deleteValidationRule(id: number): Promise<void>;
+  validateInvoiceData(invoiceData: any): Promise<{
+    isValid: boolean;
+    violations: Array<{
+      fieldName: string;
+      ruleName: string;
+      severity: string;
+      message: string;
+    }>;
+  }>;
   
   // Dashboard stats
   getDashboardStats(userId?: string): Promise<{
@@ -163,12 +175,109 @@ export class DatabaseStorage implements IStorage {
     return await db
       .select()
       .from(validationRules)
-      .where(eq(validationRules.isActive, true));
+      .where(eq(validationRules.isActive, true))
+      .orderBy(desc(validationRules.createdAt));
+  }
+
+  async getValidationRule(id: number): Promise<ValidationRule | undefined> {
+    const [rule] = await db.select().from(validationRules).where(eq(validationRules.id, id));
+    return rule;
   }
 
   async createValidationRule(rule: InsertValidationRule): Promise<ValidationRule> {
     const [created] = await db.insert(validationRules).values(rule).returning();
     return created;
+  }
+
+  async updateValidationRule(id: number, updates: Partial<InsertValidationRule>): Promise<ValidationRule> {
+    const [updated] = await db
+      .update(validationRules)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(validationRules.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteValidationRule(id: number): Promise<void> {
+    await db.delete(validationRules).where(eq(validationRules.id, id));
+  }
+
+  async validateInvoiceData(invoiceData: any): Promise<{
+    isValid: boolean;
+    violations: Array<{
+      fieldName: string;
+      ruleName: string;
+      severity: string;
+      message: string;
+    }>;
+  }> {
+    const rules = await this.getValidationRules();
+    const violations: Array<{
+      fieldName: string;
+      ruleName: string;
+      severity: string;
+      message: string;
+    }> = [];
+
+    for (const rule of rules) {
+      const fieldValue = invoiceData[rule.fieldName];
+      let isViolation = false;
+      let errorMessage = rule.errorMessage || `Validation failed for ${rule.fieldName}`;
+
+      switch (rule.ruleType) {
+        case 'required':
+          isViolation = !fieldValue || (typeof fieldValue === 'string' && fieldValue.trim() === '');
+          errorMessage = rule.errorMessage || `${rule.fieldName} is required`;
+          break;
+
+        case 'regex':
+          if (fieldValue) {
+            const regex = new RegExp(rule.ruleValue);
+            isViolation = !regex.test(String(fieldValue));
+            errorMessage = rule.errorMessage || `${rule.fieldName} format is invalid`;
+          }
+          break;
+
+        case 'range':
+          if (fieldValue) {
+            const [min, max] = rule.ruleValue.split(',').map(v => parseFloat(v.trim()));
+            const numValue = parseFloat(String(fieldValue));
+            isViolation = isNaN(numValue) || numValue < min || numValue > max;
+            errorMessage = rule.errorMessage || `${rule.fieldName} must be between ${min} and ${max}`;
+          }
+          break;
+
+        case 'enum':
+          if (fieldValue) {
+            const allowedValues = rule.ruleValue.split(',').map(v => v.trim());
+            isViolation = !allowedValues.includes(String(fieldValue));
+            errorMessage = rule.errorMessage || `${rule.fieldName} must be one of: ${rule.ruleValue}`;
+          }
+          break;
+
+        case 'format':
+          if (fieldValue && rule.ruleValue === 'email') {
+            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+            isViolation = !emailRegex.test(String(fieldValue));
+            errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid email address`;
+          }
+          break;
+      }
+
+      if (isViolation) {
+        violations.push({
+          fieldName: rule.fieldName,
+          ruleName: rule.name,
+          severity: rule.severity,
+          message: errorMessage,
+        });
+      }
+    }
+
+    return {
+      isValid: violations.length === 0,
+      violations,
+    };
   }
 
   // Dashboard stats
