@@ -105,6 +105,7 @@ export interface IStorage {
   createProject(project: InsertProject): Promise<Project>;
   updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project>;
   deleteProject(projectId: string): Promise<void>;
+  deleteAllProjects(): Promise<void>;
 
   // Purchase order operations
   getPurchaseOrders(): Promise<PurchaseOrder[]>;
@@ -190,25 +191,25 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInvoice(id: number): Promise<void> {
     // Delete related records first to maintain referential integrity
-    
+
     // Delete line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
-    
+
     // Delete approvals
     await db.delete(approvals).where(eq(approvals.invoiceId, id));
-    
+
     // Delete invoice-PO matches
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
-    
+
     // Delete invoice flags
     await db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id));
-    
+
     // Delete predictive alerts
     await db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id));
-    
+
     // Delete petty cash logs
     await db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id));
-    
+
     // Finally delete the invoice
     await db.delete(invoices).where(eq(invoices.id, id));
   }
@@ -579,6 +580,15 @@ export class DatabaseStorage implements IStorage {
     }
 
     await db.delete(projects).where(eq(projects.projectId, projectId));
+  }
+
+  async deleteAllProjects(): Promise<void> {
+    try {
+      await db.delete(projects);
+    } catch (error) {
+      console.error("Error deleting all projects:", error);
+      throw error;
+    }
   }
 
   // Purchase order operations

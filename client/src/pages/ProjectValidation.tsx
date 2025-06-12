@@ -161,6 +161,30 @@ export default function ProjectValidation() {
     },
   });
 
+  const deleteAllProjectsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/projects/delete-all", {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete all projects");
+      }
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      toast({ title: "Success", description: "All projects deleted successfully" });
+    },
+    onError: (error: Error) => {
+      toast({ 
+        title: "Error", 
+        description: error.message,
+        variant: "destructive" 
+      });
+    },
+  });
+
   const validateProjectMutation = useMutation({
     mutationFn: async ({ projectId, action }: { projectId: string; action: "validate" | "reject" }) => {
       const response = await fetch(`/api/projects/${projectId}/validate`, {
@@ -261,6 +285,17 @@ export default function ProjectValidation() {
     }
   };
 
+  const handleDeleteAll = () => {
+    if (projects.length === 0) {
+      toast({ title: "No Projects", description: "There are no projects to delete.", variant: "destructive" });
+      return;
+    }
+    
+    if (confirm(`Are you sure you want to delete ALL ${projects.length} projects? This action cannot be undone.`)) {
+      deleteAllProjectsMutation.mutate();
+    }
+  };
+
   const getValidationStatusBadge = (status: string) => {
     switch (status) {
       case "validated":
@@ -335,6 +370,15 @@ export default function ProjectValidation() {
                   {isImporting ? 'Importing...' : 'Import Excel'}
                 </Button>
               </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={handleDeleteAll}
+                disabled={deleteAllProjectsMutation.isPending || projects.length === 0}
+                className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
+              >
+                {deleteAllProjectsMutation.isPending ? 'Deleting...' : 'Delete All'}
+              </Button>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-blue-600 hover:bg-blue-700">

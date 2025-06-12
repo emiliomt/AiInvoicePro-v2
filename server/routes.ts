@@ -220,6 +220,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete all projects endpoint
+  app.delete('/api/projects/delete-all', isAuthenticated, async (req, res) => {
+    try {
+      await storage.deleteAllProjects();
+      res.json({ message: "All projects deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting all projects:", error);
+      
+      if (error instanceof Error) {
+        if (error.message.includes("Cannot delete projects")) {
+          return res.status(400).json({ message: error.message });
+        }
+        if (error.message.includes("foreign key constraint")) {
+          return res.status(400).json({ 
+            message: "Cannot delete projects because some have associated records. Please remove dependencies first." 
+          });
+        }
+      }
+      
+      res.status(500).json({ message: "Failed to delete all projects" });
+    }
+  });
+
   // Purchase order routes
   app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
