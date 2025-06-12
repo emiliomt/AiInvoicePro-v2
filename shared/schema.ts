@@ -49,6 +49,13 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "paid",
 ]);
 
+// Approval status enum
+export const approvalStatusEnum = pgEnum("approval_status", [
+  "pending",
+  "approved", 
+  "rejected",
+]);
+
 // Invoice table
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -87,7 +94,7 @@ export const approvals = pgTable("approvals", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull(),
   approverId: varchar("approver_id").notNull(),
-  status: pgEnum("approval_status", ["pending", "approved", "rejected"])("status").default("pending"),
+  status: approvalStatusEnum("status").default("pending"),
   comments: text("comments"),
   approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow(),
