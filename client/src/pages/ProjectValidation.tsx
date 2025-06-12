@@ -68,6 +68,7 @@ interface Project {
 export default function ProjectValidation() {
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
   const [statusFilter, setStatusFilter] = useState("all");
+  const [isImporting, setIsImporting] = useState(false);
   const { toast } = useToast();
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
@@ -131,6 +132,57 @@ export default function ProjectValidation() {
     },
   });
 
+  const handleDownloadTemplate = () => {
+    const link = document.createElement('a');
+    link.href = '/api/projects/template';
+    link.download = 'project_validation_template.xlsx';
+    link.click();
+  };
+
+  const handleExcelImport = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+      toast({ title: "Error", description: "Please select an Excel file (.xlsx or .xls)", variant: "destructive" });
+      return;
+    }
+
+    const formData = new FormData();
+    formData.append('excel', file);
+
+    setIsImporting(true);
+
+    fetch('/api/projects/import', {
+      method: 'POST',
+      body: formData,
+    })
+    .then(response => response.json())
+    .then(data => {
+      if (data.message) {
+        toast({ title: "Import Complete", description: data.message });
+        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+        
+        if (data.errorDetails && data.errorDetails.length > 0) {
+          console.log('Import errors:', data.errorDetails);
+          toast({ 
+            title: "Warning", 
+            description: `${data.errors} rows had errors. Check console for details.`,
+            variant: "destructive"
+          });
+        }
+      }
+    })
+    .catch(error => {
+      console.error('Import error:', error);
+      toast({ title: "Error", description: "Failed to import Excel file", variant: "destructive" });
+    })
+    .finally(() => {
+      setIsImporting(false);
+      event.target.value = '';
+    });
+  };
+
   const onSubmit = (data: any) => {
     createProjectMutation.mutate(data);
   };
@@ -186,14 +238,29 @@ export default function ProjectValidation() {
               <p className="text-gray-600 mt-2">Configure custom validation rules for invoice-to-contract matching</p>
             </div>
             <div className="flex space-x-2">
-              <Button variant="outline" size="sm">
+              <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
                 <Download size={16} className="mr-2" />
                 Download Template
               </Button>
-              <Button variant="outline" size="sm">
-                <Upload size={16} className="mr-2" />
-                Import Excel
-              </Button>
+              <div>
+                <input
+                  type="file"
+                  accept=".xlsx,.xls"
+                  onChange={handleExcelImport}
+                  style={{ display: 'none' }}
+                  id="excel-upload"
+                  disabled={isImporting}
+                />
+                <Button 
+                  variant="outline" 
+                  size="sm" 
+                  onClick={() => document.getElementById('excel-upload')?.click()}
+                  disabled={isImporting}
+                >
+                  <Upload size={16} className="mr-2" />
+                  {isImporting ? 'Importing...' : 'Import Excel'}
+                </Button>
+              </div>
               <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
                 <DialogTrigger asChild>
                   <Button className="bg-blue-600 hover:bg-blue-700">

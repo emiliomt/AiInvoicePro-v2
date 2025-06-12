@@ -303,6 +303,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Excel import endpoint for projects
+  app.post('/api/projects/import', isAuthenticated, (req: any, res) => {
+    upload.single('excel')(req, res, async (err) => {
+      if (err) {
+        console.error('Upload error:', err);
+        return res.status(400).json({ message: 'File upload failed' });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({ message: 'No file uploaded' });
+      }
+
+      try {
+        const XLSX = require('xlsx');
+        const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+        const sheetName = workbook.SheetNames[0];
+        const worksheet = workbook.Sheets[sheetName];
+        const data = XLSX.utils.sheet_to_json(worksheet);
+
+        const importedProjects = [];
+        const errors = [];
+
+        for (let i = 0; i < data.length; i++) {
+          const row = data[i] as any;
+          try {
+            const projectData = {
+              projectId: row['Project ID'] || row['projectId'] || `PROJ-${Date.now()}-${i}`,
+              name: row['Project Name'] || row['name'] || 'Imported Project',
+              description: row['Description'] || row['description'] || '',
+              address: row['Address'] || row['address'] || '',
+              city: row['City'] || row['city'] || '',
+              vatNumber: row['VAT Number'] || row['vatNumber'] || '',
+              supervisor: row['Supervisor'] || row['supervisor'] || '',
+              budget: row['Budget'] || row['budget'] || '0',
+              currency: row['Currency'] || row['currency'] || 'USD',
+              status: 'active',
+              validationStatus: 'pending',
+              isValidated: false
+            };
+
+            const project = await storage.createProject(projectData);
+            importedProjects.push(project);
+          } catch (error) {
+            errors.push({
+              row: i + 1,
+              error: error instanceof Error ? error.message : 'Unknown error',
+              data: row
+            });
+          }
+        }
+
+        res.json({
+          message: `Successfully imported ${importedProjects.length} projects`,
+          imported: importedProjects.length,
+          errors: errors.length,
+          errorDetails: errors
+        });
+      } catch (error) {
+        console.error('Excel processing error:', error);
+        res.status(500).json({ message: 'Failed to process Excel file' });
+      }
+    });
+  });
+
+  // Download template endpoint
+  app.get('/api/projects/template', isAuthenticated, (req, res) => {
+    try {
+      const XLSX = require('xlsx');
+      
+      const templateData = [
+        {
+          'Project ID': 'PROJ-2024-001',
+          'Project Name': 'Office Renovation',
+          'Description': 'Complete office renovation project',
+          'Address': 'Calle 1B No. 20-59 Urbanización',
+          'City': 'Puertocotonue',
+          'VAT Number': 'VAT123456',
+          'Supervisor': 'Diana Martinez',
+          'Budget': '50000',
+          'Currency': 'USD'
+        },
+        {
+          'Project ID': 'PROJ-2024-002',
+          'Project Name': 'IT Infrastructure',
+          'Description': 'Network upgrade and security implementation',
+          'Address': 'Diagonal 32 No 80-966 Supermanzana',
+          'City': 'Cartagena',
+          'VAT Number': 'VAT789012',
+          'Supervisor': 'Indira Garcia',
+          'Budget': '75000',
+          'Currency': 'USD'
+        }
+      ];
+
+      const worksheet = XLSX.utils.json_to_sheet(templateData);
+      const workbook = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(workbook, worksheet, 'Projects');
+
+      const buffer = XLSX.write(workbook, { type: 'buffer', bookType: 'xlsx' });
+
+      res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+      res.setHeader('Content-Disposition', 'attachment; filename=project_validation_template.xlsx');
+      res.send(buffer);
+    } catch (error) {
+      console.error('Template generation error:', error);
+      res.status(500).json({ message: 'Failed to generate template' });
+    }
+  });
+
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
     upload.single('invoice')(req, res, async (err) => {
