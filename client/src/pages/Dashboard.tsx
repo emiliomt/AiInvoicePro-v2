@@ -7,7 +7,7 @@ import InvoiceUpload from "@/components/InvoiceUpload";
 import ExtractedData from "@/components/ExtractedData";
 import TopIssuesWidget from "@/components/TopIssuesWidget";
 import Sidebar from "@/components/Sidebar";
-import { isUnauthorizedError } from "@/lib/authUtils";
+
 
 export default function Dashboard() {
   const { toast } = useToast();
