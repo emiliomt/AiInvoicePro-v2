@@ -151,10 +151,10 @@ export default function Invoices() {
                       <div className="space-y-2">
                         <CardTitle className="flex items-center space-x-2">
                           <FileText className="text-blue-600" size={20} />
-                          <span>{invoice.fileName}</span>
+                          <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
                         </CardTitle>
                         <div className="flex items-center space-x-4 text-sm text-gray-600">
-                          <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
+                          <span>{invoice.fileName}</span>
                           <span>•</span>
                           <span>Uploaded {formatDate(invoice.createdAt)}</span>
                         </div>
