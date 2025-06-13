@@ -226,6 +226,17 @@ export default function ExtractedData() {
               />
             </div>
             <div>
+              <Label htmlFor="projectName" className="text-sm font-medium text-gray-700">
+                Project Name
+              </Label>
+              <Input
+                id="projectName"
+                value={(invoice as any).projectName || (invoice as any).extractedData?.projectName || ""}
+                className="mt-2"
+                readOnly
+              />
+            </div>
+            <div>
               <Label htmlFor="invoiceDate" className="text-sm font-medium text-gray-700">
                 Invoice Date
               </Label>

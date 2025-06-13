@@ -660,7 +660,7 @@ export default function ProjectValidation() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Records</p>
-                  <p className="text-3xl font-bold text-gray-900">{totalRecords.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-gray-900">{totalRecords}</p>
                 </div>
                 <FileText className="h-8 w-8 text-blue-600" />
               </div>
@@ -672,7 +672,7 @@ export default function ProjectValidation() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Validated</p>
-                  <p className="text-3xl font-bold text-green-600">{validatedRecords.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-green-600">{validatedRecords}</p>
                 </div>
                 <CheckCircle className="h-8 w-8 text-green-600" />
               </div>
@@ -684,7 +684,7 @@ export default function ProjectValidation() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Pending</p>
-                  <p className="text-3xl font-bold text-yellow-600">{pendingRecords.toLocaleString()}</p>
+                  <p className="text-3xl font-bold text-yellow-600">{pendingRecords}</p>
                 </div>
                 <Clock className="h-8 w-8 text-yellow-600" />
               </div>
