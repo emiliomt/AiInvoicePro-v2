@@ -104,7 +104,7 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
       id: log.id,
       updates: {
         status: "approved",
-        approvedAt: new Date(),
+        approvedAt: new Date().toISOString(),
         approvalNotes: formData.approvalNotes,
       },
     });
