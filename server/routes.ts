@@ -481,7 +481,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { value } = req.body;
       
-      if (!value) {
+      if (value === undefined || value === null) {
         return res.status(400).json({ message: "Settings value is required" });
       }
 
@@ -489,14 +489,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let settingsJson: string;
       if (typeof value === 'object') {
         settingsJson = JSON.stringify(value);
-      } else {
+      } else if (typeof value === 'string') {
         settingsJson = value;
-        // Validate that it's valid JSON
-        try {
-          JSON.parse(settingsJson);
-        } catch (parseError) {
-          return res.status(400).json({ message: "Invalid JSON format for settings value" });
+        // Only validate non-empty strings as JSON
+        if (settingsJson.trim()) {
+          try {
+            JSON.parse(settingsJson);
+          } catch (parseError) {
+            console.error("JSON parse error:", parseError);
+            return res.status(400).json({ message: "Invalid JSON format for settings value" });
+          }
+        } else {
+          return res.status(400).json({ message: "Settings value cannot be empty" });
         }
+      } else {
+        // Convert other types to string and then to JSON
+        settingsJson = JSON.stringify(value);
       }
       
       const setting = await storage.updateSetting('user_preferences', settingsJson);

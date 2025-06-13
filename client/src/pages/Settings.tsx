@@ -88,11 +88,15 @@ export default function Settings() {
   // Update settings mutation
   const updateSettingsMutation = useMutation({
     mutationFn: async (settings: UserSettings) => {
+      const payload = { value: settings };
+      console.log('Sending settings payload:', payload);
+      
       const response = await fetch('/api/settings/user_preferences', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ value: JSON.stringify(settings) }),
+        body: JSON.stringify(payload),
       });
+      
       if (!response.ok) {
         const errorData = await response.text();
         console.error('Settings update error:', errorData);
@@ -137,6 +141,7 @@ export default function Settings() {
   const updateSetting = (key: keyof UserSettings, value: any) => {
     try {
       const updatedSettings = { ...userSettings, [key]: value };
+      console.log('Updating settings:', updatedSettings);
       updateSettingsMutation.mutate(updatedSettings);
     } catch (error) {
       console.error('Error updating setting:', error);
