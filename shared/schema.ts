@@ -443,24 +443,3 @@ export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).o
   createdAt: true,
   updatedAt: true,
 });
-// Invoice table
-export const invoices = pgTable("invoices", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull(),
-  fileName: varchar("file_name").notNull(),
-  fileUrl: varchar("file_url"),
-  status: invoiceStatusEnum("status").default("pending"),
-  vendorName: varchar("vendor_name"),
-  invoiceNumber: varchar("invoice_number"),
-  invoiceDate: timestamp("invoice_date"),
-  dueDate: timestamp("due_date"),
-  totalAmount: decimal("total_amount", { precision: 10, scale: 2 }),
-  taxAmount: decimal("tax_amount", { precision: 10, scale: 2 }),
-  subtotal: decimal("subtotal", { precision: 10, scale: 2 }),
-  currency: varchar("currency").default("USD"),
-  ocrText: text("ocr_text"),
-  extractedData: jsonb("extracted_data"),
-  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});

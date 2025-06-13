@@ -580,8 +580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create initial invoice record
       const invoice = await storage.createInvoice({
         userId,
-        fileName: file.originalname || "unknown-file",
-        fileBuffer: file.buffer,
+        fileName: file.originalname,
         status: "processing",
       });
 
@@ -780,48 +779,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching invoice:", error);
       res.status(500).json({ message: "Failed to fetch invoice" });
-    }
-  });
-
-  // Get invoice file preview
-  app.get('/api/invoices/:id/preview', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const invoice = await storage.getInvoice(invoiceId);
-
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      // Check if user owns the invoice
-      const userId = req.user.claims.sub;
-      if (invoice.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Check if file buffer exists
-      if (!invoice.fileBuffer) {
-        return res.status(404).json({ message: "Original file not available" });
-      }
-
-      // Determine content type based on file extension
-      const fileName = (invoice.fileName || "").toLowerCase();
-      let contentType = 'application/octet-stream';
-      
-      if (fileName.endsWith('.pdf')) {
-        contentType = 'application/pdf';
-      } else if (fileName.endsWith('.jpg') || fileName.endsWith('.jpeg')) {
-        contentType = 'image/jpeg';
-      } else if (fileName.endsWith('.png')) {
-        contentType = 'image/png';
-      }
-
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName || 'invoice'}"`);
-      res.send(invoice.fileBuffer);
-    } catch (error) {
-      console.error("Error serving invoice preview:", error);
-      res.status(500).json({ message: "Failed to serve invoice preview" });
     }
   });
 

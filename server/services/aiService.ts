@@ -65,18 +65,7 @@ Rules:
 - companyName: Extract the buyer/client company name (not the vendor)
 - concept: Extract the main purpose or description of the invoice (summary of services/products)
 - Include all line items found in the invoice
-- Provide confidence score based on text clarity and completeness
-- Common currency mappings: $ = USD, € = EUR, £ = GBP, ¥ = JPY, C$ = CAD, A$ = AUD, peso = MXN, real = BRL, sol = PEN, Peso Colombiano = COP, COP$ = COP
-
-Spanish Field Mappings (for Colombian/Spanish invoices):
-- companyName: Look for "Razón Social" 
-- address: Look for "Dirección"
-- city: Look for "Ciudad"
-- taxId: Look for "No." or "NIT"
-- invoiceNumber: Look for "Orden de compra" or "Factura No."
-- concept: Look for "Descripción" or "Artículos"
-- taxAmount: Look for "Valor Impto" or "IVA"
-- currency: If text mentions "Pesos Colombianos" or "COP", set currency to "COP"`;
+- Provide confidence score based on text clarity and completeness`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
@@ -95,7 +84,7 @@ Spanish Field Mappings (for Colombian/Spanish invoices):
     });
 
     const extractedData = JSON.parse(response.choices[0].message.content || '{}');
-
+    
     // Validate and clean the response
     return {
       vendorName: extractedData.vendorName || null,
