@@ -585,7 +585,29 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAllProjects(): Promise<void> {
     try {
-      await db.delete(projects);
+      // Check if any projects have associated purchase orders
+      const [associatedPOs] = await db
+        .select({ count: count() })
+        .from(purchaseOrders)
+        .innerJoin(projects, eq(purchaseOrders.projectId, projects.projectId));
+
+      if (associatedPOs.count > 0) {
+        throw new Error(`Cannot delete projects because ${associatedPOs.count} project(s) have associated purchase orders. Please remove or reassign the purchase orders first.`);
+      }
+
+      // Check if any projects have associated invoice matches through purchase orders
+      const associatedInvoiceMatches = await db
+        .select({ count: count() })
+        .from(invoicePoMatches)
+        .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
+        .innerJoin(projects, eq(purchaseOrders.projectId, projects.projectId));
+
+      if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
+        throw new Error(`Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.`);
+      }
+
+      const result = await db.delete(projects);
+      console.log("Projects deleted successfully:", result);
     } catch (error) {
       console.error("Error deleting all projects:", error);
       throw error;
