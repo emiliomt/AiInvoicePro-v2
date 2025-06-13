@@ -171,7 +171,7 @@ export default function InvoicePreview() {
                 <h1 className="text-lg font-semibold text-gray-900">
                   {invoice?.fileName || 'Invoice Preview'}
                 </h1>
-                <p className="text-sm text-gray-600">Invoice #{invoice?.invoiceNumber ? Number(invoice.invoiceNumber).toLocaleString() : id}</p>
+                <p className="text-sm text-gray-600">Invoice #{invoice?.invoiceNumber || id}</p>
               </div>
             </div>
 

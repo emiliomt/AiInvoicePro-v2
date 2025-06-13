@@ -65,18 +65,17 @@ export default function Sidebar() {
   };
 
   const getActivityText = (invoice: Invoice) => {
-    const formattedId = Number(invoice.id).toLocaleString();
     switch (invoice.status) {
       case 'approved':
-        return `Invoice #${formattedId} approved`;
+        return `Invoice #${invoice.id} approved`;
       case 'processing':
-        return `Invoice #${formattedId} processing`;
+        return `Invoice #${invoice.id} processing`;
       case 'extracted':
-        return `Invoice #${formattedId} data extracted`;
+        return `Invoice #${invoice.id} data extracted`;
       case 'rejected':
-        return `Invoice #${formattedId} rejected`;
+        return `Invoice #${invoice.id} rejected`;
       default:
-        return `Invoice #${formattedId} uploaded`;
+        return `Invoice #${invoice.id} uploaded`;
     }
   };
 
