@@ -12,6 +12,7 @@ import Approvals from "@/pages/Approvals";
 import ValidationRules from "@/pages/ValidationRules";
 import PettyCash from "@/pages/PettyCash";
 import POMatching from "@/pages/POMatching";
+import PurchaseOrders from "@/pages/PurchaseOrders";
 import Reports from "@/pages/Reports";
 import ProjectValidation from "@/pages/ProjectValidation";
 import { ErrorBoundary } from "react-error-boundary";
@@ -52,6 +53,7 @@ function Router() {
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
+          <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
         </>

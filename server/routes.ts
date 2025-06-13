@@ -254,6 +254,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
+    try {
+      const purchaseOrders = await storage.getPurchaseOrders();
+      res.json(purchaseOrders);
+    } catch (error) {
+      console.error("Error fetching purchase orders:", error);
+      res.status(500).json({ message: "Failed to fetch purchase orders" });
+    }
+  });
+
   app.post('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
       const poData = req.body;

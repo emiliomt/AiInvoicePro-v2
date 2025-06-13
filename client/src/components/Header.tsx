@@ -13,7 +13,7 @@ import { Link, useLocation } from "wouter";
 export default function Header() {
   const { user } = useAuth();
   const [location] = useLocation();
-  
+
   // Type the user object properly
   const typedUser = user as any;
 
@@ -81,6 +81,9 @@ export default function Header() {
             <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
               Petty Cash
             </Link>
+            <Link href="/purchase-orders" className={getLinkClassName("/purchase-orders")}>
+              Purchase Orders
+            </Link>
             <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
               PO Matching
             </Link>
@@ -94,7 +97,7 @@ export default function Header() {
             <Button variant="ghost" size="sm" className="p-2 text-gray-400 hover:text-gray-600">
               <Bell size={20} />
             </Button>
-            
+
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <Button variant="ghost" className="flex items-center space-x-3 hover:bg-gray-50">
