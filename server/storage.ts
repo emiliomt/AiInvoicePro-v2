@@ -283,13 +283,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createValidationRule(rule: InsertValidationRule): Promise<ValidationRule> {
-    // Map the rule data to include the legacy ruleData column if needed
-    const ruleData = {
-      ...rule,
-      ruleData: rule.ruleValue, // Map ruleValue to ruleData for legacy compatibility
-    };
-    
-    const [created] = await db.insert(validationRules).values(ruleData).returning();
+    const [created] = await db.insert(validationRules).values(rule).returning();
     return created;
   }
 
