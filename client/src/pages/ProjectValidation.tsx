@@ -234,7 +234,7 @@ export default function ProjectValidation() {
       if (data.message) {
         toast({ title: "Import Complete", description: data.message });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-
+        
         if (data.errorDetails && data.errorDetails.length > 0) {
           console.log('Import errors:', data.errorDetails);
           toast({ 
@@ -290,7 +290,7 @@ export default function ProjectValidation() {
       toast({ title: "No Projects", description: "There are no projects to delete.", variant: "destructive" });
       return;
     }
-
+    
     if (confirm(`Are you sure you want to delete ALL ${projects.length} projects? This action cannot be undone.`)) {
       deleteAllProjectsMutation.mutate();
     }
@@ -452,17 +452,9 @@ export default function ProjectValidation() {
                           name="vatNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>VAT Reimbursement</FormLabel>
+                              <FormLabel>VAT Number</FormLabel>
                               <FormControl>
-                                <Select onValueChange={field.onChange} value={field.value}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select VAT Reimbursement" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="true">Yes</SelectItem>
-                                    <SelectItem value="false">No</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                <Input placeholder="VAT Number" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -475,9 +467,9 @@ export default function ProjectValidation() {
                           name="supervisor"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Superintendent Name</FormLabel>
+                              <FormLabel>Supervisor</FormLabel>
                               <FormControl>
-                                <Input placeholder="Superintendent name" {...field} />
+                                <Input placeholder="Project supervisor" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -521,7 +513,7 @@ export default function ProjectValidation() {
                   </Form>
                 </DialogContent>
               </Dialog>
-
+              
               {/* Edit Project Dialog */}
               <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                 <DialogContent className="max-w-2xl">
@@ -590,17 +582,9 @@ export default function ProjectValidation() {
                           name="vatNumber"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>VAT Reimbursement</FormLabel>
+                              <FormLabel>VAT Number</FormLabel>
                               <FormControl>
-                                <Select onValueChange={field.onChange} value={field.value}>
-                                  <SelectTrigger>
-                                    <SelectValue placeholder="Select VAT Reimbursement" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    <SelectItem value="true">Yes</SelectItem>
-                                    <SelectItem value="false">No</SelectItem>
-                                  </SelectContent>
-                                </Select>
+                                <Input placeholder="VAT Number" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -613,9 +597,9 @@ export default function ProjectValidation() {
                           name="supervisor"
                           render={({ field }) => (
                             <FormItem>
-                              <FormLabel>Superintendent Name</FormLabel>
+                              <FormLabel>Supervisor</FormLabel>
                               <FormControl>
-                                <Input placeholder="Superintendent name" {...field} />
+                                <Input placeholder="Project supervisor" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -766,10 +750,10 @@ export default function ProjectValidation() {
                         <td className="p-3 text-sm text-gray-600">{project.address || "—"}</td>
                         <td className="p-3 text-sm text-gray-600">{project.city || "—"}</td>
                         <td className="p-3 text-sm text-gray-600">
-                          {project.vatNumber === 'true' ? (
+                          {project.isValidated ? (
                             <CheckCircle size={16} className="text-green-500" />
                           ) : (
-                            "—"
+                            <Clock size={16} className="text-yellow-500" />
                           )}
                         </td>
                         <td className="p-3 text-sm text-gray-600">{project.supervisor || "—"}</td>

@@ -432,13 +432,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         for (let i = 0; i < data.length; i++) {
           const row = data[i] as any;
+          try {
+            // Handle VAT Reimbursement as boolean
+            const vatReimbursement = row['VAT Reimbursement'] || row['vatReimbursement'] || row['VAT'] || row['vat'];
+            let vatNumber = '';
+            
+            if (typeof vatReimbursement === 'boolean') {
+              vatNumber = vatReimbursement.toString();
+            } else if (typeof vatReimbursement === 'string') {
+              const lowerVal = vatReimbursement.toLowerCase();
+              if (lowerVal === 'true' || lowerVal === 'yes' || lowerVal === '1' || lowerVal === 'si') {
+                vatNumber = 'true';
+              } else if (lowerVal === 'false' || lowerVal === 'no' || lowerVal === '0') {
+                vatNumber = 'false';
+              } else {
+                vatNumber = vatReimbursement;
+              }
+            }
+
             const projectData = {
               projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || `PROJ-${Date.now()}-${i}`,
               name: row['Project Name'] || row['name'] || row['Name'] || row['Project'] || row['project'] || 'Imported Project',
               description: row['Description'] || row['description'] || row['Desc'] || row['desc'] || row['Notes'] || row['notes'] || '',
               address: row['Invoice Address'] || row['Address'] || row['address'] || row['Location'] || row['location'] || '',
               city: row['City'] || row['city'] || row['Ciudad'] || row['ciudad'] || '',
-              vatNumber: row['VAT Number'] || row['vatNumber'] || row['VAT'] || row['vat'],
+              vatNumber: vatNumber,
               supervisor: row['Superintendent Name'] || row['superintendentName'] || row['Supervisor'] || row['supervisor'] || row['Manager'] || row['manager'] || row['Responsable'] || row['responsable'] || '',
               budget: (row['Budget'] || row['budget'] || row['Presupuesto'] || row['presupuesto'] || '0').toString(),
               currency: row['Currency'] || row['currency'] || row['Moneda'] || row['moneda'] || 'USD',
@@ -483,7 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Notes': 'Complete office renovation project',
           'Invoice Address': 'Calle 1B No. 20-59 Urbanización',
           'City': 'Puertocotonue',
-          'VAT Number': true,
+          'VAT Reimbursement': true,
           'Superintendent Name': 'Diana Martinez',
           'Budget': '50000',
           'Currency': 'USD'
@@ -494,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Notes': 'Network upgrade and security implementation',
           'Invoice Address': 'Diagonal 32 No 80-966 Supermanzana',
           'City': 'Cartagena',
-          'VAT Number': false,
+          'VAT Reimbursement': false,
           'Superintendent Name': 'Indira Garcia',
           'Budget': '75000',
           'Currency': 'USD'
