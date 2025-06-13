@@ -1,137 +1,203 @@
-import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { 
-  DropdownMenu, 
-  DropdownMenuContent, 
-  DropdownMenuItem, 
-  DropdownMenuTrigger 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  NavigationMenu,
+  NavigationMenuContent,
+  NavigationMenuItem,
+  NavigationMenuLink,
+  NavigationMenuList,
+  NavigationMenuTrigger,
+  navigationMenuTriggerStyle,
+} from "@/components/ui/navigation-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { FileText, Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
-import { Link, useLocation } from "wouter";
+import { useAuth } from "@/hooks/useAuth";
+import { 
+  LogOut, 
+  User, 
+  FileText, 
+  ShoppingCart, 
+  Receipt, 
+  Settings, 
+  BarChart3, 
+  CheckSquare,
+  DollarSign,
+  GitBranch,
+  Shield
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import React from "react";
+
+const ListItem = React.forwardRef<
+  React.ElementRef<"a">,
+  React.ComponentPropsWithoutRef<"a">
+>(({ className, title, children, ...props }, ref) => {
+  return (
+    <li>
+      <NavigationMenuLink asChild>
+        <a
+          ref={ref}
+          className={cn(
+            "block select-none space-y-1 rounded-md p-3 leading-none no-underline outline-none transition-colors hover:bg-accent hover:text-accent-foreground focus:bg-accent focus:text-accent-foreground",
+            className
+          )}
+          {...props}
+        >
+          <div className="text-sm font-medium leading-none">{title}</div>
+          <p className="line-clamp-2 text-xs leading-snug text-muted-foreground">
+            {children}
+          </p>
+        </a>
+      </NavigationMenuLink>
+    </li>
+  )
+});
+ListItem.displayName = "ListItem";
 
 export default function Header() {
-  const { user } = useAuth();
-  const [location] = useLocation();
+  const { user, signOut } = useAuth();
 
-  // Type the user object properly
-  const typedUser = user as any;
-
-  const isActiveRoute = (path: string) => {
-    return location === path;
-  };
-
-  const getLinkClassName = (path: string) => {
-    return isActiveRoute(path) 
-      ? "text-primary-600 font-semibold text-sm border-b-2 border-primary-600 pb-4 -mb-[1px] whitespace-nowrap"
-      : "text-gray-600 hover:text-gray-900 pb-4 transition-colors text-sm font-medium whitespace-nowrap";
-  };
-
-  const getInitials = (firstName?: string, lastName?: string) => {
-    if (firstName && lastName) {
-      return `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase();
-    }
-    if (firstName) {
-      return firstName.charAt(0).toUpperCase();
-    }
-    return 'U';
-  };
-
-  const getDisplayName = (firstName?: string, lastName?: string) => {
-    if (firstName && lastName) {
-      return `${firstName} ${lastName}`;
-    }
-    if (firstName) {
-      return firstName;
-    }
-    return 'User';
+  const handleSignOut = () => {
+    signOut();
+    window.location.href = "/";
   };
 
   return (
-    <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-18">
-          {/* Logo and Brand */}
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-                <FileText className="text-white" size={20} />
-              </div>
-              <h1 className="text-xl font-bold text-gray-900">InvoicePro</h1>
-            </div>
-          </div>
+    <header className="bg-white border-b border-gray-200 px-6 py-4">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center space-x-8">
+          <h1 className="text-2xl font-bold text-gray-900">
+            Invoice Management
+          </h1>
 
-          {/* Navigation */}
-          <nav className="hidden md:flex space-x-6 lg:space-x-8">
-            <Link href="/" className={getLinkClassName("/")}>
-              Dashboard
-            </Link>
-            <Link href="/invoices" className={getLinkClassName("/invoices")}>
-              Invoices
-            </Link>
-            <Link href="/approvals" className={getLinkClassName("/approvals")}>
-              Approvals
-            </Link>
-            <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
-              Validation Rules
-            </Link>
-            <Link href="/project-validation" className={getLinkClassName("/project-validation")}>
-              Project Validation
-            </Link>
-            <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
-              Petty Cash
-            </Link>
-            <Link href="/purchase-orders" className={getLinkClassName("/purchase-orders")}>
-              Purchase Orders
-            </Link>
-            <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
-              PO Matching
-            </Link>
-            <Link href="/reports" className={getLinkClassName("/reports")}>
-              Reports
-            </Link>
-          </nav>
+          <NavigationMenu>
+            <NavigationMenuList>
+              <NavigationMenuItem>
+                <NavigationMenuTrigger className="text-gray-700">
+                  <FileText className="h-4 w-4 mr-2" />
+                  Documents
+                </NavigationMenuTrigger>
+                <NavigationMenuContent>
+                  <ul className="grid gap-3 p-6 md:w-[400px] lg:w-[500px] lg:grid-cols-[.75fr_1fr]">
+                    <li className="row-span-3">
+                      <NavigationMenuLink asChild>
+                        <a
+                          className="flex h-full w-full select-none flex-col justify-end rounded-md bg-gradient-to-b from-muted/50 to-muted p-6 no-underline outline-none focus:shadow-md"
+                          href="/invoices"
+                        >
+                          <FileText className="h-6 w-6" />
+                          <div className="mb-2 mt-4 text-lg font-medium">
+                            Invoices
+                          </div>
+                          <p className="text-sm leading-tight text-muted-foreground">
+                            Upload, extract, and manage invoice data with AI-powered processing.
+                          </p>
+                        </a>
+                      </NavigationMenuLink>
+                    </li>
+                    <ListItem href="/purchase-orders" title="Purchase Orders">
+                      <ShoppingCart className="h-4 w-4 inline mr-2" />
+                      Create and manage purchase orders
+                    </ListItem>
+                    <ListItem href="/petty-cash" title="Petty Cash">
+                      <Receipt className="h-4 w-4 inline mr-2" />
+                      Track small expense transactions
+                    </ListItem>
+                    <ListItem href="/approvals" title="Approvals">
+                      <CheckSquare className="h-4 w-4 inline mr-2" />
+                      Review and approve pending items
+                    </ListItem>
+                  </ul>
+                </NavigationMenuContent>
+              </NavigationMenuItem>
 
-          {/* User Menu */}
-          <div className="flex items-center space-x-4">
-            <Button variant="ghost" size="sm" className="p-2 text-gray-400 hover:text-gray-600">
-              <Bell size={20} />
-            </Button>
+              <NavigationMenuItem>
+                <NavigationMenuTrigger className="text-gray-700">
+                  <GitBranch className="h-4 w-4 mr-2" />
+                  Matching
+                </NavigationMenuTrigger>
+                <NavigationMenuContent>
+                  <ul className="grid w-[400px] gap-3 p-4 md:w-[500px] md:grid-cols-2 lg:w-[600px]">
+                    <ListItem
+                      title="Invoice-Project Matching"
+                      href="/invoices/match-project"
+                    >
+                      AI-powered matching of invoices to projects
+                    </ListItem>
+                    <ListItem
+                      title="PO Matching"
+                      href="/po-matching"
+                    >
+                      Match purchase orders with invoices
+                    </ListItem>
+                    <ListItem
+                      title="Project Validation"
+                      href="/project-validation"
+                    >
+                      Validate and manage project data
+                    </ListItem>
+                    <ListItem
+                      title="Validation Rules"
+                      href="/validation-rules"
+                    >
+                      Configure validation rules and criteria
+                    </ListItem>
+                  </ul>
+                </NavigationMenuContent>
+              </NavigationMenuItem>
 
-            <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="flex items-center space-x-3 hover:bg-gray-50">
-                  <Avatar className="w-8 h-8">
-                    <AvatarImage src={typedUser?.profileImageUrl || undefined} />
-                    <AvatarFallback className="bg-gray-300 text-gray-600 text-sm">
-                      {getInitials(typedUser?.firstName, typedUser?.lastName)}
-                    </AvatarFallback>
-                  </Avatar>
-                  <span className="hidden sm:block text-sm font-medium text-gray-900">
-                    {getDisplayName(typedUser?.firstName, typedUser?.lastName)}
-                  </span>
-                  <ChevronDown className="text-gray-400" size={16} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-56">
-                <DropdownMenuItem onClick={() => window.location.href = '/profile'}>
-                  <User className="mr-2 h-4 w-4" />
-                  Profile
-                </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.location.href = '/settings'}>
-                  <Settings className="mr-2 h-4 w-4" />
+              <NavigationMenuItem>
+                <NavigationMenuLink className={cn(navigationMenuTriggerStyle(), "text-gray-700")} href="/reports">
+                  <BarChart3 className="h-4 w-4 mr-2" />
+                  Reports
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+
+              <NavigationMenuItem>
+                <NavigationMenuLink className={cn(navigationMenuTriggerStyle(), "text-gray-700")} href="/settings">
+                  <Settings className="h-4 w-4 mr-2" />
                   Settings
-                </DropdownMenuItem>
-                <DropdownMenuItem 
-                  onClick={() => window.location.href = '/api/logout'}
-                  className="text-red-600 focus:text-red-600"
-                >
-                  <LogOut className="mr-2 h-4 w-4" />
-                  Sign Out
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-          </div>
+                </NavigationMenuLink>
+              </NavigationMenuItem>
+            </NavigationMenuList>
+          </NavigationMenu>
+        </div>
+
+        <div className="flex items-center space-x-4">
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="flex items-center space-x-2">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback>
+                    <User className="h-4 w-4" />
+                  </AvatarFallback>
+                </Avatar>
+                <span className="text-sm font-medium text-gray-700">
+                  {user?.name || 'User'}
+                </span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuItem onClick={() => window.location.href = '/profile'}>
+                <User className="h-4 w-4 mr-2" />
+                Profile
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => window.location.href = '/settings'}>
+                <Settings className="h-4 w-4 mr-2" />
+                Settings
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={handleSignOut}>
+                <LogOut className="h-4 w-4 mr-2" />
+                Sign Out
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
     </header>
