@@ -4,6 +4,7 @@ import { QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
+import { ErrorBoundary } from "react-error-boundary";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
@@ -12,21 +13,27 @@ import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
 import Approvals from "./pages/Approvals";
 import Reports from "./pages/Reports";
-import Settings from "./pages/Settings";
 import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
 import React from "react";
 
-const Settings = () => (
+const Profile = () => (
+  <div>
+    <h1>Profile</h1>
+    <p>This is the profile page.</p>
+  </div>
+);
+
+const SettingsPage = () => (
   <div>
     <h1>Settings</h1>
     <p>This is the settings page.</p>
   </div>
 );
 
-function ErrorFallback({ error }) {
+function ErrorFallback({ error }: { error: Error }) {
   return (
     <div className="flex items-center justify-center min-h-screen">
       <div className="text-center">
@@ -66,7 +73,7 @@ function Router() {
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
           <Route path="/profile" component={Profile} />
-          <Route path="/settings" component={Settings} />
+          <Route path="/settings" component={SettingsPage} />
         </>
       )}
       <Route component={NotFound} />
