@@ -84,6 +84,9 @@ export default function Header() {
             <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
               PO Matching
             </Link>
+            <Link href="/project-matcher" className={getLinkClassName("/project-matcher")}>
+              Project Matcher
+            </Link>
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
             </Link>

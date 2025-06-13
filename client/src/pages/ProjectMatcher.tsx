@@ -577,7 +577,7 @@ function MatchingSettings({
 
 // Unresolved Matches Component  
 function UnresolvedMatches() {
-  const { data: unresolvedMatches = [] } = useQuery({
+  const { data: unresolvedMatches = [] } = useQuery<(InvoiceProjectMatch & { invoice: Invoice; project: Project })[]>({
     queryKey: ["/api/project-matches/unresolved"],
   });
 
@@ -603,7 +603,7 @@ function UnresolvedMatches() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {unresolvedMatches.map((match: any) => (
+              {unresolvedMatches.map((match) => (
                 <TableRow key={match.id}>
                   <TableCell>{match.invoice.fileName}</TableCell>
                   <TableCell>{match.project.name}</TableCell>
