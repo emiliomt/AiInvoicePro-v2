@@ -59,51 +59,13 @@ export default function Settings() {
     confirmPassword: ""
   });
 
-  console.log('Settings component loaded', { user, activeTab });
-
   // Fetch user settings
-  const { data: userSettings = {}, isLoading, error } = useQuery<UserSettings>({
+  const { data: userSettings = {}, isLoading } = useQuery<UserSettings>({
     queryKey: ['userSettings'],
     queryFn: async () => {
-      try {
-        const response = await fetch('/api/settings/user_preferences');
-        if (!response.ok) {
-          // Return default settings if none exist
-          return {
-            fullName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
-            department: '',
-            phoneNumber: '',
-            emailNotifications: true,
-            dashboardLayout: 'grid',
-            defaultCurrency: 'USD',
-            timezone: 'America/New_York',
-            aiProcessingMode: 'automatic',
-            aiCacheEnabled: true,
-            aiCacheExpiry: '24h',
-            aiAutoInvalidation: 'on_update'
-          };
-        }
-        const data = await response.json();
-        const parsedData = JSON.parse(data.value || '{}');
-        
-        // Merge with defaults to ensure all fields are present
-        return {
-          fullName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
-          department: '',
-          phoneNumber: '',
-          emailNotifications: true,
-          dashboardLayout: 'grid',
-          defaultCurrency: 'USD',
-          timezone: 'America/New_York',
-          aiProcessingMode: 'automatic',
-          aiCacheEnabled: true,
-          aiCacheExpiry: '24h',
-          aiAutoInvalidation: 'on_update',
-          ...parsedData
-        };
-      } catch (error) {
-        console.error('Error fetching user settings:', error);
-        // Return default settings on error
+      const response = await fetch('/api/settings/user_preferences');
+      if (!response.ok) {
+        // Return default settings if none exist
         return {
           fullName: `${user?.firstName || ''} ${user?.lastName || ''}`.trim(),
           department: '',
@@ -118,6 +80,8 @@ export default function Settings() {
           aiAutoInvalidation: 'on_update'
         };
       }
+      const data = await response.json();
+      return JSON.parse(data.value || '{}');
     },
   });
 
@@ -195,21 +159,6 @@ export default function Settings() {
           <div className="animate-pulse space-y-4">
             <div className="h-8 bg-gray-200 rounded w-1/3"></div>
             <div className="h-96 bg-gray-200 rounded"></div>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="min-h-screen bg-gray-50">
-        <Header />
-        <div className="max-w-6xl mx-auto py-8 px-4">
-          <div className="text-center py-12">
-            <h2 className="text-2xl font-bold text-red-600 mb-2">Error Loading Settings</h2>
-            <p className="text-gray-600 mb-4">There was an issue loading your settings. Using default values.</p>
-            <Button onClick={() => window.location.reload()}>Reload Page</Button>
           </div>
         </div>
       </div>

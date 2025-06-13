@@ -466,39 +466,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }),
           description: 'User preferences and settings'
         };
-        
-        // Try to create the setting, but don't fail if it doesn't work
-        try {
-          await storage.updateSetting('user_preferences', defaultSettings.value);
-        } catch (createError) {
-          console.log('Could not create default setting, proceeding with defaults');
-        }
-        
+        await storage.setSetting(defaultSettings);
         res.json(defaultSettings);
       } else {
         res.json(setting);
       }
     } catch (error) {
       console.error("Error fetching user settings:", error);
-      // Return default settings instead of failing
-      const defaultSettings = {
-        key: 'user_preferences',
-        value: JSON.stringify({
-          fullName: '',
-          department: '',
-          phoneNumber: '',
-          emailNotifications: true,
-          dashboardLayout: 'grid',
-          defaultCurrency: 'USD',
-          timezone: 'America/New_York',
-          aiProcessingMode: 'automatic',
-          aiCacheEnabled: true,
-          aiCacheExpiry: '24h',
-          aiAutoInvalidation: 'on_update'
-        }),
-        description: 'User preferences and settings'
-      };
-      res.json(defaultSettings);
+      res.status(500).json({ message: "Failed to fetch user settings" });
     }
   });
 
