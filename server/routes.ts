@@ -357,6 +357,91 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project matching routes
+  app.get('/api/invoices/:id/project-matches', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const matches = await storage.getInvoiceProjectMatches(invoiceId);
+      res.json(matches);
+    } catch (error) {
+      console.error("Error fetching invoice project matches:", error);
+      res.status(500).json({ message: "Failed to fetch project matches" });
+    }
+  });
+
+  app.post('/api/invoices/:id/find-project-matches', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      const potentialMatches = await storage.findPotentialProjectMatches(invoice);
+      res.json(potentialMatches);
+    } catch (error) {
+      console.error("Error finding project matches:", error);
+      res.status(500).json({ message: "Failed to find project matches" });
+    }
+  });
+
+  app.post('/api/invoices/:id/create-project-match', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { projectId, matchScore, matchDetails, status = 'manual' } = req.body;
+
+      const matchData = {
+        invoiceId,
+        projectId,
+        matchScore: matchScore.toString(),
+        status: status as any,
+        matchDetails,
+        isActive: true,
+      };
+
+      const match = await storage.createInvoiceProjectMatch(matchData);
+      res.json(match);
+    } catch (error) {
+      console.error("Error creating project match:", error);
+      res.status(500).json({ message: "Failed to create project match" });
+    }
+  });
+
+  app.put('/api/project-matches/:id', isAuthenticated, async (req, res) => {
+    try {
+      const matchId = parseInt(req.params.id);
+      const updates = req.body;
+      const match = await storage.updateInvoiceProjectMatch(matchId, updates);
+      res.json(match);
+    } catch (error) {
+      console.error("Error updating project match:", error);
+      res.status(500).json({ message: "Failed to update project match" });
+    }
+  });
+
+  app.post('/api/invoices/:id/set-active-project-match', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { matchId } = req.body;
+      await storage.setActiveProjectMatch(invoiceId, matchId);
+      res.json({ message: "Active project match set successfully" });
+    } catch (error) {
+      console.error("Error setting active project match:", error);
+      res.status(500).json({ message: "Failed to set active project match" });
+    }
+  });
+
+  app.get('/api/project-matches/unresolved', isAuthenticated, async (req, res) => {
+    try {
+      const unresolvedMatches = await storage.getUnresolvedProjectMatches();
+      res.json(unresolvedMatches);
+    } catch (error) {
+      console.error("Error fetching unresolved project matches:", error);
+      res.status(500).json({ message: "Failed to fetch unresolved project matches" });
+    }
+  });
+
   // Discrepancy detection routes
   app.get("/api/flags/:invoiceId", isAuthenticated, async (req, res) => {
     try {
