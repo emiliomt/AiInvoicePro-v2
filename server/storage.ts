@@ -521,22 +521,11 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updatePettyCashLog(id: number, updates: Partial<InsertPettyCashLog>): Promise<PettyCashLog> {
-    // Ensure approvedAt is properly handled as a Date object
-    const processedUpdates = { ...updates };
-    if (processedUpdates.approvedAt && typeof processedUpdates.approvedAt === 'string') {
-      processedUpdates.approvedAt = new Date(processedUpdates.approvedAt);
-    }
-
     const [updatedLog] = await db
       .update(pettyCashLog)
-      .set({ ...processedUpdates, updatedAt: new Date() })
+      .set({ ...updates, updatedAt: new Date() })
       .where(eq(pettyCashLog.id, id))
       .returning();
-
-    if (!updatedLog) {
-      throw new Error("Petty cash log not found");
-    }
-
     return updatedLog;
   }
 
@@ -887,7 +876,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void> {
-    const invoice = await this.getInvoice(invoiceId, projectId: string): Promise<void> {
+    const invoice = await this.getInvoice(invoiceId);
     if (invoice) {
       const currentData = invoice.extractedData || {};
       const updatedData = {
