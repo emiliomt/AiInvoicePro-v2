@@ -45,6 +45,7 @@ const RULE_TYPE_OPTIONS = [
   { value: "range", label: "Numeric Range", description: "Number must be within min,max range" },
   { value: "enum", label: "Allowed Values", description: "Field must be one of specified values" },
   { value: "format", label: "Format Check", description: "Field must match a specific format (email, etc.)" },
+  { value: "comparison", label: "Comparison", description: "Compare field value using operators (>, <, =, etc.)" },
 ];
 
 const SEVERITY_OPTIONS = [
@@ -222,6 +223,8 @@ export default function ValidationRules() {
         return `Must be one of: ${ruleValue}`;
       case "format":
         return `Must be valid ${ruleValue}`;
+      case "comparison":
+        return `Must satisfy: ${ruleValue}`;
       default:
         return ruleValue;
     }
@@ -342,6 +345,7 @@ export default function ValidationRules() {
                       formData.ruleType === "range" ? "0,1000000" :
                       formData.ruleType === "enum" ? "USD,EUR,GBP" :
                       formData.ruleType === "format" ? "email" :
+                      formData.ruleType === "comparison" ? ">1000 or <=5000 or =100" :
                       "Rule value"
                     }
                     required
@@ -353,6 +357,7 @@ export default function ValidationRules() {
                       {formData.ruleType === "enum" && "Enter comma-separated allowed values"}
                       {formData.ruleType === "format" && "Enter format type (email, etc.)"}
                       {formData.ruleType === "required" && "Enter 'true' to make field required"}
+                      {formData.ruleType === "comparison" && "Enter comparison operator and value (e.g., >1000, <=5000, =100, !=0)"}
                     </p>
                   )}
                 </div>

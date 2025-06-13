@@ -115,6 +115,7 @@ export const validationRuleTypeEnum = pgEnum("validation_rule_type", [
   "range",
   "enum",
   "format",
+  "comparison",
 ]);
 
 // Validation rules table

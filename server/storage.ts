@@ -360,6 +360,51 @@ export class DatabaseStorage implements IStorage {
             errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid email address`;
           }
           break;
+
+        case 'comparison':
+          if (fieldValue) {
+            const numValue = parseFloat(String(fieldValue));
+            if (!isNaN(numValue)) {
+              // Parse comparison operator and value from rule.ruleValue
+              const comparisonMatch = rule.ruleValue.match(/^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
+              if (comparisonMatch) {
+                const [, operator, targetValue] = comparisonMatch;
+                const targetNum = parseFloat(targetValue);
+                
+                switch (operator) {
+                  case '>':
+                    isViolation = !(numValue > targetNum);
+                    break;
+                  case '>=':
+                    isViolation = !(numValue >= targetNum);
+                    break;
+                  case '<':
+                    isViolation = !(numValue < targetNum);
+                    break;
+                  case '<=':
+                    isViolation = !(numValue <= targetNum);
+                    break;
+                  case '=':
+                    isViolation = !(numValue === targetNum);
+                    break;
+                  case '!=':
+                    isViolation = !(numValue !== targetNum);
+                    break;
+                }
+                
+                if (isViolation) {
+                  errorMessage = rule.errorMessage || `${rule.fieldName} must be ${operator} ${targetValue}`;
+                }
+              } else {
+                isViolation = true;
+                errorMessage = rule.errorMessage || `Invalid comparison format for ${rule.fieldName}`;
+              }
+            } else {
+              isViolation = true;
+              errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid number for comparison`;
+            }
+          }
+          break;
       }
 
       if (isViolation) {
