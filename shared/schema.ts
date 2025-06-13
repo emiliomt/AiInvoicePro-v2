@@ -56,6 +56,21 @@ export const approvalStatusEnum = pgEnum("approval_status", [
   "rejected",
 ]);
 
+// Match status enum for project matching
+export const matchStatusEnum = pgEnum("match_status", [
+  "auto_matched",
+  "manual_match", 
+  "no_match",
+  "pending_review"
+]);
+
+// Matched by enum
+export const matchedByEnum = pgEnum("matched_by", [
+  "ai",
+  "user",
+  "system"
+]);
+
 // Invoice table
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -75,6 +90,13 @@ export const invoices = pgTable("invoices", {
   extractedData: jsonb("extracted_data"),
   projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
+  // Project matching fields
+  matchedProjectId: varchar("matched_project_id"),
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }), // 0-100
+  matchStatus: matchStatusEnum("match_status").default("pending_review"),
+  matchedBy: matchedByEnum("matched_by"),
+  isPettyCash: boolean("is_petty_cash").default(false),
+  pettyCashChecked: boolean("petty_cash_checked").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -174,8 +196,8 @@ export const poStatusEnum = pgEnum("po_status", [
   "cancelled"
 ]);
 
-// Match status enum
-export const matchStatusEnum = pgEnum("match_status", [
+// PO Match status enum
+export const poMatchStatusEnum = pgEnum("po_match_status", [
   "auto",
   "manual", 
   "unresolved"
@@ -226,7 +248,7 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
   poId: integer("po_id").references(() => purchaseOrders.id).notNull(),
   matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
-  status: matchStatusEnum("status").default("auto"),
+  status: poMatchStatusEnum("status").default("auto"),
   matchDetails: jsonb("match_details"), // Details about what matched
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
