@@ -11,6 +11,7 @@ import {
   invoicePoMatches,
   invoiceFlags,
   predictiveAlerts,
+  projectMatches,
   type User,
   type UpsertUser,
   type Invoice,
@@ -35,6 +36,8 @@ import {
   type InsertInvoiceFlag,
   type PredictiveAlert,
   type InsertPredictiveAlert,
+  type ProjectMatch,
+  type InsertProjectMatch,
 } from "@shared/schema";
 import { db } from "./db";
 import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql, sum } from "drizzle-orm";
@@ -1098,6 +1101,56 @@ export class DatabaseStorage implements IStorage {
       manualMatched,
       unmatched
     };
+  }
+
+  // Project match management operations
+  async createProjectMatch(match: InsertProjectMatch): Promise<ProjectMatch> {
+    const [result] = await db.insert(projectMatches).values(match).returning();
+    return result;
+  }
+
+  async updateProjectMatch(id: number, updates: Partial<InsertProjectMatch>): Promise<ProjectMatch> {
+    const [result] = await db
+      .update(projectMatches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(projectMatches.id, id))
+      .returning();
+    return result;
+  }
+
+  async getProjectMatchByInvoiceId(invoiceId: number): Promise<ProjectMatch | undefined> {
+    const [result] = await db
+      .select()
+      .from(projectMatches)
+      .where(eq(projectMatches.invoiceId, invoiceId));
+    return result;
+  }
+
+  async getProjectMatches(status?: string): Promise<(ProjectMatch & { invoice: Invoice; project?: Project })[]> {
+    let query = db
+      .select({
+        id: projectMatches.id,
+        invoiceId: projectMatches.invoiceId,
+        projectId: projectMatches.projectId,
+        confidence: projectMatches.confidence,
+        matchedBy: projectMatches.matchedBy,
+        matchStatus: projectMatches.matchStatus,
+        matchNotes: projectMatches.matchNotes,
+        matchedAt: projectMatches.matchedAt,
+        createdAt: projectMatches.createdAt,
+        updatedAt: projectMatches.updatedAt,
+        invoice: invoices,
+        project: projects,
+      })
+      .from(projectMatches)
+      .leftJoin(invoices, eq(projectMatches.invoiceId, invoices.id))
+      .leftJoin(projects, eq(projectMatches.projectId, projects.projectId));
+
+    if (status) {
+      query = query.where(eq(projectMatches.matchStatus, status));
+    }
+
+    return await query;
   }
 }
 
