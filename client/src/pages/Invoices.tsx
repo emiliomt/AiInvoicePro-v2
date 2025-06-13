@@ -2,8 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, Target, CheckCircle, AlertCircle, XCircle } from "lucide-react";
-import { Link } from "wouter";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -28,8 +27,6 @@ import Header from "@/components/Header";
 import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
-import PettyCashManager from "@/components/PettyCashManager";
-import ProjectMatchingManager from "@/components/ProjectMatchingManager";
 
 interface Invoice {
   id: number;
@@ -43,10 +40,6 @@ interface Invoice {
   dueDate: string | null;
   createdAt: string;
   userId: string;
-  matchedProjectId?: string | null;
-  matchConfidence?: string | null;
-  matchedBy?: string | null;
-  matchStatus?: string | null;
 }
 
 export default function Invoices() {
@@ -90,42 +83,6 @@ export default function Invoices() {
       case "failed": return "bg-red-100 text-red-800";
       case "draft": return "bg-gray-100 text-gray-800";
       default: return "bg-gray-100 text-gray-800";
-    }
-  };
-
-  const getProjectMatchBadge = (invoice: Invoice) => {
-    if (!invoice.matchedProjectId) {
-      return (
-        <Badge variant="outline" className="text-gray-600">
-          <XCircle size={14} className="mr-1" />
-          No Project
-        </Badge>
-      );
-    }
-
-    const confidence = parseFloat(invoice.matchConfidence || "0");
-    
-    if (invoice.matchedBy === "ai" && confidence >= 80) {
-      return (
-        <Badge className="bg-green-100 text-green-800">
-          <CheckCircle size={14} className="mr-1" />
-          Auto-Matched ({confidence}%)
-        </Badge>
-      );
-    } else if (invoice.matchedBy === "manual") {
-      return (
-        <Badge className="bg-blue-100 text-blue-800">
-          <CheckCircle size={14} className="mr-1" />
-          Manual Match
-        </Badge>
-      );
-    } else {
-      return (
-        <Badge className="bg-yellow-100 text-yellow-800">
-          <AlertCircle size={14} className="mr-1" />
-          Low Confidence ({confidence}%)
-        </Badge>
-      );
     }
   };
 
@@ -238,12 +195,7 @@ export default function Invoices() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <div className="flex items-center space-x-2">
-                        <span className="text-sm font-medium text-gray-500">Project Status:</span>
-                        {getProjectMatchBadge(invoice)}
-                      </div>
-                      <div className="flex space-x-2">
+                    <div className="flex justify-end space-x-2">
                       <Button 
                         variant="outline" 
                         size="sm"
@@ -255,12 +207,6 @@ export default function Invoices() {
                         <Eye size={16} className="mr-2" />
                         View Details
                       </Button>
-                      <Link href={`/invoices/${invoice.id}/match-project`}>
-                        <Button variant="outline" size="sm">
-                          <Target size={16} className="mr-2" />
-                          Match Project
-                        </Button>
-                      </Link>
                       {isPDFFile(invoice.fileName) && (
                         <>
                           <Button 
@@ -312,7 +258,6 @@ export default function Invoices() {
                           </AlertDialogFooter>
                         </AlertDialogContent>
                       </AlertDialog>
-                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -521,13 +466,6 @@ export default function Invoices() {
                     </div>
                   </div>
                 )}
-
-                {/* Petty Cash Management */}
-                <PettyCashManager invoiceId={selectedInvoice.id} />
-
-                {/* Project Matching Management */}
-                <ProjectMatchingManager invoiceId={selectedInvoice.id} />
-
                 <div className="flex justify-end space-x-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close

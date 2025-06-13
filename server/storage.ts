@@ -11,7 +11,6 @@ import {
   invoicePoMatches,
   invoiceFlags,
   predictiveAlerts,
-  projectMatches,
   type User,
   type UpsertUser,
   type Invoice,
@@ -36,8 +35,6 @@ import {
   type InsertInvoiceFlag,
   type PredictiveAlert,
   type InsertPredictiveAlert,
-  type ProjectMatch,
-  type InsertProjectMatch,
 } from "@shared/schema";
 import { db } from "./db";
 import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql, sum } from "drizzle-orm";
@@ -140,28 +137,6 @@ export interface IStorage {
   createPredictiveAlerts(alerts: InsertPredictiveAlert[]): Promise<PredictiveAlert[]>;
   getPredictiveAlerts(invoiceId: number): Promise<PredictiveAlert[]>;
   getTopIssuesThisMonth(): Promise<any[]>;
-
-  // Project matching operations
-  updateInvoiceProjectMatch(
-    invoiceId: number, 
-    projectId: string | null, 
-    confidence: number | null,
-    matchedBy: string | null,
-    matchStatus: string | null
-  ): Promise<Invoice>;
-  getInvoiceWithProjectMatch(invoiceId: number): Promise<(Invoice & { matchedProject?: Project }) | undefined>;
-  getProjectMatchingStats(): Promise<{
-    totalMatched: number;
-    autoMatched: number;
-    manualMatched: number;
-    unmatched: number;
-  }>;
-
-  // Project match management operations
-  createProjectMatch(match: InsertProjectMatch): Promise<ProjectMatch>;
-  updateProjectMatch(id: number, updates: Partial<InsertProjectMatch>): Promise<ProjectMatch>;
-  getProjectMatchByInvoiceId(invoiceId: number): Promise<ProjectMatch | undefined>;
-  getProjectMatches(status?: string): Promise<(ProjectMatch & { invoice: Invoice; project?: Project })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1031,126 +1006,6 @@ export class DatabaseStorage implements IStorage {
     }
 
     return matrix[str2.length][str1.length];
-  }
-
-  // Project matching operations
-  async updateInvoiceProjectMatch(
-    invoiceId: number, 
-    projectId: string | null, 
-    confidence: number | null,
-    matchedBy: string | null,
-    matchStatus: string | null
-  ): Promise<Invoice> {
-    const [updatedInvoice] = await db
-      .update(invoices)
-      .set({
-        matchedProjectId: projectId,
-        matchConfidence: confidence?.toString(),
-        matchedBy,
-        matchStatus,
-        updatedAt: new Date()
-      })
-      .where(eq(invoices.id, invoiceId))
-      .returning();
-    
-    return updatedInvoice;
-  }
-
-  async getInvoiceWithProjectMatch(invoiceId: number): Promise<(Invoice & { matchedProject?: Project }) | undefined> {
-    const result = await db
-      .select({
-        invoice: invoices,
-        project: projects
-      })
-      .from(invoices)
-      .leftJoin(projects, eq(invoices.matchedProjectId, projects.projectId))
-      .where(eq(invoices.id, invoiceId));
-
-    if (result.length === 0) return undefined;
-
-    const { invoice, project } = result[0];
-    return {
-      ...invoice,
-      matchedProject: project || undefined
-    };
-  }
-
-  async getProjectMatchingStats(): Promise<{
-    totalMatched: number;
-    autoMatched: number;
-    manualMatched: number;
-    unmatched: number;
-  }> {
-    const [stats] = await db
-      .select({
-        totalInvoices: count(),
-        matchedInvoices: count(invoices.matchedProjectId),
-        autoMatched: sql<number>`COUNT(CASE WHEN ${invoices.matchedBy} = 'AI' THEN 1 END)`,
-        manualMatched: sql<number>`COUNT(CASE WHEN ${invoices.matchedBy} = 'user' THEN 1 END)`
-      })
-      .from(invoices);
-
-    const totalMatched = Number(stats.matchedInvoices);
-    const autoMatched = Number(stats.autoMatched);
-    const manualMatched = Number(stats.manualMatched);
-    const unmatched = Number(stats.totalInvoices) - totalMatched;
-
-    return {
-      totalMatched,
-      autoMatched,
-      manualMatched,
-      unmatched
-    };
-  }
-
-  // Project match management operations
-  async createProjectMatch(match: InsertProjectMatch): Promise<ProjectMatch> {
-    const [result] = await db.insert(projectMatches).values(match).returning();
-    return result;
-  }
-
-  async updateProjectMatch(id: number, updates: Partial<InsertProjectMatch>): Promise<ProjectMatch> {
-    const [result] = await db
-      .update(projectMatches)
-      .set({ ...updates, updatedAt: new Date() })
-      .where(eq(projectMatches.id, id))
-      .returning();
-    return result;
-  }
-
-  async getProjectMatchByInvoiceId(invoiceId: number): Promise<ProjectMatch | undefined> {
-    const [result] = await db
-      .select()
-      .from(projectMatches)
-      .where(eq(projectMatches.invoiceId, invoiceId));
-    return result;
-  }
-
-  async getProjectMatches(status?: string): Promise<(ProjectMatch & { invoice: Invoice; project?: Project })[]> {
-    const baseQuery = db
-      .select({
-        id: projectMatches.id,
-        invoiceId: projectMatches.invoiceId,
-        projectId: projectMatches.projectId,
-        confidence: projectMatches.confidence,
-        matchedBy: projectMatches.matchedBy,
-        matchStatus: projectMatches.matchStatus,
-        matchNotes: projectMatches.matchNotes,
-        matchedAt: projectMatches.matchedAt,
-        createdAt: projectMatches.createdAt,
-        updatedAt: projectMatches.updatedAt,
-        invoice: invoices,
-        project: projects,
-      })
-      .from(projectMatches)
-      .leftJoin(invoices, eq(projectMatches.invoiceId, invoices.id))
-      .leftJoin(projects, eq(projectMatches.projectId, projects.projectId));
-
-    if (status) {
-      return await baseQuery.where(eq(projectMatches.matchStatus, status));
-    }
-
-    return await baseQuery;
   }
 }
 

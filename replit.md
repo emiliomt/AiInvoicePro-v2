@@ -63,7 +63,6 @@ The system uses PostgreSQL with the following key entities:
 - **Invoice Management**: Upload, preview, and data extraction
 - **Approval Workflow**: Multi-stage approval process
 - **PO Matching**: Automated and manual purchase order matching
-- **Project Matching**: AI-powered project assignment with confidence scoring
 - **Project Validation**: Project assignment and validation
 - **Reporting**: Analytics and trend analysis
 - **Configuration**: Validation rules and system settings
@@ -114,7 +113,7 @@ The system uses PostgreSQL with the following key entities:
 
 ## Changelog
 - June 13, 2025. Initial setup
-- June 13, 2025. Implemented AI-powered Project Matching feature with confidence thresholds, auto-matching, and manual override capabilities
+- June 13, 2025. Added comprehensive AI-powered Project Matching system with petty cash filtering, intelligent invoice-to-project assignment, configurable thresholds, and manual review capabilities
 
 ## User Preferences
 

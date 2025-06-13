@@ -11,13 +11,13 @@ import Dashboard from "@/pages/Dashboard";
 import Invoices from "./pages/Invoices";
 import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
+import ProjectMatching from "./pages/ProjectMatching";
 import Approvals from "./pages/Approvals";
 import Reports from "./pages/Reports";
 import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
-import ProjectMatching from "./pages/ProjectMatching";
 import Settings from "./pages/Settings";
 import React from "react";
 
@@ -64,10 +64,10 @@ function Router() {
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
+          <Route path="/project-matching" component={ProjectMatching} />
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
-          <Route path="/invoices/:id/match-project" component={ProjectMatching} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
         </>

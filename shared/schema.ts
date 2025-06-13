@@ -56,6 +56,21 @@ export const approvalStatusEnum = pgEnum("approval_status", [
   "rejected",
 ]);
 
+// Match status enum for project matching
+export const matchStatusEnum = pgEnum("match_status", [
+  "auto_matched",
+  "manual_match", 
+  "no_match",
+  "pending_review"
+]);
+
+// Matched by enum
+export const matchedByEnum = pgEnum("matched_by", [
+  "ai",
+  "user",
+  "system"
+]);
+
 // Invoice table
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -77,9 +92,11 @@ export const invoices = pgTable("invoices", {
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
   // Project matching fields
   matchedProjectId: varchar("matched_project_id"),
-  matchConfidence: decimal("match_confidence", { precision: 5, scale: 2 }), // 0-100
-  matchedBy: varchar("matched_by"), // "AI" | "user"
-  matchStatus: varchar("match_status"), // "auto" | "manual" | "no_match"
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }), // 0-100
+  matchStatus: matchStatusEnum("match_status").default("pending_review"),
+  matchedBy: matchedByEnum("matched_by"),
+  isPettyCash: boolean("is_petty_cash").default(false),
+  pettyCashChecked: boolean("petty_cash_checked").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -179,8 +196,8 @@ export const poStatusEnum = pgEnum("po_status", [
   "cancelled"
 ]);
 
-// Match status enum
-export const matchStatusEnum = pgEnum("match_status", [
+// PO Match status enum
+export const poMatchStatusEnum = pgEnum("po_match_status", [
   "auto",
   "manual", 
   "unresolved"
@@ -231,7 +248,7 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
   poId: integer("po_id").references(() => purchaseOrders.id).notNull(),
   matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
-  status: matchStatusEnum("status").default("auto"),
+  status: poMatchStatusEnum("status").default("auto"),
   matchDetails: jsonb("match_details"), // Details about what matched
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -397,33 +414,6 @@ export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 
-export const projectMatches = pgTable("project_matches", {
-  id: serial("id").primaryKey(),
-  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
-  projectId: text("project_id").references(() => projects.projectId),
-  confidence: integer("confidence"), // AI confidence score 0-100
-  matchedBy: text("matched_by"), // 'ai', 'manual'
-  matchStatus: text("match_status").default("pending"), // 'pending', 'matched', 'rejected', 'auto_matched'
-  matchNotes: text("match_notes"),
-  matchedAt: timestamp("matched_at"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
-});
-
-export const projectMatchesRelations = relations(projectMatches, ({ one }) => ({
-  invoice: one(invoices, {
-    fields: [projectMatches.invoiceId],
-    references: [invoices.id],
-  }),
-  project: one(projects, {
-    fields: [projectMatches.projectId],
-    references: [projects.projectId],
-  }),
-}));
-
-export type InsertProjectMatch = typeof projectMatches.$inferInsert;
-export type ProjectMatch = typeof projectMatches.$inferSelect;
-
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
@@ -472,12 +462,6 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 });
 
 export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
-
-export const insertProjectMatchSchema = createInsertSchema(projectMatches).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
