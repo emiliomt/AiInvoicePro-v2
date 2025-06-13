@@ -17,6 +17,7 @@ import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
+import ProjectMatching from "./pages/ProjectMatching";
 import Settings from "./pages/Settings";
 import React from "react";
 
@@ -66,6 +67,7 @@ function Router() {
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
+          <Route path="/invoices/:id/match-project" component={ProjectMatching} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
         </>

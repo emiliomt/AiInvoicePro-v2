@@ -7,6 +7,7 @@ import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
+import { matchProjectToInvoice } from "./projectMatching";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -1301,6 +1302,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
+    }
+  });
+
+  // Project matching endpoints
+  app.get('/api/invoices/:id/match-project', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const threshold = parseInt(req.query.threshold as string) || 80;
+
+      // Get invoice and verify ownership
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice || invoice.userId !== userId) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Get line items
+      const lineItems = await storage.getLineItemsByInvoiceId(invoiceId);
+
+      // Get all validated projects
+      const allProjects = await storage.getProjects();
+      const validatedProjects = allProjects.filter(p => p.isValidated);
+
+      if (validatedProjects.length === 0) {
+        return res.json({
+          matches: [],
+          autoMatch: null,
+          recommendation: "No validated projects available. Please validate projects first.",
+          currentMatch: invoice.matchedProjectId ? {
+            projectId: invoice.matchedProjectId,
+            confidence: parseFloat(invoice.matchConfidence || '0'),
+            matchedBy: invoice.matchedBy,
+            status: invoice.matchStatus
+          } : null
+        });
+      }
+
+      // Perform AI-powered matching
+      const matchingResult = await matchProjectToInvoice(invoice, lineItems, validatedProjects, threshold);
+
+      // Include current match info if exists
+      const currentMatch = invoice.matchedProjectId ? {
+        projectId: invoice.matchedProjectId,
+        confidence: parseFloat(invoice.matchConfidence || '0'),
+        matchedBy: invoice.matchedBy,
+        status: invoice.matchStatus
+      } : null;
+
+      res.json({
+        ...matchingResult,
+        currentMatch
+      });
+    } catch (error) {
+      console.error("Error matching project:", error);
+      res.status(500).json({ message: "Failed to match project" });
+    }
+  });
+
+  app.post('/api/invoices/:id/match-project', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const { projectId, confidence, matchedBy, matchStatus } = req.body;
+
+      // Get invoice and verify ownership
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice || invoice.userId !== userId) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Validate project exists
+      if (projectId) {
+        const project = await storage.getProject(projectId);
+        if (!project) {
+          return res.status(400).json({ message: "Project not found" });
+        }
+      }
+
+      // Update invoice with project match
+      const updatedInvoice = await storage.updateInvoiceProjectMatch(
+        invoiceId,
+        projectId,
+        confidence,
+        matchedBy,
+        matchStatus
+      );
+
+      res.json({
+        message: projectId ? "Project matched successfully" : "Project match cleared",
+        invoice: updatedInvoice
+      });
+    } catch (error) {
+      console.error("Error updating project match:", error);
+      res.status(500).json({ message: "Failed to update project match" });
+    }
+  });
+
+  app.get('/api/invoices/:id/project-details', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+
+      // Get invoice with project match details
+      const invoiceWithProject = await storage.getInvoiceWithProjectMatch(invoiceId);
+      
+      if (!invoiceWithProject || invoiceWithProject.userId !== userId) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      res.json(invoiceWithProject);
+    } catch (error) {
+      console.error("Error fetching invoice project details:", error);
+      res.status(500).json({ message: "Failed to fetch project details" });
+    }
+  });
+
+  app.get('/api/projects/matching-stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const stats = await storage.getProjectMatchingStats();
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching project matching stats:", error);
+      res.status(500).json({ message: "Failed to fetch matching stats" });
     }
   });
 
