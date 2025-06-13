@@ -17,19 +17,13 @@ import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
+import Settings from "./pages/Settings";
 import React from "react";
 
 const Profile = () => (
   <div>
     <h1>Profile</h1>
     <p>This is the profile page.</p>
-  </div>
-);
-
-const SettingsPage = () => (
-  <div>
-    <h1>Settings</h1>
-    <p>This is the settings page.</p>
   </div>
 );
 
@@ -73,7 +67,7 @@ function Router() {
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
           <Route path="/profile" component={Profile} />
-          <Route path="/settings" component={SettingsPage} />
+          <Route path="/settings" component={Settings} />
         </>
       )}
       <Route component={NotFound} />
