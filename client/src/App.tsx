@@ -18,6 +18,7 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
 import React from "react";
+import Settings from "./pages/Settings"; //Import the correct Settings component
 
 const Profile = () => (
   <div>
@@ -26,12 +27,12 @@ const Profile = () => (
   </div>
 );
 
-const SettingsPage = () => (
-  <div>
-    <h1>Settings</h1>
-    <p>This is the settings page.</p>
-  </div>
-);
+// const SettingsPage = () => (
+//   <div>
+//     <h1>Settings</h1>
+//     <p>This is the settings page.</p>
+//   </div>
+// );
 
 function ErrorFallback({ error }: { error: Error }) {
   return (
@@ -73,7 +74,8 @@ function Router() {
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
           <Route path="/profile" component={Profile} />
-          <Route path="/settings" component={SettingsPage} />
+          {/* Use the imported Settings component */}
+          <Route path="/settings" component={Settings} />
         </>
       )}
       <Route component={NotFound} />
