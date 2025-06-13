@@ -117,7 +117,7 @@ export default function ProjectMatching() {
   // Update settings when data changes
   useEffect(() => {
     if (matchingSettings) {
-      setSettings(matchingSettings);
+      setSettings(matchingSettings as MatchingSettings);
     }
   }, [matchingSettings]);
 
@@ -269,7 +269,7 @@ export default function ProjectMatching() {
     }
   };
 
-  const filteredProjects = allProjects.filter((project: Project) =>
+  const filteredProjects = (allProjects as Project[]).filter((project: Project) =>
     project.name.toLowerCase().includes(projectSearch.toLowerCase()) ||
     project.projectId.toLowerCase().includes(projectSearch.toLowerCase()) ||
     (project.description && project.description.toLowerCase().includes(projectSearch.toLowerCase()))
@@ -369,7 +369,7 @@ export default function ProjectMatching() {
               <FileText size={20} className="mr-2" />
               Pending Invoices
               <Badge variant="secondary" className="ml-2">
-                {pendingInvoices.length}
+                {(pendingInvoices as Invoice[]).length}
               </Badge>
             </CardTitle>
             <CardDescription>
@@ -377,14 +377,14 @@ export default function ProjectMatching() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {pendingInvoices.length === 0 ? (
+            {(pendingInvoices as Invoice[]).length === 0 ? (
               <div className="text-center py-8">
                 <CheckCircle size={48} className="mx-auto text-green-500 mb-4" />
                 <p className="text-gray-600">All invoices have been processed!</p>
               </div>
             ) : (
               <div className="space-y-3">
-                {pendingInvoices.map((invoice: Invoice) => (
+                {(pendingInvoices as Invoice[]).map((invoice: Invoice) => (
                   <div
                     key={invoice.id}
                     className={`p-4 border rounded-lg cursor-pointer transition-colors ${

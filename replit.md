@@ -113,6 +113,7 @@ The system uses PostgreSQL with the following key entities:
 
 ## Changelog
 - June 13, 2025. Initial setup
+- June 13, 2025. Added comprehensive AI-powered Project Matching system with petty cash filtering, intelligent invoice-to-project assignment, configurable thresholds, and manual review capabilities
 
 ## User Preferences
 
