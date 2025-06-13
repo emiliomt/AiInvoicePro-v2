@@ -123,14 +123,15 @@ export const validationRules = pgTable("validation_rules", {
   id: serial("id").primaryKey(),
   name: varchar("name").notNull(),
   description: text("description"),
-  fieldName: varchar("field_name").notNull(), // e.g., 'vendorName', 'totalAmount', 'taxId'
   ruleType: validationRuleTypeEnum("rule_type").notNull(),
-  ruleValue: text("rule_value").notNull(), // regex pattern, min/max values, etc.
-  severity: validationSeverityEnum("severity").default("medium"),
-  errorMessage: text("error_message"), // Custom error message
+  ruleData: text("rule_data"), // Legacy column that might exist in DB
   isActive: boolean("is_active").default(true),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
+  fieldName: varchar("field_name").notNull(), // e.g., 'vendorName', 'totalAmount', 'taxId'
+  ruleValue: text("rule_value").notNull(), // regex pattern, min/max values, etc.
+  severity: validationSeverityEnum("severity").default("medium"),
+  errorMessage: text("error_message"), // Custom error message
 });
 
 // Settings table for configuration

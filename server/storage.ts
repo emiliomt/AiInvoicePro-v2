@@ -37,7 +37,7 @@ import {
   type InsertPredictiveAlert,
 } from "@shared/schema";
 import { db } from "./db";
-import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql, sum } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -283,7 +283,13 @@ export class DatabaseStorage implements IStorage {
   }
 
   async createValidationRule(rule: InsertValidationRule): Promise<ValidationRule> {
-    const [created] = await db.insert(validationRules).values(rule).returning();
+    // Map the rule data to include the legacy ruleData column if needed
+    const ruleData = {
+      ...rule,
+      ruleData: rule.ruleValue, // Map ruleValue to ruleData for legacy compatibility
+    };
+    
+    const [created] = await db.insert(validationRules).values(ruleData).returning();
     return created;
   }
 
