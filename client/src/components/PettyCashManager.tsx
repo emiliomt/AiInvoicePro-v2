@@ -36,9 +36,11 @@ interface PettyCashLog {
 interface PettyCashManagerProps {
   invoiceId?: number;
   showAllLogs?: boolean;
+  filterStatus?: string;
+  filterAssigned?: boolean;
 }
 
-export default function PettyCashManager({ invoiceId, showAllLogs = false }: PettyCashManagerProps) {
+export default function PettyCashManager({ invoiceId, showAllLogs = false, filterStatus, filterAssigned }: PettyCashManagerProps) {
   const [editingLog, setEditingLog] = useState<PettyCashLog | null>(null);
   const [formData, setFormData] = useState({
     projectId: "",
@@ -51,8 +53,27 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
 
   // Fetch petty cash logs
   const { data: pettyCashLogs, isLoading } = useQuery({
-    queryKey: showAllLogs ? ["/api/petty-cash"] : ["/api/petty-cash/invoice", invoiceId],
+    queryKey: showAllLogs 
+      ? ["/api/petty-cash", { filterStatus, filterAssigned }] 
+      : ["/api/petty-cash/invoice", invoiceId],
     enabled: showAllLogs || !!invoiceId,
+    select: (data: any) => {
+      if (!showAllLogs || !data) return data;
+      
+      let filteredData = Array.isArray(data) ? data : [data];
+      
+      // Filter by status if specified
+      if (filterStatus) {
+        filteredData = filteredData.filter(log => log.status === filterStatus);
+      }
+      
+      // Filter by assigned status if specified
+      if (filterAssigned) {
+        filteredData = filteredData.filter(log => log.costCenter && log.costCenter.trim() !== "");
+      }
+      
+      return filteredData;
+    }
   });
 
   // Update petty cash log mutation

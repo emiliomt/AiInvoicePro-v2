@@ -1,14 +1,17 @@
+import { useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import PettyCashManager from "@/components/PettyCashManager";
 import ThresholdConfig from "@/components/ThresholdConfig";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { DollarSign, Clock, CheckCircle, XCircle } from "lucide-react";
 
 export default function PettyCash() {
   const { user } = useAuth();
+  const [activeTab, setActiveTab] = useState("all");
 
   // Fetch petty cash stats
   const { data: stats } = useQuery({
@@ -17,6 +20,7 @@ export default function PettyCash() {
       const pending = data.filter(log => log.status === "pending_approval").length;
       const approved = data.filter(log => log.status === "approved").length;
       const rejected = data.filter(log => log.status === "rejected").length;
+      const assigned = data.filter(log => log.costCenter && log.costCenter !== "").length;
       const totalValue = data.reduce((sum, log) => sum + parseFloat(log.invoice.totalAmount || "0"), 0);
       
       return {
@@ -24,6 +28,7 @@ export default function PettyCash() {
         pending,
         approved,
         rejected,
+        assigned,
         totalValue: totalValue.toFixed(2),
       };
     },
@@ -42,7 +47,7 @@ export default function PettyCash() {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -98,6 +103,20 @@ export default function PettyCash() {
               </div>
             </CardContent>
           </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Assigned</p>
+                  <p className="text-3xl font-bold text-indigo-600">{stats?.assigned || 0}</p>
+                </div>
+                <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <DollarSign className="text-indigo-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
         </div>
 
         {/* Threshold Configuration */}
@@ -110,26 +129,55 @@ export default function PettyCash() {
           </CardContent>
         </Card>
 
-        {/* Filter Tabs */}
-        <div className="mb-6">
-          <div className="flex space-x-4">
-            <Badge variant="secondary" className="bg-blue-100 text-blue-800 cursor-pointer px-4 py-2">
-              All ({stats?.total || 0})
-            </Badge>
-            <Badge variant="outline" className="cursor-pointer px-4 py-2 hover:bg-yellow-50">
-              Pending ({stats?.pending || 0})
-            </Badge>
-            <Badge variant="outline" className="cursor-pointer px-4 py-2 hover:bg-green-50">
-              Approved ({stats?.approved || 0})
-            </Badge>
-            <Badge variant="outline" className="cursor-pointer px-4 py-2 hover:bg-red-50">
-              Rejected ({stats?.rejected || 0})
-            </Badge>
-          </div>
-        </div>
+        {/* Tabs for filtering petty cash records */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid w-full grid-cols-5">
+            <TabsTrigger value="all" className="flex items-center space-x-2">
+              <span>All</span>
+              <Badge variant="secondary" className="ml-1">{stats?.total || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="pending" className="flex items-center space-x-2">
+              <Clock size={16} />
+              <span>Pending</span>
+              <Badge variant="secondary" className="ml-1">{stats?.pending || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="approved" className="flex items-center space-x-2">
+              <CheckCircle size={16} />
+              <span>Approved</span>
+              <Badge variant="secondary" className="ml-1">{stats?.approved || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="rejected" className="flex items-center space-x-2">
+              <XCircle size={16} />
+              <span>Rejected</span>
+              <Badge variant="secondary" className="ml-1">{stats?.rejected || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="assigned" className="flex items-center space-x-2">
+              <DollarSign size={16} />
+              <span>Assigned</span>
+              <Badge variant="secondary" className="ml-1">{stats?.assigned || 0}</Badge>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Petty Cash Manager Component */}
-        <PettyCashManager showAllLogs={true} />
+          <TabsContent value="all" className="mt-6">
+            <PettyCashManager showAllLogs={true} />
+          </TabsContent>
+
+          <TabsContent value="pending" className="mt-6">
+            <PettyCashManager showAllLogs={true} filterStatus="pending_approval" />
+          </TabsContent>
+
+          <TabsContent value="approved" className="mt-6">
+            <PettyCashManager showAllLogs={true} filterStatus="approved" />
+          </TabsContent>
+
+          <TabsContent value="rejected" className="mt-6">
+            <PettyCashManager showAllLogs={true} filterStatus="rejected" />
+          </TabsContent>
+
+          <TabsContent value="assigned" className="mt-6">
+            <PettyCashManager showAllLogs={true} filterAssigned={true} />
+          </TabsContent>
+        </Tabs>
       </div>
     </div>
   );
