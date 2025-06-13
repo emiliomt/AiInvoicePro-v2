@@ -205,14 +205,24 @@ export default function Invoices() {
                         View Details
                       </Button>
                       {isPDFFile(invoice.fileName) && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handlePreviewClick(invoice)}
-                        >
-                          <FileIcon size={16} className="mr-2" />
-                          Preview
-                        </Button>
+                        <>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => handlePreviewClick(invoice)}
+                          >
+                            <FileIcon size={16} className="mr-2" />
+                            Preview
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => window.open(`/preview/${invoice.id}`, '_blank')}
+                          >
+                            <FileIcon size={16} className="mr-2" />
+                            View in Tab
+                          </Button>
+                        </>
                       )}
                       <Button variant="outline" size="sm">
                         <Download size={16} className="mr-2" />
@@ -313,16 +323,25 @@ export default function Invoices() {
                     Close
                   </Button>
                   {isPDFFile(selectedInvoice.fileName) && (
-                    <Button 
-                      variant="outline"
-                      onClick={() => {
-                        setShowDetailsModal(false);
-                        handlePreviewClick(selectedInvoice);
-                      }}
-                    >
-                      <FileIcon size={16} className="mr-2" />
-                      Preview PDF
-                    </Button>
+                    <>
+                      <Button 
+                        variant="outline"
+                        onClick={() => {
+                          setShowDetailsModal(false);
+                          handlePreviewClick(selectedInvoice);
+                        }}
+                      >
+                        <FileIcon size={16} className="mr-2" />
+                        Preview PDF
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        onClick={() => window.open(`/preview/${selectedInvoice.id}`, '_blank')}
+                      >
+                        <FileIcon size={16} className="mr-2" />
+                        View in Tab
+                      </Button>
+                    </>
                   )}
                   <Button variant="outline">
                     <Download size={16} className="mr-2" />

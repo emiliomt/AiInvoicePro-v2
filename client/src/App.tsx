@@ -7,15 +7,18 @@ import { useAuth } from "@/hooks/useAuth";
 import NotFound from "@/pages/not-found";
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
-import Invoices from "@/pages/Invoices";
-import Approvals from "@/pages/Approvals";
-import ValidationRules from "@/pages/ValidationRules";
-import PettyCash from "@/pages/PettyCash";
-import POMatching from "@/pages/POMatching";
-import PurchaseOrders from "@/pages/PurchaseOrders";
-import Reports from "@/pages/Reports";
-import ProjectValidation from "@/pages/ProjectValidation";
-import { ErrorBoundary } from "react-error-boundary";
+import Invoices from "./pages/Invoices";
+import InvoicePreview from "./pages/InvoicePreview";
+import POMatching from "./pages/POMatching";
+import Approvals from "./pages/Approvals";
+import Reports from "./pages/Reports";
+import Settings from "./pages/Settings";
+import ValidationRules from "./pages/ValidationRules";
+import PurchaseOrders from "./pages/PurchaseOrders";
+import PettyCash from "./pages/PettyCash";
+import ProjectValidation from "./pages/ProjectValidation";
+import Profile from "./pages/Profile";
+import NotFound from "./pages/not-found";
 import React from "react";
 
 // Placeholder components for Profile and Settings pages
@@ -64,6 +67,7 @@ function Router() {
           <Route path="/" component={Dashboard} />
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/invoices" component={Invoices} />
+          <Route path="/preview/:id" component={InvoicePreview} />
           <Route path="/approvals" component={Approvals} />
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />

@@ -756,7 +756,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   
 
-  // Serve invoice file for preview
+  // Serve invoice file for preview (metadata)
   app.get('/api/invoices/:id/preview', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
@@ -777,21 +777,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "File not available for preview or not a PDF" });
       }
 
-      // In a real implementation, you would serve from secure storage
-      // For now, we'll return a placeholder response indicating the file would be served
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
-      res.setHeader('Cache-Control', 'private, no-cache');
-      
-      // This is a placeholder - in production you would stream the actual file
       res.status(200).json({ 
         message: "PDF preview endpoint ready", 
         fileName: invoice.fileName,
-        previewUrl: `/api/invoices/${invoiceId}/preview`
+        previewUrl: `/api/invoices/${invoiceId}/preview/file`
       });
     } catch (error) {
       console.error("Error serving invoice preview:", error);
       res.status(500).json({ message: "Failed to serve invoice preview" });
+    }
+  });
+
+  // Serve actual PDF file for preview
+  app.get('/api/invoices/:id/preview/file', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).send('Invoice not found');
+      }
+
+      // Check if user owns the invoice
+      const userId = req.user.claims.sub;
+      if (invoice.userId !== userId) {
+        return res.status(403).send('Access denied');
+      }
+
+      // Check if file exists and is a PDF
+      if (!invoice.fileName?.toLowerCase().endsWith('.pdf')) {
+        return res.status(404).send('File not found or not a PDF');
+      }
+
+      // For demonstration purposes, we'll create a sample PDF response
+      // In production, you would stream from your secure file storage
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Check if we have a stored file path, otherwise create a demo PDF
+      if (invoice.fileUrl && fs.existsSync(invoice.fileUrl)) {
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        fs.createReadStream(invoice.fileUrl).pipe(res);
+      } else {
+        // Create a minimal PDF for demonstration
+        const PDFDocument = await import('pdfkit');
+        const doc = new PDFDocument.default();
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        
+        doc.pipe(res);
+        
+        // Add content to the PDF
+        doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
+        doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
+        doc.text(`Invoice ID: ${invoice.id}`, 100, 160);
+        doc.text(`Vendor: ${invoice.vendorName || 'N/A'}`, 100, 180);
+        doc.text(`Amount: ${invoice.totalAmount || 'N/A'} ${invoice.currency || 'USD'}`, 100, 200);
+        doc.text(`Date: ${invoice.invoiceDate || 'N/A'}`, 100, 220);
+        
+        doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
+        doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
+        
+        doc.end();
+      }
+    } catch (error) {
+      console.error("Error serving PDF file:", error);
+      res.status(500).send('Failed to serve PDF file');
     }
   });
 

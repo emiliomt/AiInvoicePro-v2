@@ -1,22 +1,10 @@
 
+import { useParams, useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { X, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-interface PDFPreviewModalProps {
-  isOpen: boolean;
-  onClose: () => void;
-  invoiceId: number;
-  fileName: string;
-}
 
 declare global {
   interface Window {
@@ -24,12 +12,9 @@ declare global {
   }
 }
 
-export default function PDFPreviewModal({ 
-  isOpen, 
-  onClose, 
-  invoiceId, 
-  fileName 
-}: PDFPreviewModalProps) {
+export default function InvoicePreview() {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -39,8 +24,13 @@ export default function PDFPreviewModal({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
+  const { data: invoice } = useQuery({
+    queryKey: [`/api/invoices/${id}`],
+    enabled: !!id,
+  });
+
   useEffect(() => {
-    if (isOpen && window.pdfjsLib) {
+    if (id && window.pdfjsLib) {
       loadPDF();
     }
     return () => {
@@ -48,7 +38,7 @@ export default function PDFPreviewModal({
         pdfDoc.destroy();
       }
     };
-  }, [isOpen, invoiceId]);
+  }, [id]);
 
   useEffect(() => {
     if (pdfDoc && currentPage) {
@@ -67,7 +57,7 @@ export default function PDFPreviewModal({
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       }
 
-      const url = `/api/invoices/${invoiceId}/preview/file`;
+      const url = `/api/invoices/${id}/preview/file`;
       const loadingTask = window.pdfjsLib.getDocument(url);
       
       const pdf = await loadingTask.promise;
@@ -115,7 +105,7 @@ export default function PDFPreviewModal({
   const handleDownload = async () => {
     try {
       setIsLoading(true);
-      const response = await fetch(`/api/invoices/${invoiceId}/preview/file`);
+      const response = await fetch(`/api/invoices/${id}/preview/file`);
       
       if (!response.ok) {
         throw new Error('Failed to download file');
@@ -125,7 +115,7 @@ export default function PDFPreviewModal({
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = fileName;
+      link.download = invoice?.fileName || 'invoice.pdf';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -133,7 +123,7 @@ export default function PDFPreviewModal({
 
       toast({
         title: "Download Started",
-        description: `Downloading ${fileName}...`,
+        description: `Downloading ${invoice?.fileName}...`,
       });
     } catch (error) {
       toast({
@@ -163,18 +153,28 @@ export default function PDFPreviewModal({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] p-0">
-        <DialogHeader className="p-6 pb-4 border-b">
-          <div className="flex items-center justify-between">
-            <div>
-              <DialogTitle className="text-lg font-semibold">
-                PDF Preview
-              </DialogTitle>
-              <DialogDescription className="mt-1">
-                {fileName}
-              </DialogDescription>
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white border-b shadow-sm">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-16">
+            <div className="flex items-center space-x-4">
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate('/invoices')}
+              >
+                <ArrowLeft size={16} className="mr-2" />
+                Back to Invoices
+              </Button>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">
+                  {invoice?.fileName || 'Invoice Preview'}
+                </h1>
+                <p className="text-sm text-gray-600">Invoice #{invoice?.invoiceNumber || id}</p>
+              </div>
             </div>
+
             <div className="flex items-center space-x-2">
               {totalPages > 1 && (
                 <>
@@ -228,19 +228,15 @@ export default function PDFPreviewModal({
                 <Download size={16} className="mr-2" />
                 Download
               </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClose}
-              >
-                <X size={16} />
-              </Button>
             </div>
           </div>
-        </DialogHeader>
-        
-        <div className="flex-1 overflow-auto p-4">
-          <div className="bg-gray-100 rounded-lg p-8 min-h-[600px] flex items-center justify-center">
+        </div>
+      </div>
+
+      {/* PDF Viewer */}
+      <div className="flex-1 p-8">
+        <div className="max-w-5xl mx-auto">
+          <div className="bg-gray-100 rounded-lg p-8 min-h-[800px] flex items-center justify-center">
             {isLoading && (
               <div className="text-center">
                 <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
@@ -275,7 +271,7 @@ export default function PDFPreviewModal({
             )}
           </div>
         </div>
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
