@@ -1,0 +1,85 @@
+Build a modular Project Matching feature that uses AI to automatically assign an invoice to a project, but only if the invoice is not flagged as petty cash. Follow the steps below incrementally:
+
+🔹 Step 1 — Scaffold the Project Matching System
+Create a new route /invoices/:id/match-project
+
+Add a backend service /api/invoices/:id/match-project
+
+Load invoice metadata: project_name, address, city, total_amount
+
+Fetch the list of validated projects from the Project Validation database
+
+Display invoice info and project candidates on the page
+
+🔹 Step 2 — Add Petty Cash Filtering (Pre-Match Gate)
+Check invoice total against a user-defined petty cash threshold (e.g. 500)
+
+If invoice is petty cash:
+
+Set petty_cash: true in invoice
+
+Skip project matching UI
+
+Show a banner: “Petty cash invoice — no project matching required”
+
+Else:
+
+Continue to AI project matching
+
+🔹 Step 3 — Implement AI Project Matching
+Build a backend function matchProjectToInvoice(invoice, projectList, threshold)
+
+Compare:
+
+project_name, address, city from the invoice
+
+Against each project in the DB
+
+Use GPT or embeddings to generate a confidence score (0–100) for each match
+
+Return top 3 matches sorted by score
+
+🔹 Step 4 — Confidence Threshold Controls
+Add a slider or input on the UI where user defines the minimum confidence required to auto-match (default: 80%)
+
+If best match exceeds threshold:
+
+Auto-assign project and show confirmation:
+“Matched to Project XYZ (confidence: 92%)”
+
+If no match exceeds threshold:
+
+Show top 3 suggestions with manual selection buttons
+
+🔹 Step 5 — Manual Matching UI & Fallbacks
+Allow user to:
+
+Select one of the suggested projects
+
+Search/select from all validated projects
+
+Add a new project if needed
+
+Store user override in match_status = "manual" and log who matched it
+
+🔹 Step 6 — Store Match Metadata
+In the invoice record, save:
+
+json
+Copiar
+Editar
+{
+  "matched_project_id": "...",
+  "match_confidence": 91,
+  "matched_by": "AI" | "user",
+  "match_status": "auto" | "manual" | "no_match",
+  "petty_cash": true | false
+}
+🔹 Step 7 — UI Integration
+Left panel: invoice metadata
+
+Right panel: match confidence and suggestions
+
+Show match badge in invoice list/detail view:
+
+“Project Matched ✅” / “Manual Match” / “Petty Cash 🪙” / “No Match ❌”

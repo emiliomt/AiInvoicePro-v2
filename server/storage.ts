@@ -137,6 +137,22 @@ export interface IStorage {
   createPredictiveAlerts(alerts: InsertPredictiveAlert[]): Promise<PredictiveAlert[]>;
   getPredictiveAlerts(invoiceId: number): Promise<PredictiveAlert[]>;
   getTopIssuesThisMonth(): Promise<any[]>;
+
+  // Project matching operations
+  updateInvoiceProjectMatch(
+    invoiceId: number, 
+    projectId: string | null, 
+    confidence: number | null,
+    matchedBy: string | null,
+    matchStatus: string | null
+  ): Promise<Invoice>;
+  getInvoiceWithProjectMatch(invoiceId: number): Promise<(Invoice & { matchedProject?: Project }) | undefined>;
+  getProjectMatchingStats(): Promise<{
+    totalMatched: number;
+    autoMatched: number;
+    manualMatched: number;
+    unmatched: number;
+  }>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1006,6 +1022,76 @@ export class DatabaseStorage implements IStorage {
     }
 
     return matrix[str2.length][str1.length];
+  }
+
+  // Project matching operations
+  async updateInvoiceProjectMatch(
+    invoiceId: number, 
+    projectId: string | null, 
+    confidence: number | null,
+    matchedBy: string | null,
+    matchStatus: string | null
+  ): Promise<Invoice> {
+    const [updatedInvoice] = await db
+      .update(invoices)
+      .set({
+        matchedProjectId: projectId,
+        matchConfidence: confidence?.toString(),
+        matchedBy,
+        matchStatus,
+        updatedAt: new Date()
+      })
+      .where(eq(invoices.id, invoiceId))
+      .returning();
+    
+    return updatedInvoice;
+  }
+
+  async getInvoiceWithProjectMatch(invoiceId: number): Promise<(Invoice & { matchedProject?: Project }) | undefined> {
+    const result = await db
+      .select({
+        invoice: invoices,
+        project: projects
+      })
+      .from(invoices)
+      .leftJoin(projects, eq(invoices.matchedProjectId, projects.projectId))
+      .where(eq(invoices.id, invoiceId));
+
+    if (result.length === 0) return undefined;
+
+    const { invoice, project } = result[0];
+    return {
+      ...invoice,
+      matchedProject: project || undefined
+    };
+  }
+
+  async getProjectMatchingStats(): Promise<{
+    totalMatched: number;
+    autoMatched: number;
+    manualMatched: number;
+    unmatched: number;
+  }> {
+    const [stats] = await db
+      .select({
+        totalInvoices: count(),
+        matchedInvoices: count(invoices.matchedProjectId),
+        autoMatched: sql<number>`COUNT(CASE WHEN ${invoices.matchedBy} = 'AI' THEN 1 END)`,
+        manualMatched: sql<number>`COUNT(CASE WHEN ${invoices.matchedBy} = 'user' THEN 1 END)`
+      })
+      .from(invoices);
+
+    const totalMatched = Number(stats.matchedInvoices);
+    const autoMatched = Number(stats.autoMatched);
+    const manualMatched = Number(stats.manualMatched);
+    const unmatched = Number(stats.totalInvoices) - totalMatched;
+
+    return {
+      totalMatched,
+      autoMatched,
+      manualMatched,
+      unmatched
+    };
   }
 }
 

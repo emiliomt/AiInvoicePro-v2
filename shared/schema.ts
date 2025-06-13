@@ -75,6 +75,11 @@ export const invoices = pgTable("invoices", {
   extractedData: jsonb("extracted_data"),
   projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
+  // Project matching fields
+  matchedProjectId: varchar("matched_project_id"),
+  matchConfidence: decimal("match_confidence", { precision: 5, scale: 2 }), // 0-100
+  matchedBy: varchar("matched_by"), // "AI" | "user"
+  matchStatus: varchar("match_status"), // "auto" | "manual" | "no_match"
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
