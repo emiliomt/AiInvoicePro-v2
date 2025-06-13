@@ -17,67 +17,72 @@ interface ExtractedInvoiceData {
   companyName: string | null;
   concept: string | null;
   projectName: string | null;
+  vendorAddress: string | null;
+  buyerTaxId: string | null;
+  buyerAddress: string | null;
+  descriptionSummary: string | null;
+  projectAddress: string | null;
+  projectCity: string | null;
+  notes: string | null;
   lineItems: Array<{
     description: string;
     quantity: string;
     unitPrice: string;
     totalPrice: string;
+    itemType?: string;
   }>;
   confidenceScore: string;
 }
 
 export async function extractInvoiceData(ocrText: string): Promise<ExtractedInvoiceData> {
   try {
-    const prompt = `Extract structured data from this invoice OCR text. The invoice may be in Spanish or English. Respond with JSON in the exact format specified:
+    const prompt = `You are an intelligent document parser specialized in Latin American electronic invoices. Your task is to extract structured data from raw OCR text or plain PDF content. Extract the fields consistently, using contextual logic to improve accuracy.
 
 OCR Text:
 ${ocrText}
 
-Extract the following information and return as JSON:
+🔹 Core Fields to Extract - Return as JSON:
 {
-  "vendorName": "string or null",
-  "invoiceNumber": "string or null", 
-  "invoiceDate": "YYYY-MM-DD or null",
-  "dueDate": "YYYY-MM-DD or null",
-  "totalAmount": "decimal string or null",
-  "taxAmount": "decimal string or null",
-  "subtotal": "decimal string or null",
-  "currency": "string (default USD)",
-  "taxId": "string or null",
-  "companyName": "string or null",
-  "concept": "string or null",
-  "projectName": "string or null",
+  "vendorName": "...",                      // Emisor / Proveedor / Razón Social
+  "taxId": "...",                           // Vendor NIT / RFC / CUIT
+  "vendorAddress": "...",
+  "companyName": "...",                     // Cliente / Adquiriente / Buyer
+  "buyerTaxId": "...",                      // Buyer NIT / RFC / CUIT
+  "buyerAddress": "...",
+  "invoiceNumber": "...",                   // Nro. Factura / Folio
+  "invoiceDate": "YYYY-MM-DD",              // Fecha de emisión
+  "dueDate": "YYYY-MM-DD",                  // Fecha de vencimiento
+  "subtotal": "0.00",
+  "taxAmount": "0.00",
+  "totalAmount": "0.00",
+  "currency": "COP",                        // COP / MXN / USD, etc.
+  "concept": "...",                         // Raw line item descriptions
+  "descriptionSummary": "...",              // One-line summary of services/goods
+  "projectName": "...",                     // Project or Obra (e.g. Etapa II)
+  "projectAddress": "...",                  // Street name and number
+  "projectCity": "...",                     // City (e.g. Bogotá, Barranquilla)
+  "notes": "...",                           // Additional observations or terms
   "lineItems": [
     {
-      "description": "string",
-      "quantity": "decimal string",
-      "unitPrice": "decimal string", 
-      "totalPrice": "decimal string"
+      "description": "...",
+      "unitPrice": "0.00",
+      "quantity": "0",
+      "totalPrice": "0.00",
+      "itemType": "Labor"                   // or "Materials"
     }
   ],
-  "confidenceScore": "decimal string 0-1"
+  "confidenceScore": "0.00"                 // 0-1 confidence score
 }
 
-Field Mapping (English/Spanish):
-- vendorName: Look for "Vendor", "Supplier", "From" OR "Proveedor", "De", "Empresa"
-- invoiceNumber: Look for "Invoice Number", "Invoice #" OR "Número de Factura", "Factura No.", "Orden de Compra"
-- invoiceDate: Look for "Invoice Date", "Date" OR "Fecha de Emisión", "Fecha de Factura", "Fecha"
-- dueDate: Look for "Due Date", "Payment Due" OR "Fecha de Vencimiento", "Vence", "Fecha Límite"
-- totalAmount: Look for "Total", "Amount Due", "Total Amount" OR "Valor de Venta", "Total", "Importe Total"
-- taxAmount: Look for "Tax", "VAT", "Sales Tax" OR "Valor Impto", "Valor de Impuesto", "IVA", "Impuesto"
-- taxId: Look for "Tax ID", "VAT Number" OR "NIT" (for vendor), "No." (for buyer), "RUT", "RFC"
-- companyName: Look for "Bill To", "Customer", "Client" OR "Razón Social", "Cliente", "Empresa Cliente"
-- concept: Look for "Description", "Services", "Purpose" OR "Descripción", "Concepto", "Servicios"
-- projectName: Look for "Project", "Project Name" OR "Proyecto", "Nombre del Proyecto"
-- lineItems descriptions: Look under "Items", "Products", "Services" OR "Artículos", "Productos", "Descripción"
-
-Rules:
+🧩 Extraction Logic:
+- Use consistent label recognition across LatAm formats (Colombia, Mexico, etc.)
+- Extract buyerTaxId from fields labeled as "NIT del Cliente", "RFC Cliente", or similar
+- Use spatial proximity to companyName to identify the correct field
+- Return null for any field that is not found in the document
 - Extract actual values from the text, don't invent data
-- Use null if information is not found
 - Convert dates to YYYY-MM-DD format
 - Extract amounts as decimal strings without currency symbols
-- Handle both Spanish and English field labels
-- Provide confidence score based on text clarity and completeness`;
+- Handle both Spanish and English field labels`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
@@ -111,6 +116,13 @@ Rules:
       companyName: extractedData.companyName || null,
       concept: extractedData.concept || null,
       projectName: extractedData.projectName || null,
+      vendorAddress: extractedData.vendorAddress || null,
+      buyerTaxId: extractedData.buyerTaxId || null,
+      buyerAddress: extractedData.buyerAddress || null,
+      descriptionSummary: extractedData.descriptionSummary || null,
+      projectAddress: extractedData.projectAddress || null,
+      projectCity: extractedData.projectCity || null,
+      notes: extractedData.notes || null,
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
       confidenceScore: extractedData.confidenceScore || "0.0",
     };
