@@ -21,7 +21,7 @@ const upload = multer({
     const allowedTypes = /jpeg|jpg|png|pdf/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
@@ -41,7 +41,7 @@ const excelUpload = multer({
     const mimetype = file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' || 
                     file.mimetype === 'application/vnd.ms-excel' ||
                     file.mimetype === 'application/octet-stream';
-    
+
     if (mimetype && extname) {
       return cb(null, true);
     } else {
@@ -203,7 +203,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Project deleted successfully" });
     } catch (error) {
       console.error("Error deleting project:", error);
-      
+
       // Handle specific constraint violation errors
       if (error instanceof Error) {
         if (error.message.includes("Cannot delete project")) {
@@ -215,7 +215,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
       res.status(500).json({ message: "Failed to delete project" });
     }
   });
@@ -227,7 +227,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "All projects deleted successfully" });
     } catch (error) {
       console.error("Error deleting all projects:", error);
-      
+
       if (error instanceof Error) {
         if (error.message.includes("Cannot delete projects")) {
           return res.status(400).json({ message: error.message });
@@ -238,7 +238,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           });
         }
       }
-      
+
       res.status(500).json({ message: "Failed to delete all projects" });
     }
   });
@@ -384,17 +384,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId } = req.params;
       const { action } = req.body;
       const userId = req.user?.id || "unknown";
-      
+
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
-      
+
       const updates = {
         validationStatus,
         isValidated,
         validatedAt: new Date(),
         validatedBy: userId,
       };
-      
+
       const project = await storage.updateProject(projectId, updates);
       res.json(project);
     } catch (error) {
@@ -421,7 +421,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet);
-        
+
         // Debug: Log the first row to see available column names
         if (data.length > 0) {
           console.log('Excel columns available:', Object.keys(data[0]));
@@ -436,7 +436,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Handle VAT Reimbursement as boolean
             const vatReimbursement = row['VAT Reimbursement'] || row['vatReimbursement'] || row['VAT'] || row['vat'];
             let vatNumber = '';
-            
+
             if (typeof vatReimbursement === 'boolean') {
               vatNumber = vatReimbursement.toString();
             } else if (typeof vatReimbursement === 'string') {
@@ -493,7 +493,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/projects/template', isAuthenticated, async (req, res) => {
     try {
       const XLSX = await import('xlsx');
-      
+
       const templateData = [
         {
           'Project ID': 'PROJ-2024-001',
@@ -541,11 +541,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error("Multer error:", err);
         return res.status(400).json({ message: err.message });
       }
-      
+
       try {
         const userId = req.user.claims.sub;
         const file = req.file;
-        
+
         console.log("Upload request received:", { 
           hasFile: !!file, 
           fieldname: file?.fieldname,
@@ -553,7 +553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           mimetype: file?.mimetype,
           size: file?.size 
         });
-        
+
         if (!file) {
           return res.status(400).json({ message: "No file uploaded" });
         }
@@ -578,7 +578,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice || invoice.userId !== req.user.claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -595,7 +595,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice || invoice.userId !== req.user.claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -611,7 +611,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice || invoice.userId !== req.user.claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -629,7 +629,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .then(async (ocrText) => {
           // Extract structured data using AI
           const extractedData = await extractInvoiceData(ocrText);
-          
+
           // Update invoice with extracted data
           await storage.updateInvoice(invoice.id, {
             status: "extracted",
@@ -647,14 +647,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Check if this is a petty cash invoice
           const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
-          
+
           if (isPettyCash) {
             // Create petty cash log entry
             await storage.createPettyCashLog({
               invoiceId: invoice.id,
               status: "pending_approval",
             });
-            
+
             // Update invoice status to indicate petty cash
             await storage.updateInvoice(invoice.id, {
               status: "petty_cash_pending" as any,
@@ -675,12 +675,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Find potential PO matches
             const potentialMatches = await storage.findPotentialMatches(invoice, lineItems);
-            
+
             if (potentialMatches.length > 0) {
               // Create match records for all potential matches
               for (const match of potentialMatches) {
                 const matchStatus = match.matchScore >= 80 ? 'auto' : 'unresolved';
-                
+
                 await storage.createInvoicePoMatch({
                   invoiceId: invoice.id,
                   poId: match.purchaseOrder.id,
@@ -689,7 +689,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   matchDetails: match.matchDetails,
                 });
               }
-              
+
               // If we have a high-confidence match, assign the project automatically
               const bestMatch = potentialMatches[0];
               if (bestMatch.matchScore >= 80 && bestMatch.purchaseOrder.projectId) {
@@ -713,7 +713,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Get the updated invoice for discrepancy detection
           const updatedInvoice = await storage.getInvoice(invoice.id);
-          
+
           if (updatedInvoice) {
             // Run discrepancy detection
             const discrepancyResult = await checkInvoiceDiscrepancies(updatedInvoice, createdLineItems);
@@ -742,7 +742,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -780,7 +780,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
-      
+
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -792,7 +792,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updates = req.body;
       const updatedInvoice = await storage.updateInvoice(invoiceId, updates);
-      
+
       res.json(updatedInvoice);
     } catch (error) {
       console.error("Error updating invoice:", error);
@@ -805,7 +805,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
-      
+
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -840,7 +840,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
       const { comments } = req.body;
-      
+
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -875,7 +875,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
-      
+
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -919,7 +919,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ruleId = parseInt(req.params.id);
       const rule = await storage.getValidationRule(ruleId);
-      
+
       if (!rule) {
         return res.status(404).json({ message: "Validation rule not found" });
       }
@@ -934,7 +934,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/validation-rules', isAuthenticated, async (req: any, res) => {
     try {
       const ruleData = req.body;
-      
+
       // Validate required fields
       if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
         return res.status(400).json({ 
