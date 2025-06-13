@@ -105,7 +105,8 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
       updates: {
         status: "approved",
         approvedAt: new Date().toISOString(),
-        approvalNotes: formData.approvalNotes,
+        approvalNotes: formData.approvalNotes || "",
+        costCenter: "Petty Cash", // Auto-assign to Petty Cash cost center
       },
     });
   };
@@ -115,7 +116,8 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
       id: log.id,
       updates: {
         status: "rejected",
-        approvalNotes: formData.approvalNotes,
+        approvalNotes: formData.approvalNotes || "",
+        costCenter: "Petty Cash", // Auto-assign to Petty Cash cost center
       },
     });
   };

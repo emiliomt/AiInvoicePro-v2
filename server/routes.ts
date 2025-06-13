@@ -113,11 +113,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const updates = req.body;
+      
+      // Convert ISO string to Date object if approvedAt is present
+      if (updates.approvedAt && typeof updates.approvedAt === 'string') {
+        updates.approvedAt = new Date(updates.approvedAt);
+      }
+      
       const pettyCash = await storage.updatePettyCashLog(id, updates);
       res.json(pettyCash);
     } catch (error) {
       console.error("Error updating petty cash log:", error);
-      res.status(500).json({ message: "Failed to update petty cash log" });
+      res.status(500).json({ message: "Failed to update petty cash log", error: error.message });
     }
   });
 
