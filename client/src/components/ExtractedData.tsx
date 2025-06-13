@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle } from "lucide-react";
+import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
@@ -205,7 +205,7 @@ export default function ExtractedData() {
         <CardContent>
           <div className="text-center py-8">
             <div className="w-16 h-16 bg-gray-100 rounded-xl flex items-center justify-center mx-auto mb-4">
-              <InfoIcon className="text-gray-400" size={32} />
+              <Info className="text-gray-400" size={32} />
             </div>
             <p className="text-gray-500">Upload an invoice to see extracted data here</p>
           </div>
@@ -549,7 +549,7 @@ export default function ExtractedData() {
           {invoice.status === 'extracted' && (
             <div className="flex justify-between items-start pt-6 border-t border-gray-200">
               <div className="flex items-center space-x-2 text-sm text-gray-600">
-                <InfoIcon className="w-4 h-4" />
+                <Info className="w-4 h-4" />
                 <span>AI extracted data - please review for accuracy</span>
               </div>
               <div className="space-y-3">
