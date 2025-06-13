@@ -165,8 +165,8 @@ async function calculateFinalScores(
     // Calculate rule-based scores
     const nameMatch = calculateStringMatch(metadata.projectName, project.name);
     const addressMatch = calculateAddressMatch(metadata, project);
-    const vendorMatch = calculateVendorMatch(metadata.vendorName, project);
-    const amountMatch = calculateAmountMatch(metadata.totalAmount, project.budget);
+    const vendorMatch = calculateVendorMatch(metadata.vendorName || undefined, project);
+    const amountMatch = calculateAmountMatch(metadata.totalAmount, project.budget || undefined);
     
     // Weighted final score
     const finalScore = Math.round(
@@ -242,10 +242,10 @@ function calculateAddressMatch(metadata: MatchingMetadata, project: Project): nu
 }
 
 function calculateVendorMatch(vendorName?: string, project?: Project): number {
-  if (!vendorName || !project.supervisor) return 0;
+  if (!vendorName || !project?.supervisor) return 0;
   
   // Simple check if vendor name appears in project supervisor or description
-  const projectText = `${project.supervisor} ${project.description || ''}`.toLowerCase();
+  const projectText = `${project?.supervisor} ${project?.description || ''}`.toLowerCase();
   const vendor = vendorName.toLowerCase();
   
   if (projectText.includes(vendor)) return 80;
