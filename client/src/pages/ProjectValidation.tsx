@@ -163,7 +163,7 @@ export default function ProjectValidation() {
 
   const deleteAllProjectsMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch("/api/projects/delete-all", {
+      const response = await fetch("/api/projects-delete-all", {
         method: "DELETE",
       });
       if (!response.ok) {
@@ -174,6 +174,7 @@ export default function ProjectValidation() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
+      queryClient.refetchQueries({ queryKey: ["/api/projects"] });
       toast({ title: "Success", description: "All projects deleted successfully" });
     },
     onError: (error: Error) => {

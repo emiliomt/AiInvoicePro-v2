@@ -221,7 +221,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Delete all projects endpoint
-  app.delete('/api/projects/delete-all', isAuthenticated, async (req, res) => {
+  app.delete('/api/projects-delete-all', isAuthenticated, async (req, res) => {
     try {
       await storage.deleteAllProjects();
       res.json({ message: "All projects deleted successfully" });
