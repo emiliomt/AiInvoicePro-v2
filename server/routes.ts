@@ -580,7 +580,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create initial invoice record
       const invoice = await storage.createInvoice({
         userId,
-        fileName: file.originalname,
+        fileName: file.originalname || "unknown-file",
         fileBuffer: file.buffer,
         status: "processing",
       });
@@ -805,7 +805,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Determine content type based on file extension
-      const fileName = invoice.fileName.toLowerCase();
+      const fileName = (invoice.fileName || "").toLowerCase();
       let contentType = 'application/octet-stream';
       
       if (fileName.endsWith('.pdf')) {
@@ -817,7 +817,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.setHeader('Content-Type', contentType);
-      res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+      res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName || 'invoice'}"`);
       res.send(invoice.fileBuffer);
     } catch (error) {
       console.error("Error serving invoice preview:", error);
