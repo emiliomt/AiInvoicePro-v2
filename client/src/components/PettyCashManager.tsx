@@ -8,8 +8,9 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { FileUpload } from "@/components/ui/file-upload";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
-import { DollarSign, Upload, CheckCircle, XCircle, Clock } from "lucide-react";
+import { DollarSign, Upload, CheckCircle, XCircle, Clock, Edit, Trash2 } from "lucide-react";
 
 interface PettyCashLog {
   id: number;
@@ -279,6 +280,137 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false, filte
 
   // All logs view
   const logs = pettyCashLogs as PettyCashLog[];
+
+  // Check if we should show table view (for approved records)
+  const showTableView = filterStatus === "approved";
+
+  if (showTableView) {
+    return (
+      <div className="space-y-4">
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <CheckCircle className="text-green-600" size={20} />
+                <span>Approved Petty Cash Records</span>
+              </div>
+              <p className="text-sm text-gray-500">
+                Records automatically assigned to Petty Cash cost center when approved
+              </p>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {logs && logs.length > 0 ? (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Invoice #</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Project ID</TableHead>
+                      <TableHead>Cost Center</TableHead>
+                      <TableHead>Approved By</TableHead>
+                      <TableHead>Approved Date</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {logs.map((log) => (
+                      <TableRow key={log.id}>
+                        <TableCell>
+                          <div>
+                            <p className="font-medium">{log.invoice.vendorName || "Unknown Vendor"}</p>
+                            <p className="text-xs text-gray-500">{log.invoice.fileName}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell>{log.invoice.invoiceNumber || "—"}</TableCell>
+                        <TableCell>
+                          <span className="font-medium">${log.invoice.totalAmount}</span>
+                        </TableCell>
+                        <TableCell>
+                          <span className="text-sm">{log.projectId || "—"}</span>
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                            {log.costCenter || "Petty Cash"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>{log.approvedBy || "—"}</TableCell>
+                        <TableCell>
+                          {log.approvedAt ? new Date(log.approvedAt).toLocaleDateString() : "—"}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="secondary" className="bg-green-100 text-green-800">
+                            <CheckCircle size={14} className="mr-1" />
+                            Approved
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex space-x-1">
+                            <Button size="sm" variant="outline" onClick={() => handleEdit(log)}>
+                              <Edit size={14} className="mr-1" />
+                              Edit
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            ) : (
+              <div className="text-center py-12">
+                <CheckCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No Approved Records</h3>
+                <p className="text-gray-500">No petty cash records have been approved yet.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Edit Modal/Form */}
+        {editingLog && (
+          <Card>
+            <CardHeader>
+              <CardTitle>Edit Assignment</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-2 gap-4 mb-4">
+                <div>
+                  <Label htmlFor="projectId">Project ID</Label>
+                  <Input
+                    id="projectId"
+                    value={formData.projectId}
+                    onChange={(e) => setFormData(prev => ({ ...prev, projectId: e.target.value }))}
+                    placeholder="Enter project ID"
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="costCenter">Cost Center</Label>
+                  <Input
+                    id="costCenter"
+                    value={formData.costCenter}
+                    onChange={(e) => setFormData(prev => ({ ...prev, costCenter: e.target.value }))}
+                    placeholder="Enter cost center"
+                  />
+                </div>
+              </div>
+              <div className="flex space-x-2">
+                <Button onClick={handleUpdateAssignment} disabled={updateMutation.isPending}>
+                  Update Assignment
+                </Button>
+                <Button onClick={() => setEditingLog(null)} variant="outline">
+                  Cancel
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-4">
