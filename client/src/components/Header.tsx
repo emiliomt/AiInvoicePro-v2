@@ -23,8 +23,8 @@ export default function Header() {
 
   const getLinkClassName = (path: string) => {
     return isActiveRoute(path) 
-      ? "text-primary-600 font-medium border-b-2 border-primary-600 pb-4 -mb-[1px]"
-      : "text-gray-600 hover:text-gray-900 pb-4 transition-colors";
+      ? "text-primary-600 font-semibold text-sm border-b-2 border-primary-600 pb-4 -mb-[1px] whitespace-nowrap"
+      : "text-gray-600 hover:text-gray-900 pb-4 transition-colors text-sm font-medium whitespace-nowrap";
   };
 
   const getInitials = (firstName?: string, lastName?: string) => {
@@ -50,7 +50,7 @@ export default function Header() {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-16">
+        <div className="flex justify-between items-center h-18">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -62,7 +62,7 @@ export default function Header() {
           </div>
 
           {/* Navigation */}
-          <nav className="hidden md:flex space-x-8">
+          <nav className="hidden md:flex space-x-6 lg:space-x-8">
             <Link href="/" className={getLinkClassName("/")}>
               Dashboard
             </Link>
