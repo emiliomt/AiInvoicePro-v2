@@ -85,7 +85,7 @@ export default function ExtractedData() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Approval Failed",
         description: error.message,
@@ -121,7 +121,7 @@ export default function ExtractedData() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Rejection Failed",
         description: error.message,
@@ -386,7 +386,7 @@ export default function ExtractedData() {
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
-      
+
       {/* Project Assignment and PO Matching for regular invoices */}
       {!isPettyCash && (
         <ProjectAssignment 

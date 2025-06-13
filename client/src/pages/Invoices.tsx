@@ -299,7 +299,7 @@ export default function Invoices() {
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Currency</label>
-                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.currency || "USD"}</p>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.currency || "COP"}</p>
                     </div>
                   </div>
                 </div>

@@ -192,7 +192,7 @@ export const projects = pgTable("projects", {
   vatNumber: varchar("vat_number", { length: 50 }),
   supervisor: varchar("supervisor", { length: 255 }),
   budget: decimal("budget", { precision: 12, scale: 2 }),
-  currency: varchar("currency", { length: 3 }).default("USD"),
+  currency: varchar("currency", { length: 3 }).default("COP"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
   status: varchar("status", { length: 50 }).default("active"),
@@ -211,7 +211,7 @@ export const purchaseOrders = pgTable("purchase_orders", {
   vendorName: varchar("vendor_name", { length: 255 }).notNull(),
   projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId),
   amount: decimal("amount", { precision: 12, scale: 2 }).notNull(),
-  currency: varchar("currency", { length: 3 }).default("USD"),
+  currency: varchar("currency", { length: 3 }).default("COP"),
   items: jsonb("items").notNull(), // Array of line items
   issueDate: timestamp("issue_date").notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),

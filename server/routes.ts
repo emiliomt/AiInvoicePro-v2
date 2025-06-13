@@ -113,12 +113,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const id = parseInt(req.params.id);
       const updates = req.body;
-      
+
       // Convert ISO string to Date object if approvedAt is present
       if (updates.approvedAt && typeof updates.approvedAt === 'string') {
         updates.approvedAt = new Date(updates.approvedAt);
       }
-      
+
       const pettyCash = await storage.updatePettyCashLog(id, updates);
       res.json(pettyCash);
     } catch (error) {
@@ -420,11 +420,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const key = req.params.key;
       const setting = await storage.getSetting(key);
-      
+
       if (!setting) {
         return res.status(404).json({ message: "Setting not found" });
       }
-      
+
       res.json(setting);
     } catch (error) {
       console.error("Error fetching setting:", error);
@@ -436,11 +436,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const key = req.params.key;
       const { value } = req.body;
-      
+
       if (!value) {
         return res.status(400).json({ message: "Value is required" });
       }
-      
+
       const setting = await storage.updateSetting(key, value);
       res.json(setting);
     } catch (error) {
@@ -486,7 +486,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.put('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
       const { value } = req.body;
-      
+
       if (value === undefined || value === null) {
         return res.status(400).json({ message: "Settings value is required" });
       }
@@ -512,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Convert other types to string and then to JSON
         settingsJson = JSON.stringify(value);
       }
-      
+
       const setting = await storage.updateSetting('user_preferences', settingsJson);
       res.json({ 
         message: "Settings updated successfully",
@@ -531,7 +531,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/auth/change-password', isAuthenticated, async (req, res) => {
     try {
       const { currentPassword, newPassword } = req.body;
-      
+
       if (!currentPassword || !newPassword) {
         return res.status(400).json({ message: "Current and new passwords are required" });
       }
@@ -548,7 +548,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // 1. Verify the current password
       // 2. Hash the new password
       // 3. Update the user's password in the database
-      
+
       // For this demo, we'll just return success
       res.json({ message: "Password changed successfully" });
     } catch (error) {
@@ -673,7 +673,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'VAT Reimbursement': true,
           'Superintendent Name': 'Diana Martinez',
           'Budget': '50000',
-          'Currency': 'USD'
+          'Currency': 'COP'
         },
         {
           'Project ID': 'PROJ-2024-002',
@@ -684,7 +684,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'VAT Reimbursement': false,
           'Superintendent Name': 'Indira Garcia',
           'Budget': '75000',
-          'Currency': 'USD'
+          'Currency': 'COP'
         }
       ];
 
@@ -731,17 +731,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fs = await import('fs');
       const path = await import('path');
       const uploadsDir = path.join(process.cwd(), 'uploads');
-      
+
       // Ensure uploads directory exists
       if (!fs.existsSync(uploadsDir)) {
         fs.mkdirSync(uploadsDir, { recursive: true });
       }
-      
+
       // Generate unique filename
       const fileExt = path.extname(file.originalname);
       const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
       const filePath = path.join(uploadsDir, uniqueFileName);
-      
+
       // Write file to disk
       fs.writeFileSync(filePath, file.buffer);
 
@@ -924,7 +924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  
+
 
   // Serve invoice file for preview (metadata)
   app.get('/api/invoices/:id/preview', isAuthenticated, async (req: any, res) => {
@@ -983,7 +983,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // In production, you would stream from your secure file storage
       const fs = await import('fs');
       const path = await import('path');
-      
+
       // Check if we have a stored file path, otherwise create a demo PDF
       if (invoice.fileUrl && fs.existsSync(invoice.fileUrl)) {
         const stat = fs.statSync(invoice.fileUrl);
@@ -992,10 +992,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
         res.setHeader('Accept-Ranges', 'bytes');
-        
+
         const stream = fs.createReadStream(invoice.fileUrl);
         stream.pipe(res);
-        
+
         stream.on('error', (err) => {
           console.error('Stream error:', err);
           if (!res.headersSent) {
@@ -1006,15 +1006,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Create a minimal PDF for demonstration
         const PDFDocument = await import('pdfkit');
         const doc = new PDFDocument.default();
-        
+
         // Set headers before piping
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
-        
+
         // Pipe the PDF to response
         doc.pipe(res);
-        
+
         // Add content to the PDF
         doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
         doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
@@ -1022,18 +1022,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doc.text(`Vendor: ${invoice.vendorName || 'N/A'}`, 100, 180);
         doc.text(`Amount: ${invoice.totalAmount || 'N/A'} ${invoice.currency || 'USD'}`, 100, 200);
         doc.text(`Date: ${invoice.invoiceDate || 'N/A'}`, 100, 220);
-        
+
         doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
         doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
         doc.text('You can download this file using the download button.', 100, 300);
-        
+
         // Add some more content to make it a proper PDF
         doc.addPage();
         doc.fontSize(16).text('Additional Information', 100, 100);
         doc.fontSize(12).text('This is page 2 of the demo invoice.', 100, 140);
         doc.text('Status: ' + (invoice.status || 'Unknown'), 100, 160);
         doc.text('Created: ' + (invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'Unknown'), 100, 180);
-        
+
         // Finalize the PDF
         doc.end();
       }
