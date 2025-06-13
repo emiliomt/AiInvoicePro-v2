@@ -1,5 +1,8 @@
+
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useAuth } from "@/hooks/useAuth";
+import Header from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -23,7 +26,8 @@ import {
   Settings,
   Eye,
   Zap,
-  Filter
+  Filter,
+  DollarSign
 } from "lucide-react";
 
 interface Invoice {
@@ -77,11 +81,13 @@ interface InvoiceProjectMatch {
 }
 
 export default function ProjectMatcher() {
+  const { user } = useAuth();
   const [confidenceThreshold, setConfidenceThreshold] = useState([85]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [matchingInProgress, setMatchingInProgress] = useState<number | null>(null);
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
+  const [activeTab, setActiveTab] = useState("all");
   
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -94,6 +100,33 @@ export default function ProjectMatcher() {
   // Fetch all projects
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
+  });
+
+  // Calculate stats for the dashboard cards
+  const { data: stats } = useQuery({
+    queryKey: ["/api/invoices"],
+    select: (data: Invoice[]) => {
+      const totalInvoices = data.length;
+      const matched = data.filter(invoice => 
+        invoice.extractedData?.projectName && 
+        getMatchStatus(invoice, confidenceThreshold[0]).status === "matched"
+      ).length;
+      const needsReview = data.filter(invoice => 
+        getMatchStatus(invoice, confidenceThreshold[0]).status === "needs_review"
+      ).length;
+      const unmatched = totalInvoices - matched - needsReview;
+      const totalValue = data.reduce((sum, invoice) => 
+        sum + parseFloat(invoice.totalAmount || "0"), 0
+      );
+      
+      return {
+        totalInvoices,
+        matched,
+        needsReview,
+        unmatched,
+        totalValue: totalValue.toFixed(2),
+      };
+    },
   });
 
   // Find project matches mutation
@@ -109,6 +142,11 @@ export default function ProjectMatcher() {
     onSuccess: (matches, invoiceId) => {
       queryClient.setQueryData(["/api/invoices", invoiceId, "project-matches"], matches);
       setMatchingInProgress(null);
+      
+      // Invalidate related queries to update stats across modules
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      
       toast({
         title: "Matching Complete",
         description: `Found ${matches.length} potential project matches`,
@@ -142,6 +180,7 @@ export default function ProjectMatcher() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success",
         description: "Project match created successfully",
@@ -162,6 +201,7 @@ export default function ProjectMatcher() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success", 
         description: "Active project match updated",
@@ -195,10 +235,8 @@ export default function ProjectMatcher() {
     });
   };
 
-  const getMatchStatus = (invoice: Invoice) => {
-    // This would need to be enhanced to check actual matches from the database
+  const getMatchStatus = (invoice: Invoice, threshold: number = 85) => {
     const hasExtractedData = invoice.extractedData?.projectName || invoice.extractedData?.address;
-    const threshold = confidenceThreshold[0];
     
     if (!hasExtractedData) {
       return { status: "needs_review", label: "Needs Review", color: "yellow" };
@@ -214,7 +252,7 @@ export default function ProjectMatcher() {
   };
 
   const filteredInvoices = invoices.filter(invoice => {
-    const statusMatch = filterStatus === "all" || getMatchStatus(invoice).status === filterStatus;
+    const statusMatch = activeTab === "all" || getMatchStatus(invoice, confidenceThreshold[0]).status === activeTab;
     const searchMatch = !searchTerm || 
       invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -224,226 +262,297 @@ export default function ProjectMatcher() {
   });
 
   return (
-    <div className="container mx-auto p-6 space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-3xl font-bold">Project Matcher</h1>
-          <p className="text-muted-foreground">
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="mb-8">
+          <h1 className="text-2xl font-bold text-gray-900">Project Matcher</h1>
+          <p className="text-gray-600 mt-2">
             Match invoices with projects using AI-powered analysis
           </p>
         </div>
-        <div className="flex items-center gap-4">
-          <Badge variant="outline" className="text-sm">
-            <Target className="w-4 h-4 mr-2" />
-            Threshold: {confidenceThreshold[0]}%
-          </Badge>
-        </div>
-      </div>
 
-      <Tabs defaultValue="overview" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="overview">Invoice Overview</TabsTrigger>
-          <TabsTrigger value="settings">Matching Settings</TabsTrigger>
-          <TabsTrigger value="unresolved">Unresolved Matches</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="overview" className="space-y-6">
-          {/* Controls */}
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Settings className="w-5 h-5" />
-                Matching Controls
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div className="space-y-2">
-                  <Label>Confidence Threshold</Label>
-                  <div className="px-4 py-2 border rounded-md">
-                    <Slider
-                      value={confidenceThreshold}
-                      onValueChange={setConfidenceThreshold}
-                      max={100}
-                      min={0}
-                      step={5}
-                      className="w-full"
-                    />
-                    <div className="flex justify-between text-sm text-muted-foreground mt-1">
-                      <span>0%</span>
-                      <span className="font-medium">{confidenceThreshold[0]}%</span>
-                      <span>100%</span>
-                    </div>
-                  </div>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Invoices</p>
+                  <p className="text-3xl font-bold text-gray-900">{stats?.totalInvoices || 0}</p>
                 </div>
-
-                <div className="space-y-2">
-                  <Label>Filter by Status</Label>
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Invoices</SelectItem>
-                      <SelectItem value="matched">Matched</SelectItem>
-                      <SelectItem value="needs_review">Needs Review</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-2">
-                  <Label>Search</Label>
-                  <div className="relative">
-                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                    <Input
-                      placeholder="Search invoices..."
-                      value={searchTerm}
-                      onChange={(e) => setSearchTerm(e.target.value)}
-                      className="pl-10"
-                    />
-                  </div>
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Building2 className="text-blue-600" size={24} />
                 </div>
               </div>
             </CardContent>
           </Card>
 
-          {/* Invoice Table */}
           <Card>
-            <CardHeader>
-              <CardTitle>Invoice Project Matching</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice</TableHead>
-                    <TableHead>Extracted Address</TableHead>
-                    <TableHead>Extracted City</TableHead>
-                    <TableHead>Best Match</TableHead>
-                    <TableHead>Confidence</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.map((invoice) => {
-                    const status = getMatchStatus(invoice);
-                    const isMatching = matchingInProgress === invoice.id;
-                    
-                    return (
-                      <TableRow key={invoice.id}>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{invoice.fileName}</div>
-                            <div className="text-sm text-muted-foreground">
-                              {invoice.vendorName || 'N/A'}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <MapPin className="w-4 h-4 text-muted-foreground" />
-                            {invoice.extractedData?.address || 'N/A'}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {invoice.extractedData?.city || 'N/A'}
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">
-                              {invoice.extractedData?.projectName || 'No match found'}
-                            </div>
-                            <div className="text-sm text-muted-foreground">
-                              <Building2 className="w-3 h-3 inline mr-1" />
-                              Project matching needed
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-2">
-                            <Progress value={Math.random() * 100} className="w-20" />
-                            <span className="text-sm">
-                              {Math.round(Math.random() * 100)}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <Badge 
-                            variant={status.color === "green" ? "default" : "secondary"}
-                            className={
-                              status.color === "green" 
-                                ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                                : status.color === "yellow"
-                                ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                                : ""
-                            }
-                          >
-                            {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
-                            {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
-                            {status.label}
-                          </Badge>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              size="sm"
-                              variant="outline"
-                              onClick={() => handleFindMatches(invoice)}
-                              disabled={isMatching}
-                            >
-                              {isMatching ? (
-                                <>
-                                  <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                  Matching...
-                                </>
-                              ) : (
-                                <>
-                                  <Zap className="w-4 h-4 mr-2" />
-                                  Find Matches
-                                </>
-                              )}
-                            </Button>
-                            
-                            <Dialog>
-                              <DialogTrigger asChild>
-                                <Button size="sm" variant="ghost">
-                                  <Eye className="w-4 h-4" />
-                                </Button>
-                              </DialogTrigger>
-                              <DialogContent className="max-w-4xl">
-                                <DialogHeader>
-                                  <DialogTitle>Invoice Details & Manual Matching</DialogTitle>
-                                </DialogHeader>
-                                <InvoiceMatchingDialog 
-                                  invoice={invoice} 
-                                  projects={projects}
-                                  onManualMatch={handleManualMatch}
-                                />
-                              </DialogContent>
-                            </Dialog>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Matched</p>
+                  <p className="text-3xl font-bold text-green-600">{stats?.matched || 0}</p>
+                </div>
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-green-600" size={24} />
+                </div>
+              </div>
             </CardContent>
           </Card>
-        </TabsContent>
 
-        <TabsContent value="settings">
-          <MatchingSettings 
-            threshold={confidenceThreshold[0]} 
-            onThresholdChange={(value) => setConfidenceThreshold([value])}
-          />
-        </TabsContent>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Needs Review</p>
+                  <p className="text-3xl font-bold text-yellow-600">{stats?.needsReview || 0}</p>
+                </div>
+                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="text-yellow-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
 
-        <TabsContent value="unresolved">
-          <UnresolvedMatches />
-        </TabsContent>
-      </Tabs>
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Value</p>
+                  <p className="text-3xl font-bold text-gray-900">${stats?.totalValue || "0.00"}</p>
+                </div>
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <DollarSign className="text-purple-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Threshold</p>
+                  <p className="text-3xl font-bold text-indigo-600">{confidenceThreshold[0]}%</p>
+                </div>
+                <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <Target className="text-indigo-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Matching Configuration */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Project Matching Configuration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Confidence Threshold</Label>
+                <div className="px-4 py-2 border rounded-md">
+                  <Slider
+                    value={confidenceThreshold}
+                    onValueChange={setConfidenceThreshold}
+                    max={100}
+                    min={0}
+                    step={5}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-sm text-muted-foreground mt-1">
+                    <span>0%</span>
+                    <span className="font-medium">{confidenceThreshold[0]}%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Filter by Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Invoices</SelectItem>
+                    <SelectItem value="matched">Matched</SelectItem>
+                    <SelectItem value="needs_review">Needs Review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                  <Input
+                    placeholder="Search invoices..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="pl-10"
+                  />
+                </div>
+              </div>
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Tabs for filtering project matching records */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="all" className="flex items-center space-x-2">
+              <span>All</span>
+              <Badge variant="secondary" className="ml-1">{stats?.totalInvoices || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="matched" className="flex items-center space-x-2">
+              <CheckCircle size={16} />
+              <span>Matched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.matched || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="needs_review" className="flex items-center space-x-2">
+              <AlertTriangle size={16} />
+              <span>Needs Review</span>
+              <Badge variant="secondary" className="ml-1">{stats?.needsReview || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="unmatched" className="flex items-center space-x-2">
+              <Clock size={16} />
+              <span>Unmatched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.unmatched || 0}</Badge>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value={activeTab} className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoice Project Matching</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Extracted Address</TableHead>
+                      <TableHead>Extracted City</TableHead>
+                      <TableHead>Best Match</TableHead>
+                      <TableHead>Confidence</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInvoices.map((invoice) => {
+                      const status = getMatchStatus(invoice, confidenceThreshold[0]);
+                      const isMatching = matchingInProgress === invoice.id;
+                      
+                      return (
+                        <TableRow key={invoice.id}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">{invoice.fileName}</div>
+                              <div className="text-sm text-muted-foreground">
+                                {invoice.vendorName || 'N/A'}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {invoice.extractedData?.address || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {invoice.extractedData?.city || 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {invoice.extractedData?.projectName || 'No match found'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                <Building2 className="w-3 h-3 inline mr-1" />
+                                Project matching needed
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-2">
+                              <Progress value={Math.random() * 100} className="w-20" />
+                              <span className="text-sm">
+                                {Math.round(Math.random() * 100)}%
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={status.color === "green" ? "default" : "secondary"}
+                              className={
+                                status.color === "green" 
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                                  : status.color === "yellow"
+                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+                                  : ""
+                              }
+                            >
+                              {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
+                              {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
+                              {status.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleFindMatches(invoice)}
+                                disabled={isMatching}
+                              >
+                                {isMatching ? (
+                                  <>
+                                    <Clock className="w-4 h-4 mr-2 animate-spin" />
+                                    Matching...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="w-4 h-4 mr-2" />
+                                    Find Matches
+                                  </>
+                                )}
+                              </Button>
+                              
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button size="sm" variant="ghost">
+                                    <Eye className="w-4 h-4" />
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-4xl">
+                                  <DialogHeader>
+                                    <DialogTitle>Invoice Details & Manual Matching</DialogTitle>
+                                  </DialogHeader>
+                                  <InvoiceMatchingDialog 
+                                    invoice={invoice} 
+                                    projects={projects}
+                                    onManualMatch={handleManualMatch}
+                                  />
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
     </div>
   );
 }
@@ -512,117 +621,5 @@ function InvoiceMatchingDialog({
         </div>
       </div>
     </div>
-  );
-}
-
-// Matching Settings Component
-function MatchingSettings({ 
-  threshold, 
-  onThresholdChange 
-}: { 
-  threshold: number; 
-  onThresholdChange: (value: number) => void; 
-}) {
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Matching Configuration</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-6">
-        <div className="space-y-4">
-          <div>
-            <Label className="text-base font-medium">Auto-Match Confidence Threshold</Label>
-            <p className="text-sm text-muted-foreground mb-4">
-              Invoices with match confidence above this threshold will be automatically matched.
-            </p>
-            <div className="space-y-2">
-              <Slider
-                value={[threshold]}
-                onValueChange={(value) => onThresholdChange(value[0])}
-                max={100}
-                min={0}
-                step={5}
-                className="w-full max-w-sm"
-              />
-              <div className="flex justify-between text-sm text-muted-foreground max-w-sm">
-                <span>0% (Manual only)</span>
-                <span className="font-medium">{threshold}%</span>
-                <span>100% (Exact match)</span>
-              </div>
-            </div>
-          </div>
-          
-          <div className="pt-4 border-t">
-            <h4 className="font-medium mb-2">Matching Criteria Weights</h4>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="font-medium">Project Name</div>
-                <div className="text-muted-foreground">Weight: 50%</div>
-              </div>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="font-medium">Address</div>
-                <div className="text-muted-foreground">Weight: 30%</div>
-              </div>
-              <div className="p-3 bg-muted rounded-lg">
-                <div className="font-medium">City</div>
-                <div className="text-muted-foreground">Weight: 20%</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-// Unresolved Matches Component  
-function UnresolvedMatches() {
-  const { data: unresolvedMatches = [] } = useQuery<(InvoiceProjectMatch & { invoice: Invoice; project: Project })[]>({
-    queryKey: ["/api/project-matches/unresolved"],
-  });
-
-  return (
-    <Card>
-      <CardHeader>
-        <CardTitle>Unresolved Project Matches</CardTitle>
-      </CardHeader>
-      <CardContent>
-        {unresolvedMatches.length === 0 ? (
-          <div className="text-center py-8 text-muted-foreground">
-            <CheckCircle className="w-12 h-12 mx-auto mb-4 text-green-500" />
-            <p>All project matches have been resolved!</p>
-          </div>
-        ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead>Invoice</TableHead>
-                <TableHead>Potential Project</TableHead>
-                <TableHead>Match Score</TableHead>
-                <TableHead>Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {unresolvedMatches.map((match) => (
-                <TableRow key={match.id}>
-                  <TableCell>{match.invoice.fileName}</TableCell>
-                  <TableCell>{match.project.name}</TableCell>
-                  <TableCell>
-                    <Badge variant="outline">{match.matchScore}%</Badge>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex gap-2">
-                      <Button size="sm" variant="outline">
-                        Review
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        )}
-      </CardContent>
-    </Card>
   );
 }
