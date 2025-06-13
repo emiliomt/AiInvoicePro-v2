@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { DollarSign, InfoIcon, CheckCircle, XCircle, AlertTriangle, Building2 } from "lucide-react";
+import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
