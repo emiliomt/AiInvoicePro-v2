@@ -54,7 +54,7 @@ export default function ProjectMatching() {
   const queryClient = useQueryClient();
 
   // Get invoice details
-  const { data: invoice, isLoading: invoiceLoading } = useQuery({
+  const { data: invoice, isLoading: invoiceLoading } = useQuery<any>({
     queryKey: ['/api/invoices', invoiceId],
     enabled: !!invoiceId,
   });
@@ -62,7 +62,13 @@ export default function ProjectMatching() {
   // Get matching results
   const { data: matchingResult, isLoading: matchingLoading, refetch: refetchMatching } = useQuery<MatchingResult>({
     queryKey: ['/api/invoices', invoiceId, 'match-project', confidenceThreshold[0]],
-    queryFn: () => apiRequest(`/api/invoices/${invoiceId}/match-project?threshold=${confidenceThreshold[0]}`),
+    queryFn: async () => {
+      const response = await fetch(`/api/invoices/${invoiceId}/match-project?threshold=${confidenceThreshold[0]}`);
+      if (!response.ok) {
+        throw new Error('Failed to fetch matching results');
+      }
+      return response.json() as MatchingResult;
+    },
     enabled: !!invoiceId,
   });
 
@@ -74,10 +80,11 @@ export default function ProjectMatching() {
       matchedBy: 'AI' | 'user';
       matchStatus: 'auto' | 'manual' | 'no_match';
     }) => {
-      return apiRequest(`/api/invoices/${invoiceId}/match-project`, {
-        method: 'POST',
-        body: JSON.stringify({ projectId, confidence, matchedBy, matchStatus }),
-        headers: { 'Content-Type': 'application/json' },
+      return apiRequest(`/api/invoices/${invoiceId}/match-project`, 'POST', { 
+        projectId, 
+        confidence, 
+        matchedBy, 
+        matchStatus 
       });
     },
     onSuccess: () => {
