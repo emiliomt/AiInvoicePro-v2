@@ -137,6 +137,18 @@ export interface IStorage {
   createPredictiveAlerts(alerts: InsertPredictiveAlert[]): Promise<PredictiveAlert[]>;
   getPredictiveAlerts(invoiceId: number): Promise<PredictiveAlert[]>;
   getTopIssuesThisMonth(): Promise<any[]>;
+
+  // Project matching operations
+  createInvoiceProjectMatch(match: InsertInvoiceProjectMatch): Promise<InvoiceProjectMatch>;
+  updateInvoiceProjectMatch(id: number, updates: Partial<InsertInvoiceProjectMatch>): Promise<InvoiceProjectMatch>;
+  getInvoiceProjectMatches(invoiceId: number): Promise<(InvoiceProjectMatch & { project: Project })[]>;
+  getUnresolvedProjectMatches(): Promise<(InvoiceProjectMatch & { invoice: Invoice; project: Project })[]>;
+  findPotentialProjectMatches(invoice: Invoice): Promise<{
+    project: Project;
+    matchScore: number;
+    matchDetails: any;
+  }[]>;
+  setActiveProjectMatch(invoiceId: number, matchId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1006,6 +1018,103 @@ export class DatabaseStorage implements IStorage {
     }
 
     return matrix[str2.length][str1.length];
+  }
+
+  // Project matching operations
+  async createInvoiceProjectMatch(match: InsertInvoiceProjectMatch): Promise<InvoiceProjectMatch> {
+    const [created] = await db
+      .insert(invoiceProjectMatches)
+      .values(match)
+      .returning();
+    return created;
+  }
+
+  async updateInvoiceProjectMatch(id: number, updates: Partial<InsertInvoiceProjectMatch>): Promise<InvoiceProjectMatch> {
+    const [updated] = await db
+      .update(invoiceProjectMatches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(invoiceProjectMatches.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getInvoiceProjectMatches(invoiceId: number): Promise<(InvoiceProjectMatch & { project: Project })[]> {
+    const matches = await db
+      .select({
+        id: invoiceProjectMatches.id,
+        invoiceId: invoiceProjectMatches.invoiceId,
+        projectId: invoiceProjectMatches.projectId,
+        matchScore: invoiceProjectMatches.matchScore,
+        status: invoiceProjectMatches.status,
+        matchDetails: invoiceProjectMatches.matchDetails,
+        isActive: invoiceProjectMatches.isActive,
+        createdAt: invoiceProjectMatches.createdAt,
+        updatedAt: invoiceProjectMatches.updatedAt,
+        project: projects,
+      })
+      .from(invoiceProjectMatches)
+      .innerJoin(projects, eq(invoiceProjectMatches.projectId, projects.projectId))
+      .where(eq(invoiceProjectMatches.invoiceId, invoiceId))
+      .orderBy(desc(invoiceProjectMatches.matchScore));
+
+    return matches;
+  }
+
+  async getUnresolvedProjectMatches(): Promise<(InvoiceProjectMatch & { invoice: Invoice; project: Project })[]> {
+    const matches = await db
+      .select({
+        id: invoiceProjectMatches.id,
+        invoiceId: invoiceProjectMatches.invoiceId,
+        projectId: invoiceProjectMatches.projectId,
+        matchScore: invoiceProjectMatches.matchScore,
+        status: invoiceProjectMatches.status,
+        matchDetails: invoiceProjectMatches.matchDetails,
+        isActive: invoiceProjectMatches.isActive,
+        createdAt: invoiceProjectMatches.createdAt,
+        updatedAt: invoiceProjectMatches.updatedAt,
+        invoice: invoices,
+        project: projects,
+      })
+      .from(invoiceProjectMatches)
+      .innerJoin(invoices, eq(invoiceProjectMatches.invoiceId, invoices.id))
+      .innerJoin(projects, eq(invoiceProjectMatches.projectId, projects.projectId))
+      .where(eq(invoiceProjectMatches.status, "unresolved"))
+      .orderBy(desc(invoiceProjectMatches.createdAt));
+
+    return matches;
+  }
+
+  async findPotentialProjectMatches(invoice: Invoice): Promise<{
+    project: Project;
+    matchScore: number;
+    matchDetails: any;
+  }[]> {
+    // Get all active projects
+    const allProjects = await this.getProjects();
+    
+    // Use the project matcher service
+    const { projectMatcher } = await import('./projectMatcher.js');
+    const matches = await projectMatcher.matchInvoiceWithProjects(invoice, allProjects);
+    
+    return matches.map(match => ({
+      project: match.project,
+      matchScore: match.matchScore,
+      matchDetails: match.matchDetails,
+    }));
+  }
+
+  async setActiveProjectMatch(invoiceId: number, matchId: number): Promise<void> {
+    // Deactivate all matches for this invoice
+    await db
+      .update(invoiceProjectMatches)
+      .set({ isActive: false, updatedAt: new Date() })
+      .where(eq(invoiceProjectMatches.invoiceId, invoiceId));
+
+    // Activate the selected match
+    await db
+      .update(invoiceProjectMatches)
+      .set({ isActive: true, status: 'manual', updatedAt: new Date() })
+      .where(eq(invoiceProjectMatches.id, matchId));
   }
 }
 

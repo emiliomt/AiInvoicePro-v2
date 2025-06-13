@@ -232,6 +232,19 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Invoice-Project matches table for project matcher
+export const invoiceProjectMatches = pgTable("invoice_project_matches", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId).notNull(),
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
+  status: matchStatusEnum("status").default("auto"),
+  matchDetails: jsonb("match_details"), // Details about what matched (address, city, project name similarity)
+  isActive: boolean("is_active").default(true), // Allow multiple matches but only one active
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Flag types and severity enums
 export const flagTypeEnum = pgEnum("flag_type", [
   "duplicate_invoice",
@@ -341,6 +354,17 @@ export const invoicePoMatchesRelations = relations(invoicePoMatches, ({ one }) =
   }),
 }));
 
+export const invoiceProjectMatchesRelations = relations(invoiceProjectMatches, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceProjectMatches.invoiceId],
+    references: [invoices.id],
+  }),
+  project: one(projects, {
+    fields: [invoiceProjectMatches.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
 export const invoiceFlagsRelations = relations(invoiceFlags, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceFlags.invoiceId],
@@ -385,6 +409,9 @@ export type PurchaseOrder = typeof purchaseOrders.$inferSelect;
 
 export type InsertInvoicePoMatch = typeof invoicePoMatches.$inferInsert;
 export type InvoicePoMatch = typeof invoicePoMatches.$inferSelect;
+
+export type InsertInvoiceProjectMatch = typeof invoiceProjectMatches.$inferInsert;
+export type InvoiceProjectMatch = typeof invoiceProjectMatches.$inferSelect;
 
 export type InsertInvoiceFlag = typeof invoiceFlags.$inferInsert;
 export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
@@ -440,6 +467,12 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 });
 
 export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoiceProjectMatchSchema = createInsertSchema(invoiceProjectMatches).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
