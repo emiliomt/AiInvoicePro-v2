@@ -7,6 +7,7 @@ import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
+import { matchInvoiceToProject, extractInvoiceDataForMatching, formatProjectsForMatching } from "./services/projectMatchingService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -1286,6 +1287,115 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error: any) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
+    }
+  });
+
+  // AI-powered project matching endpoint
+  app.post('/api/invoices/:id/match-project', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      
+      // Get the invoice and its extracted data
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+
+      // Get all available projects
+      const projects = await storage.getProjects();
+      if (projects.length === 0) {
+        return res.status(400).json({ 
+          message: 'No projects available for matching',
+          suggestion: 'Please add projects to the system first'
+        });
+      }
+
+      // Extract invoice data for matching
+      const invoiceData = extractInvoiceDataForMatching(invoice, (invoice as any).extractedData);
+      
+      // Format projects for the AI matching service
+      const formattedProjects = formatProjectsForMatching(projects);
+
+      // Perform AI-powered matching
+      const matchResult = await matchInvoiceToProject(invoiceData, formattedProjects);
+
+      // If a good match was found, assign the project to the invoice
+      if (matchResult.project_id && matchResult.confidence_score > 0.65) {
+        await storage.assignProjectToInvoice(invoiceId, matchResult.project_id);
+      }
+
+      // Store the matching result for audit purposes
+      const matchRecord = {
+        invoiceId,
+        projectId: matchResult.project_id,
+        confidenceScore: matchResult.confidence_score,
+        matchReason: matchResult.match_reason,
+        flagged: matchResult.flagged,
+        createdAt: new Date().toISOString()
+      };
+
+      // Create flags if the match is low confidence or flagged
+      if (matchResult.flagged || matchResult.confidence_score < 0.65) {
+        await storage.createInvoiceFlags([{
+          invoiceId,
+          flagType: 'low_confidence_project_match',
+          severity: matchResult.confidence_score < 0.3 ? 'high' : 'medium',
+          description: `Project matching ${matchResult.flagged ? 'flagged' : 'low confidence'}: ${matchResult.match_reason}`,
+          resolvedAt: null,
+          resolvedBy: null
+        }]);
+      }
+
+      res.json({
+        success: true,
+        match: matchResult,
+        assigned: matchResult.project_id && matchResult.confidence_score > 0.65,
+        message: matchResult.flagged 
+          ? 'Project matching completed but flagged for review'
+          : matchResult.confidence_score > 0.65 
+            ? 'Project successfully matched and assigned'
+            : 'Project matching completed but confidence too low for auto-assignment'
+      });
+
+    } catch (error: any) {
+      console.error('Error in project matching:', error);
+      res.status(500).json({ 
+        message: 'Failed to match project',
+        error: error.message 
+      });
+    }
+  });
+
+  // Get project matching results for an invoice
+  app.get('/api/invoices/:id/project-match', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      
+      // Get invoice details with any assigned project
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: 'Invoice not found' });
+      }
+
+      // Get any flags related to project matching
+      const flags = await storage.getInvoiceFlags(invoiceId);
+      const projectMatchFlags = flags.filter(flag => 
+        flag.flagType === 'low_confidence_project_match'
+      );
+
+      res.json({
+        invoiceId,
+        assignedProject: (invoice as any).projectId || null,
+        matchingFlags: projectMatchFlags,
+        hasMatchingIssues: projectMatchFlags.length > 0
+      });
+
+    } catch (error: any) {
+      console.error('Error fetching project match data:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch project match data',
+        error: error.message 
+      });
     }
   });
 

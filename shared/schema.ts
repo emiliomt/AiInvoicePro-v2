@@ -239,7 +239,8 @@ export const flagTypeEnum = pgEnum("flag_type", [
   "missing_po_match",
   "tax_id_mismatch",
   "vendor_mismatch",
-  "date_discrepancy"
+  "date_discrepancy",
+  "low_confidence_project_match"
 ]);
 
 export const flagSeverityEnum = pgEnum("flag_severity", [
