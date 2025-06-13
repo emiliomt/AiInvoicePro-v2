@@ -37,7 +37,7 @@ import {
   type InsertPredictiveAlert,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, count, sum, sql } from "drizzle-orm";
+import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -586,10 +586,16 @@ export class DatabaseStorage implements IStorage {
   async deleteAllProjects(): Promise<void> {
     try {
       // Check if any projects have associated purchase orders
+      const projectList = await db.select({projectId: projects.projectId}).from(projects);
+      if(projectList.length === 0){
+        return;
+      }
+      const projectIds = projectList.map((project)=> project.projectId);
+
       const [associatedPOs] = await db
         .select({ count: count() })
         .from(purchaseOrders)
-        .innerJoin(projects, eq(purchaseOrders.projectId, projects.projectId));
+        .where(inArray(purchaseOrders.projectId, projectIds));
 
       if (associatedPOs.count > 0) {
         throw new Error(`Cannot delete projects because ${associatedPOs.count} project(s) have associated purchase orders. Please remove or reassign the purchase orders first.`);
@@ -600,13 +606,13 @@ export class DatabaseStorage implements IStorage {
         .select({ count: count() })
         .from(invoicePoMatches)
         .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
-        .innerJoin(projects, eq(purchaseOrders.projectId, projects.projectId));
+        .where(inArray(purchaseOrders.projectId, projectIds));
 
       if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
         throw new Error(`Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.`);
       }
 
-      const result = await db.delete(projects);
+      const result = await db.delete(projects).where(inArray(projects.projectId, projectIds));
       console.log("Projects deleted successfully:", result);
     } catch (error) {
       console.error("Error deleting all projects:", error);
