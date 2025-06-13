@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Eye, Download, Calendar, DollarSign, Trash2 } from "lucide-react";
+import { useState } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -14,6 +15,13 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/Header";
 import { format } from "date-fns";
@@ -34,6 +42,9 @@ interface Invoice {
 }
 
 export default function Invoices() {
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [showDetailsModal, setShowDetailsModal] = useState(false);
+  
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
   });
@@ -170,7 +181,14 @@ export default function Invoices() {
                       </div>
                     </div>
                     <div className="flex justify-end space-x-2">
-                      <Button variant="outline" size="sm">
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setSelectedInvoice(invoice);
+                          setShowDetailsModal(true);
+                        }}
+                      >
                         <Eye size={16} className="mr-2" />
                         View Details
                       </Button>
@@ -212,6 +230,75 @@ export default function Invoices() {
             </div>
           )}
         </div>
+
+        {/* Invoice Details Modal */}
+        <Dialog open={showDetailsModal} onOpenChange={setShowDetailsModal}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Invoice Details</DialogTitle>
+              <DialogDescription>
+                Detailed information for {selectedInvoice?.fileName}
+              </DialogDescription>
+            </DialogHeader>
+            {selectedInvoice && (
+              <div className="space-y-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">File Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.fileName}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Status</label>
+                      <div className="mt-1">
+                        <Badge className={getStatusColor(selectedInvoice.status)}>
+                          {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
+                        </Badge>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.vendorName || "N/A"}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Invoice Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.invoiceNumber || "N/A"}</p>
+                    </div>
+                  </div>
+                  <div className="space-y-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Total Amount</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {formatAmount(selectedInvoice.totalAmount, selectedInvoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Invoice Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.invoiceDate)}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Due Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.dueDate)}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Upload Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.createdAt)}</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
+                    Close
+                  </Button>
+                  <Button variant="outline">
+                    <Download size={16} className="mr-2" />
+                    Download
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
