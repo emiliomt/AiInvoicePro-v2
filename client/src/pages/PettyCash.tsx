@@ -1,6 +1,7 @@
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import PettyCashManager from "@/components/PettyCashManager";
+import ThresholdConfig from "@/components/ThresholdConfig";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useQuery } from "@tanstack/react-query";
@@ -98,6 +99,16 @@ export default function PettyCash() {
             </CardContent>
           </Card>
         </div>
+
+        {/* Threshold Configuration */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="text-lg">Petty Cash Configuration</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ThresholdConfig />
+          </CardContent>
+        </Card>
 
         {/* Filter Tabs */}
         <div className="mb-6">

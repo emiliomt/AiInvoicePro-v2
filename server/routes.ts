@@ -407,6 +407,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
+
+
+  // Settings routes
+  app.get('/api/settings/:key', isAuthenticated, async (req, res) => {
+    try {
+      const key = req.params.key;
+      const setting = await storage.getSetting(key);
+      
+      if (!setting) {
+        return res.status(404).json({ message: "Setting not found" });
+      }
+      
+      res.json(setting);
+    } catch (error) {
+      console.error("Error fetching setting:", error);
+      res.status(500).json({ message: "Failed to fetch setting" });
+    }
+  });
+
+  app.put('/api/settings/:key', isAuthenticated, async (req, res) => {
+    try {
+      const key = req.params.key;
+      const { value } = req.body;
+      
+      if (!value) {
+        return res.status(400).json({ message: "Value is required" });
+      }
+      
+      const setting = await storage.updateSetting(key, value);
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating setting:", error);
+      res.status(500).json({ message: "Failed to update setting" });
+    }
+  });
+
       const updates = {
         validationStatus,
         isValidated,
