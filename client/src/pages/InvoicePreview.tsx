@@ -21,7 +21,9 @@ export default function InvoicePreview() {
   const [totalPages, setTotalPages] = useState(0);
   const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const [isAutoFit, setIsAutoFit] = useState(true);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
 
   const { data: invoice } = useQuery({
@@ -46,6 +48,17 @@ export default function InvoicePreview() {
     }
   }, [pdfDoc, currentPage, zoom]);
 
+  useEffect(() => {
+    const handleResize = () => {
+      if (isAutoFit && pdfDoc && currentPage) {
+        calculateOptimalZoom();
+      }
+    };
+
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, [isAutoFit, pdfDoc, currentPage]);
+
   const loadPDF = async () => {
     try {
       setIsLoading(true);
@@ -64,6 +77,11 @@ export default function InvoicePreview() {
       setPdfDoc(pdf);
       setTotalPages(pdf.numPages);
       setCurrentPage(1);
+      
+      // Auto-fit on load
+      if (isAutoFit) {
+        setTimeout(() => calculateOptimalZoom(), 100);
+      }
     } catch (err) {
       console.error('Error loading PDF:', err);
       setError('Failed to load PDF. The file may not be available or is corrupted.');
@@ -74,6 +92,28 @@ export default function InvoicePreview() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  const calculateOptimalZoom = async () => {
+    if (!pdfDoc || !containerRef.current) return;
+
+    try {
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: 1 });
+      
+      const container = containerRef.current;
+      const containerWidth = container.clientWidth - 64; // Account for padding
+      const containerHeight = container.clientHeight - 64;
+      
+      const scaleX = containerWidth / viewport.width;
+      const scaleY = containerHeight / viewport.height;
+      const optimalScale = Math.min(scaleX, scaleY, 1.5); // Cap at 150%
+      
+      const newZoom = Math.round(optimalScale * 100);
+      setZoom(Math.max(50, Math.min(200, newZoom))); // Keep within bounds
+    } catch (err) {
+      console.error('Error calculating optimal zoom:', err);
     }
   };
 
@@ -137,11 +177,18 @@ export default function InvoicePreview() {
   };
 
   const handleZoomIn = () => {
+    setIsAutoFit(false);
     setZoom(prev => Math.min(prev + 25, 200));
   };
 
   const handleZoomOut = () => {
+    setIsAutoFit(false);
     setZoom(prev => Math.max(prev - 25, 50));
+  };
+
+  const handleFitToWidth = () => {
+    setIsAutoFit(true);
+    calculateOptimalZoom();
   };
 
   const handlePrevPage = () => {
@@ -169,9 +216,9 @@ export default function InvoicePreview() {
               </Button>
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
-                  {invoice?.fileName || 'Invoice Preview'}
+                  {invoice?.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'Invoice Preview'}
                 </h1>
-                <p className="text-sm text-gray-600">Invoice #{invoice?.invoiceNumber || id}</p>
+                <p className="text-sm text-gray-600">{invoice?.fileName || `Document ID: ${id}`}</p>
               </div>
             </div>
 
@@ -222,6 +269,14 @@ export default function InvoicePreview() {
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleFitToWidth}
+                className={isAutoFit ? "bg-blue-50 border-blue-300" : ""}
+              >
+                Fit
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDownload}
                 disabled={isLoading}
               >
@@ -234,7 +289,7 @@ export default function InvoicePreview() {
       </div>
 
       {/* PDF Viewer */}
-      <div className="flex-1 p-8">
+      <div className="flex-1 p-8" ref={containerRef}>
         <div className="max-w-5xl mx-auto">
           <div className="bg-gray-100 rounded-lg p-8 min-h-[800px] flex items-center justify-center">
             {isLoading && (
@@ -256,11 +311,14 @@ export default function InvoicePreview() {
             )}
             
             {!isLoading && !error && (
-              <div className="bg-white shadow-lg rounded border overflow-hidden">
+              <div className="bg-white shadow-lg rounded border overflow-hidden flex items-center justify-center">
                 <canvas 
                   ref={canvasRef}
-                  className="max-w-full h-auto"
-                  style={{ display: pdfDoc ? 'block' : 'none' }}
+                  className="max-w-full max-h-full"
+                  style={{ 
+                    display: pdfDoc ? 'block' : 'none',
+                    margin: 'auto'
+                  }}
                 />
                 {!pdfDoc && (
                   <div className="p-8 text-center">
