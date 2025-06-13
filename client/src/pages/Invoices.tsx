@@ -349,19 +349,19 @@ export default function Invoices() {
                     <div>
                       <label className="text-sm font-medium text-gray-700">Tax Amount</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount(selectedInvoice.taxAmount, selectedInvoice.currency)}
+                        {formatAmount((selectedInvoice as any).taxAmount, selectedInvoice.currency)}
                       </p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Subtotal</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount(selectedInvoice.subtotal, selectedInvoice.currency)}
+                        {formatAmount((selectedInvoice as any).subtotal, selectedInvoice.currency)}
                       </p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Confidence Score</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {selectedInvoice.confidenceScore ? `${(parseFloat(selectedInvoice.confidenceScore) * 100).toFixed(1)}%` : "Not available"}
+                        {(selectedInvoice as any).confidenceScore ? `${(parseFloat((selectedInvoice as any).confidenceScore) * 100).toFixed(1)}%` : "Not available"}
                       </p>
                     </div>
                   </div>

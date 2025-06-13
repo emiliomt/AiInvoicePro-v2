@@ -727,11 +727,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "No file uploaded" });
         }
 
-      // Create initial invoice record
+      // Store file temporarily for preview functionality
+      const fs = await import('fs');
+      const path = await import('path');
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      
+      // Ensure uploads directory exists
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      
+      // Generate unique filename
+      const fileExt = path.extname(file.originalname);
+      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+      const filePath = path.join(uploadsDir, uniqueFileName);
+      
+      // Write file to disk
+      fs.writeFileSync(filePath, file.buffer);
+
+      // Create initial invoice record with file path
       const invoice = await storage.createInvoice({
         userId,
         fileName: file.originalname,
         status: "processing",
+        fileUrl: filePath,
       });
 
       res.json({ invoiceId: invoice.id, message: "Invoice uploaded successfully. Processing started." });
