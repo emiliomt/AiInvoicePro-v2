@@ -9,8 +9,8 @@ import { useToast } from "@/hooks/use-toast";
 import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
-// Set up PDF.js worker - using CDN for reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 export default function InvoicePreview() {
   const { id } = useParams<{ id: string }>();
@@ -38,21 +38,11 @@ export default function InvoicePreview() {
 
   const onDocumentLoadError = (error: Error) => {
     console.error('Error loading PDF:', error);
-    let errorMessage = 'Failed to load PDF. The file may not be available or is corrupted.';
-    
-    if (error.message.includes('cors') || error.message.includes('CORS')) {
-      errorMessage = 'PDF loading blocked by CORS policy. Please try refreshing the page.';
-    } else if (error.message.includes('worker')) {
-      errorMessage = 'PDF worker failed to load. Please check your internet connection.';
-    } else if (error.message.includes('network') || error.message.includes('fetch')) {
-      errorMessage = 'Network error loading PDF. Please check your connection and try again.';
-    }
-    
-    setError(errorMessage);
+    setError('Failed to load PDF. The file may not be available or is corrupted.');
     setIsLoading(false);
     toast({
       title: "PDF Load Error",
-      description: errorMessage,
+      description: "Failed to load the PDF file",
       variant: "destructive",
     });
   };
@@ -234,13 +224,7 @@ export default function InvoicePreview() {
             
             {!error && (
               <Document
-                file={{
-                  url: fileUrl,
-                  httpHeaders: {
-                    'Accept': 'application/pdf',
-                  },
-                  withCredentials: false,
-                }}
+                file={fileUrl}
                 onLoadSuccess={onDocumentLoadSuccess}
                 onLoadError={onDocumentLoadError}
                 loading={
@@ -250,11 +234,6 @@ export default function InvoicePreview() {
                   </div>
                 }
                 className="pdf-document"
-                options={{
-                  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
-                  cMapPacked: true,
-                  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
-                }}
               >
                 <div className="bg-white shadow-lg rounded border overflow-hidden">
                   <Page
