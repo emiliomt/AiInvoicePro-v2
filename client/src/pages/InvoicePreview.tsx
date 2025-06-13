@@ -155,7 +155,7 @@ export default function InvoicePreview() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = invoice?.fileName || 'invoice.pdf';
+      link.download = (invoice as any)?.fileName || 'invoice.pdf';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -163,7 +163,7 @@ export default function InvoicePreview() {
 
       toast({
         title: "Download Started",
-        description: `Downloading ${invoice?.fileName}...`,
+        description: `Downloading ${(invoice as any)?.fileName}...`,
       });
     } catch (error) {
       toast({
@@ -216,9 +216,9 @@ export default function InvoicePreview() {
               </Button>
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
-                  {invoice?.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'Invoice Preview'}
+                  {(invoice as any)?.invoiceNumber ? `Invoice ${(invoice as any).invoiceNumber}` : 'Invoice Preview'}
                 </h1>
-                <p className="text-sm text-gray-600">{invoice?.fileName || `Document ID: ${id}`}</p>
+                <p className="text-sm text-gray-600">{(invoice as any)?.fileName || `Document ID: ${id}`}</p>
               </div>
             </div>
 
