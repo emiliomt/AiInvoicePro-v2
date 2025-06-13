@@ -484,12 +484,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (!value) {
         return res.status(400).json({ message: "Settings value is required" });
       }
+
+      // Validate that value is a valid JSON string
+      try {
+        JSON.parse(value);
+      } catch (parseError) {
+        return res.status(400).json({ message: "Invalid JSON format for settings value" });
+      }
       
       const setting = await storage.updateSetting('user_preferences', value);
       res.json(setting);
     } catch (error) {
       console.error("Error updating user settings:", error);
-      res.status(500).json({ message: "Failed to update user settings" });
+      res.status(500).json({ 
+        message: "Failed to update user settings",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 

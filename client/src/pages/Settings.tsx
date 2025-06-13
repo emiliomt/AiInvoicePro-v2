@@ -93,15 +93,24 @@ export default function Settings() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value: JSON.stringify(settings) }),
       });
-      if (!response.ok) throw new Error('Failed to update settings');
+      if (!response.ok) {
+        const errorData = await response.text();
+        console.error('Settings update error:', errorData);
+        throw new Error(`Failed to update settings: ${response.status}`);
+      }
       return response.json();
     },
     onSuccess: () => {
       toast({ title: "Settings updated successfully" });
       queryClient.invalidateQueries({ queryKey: ['userSettings'] });
     },
-    onError: () => {
-      toast({ title: "Failed to update settings", variant: "destructive" });
+    onError: (error: Error) => {
+      console.error('Settings update failed:', error);
+      toast({ 
+        title: "Failed to update settings", 
+        description: error.message,
+        variant: "destructive" 
+      });
     },
   });
 
@@ -126,8 +135,17 @@ export default function Settings() {
   });
 
   const updateSetting = (key: keyof UserSettings, value: any) => {
-    const updatedSettings = { ...userSettings, [key]: value };
-    updateSettingsMutation.mutate(updatedSettings);
+    try {
+      const updatedSettings = { ...userSettings, [key]: value };
+      updateSettingsMutation.mutate(updatedSettings);
+    } catch (error) {
+      console.error('Error updating setting:', error);
+      toast({ 
+        title: "Error updating setting", 
+        description: "Please try again",
+        variant: "destructive" 
+      });
+    }
   };
 
   const handlePasswordSubmit = (e: React.FormEvent) => {
