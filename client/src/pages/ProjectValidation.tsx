@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import Header from "@/components/Header";
 import { z } from "zod";
+import { apiRequest } from "@/lib/api";
 
 const projectSchema = z.object({
   projectId: z.string().min(1, "Project ID is required"),
@@ -227,16 +228,13 @@ export default function ProjectValidation() {
 
     setIsImporting(true);
 
-    fetch('/api/projects/import', {
-      method: 'POST',
-      body: formData,
-    })
+    apiRequest('POST', '/api/projects/import', formData)
     .then(response => response.json())
     .then(data => {
       if (data.message) {
         toast({ title: "Import Complete", description: data.message });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-        
+
         if (data.errorDetails && data.errorDetails.length > 0) {
           console.log('Import errors:', data.errorDetails);
           toast({ 
@@ -292,7 +290,7 @@ export default function ProjectValidation() {
       toast({ title: "No Projects", description: "There are no projects to delete.", variant: "destructive" });
       return;
     }
-    
+
     if (confirm(`Are you sure you want to delete ALL ${projects.length} projects? This action cannot be undone.`)) {
       deleteAllProjectsMutation.mutate();
     }
@@ -515,7 +513,7 @@ export default function ProjectValidation() {
                   </Form>
                 </DialogContent>
               </Dialog>
-              
+
               {/* Edit Project Dialog */}
               <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                 <DialogContent className="max-w-2xl">
