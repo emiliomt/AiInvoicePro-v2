@@ -7,6 +7,7 @@ import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
+import { projectMatchingService } from "./services/projectMatchingService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -1301,6 +1302,157 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
+    }
+  });
+
+  // Project Matching API Routes
+  
+  // Get invoices pending project matching
+  app.get('/api/project-matching/pending', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoices = await storage.getInvoicesByUserId(req.user.id);
+      
+      // Filter invoices that need project matching (not petty cash, no project assigned)
+      const pendingInvoices = invoices.filter(invoice => 
+        !invoice.isPettyCash && 
+        (!invoice.matchedProjectId || invoice.matchStatus === 'pending_review')
+      );
+      
+      res.json(pendingInvoices);
+    } catch (error) {
+      console.error("Error fetching pending project matching invoices:", error);
+      res.status(500).json({ message: "Failed to fetch pending invoices" });
+    }
+  });
+
+  // Process invoice for project matching (petty cash check + AI matching)
+  app.post('/api/project-matching/:invoiceId/process', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Step 1: Check if it's petty cash
+      const pettyCashResult = await projectMatchingService.checkPettyCash(invoice);
+      
+      if (pettyCashResult.isPettyCash) {
+        // Mark as petty cash and skip project matching
+        await storage.updateInvoice(invoiceId, {
+          isPettyCash: true,
+          pettyCashChecked: true,
+          matchStatus: 'no_match',
+          matchedBy: 'system'
+        });
+        
+        return res.json({
+          isPettyCash: true,
+          pettyCashResult,
+          matches: [],
+          autoAssigned: false
+        });
+      }
+
+      // Step 2: Find project matches using AI
+      const matches = await projectMatchingService.findProjectMatches(invoice);
+      
+      // Step 3: Auto-assign if confidence threshold is met
+      const autoAssignResult = await projectMatchingService.autoAssignProject(invoice, matches);
+      
+      // Mark petty cash as checked
+      await storage.updateInvoice(invoiceId, {
+        pettyCashChecked: true
+      });
+
+      res.json({
+        isPettyCash: false,
+        pettyCashResult,
+        matches,
+        autoAssigned: autoAssignResult.autoAssigned,
+        autoAssignResult
+      });
+    } catch (error) {
+      console.error("Error processing invoice for project matching:", error);
+      res.status(500).json({ message: "Failed to process invoice for project matching" });
+    }
+  });
+
+  // Manually assign project to invoice
+  app.post('/api/project-matching/:invoiceId/assign', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const { projectId, matchScore } = req.body;
+      
+      if (!projectId) {
+        return res.status(400).json({ message: "Project ID is required" });
+      }
+
+      await projectMatchingService.assignProjectManually(invoiceId, projectId, matchScore);
+      
+      res.json({ message: "Project assigned successfully" });
+    } catch (error) {
+      console.error("Error manually assigning project:", error);
+      res.status(500).json({ message: "Failed to assign project" });
+    }
+  });
+
+  // Mark invoice as having no project match
+  app.post('/api/project-matching/:invoiceId/no-match', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      await projectMatchingService.markNoMatch(invoiceId);
+      
+      res.json({ message: "Invoice marked as no project match" });
+    } catch (error) {
+      console.error("Error marking invoice as no match:", error);
+      res.status(500).json({ message: "Failed to mark invoice as no match" });
+    }
+  });
+
+  // Get project matching settings
+  app.get('/api/project-matching/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const pettyCashThreshold = await storage.getSetting("petty_cash_threshold");
+      const autoMatchThreshold = await storage.getSetting("auto_match_threshold");
+      
+      res.json({
+        pettyCashThreshold: parseFloat(pettyCashThreshold?.value || "100"),
+        autoMatchThreshold: parseFloat(autoMatchThreshold?.value || "85")
+      });
+    } catch (error) {
+      console.error("Error fetching project matching settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  // Update project matching settings
+  app.put('/api/project-matching/settings', isAuthenticated, async (req: any, res) => {
+    try {
+      const { pettyCashThreshold, autoMatchThreshold } = req.body;
+      
+      if (pettyCashThreshold !== undefined) {
+        await storage.setSetting({
+          key: "petty_cash_threshold",
+          value: pettyCashThreshold.toString(),
+          description: "Threshold amount for petty cash classification"
+        });
+      }
+      
+      if (autoMatchThreshold !== undefined) {
+        await storage.setSetting({
+          key: "auto_match_threshold", 
+          value: autoMatchThreshold.toString(),
+          description: "Confidence threshold for automatic project matching"
+        });
+      }
+      
+      res.json({ message: "Settings updated successfully" });
+    } catch (error) {
+      console.error("Error updating project matching settings:", error);
+      res.status(500).json({ message: "Failed to update settings" });
     }
   });
 
