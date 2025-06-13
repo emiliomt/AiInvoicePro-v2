@@ -69,7 +69,9 @@ export default function Header() {
             <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
             </Link>
-            
+            <Link href="/approvals" className={getLinkClassName("/approvals")}>
+              Approvals
+            </Link>
             <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
               Validation Rules
             </Link>
@@ -84,9 +86,6 @@ export default function Header() {
             </Link>
             <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
               PO Matching
-            </Link>
-            <Link href="/project-matching" className={getLinkClassName("/project-matching")}>
-              AI Project Matching
             </Link>
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports

@@ -1,25 +1,27 @@
 
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { useState } from "react";
-import { Document, Page, pdfjs } from 'react-pdf';
+import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { ArrowLeft, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import 'react-pdf/dist/Page/AnnotationLayer.css';
-import 'react-pdf/dist/Page/TextLayer.css';
 
-// Set up PDF.js worker
-pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+declare global {
+  interface Window {
+    pdfjsLib: any;
+  }
+}
 
 export default function InvoicePreview() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [numPages, setNumPages] = useState<number>(0);
-  const [pageNumber, setPageNumber] = useState<number>(1);
-  const [scale, setScale] = useState<number>(1.0);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [zoom, setZoom] = useState(100);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(0);
+  const [pdfDoc, setPdfDoc] = useState<any>(null);
   const [error, setError] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
   const { data: invoice } = useQuery({
@@ -27,29 +29,83 @@ export default function InvoicePreview() {
     enabled: !!id,
   });
 
-  const fileUrl = `/api/invoices/${id}/preview/file`;
+  useEffect(() => {
+    if (id && window.pdfjsLib) {
+      loadPDF();
+    }
+    return () => {
+      if (pdfDoc) {
+        pdfDoc.destroy();
+      }
+    };
+  }, [id]);
 
-  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
-    setNumPages(numPages);
-    setPageNumber(1);
-    setIsLoading(false);
-    setError(null);
+  useEffect(() => {
+    if (pdfDoc && currentPage) {
+      renderPage(currentPage);
+    }
+  }, [pdfDoc, currentPage, zoom]);
+
+  const loadPDF = async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // Configure PDF.js worker
+      if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      }
+
+      const url = `/api/invoices/${id}/preview/file`;
+      const loadingTask = window.pdfjsLib.getDocument(url);
+      
+      const pdf = await loadingTask.promise;
+      setPdfDoc(pdf);
+      setTotalPages(pdf.numPages);
+      setCurrentPage(1);
+    } catch (err) {
+      console.error('Error loading PDF:', err);
+      setError('Failed to load PDF. The file may not be available or is corrupted.');
+      toast({
+        title: "PDF Load Error",
+        description: "Failed to load the PDF file",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const onDocumentLoadError = (error: Error) => {
-    console.error('Error loading PDF:', error);
-    setError('Failed to load PDF. The file may not be available or is corrupted.');
-    setIsLoading(false);
-    toast({
-      title: "PDF Load Error",
-      description: "Failed to load the PDF file",
-      variant: "destructive",
-    });
+  const renderPage = async (pageNum: number) => {
+    if (!pdfDoc || !canvasRef.current) return;
+
+    try {
+      const page = await pdfDoc.getPage(pageNum);
+      const scale = zoom / 100;
+      const viewport = page.getViewport({ scale });
+
+      const canvas = canvasRef.current;
+      const context = canvas.getContext('2d');
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+
+      const renderContext = {
+        canvasContext: context,
+        viewport: viewport,
+      };
+
+      await page.render(renderContext).promise;
+    } catch (err) {
+      console.error('Error rendering page:', err);
+      setError('Failed to render PDF page');
+    }
   };
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(fileUrl);
+      setIsLoading(true);
+      const response = await fetch(`/api/invoices/${id}/preview/file`);
       
       if (!response.ok) {
         throw new Error('Failed to download file');
@@ -75,33 +131,25 @@ export default function InvoicePreview() {
         description: "Failed to download the file",
         variant: "destructive",
       });
+    } finally {
+      setIsLoading(false);
     }
   };
 
   const handleZoomIn = () => {
-    setScale(prev => Math.min(prev + 0.25, 3.0));
+    setZoom(prev => Math.min(prev + 25, 200));
   };
 
   const handleZoomOut = () => {
-    setScale(prev => Math.max(prev - 0.25, 0.5));
-  };
-
-  const handleZoomReset = () => {
-    setScale(1.0);
+    setZoom(prev => Math.max(prev - 25, 50));
   };
 
   const handlePrevPage = () => {
-    setPageNumber(prev => Math.max(prev - 1, 1));
+    setCurrentPage(prev => Math.max(prev - 1, 1));
   };
 
   const handleNextPage = () => {
-    setPageNumber(prev => Math.min(prev + 1, numPages));
-  };
-
-  const goToPage = (page: number) => {
-    if (page >= 1 && page <= numPages) {
-      setPageNumber(page);
-    }
+    setCurrentPage(prev => Math.min(prev + 1, totalPages));
   };
 
   return (
@@ -128,32 +176,24 @@ export default function InvoicePreview() {
             </div>
 
             <div className="flex items-center space-x-2">
-              {numPages > 1 && (
+              {totalPages > 1 && (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handlePrevPage}
-                    disabled={pageNumber <= 1}
+                    disabled={currentPage <= 1}
                   >
                     <ChevronLeft size={16} />
                   </Button>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="number"
-                      value={pageNumber}
-                      onChange={(e) => goToPage(parseInt(e.target.value))}
-                      className="w-16 text-center text-sm border rounded px-2 py-1"
-                      min={1}
-                      max={numPages}
-                    />
-                    <span className="text-sm text-gray-600">of {numPages}</span>
-                  </div>
+                  <span className="text-sm font-medium min-w-[80px] text-center">
+                    {currentPage} / {totalPages}
+                  </span>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleNextPage}
-                    disabled={pageNumber >= numPages}
+                    disabled={currentPage >= totalPages}
                   >
                     <ChevronRight size={16} />
                   </Button>
@@ -164,33 +204,26 @@ export default function InvoicePreview() {
                 variant="outline"
                 size="sm"
                 onClick={handleZoomOut}
-                disabled={scale <= 0.5}
+                disabled={zoom <= 50}
               >
                 <ZoomOut size={16} />
               </Button>
               <span className="text-sm font-medium min-w-[60px] text-center">
-                {Math.round(scale * 100)}%
+                {zoom}%
               </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleZoomIn}
-                disabled={scale >= 3.0}
+                disabled={zoom >= 200}
               >
                 <ZoomIn size={16} />
               </Button>
               <Button
                 variant="outline"
                 size="sm"
-                onClick={handleZoomReset}
-                title="Reset zoom"
-              >
-                <RotateCcw size={16} />
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
                 onClick={handleDownload}
+                disabled={isLoading}
               >
                 <Download size={16} className="mr-2" />
                 Download
@@ -222,33 +255,19 @@ export default function InvoicePreview() {
               </div>
             )}
             
-            {!error && (
-              <Document
-                file={fileUrl}
-                onLoadSuccess={onDocumentLoadSuccess}
-                onLoadError={onDocumentLoadError}
-                loading={
-                  <div className="text-center">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                    <p className="text-gray-600">Loading PDF...</p>
+            {!isLoading && !error && (
+              <div className="bg-white shadow-lg rounded border overflow-hidden">
+                <canvas 
+                  ref={canvasRef}
+                  className="max-w-full h-auto"
+                  style={{ display: pdfDoc ? 'block' : 'none' }}
+                />
+                {!pdfDoc && (
+                  <div className="p-8 text-center">
+                    <p className="text-gray-600">No PDF loaded</p>
                   </div>
-                }
-                className="pdf-document"
-              >
-                <div className="bg-white shadow-lg rounded border overflow-hidden">
-                  <Page
-                    pageNumber={pageNumber}
-                    scale={scale}
-                    loading={
-                      <div className="flex items-center justify-center h-96">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-                      </div>
-                    }
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                  />
-                </div>
-              </Document>
+                )}
+              </div>
             )}
           </div>
         </div>

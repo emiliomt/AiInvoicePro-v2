@@ -56,21 +56,6 @@ export const approvalStatusEnum = pgEnum("approval_status", [
   "rejected",
 ]);
 
-// Match status enum for project matching
-export const matchStatusEnum = pgEnum("match_status", [
-  "auto_matched",
-  "manual_match", 
-  "no_match",
-  "pending_review"
-]);
-
-// Matched by enum
-export const matchedByEnum = pgEnum("matched_by", [
-  "ai",
-  "user",
-  "system"
-]);
-
 // Invoice table
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
@@ -90,13 +75,6 @@ export const invoices = pgTable("invoices", {
   extractedData: jsonb("extracted_data"),
   projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
-  // Project matching fields
-  matchedProjectId: varchar("matched_project_id"),
-  matchScore: decimal("match_score", { precision: 5, scale: 2 }), // 0-100
-  matchStatus: matchStatusEnum("match_status").default("pending_review"),
-  matchedBy: matchedByEnum("matched_by"),
-  isPettyCash: boolean("is_petty_cash").default(false),
-  pettyCashChecked: boolean("petty_cash_checked").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -109,6 +87,17 @@ export const lineItems = pgTable("line_items", {
   quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
   unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
   totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Approvals table
+export const approvals = pgTable("approvals", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull(),
+  approverId: varchar("approver_id").notNull(),
+  status: approvalStatusEnum("status").default("pending"),
+  comments: text("comments"),
+  approvedAt: timestamp("approved_at"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -185,8 +174,8 @@ export const poStatusEnum = pgEnum("po_status", [
   "cancelled"
 ]);
 
-// PO Match status enum
-export const poMatchStatusEnum = pgEnum("po_match_status", [
+// Match status enum
+export const matchStatusEnum = pgEnum("match_status", [
   "auto",
   "manual", 
   "unresolved"
@@ -237,7 +226,7 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
   poId: integer("po_id").references(() => purchaseOrders.id).notNull(),
   matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
-  status: poMatchStatusEnum("status").default("auto"),
+  status: matchStatusEnum("status").default("auto"),
   matchDetails: jsonb("match_details"), // Details about what matched
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
@@ -294,6 +283,7 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     references: [users.id],
   }),
   lineItems: many(lineItems),
+  approvals: many(approvals),
   pettyCash: one(pettyCashLog, {
     fields: [invoices.id],
     references: [pettyCashLog.invoiceId],
@@ -307,6 +297,17 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
   invoice: one(invoices, {
     fields: [lineItems.invoiceId],
     references: [invoices.id],
+  }),
+}));
+
+export const approvalsRelations = relations(approvals, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [approvals.invoiceId],
+    references: [invoices.id],
+  }),
+  approver: one(users, {
+    fields: [approvals.approverId],
+    references: [users.id],
   }),
 }));
 
@@ -364,6 +365,9 @@ export type Invoice = typeof invoices.$inferSelect;
 export type InsertLineItem = typeof lineItems.$inferInsert;
 export type LineItem = typeof lineItems.$inferSelect;
 
+export type InsertApproval = typeof approvals.$inferInsert;
+export type Approval = typeof approvals.$inferSelect;
+
 export type InsertValidationRule = typeof validationRules.$inferInsert;
 export type ValidationRule = typeof validationRules.$inferSelect;
 
@@ -398,6 +402,12 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({
 export const insertLineItemSchema = createInsertSchema(lineItems).omit({
   id: true,
   createdAt: true,
+});
+
+export const insertApprovalSchema = createInsertSchema(approvals).omit({
+  id: true,
+  createdAt: true,
+  approvedAt: true,
 });
 
 export const insertValidationRuleSchema = createInsertSchema(validationRules).omit({

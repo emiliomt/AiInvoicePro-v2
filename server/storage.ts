@@ -2,6 +2,7 @@ import {
   users,
   invoices,
   lineItems,
+  approvals,
   validationRules,
   settings,
   pettyCashLog,
@@ -16,6 +17,8 @@ import {
   type InsertInvoice,
   type LineItem,
   type InsertLineItem,
+  type Approval,
+  type InsertApproval,
   type ValidationRule,
   type InsertValidationRule,
   type Setting,
@@ -53,6 +56,12 @@ export interface IStorage {
   // Line item operations
   createLineItems(items: InsertLineItem[]): Promise<LineItem[]>;
   getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]>;
+
+  // Approval operations
+  createApproval(approval: InsertApproval): Promise<Approval>;
+  getApprovalsByInvoiceId(invoiceId: number): Promise<Approval[]>;
+  updateApproval(id: number, updates: Partial<InsertApproval>): Promise<Approval>;
+  getPendingApprovals(): Promise<(Approval & { invoice: Invoice })[]>;
 
   // Validation rules
   getValidationRules(): Promise<ValidationRule[]>;
@@ -187,6 +196,9 @@ export class DatabaseStorage implements IStorage {
     // Delete line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
 
+    // Delete approvals
+    await db.delete(approvals).where(eq(approvals.invoiceId, id));
+
     // Delete invoice-PO matches
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
 
@@ -214,6 +226,46 @@ export class DatabaseStorage implements IStorage {
       .select()
       .from(lineItems)
       .where(eq(lineItems.invoiceId, invoiceId));
+  }
+
+  // Approval operations
+  async createApproval(approval: InsertApproval): Promise<Approval> {
+    const [created] = await db.insert(approvals).values(approval).returning();
+    return created;
+  }
+
+  async getApprovalsByInvoiceId(invoiceId: number): Promise<Approval[]> {
+    return await db
+      .select()
+      .from(approvals)
+      .where(eq(approvals.invoiceId, invoiceId));
+  }
+
+  async updateApproval(id: number, updates: Partial<InsertApproval>): Promise<Approval> {
+    const [updated] = await db
+      .update(approvals)
+      .set({ ...updates, approvedAt: new Date() })
+      .where(eq(approvals.id, id))
+      .returning();
+    return updated;
+  }
+
+  async getPendingApprovals(): Promise<(Approval & { invoice: Invoice })[]> {
+    return await db
+      .select({
+        id: approvals.id,
+        invoiceId: approvals.invoiceId,
+        approverId: approvals.approverId,
+        status: approvals.status,
+        comments: approvals.comments,
+        approvedAt: approvals.approvedAt,
+        createdAt: approvals.createdAt,
+        invoice: invoices,
+      })
+      .from(approvals)
+      .innerJoin(invoices, eq(approvals.invoiceId, invoices.id))
+      .where(eq(approvals.status, "pending"))
+      .orderBy(desc(approvals.createdAt));
   }
 
   // Validation rules
@@ -391,6 +443,18 @@ export class DatabaseStorage implements IStorage {
       .from(invoices)
       .where(userId ? eq(invoices.userId, userId) : undefined);
 
+    // Pending approvals
+    const [pendingResult] = await db
+      .select({ count: count() })
+      .from(approvals)
+      .innerJoin(invoices, eq(approvals.invoiceId, invoices.id))
+      .where(
+        and(
+          eq(approvals.status, "pending"),
+          userId ? eq(invoices.userId, userId) : undefined
+        )
+      );
+
     // Processed today
     const [processedTodayResult] = await db
       .select({ count: count() })
@@ -410,7 +474,7 @@ export class DatabaseStorage implements IStorage {
 
     return {
       totalInvoices: totalResult.count,
-      pendingApproval: 0,
+      pendingApproval: pendingResult.count,
       processedToday: processedTodayResult.count,
       totalValue: totalValueResult.sum || "0",
     };
@@ -893,7 +957,8 @@ export class DatabaseStorage implements IStorage {
         flagType: invoiceFlags.flagType,
         severity: invoiceFlags.severity,
         count: count()
-      }).from(invoiceFlags)
+      })
+      .from(invoiceFlags)
       .where(sql`${invoiceFlags.createdAt} >= ${currentMonth}`)
       .groupBy(invoiceFlags.flagType, invoiceFlags.severity)
       .orderBy(desc(count()));
