@@ -193,12 +193,34 @@ export default function ExtractedData() {
               />
             </div>
             <div>
+              <Label htmlFor="companyName" className="text-sm font-medium text-gray-700">
+                Company Name (Buyer)
+              </Label>
+              <Input
+                id="companyName"
+                value={(invoice as any).extractedData?.companyName || ""}
+                className="mt-2"
+                readOnly
+              />
+            </div>
+            <div>
               <Label htmlFor="invoiceNumber" className="text-sm font-medium text-gray-700">
                 Invoice Number
               </Label>
               <Input
                 id="invoiceNumber"
                 value={invoice.invoiceNumber || ""}
+                className="mt-2"
+                readOnly
+              />
+            </div>
+            <div>
+              <Label htmlFor="taxId" className="text-sm font-medium text-gray-700">
+                Tax ID Number
+              </Label>
+              <Input
+                id="taxId"
+                value={(invoice as any).extractedData?.taxId || ""}
                 className="mt-2"
                 readOnly
               />
@@ -232,6 +254,20 @@ export default function ExtractedData() {
               </div>
             </div>
             <div>
+              <Label htmlFor="taxAmount" className="text-sm font-medium text-gray-700">
+                Tax Amount
+              </Label>
+              <div className="relative mt-2">
+                <span className="absolute left-3 top-2 text-gray-500">$</span>
+                <Input
+                  id="taxAmount"
+                  value={invoice.taxAmount || ""}
+                  className="pl-8"
+                  readOnly
+                />
+              </div>
+            </div>
+            <div>
               <Label htmlFor="dueDate" className="text-sm font-medium text-gray-700">
                 Due Date
               </Label>
@@ -241,6 +277,18 @@ export default function ExtractedData() {
                 value={invoice.dueDate ? invoice.dueDate.split('T')[0] : ""}
                 className="mt-2"
                 readOnly
+              />
+            </div>
+            <div>
+              <Label htmlFor="concept" className="text-sm font-medium text-gray-700">
+                Concept
+              </Label>
+              <Textarea
+                id="concept"
+                value={(invoice as any).extractedData?.concept || ""}
+                className="mt-2"
+                readOnly
+                rows={2}
               />
             </div>
             <div>

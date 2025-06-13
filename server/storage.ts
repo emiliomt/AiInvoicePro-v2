@@ -370,7 +370,7 @@ export class DatabaseStorage implements IStorage {
               if (comparisonMatch) {
                 const [, operator, targetValue] = comparisonMatch;
                 const targetNum = parseFloat(targetValue);
-                
+
                 switch (operator) {
                   case '>':
                     isViolation = !(numValue > targetNum);
@@ -391,7 +391,7 @@ export class DatabaseStorage implements IStorage {
                     isViolation = !(numValue !== targetNum);
                     break;
                 }
-                
+
                 if (isViolation) {
                   errorMessage = rule.errorMessage || `${rule.fieldName} must be ${operator} ${targetValue}`;
                 }
@@ -631,11 +631,11 @@ export class DatabaseStorage implements IStorage {
   async deleteAllProjects(): Promise<void> {
     try {
       console.log("Starting deleteAllProjects operation...");
-      
+
       // First get count of existing projects
       const [existingCount] = await db.select({ count: count() }).from(projects);
       console.log(`Found ${existingCount.count} projects to delete`);
-      
+
       if (existingCount.count === 0) {
         console.log("No projects to delete");
         return;
@@ -675,15 +675,15 @@ export class DatabaseStorage implements IStorage {
       console.log("Executing delete operation...");
       const result = await db.delete(projects).execute();
       console.log("Delete operation result:", result);
-      
+
       // Verify deletion worked
       const [remainingCount] = await db.select({ count: count() }).from(projects);
       console.log(`Projects remaining after delete: ${remainingCount.count}`);
-      
+
       if (remainingCount.count > 0) {
         throw new Error(`Delete operation failed. ${remainingCount.count} projects still remain.`);
       }
-      
+
       console.log("All projects deleted successfully");
     } catch (error) {
       console.error("Error deleting all projects:", error);

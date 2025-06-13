@@ -13,6 +13,9 @@ interface ExtractedInvoiceData {
   taxAmount: string | null;
   subtotal: string | null;
   currency: string;
+  taxId: string | null;
+  companyName: string | null;
+  concept: string | null;
   lineItems: Array<{
     description: string;
     quantity: string;
@@ -39,6 +42,9 @@ Extract the following information and return as JSON:
   "taxAmount": "decimal string or null",
   "subtotal": "decimal string or null",
   "currency": "string (default USD)",
+  "taxId": "string or null",
+  "companyName": "string or null",
+  "concept": "string or null",
   "lineItems": [
     {
       "description": "string",
@@ -55,6 +61,9 @@ Rules:
 - Use null if information is not found
 - Convert dates to YYYY-MM-DD format
 - Extract amounts as decimal strings without currency symbols
+- taxId: Extract tax identification number, VAT number, or similar tax registration number
+- companyName: Extract the buyer/client company name (not the vendor)
+- concept: Extract the main purpose or description of the invoice (summary of services/products)
 - Include all line items found in the invoice
 - Provide confidence score based on text clarity and completeness`;
 
@@ -86,6 +95,9 @@ Rules:
       taxAmount: extractedData.taxAmount || null,
       subtotal: extractedData.subtotal || null,
       currency: extractedData.currency || "USD",
+      taxId: extractedData.taxId || null,
+      companyName: extractedData.companyName || null,
+      concept: extractedData.concept || null,
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
       confidenceScore: extractedData.confidenceScore || "0.0",
     };
