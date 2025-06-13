@@ -1,323 +1,167 @@
-import { useState } from "react";
-import { useQuery, useMutation } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { Edit, Trash2, CheckCircle } from "lucide-react";
+import { useState } from "react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
-import { useForm } from "react-hook-form";
-import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
-import { queryClient } from "@/lib/queryClient";
-import { 
-  Plus, 
-  Building2, 
-  CheckCircle, 
-  Clock, 
-  Download, 
-  Upload, 
-  Settings,
-  MapPin,
-  User,
-  FileText,
-  DollarSign,
-  Filter,
-  X
-} from "lucide-react";
 import Header from "@/components/Header";
-import { z } from "zod";
-
-const projectSchema = z.object({
-  projectId: z.string().min(1, "Project ID is required"),
-  name: z.string().min(1, "Project name is required"),
-  description: z.string().optional(),
-  address: z.string().optional(),
-  city: z.string().optional(),
-  vatNumber: z.string().optional(),
-  supervisor: z.string().optional(),
-  budget: z.string().optional(),
-  currency: z.string().default("USD"),
-  startDate: z.string().optional(),
-  endDate: z.string().optional(),
-});
+import { apiRequest } from "@/lib/queryClient";
 
 interface Project {
   id: number;
   projectId: string;
   name: string;
-  description?: string;
-  address?: string;
-  city?: string;
-  vatNumber?: string;
-  supervisor?: string;
-  budget?: string;
-  currency: string;
-  startDate?: string;
-  endDate?: string;
-  status: string;
-  validationStatus: string;
-  isValidated: boolean;
-  validatedAt?: string;
-  validatedBy?: string;
+  address: string;
+  city: string;
+  vat: string | null;
+  supervisor: string | null;
+  status: 'pending' | 'validated' | 'rejected';
   createdAt: string;
 }
 
+interface EditProjectData {
+  name: string;
+  address: string;
+  city: string;
+  vat: string;
+  supervisor: string;
+}
+
 export default function ProjectValidation() {
-  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false);
-  const [isEditDialogOpen, setIsEditDialogOpen] = useState(false);
   const [editingProject, setEditingProject] = useState<Project | null>(null);
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [isImporting, setIsImporting] = useState(false);
-  const { toast } = useToast();
+  const [editData, setEditData] = useState<EditProjectData>({
+    name: '',
+    address: '',
+    city: '',
+    vat: '',
+    supervisor: ''
+  });
+  const [showEditModal, setShowEditModal] = useState(false);
 
   const { data: projects = [], isLoading } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
 
-  const form = useForm({
-    resolver: zodResolver(projectSchema),
-    defaultValues: {
-      projectId: "",
-      name: "",
-      description: "",
-      address: "",
-      city: "",
-      vatNumber: "",
-      supervisor: "",
-      budget: "",
-      currency: "USD",
-      startDate: "",
-      endDate: "",
-    },
-  });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
-  const createProjectMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await fetch("/api/projects", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to create project");
+  const validateMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const response = await apiRequest('PUT', `/api/projects/${projectId}/validate`);
       return response.json();
     },
     onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Project validated successfully",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project created successfully" });
-      setIsAddDialogOpen(false);
-      form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
     },
   });
 
-  const updateProjectMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await fetch(`/api/projects/${data.projectId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error("Failed to update project");
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, data }: { id: number; data: EditProjectData }) => {
+      const response = await apiRequest('PUT', `/api/projects/${id}`, data);
       return response.json();
     },
     onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Project updated successfully",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project updated successfully" });
-      setIsEditDialogOpen(false);
+      setShowEditModal(false);
       setEditingProject(null);
-      form.reset();
     },
     onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const deleteProjectMutation = useMutation({
-    mutationFn: async (projectId: string) => {
-      const response = await fetch(`/api/projects/${projectId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to delete project");
-      }
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project deleted successfully" });
-    },
-    onError: (error: Error) => {
-      toast({ 
-        title: "Cannot Delete Project", 
+      toast({
+        title: "Error",
         description: error.message,
-        variant: "destructive" 
+        variant: "destructive",
       });
     },
   });
 
-  const deleteAllProjectsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/projects-delete-all", {
-        method: "DELETE",
-      });
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Failed to delete all projects");
-      }
+  const deleteMutation = useMutation({
+    mutationFn: async (projectId: number) => {
+      const response = await apiRequest('DELETE', `/api/projects/${projectId}`);
       return response.json();
     },
     onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "Project deleted successfully",
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      queryClient.refetchQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "All projects deleted successfully" });
     },
     onError: (error: Error) => {
-      toast({ 
-        title: "Error", 
+      toast({
+        title: "Error",
         description: error.message,
-        variant: "destructive" 
+        variant: "destructive",
       });
     },
   });
 
-  const validateProjectMutation = useMutation({
-    mutationFn: async ({ projectId, action }: { projectId: string; action: "validate" | "reject" }) => {
-      const response = await fetch(`/api/projects/${projectId}/validate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      });
-      if (!response.ok) throw new Error("Failed to update validation status");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-      toast({ title: "Success", description: "Project validation status updated" });
-    },
-    onError: (error: Error) => {
-      toast({ title: "Error", description: error.message, variant: "destructive" });
-    },
-  });
-
-  const handleDownloadTemplate = () => {
-    const link = document.createElement('a');
-    link.href = '/api/projects/template';
-    link.download = 'project_validation_template.xlsx';
-    link.click();
-  };
-
-  const handleExcelImport = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
-      toast({ title: "Error", description: "Please select an Excel file (.xlsx or .xls)", variant: "destructive" });
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append('excel', file);
-
-    setIsImporting(true);
-
-    fetch('/api/projects/import', {
-      method: 'POST',
-      body: formData,
-    })
-    .then(response => response.json())
-    .then(data => {
-      if (data.message) {
-        toast({ title: "Import Complete", description: data.message });
-        queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-        
-        if (data.errorDetails && data.errorDetails.length > 0) {
-          console.log('Import errors:', data.errorDetails);
-          toast({ 
-            title: "Warning", 
-            description: `${data.errors} rows had errors. Check console for details.`,
-            variant: "destructive"
-          });
-        }
-      }
-    })
-    .catch(error => {
-      console.error('Import error:', error);
-      toast({ title: "Error", description: "Failed to import Excel file", variant: "destructive" });
-    })
-    .finally(() => {
-      setIsImporting(false);
-      event.target.value = '';
-    });
-  };
-
-  const onSubmit = (data: any) => {
-    if (editingProject) {
-      updateProjectMutation.mutate(data);
-    } else {
-      createProjectMutation.mutate(data);
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "validated": return "bg-green-100 text-green-800";
+      case "pending": return "bg-yellow-100 text-yellow-800";
+      case "rejected": return "bg-red-100 text-red-800";
+      default: return "bg-gray-100 text-gray-800";
     }
   };
 
   const handleEdit = (project: Project) => {
     setEditingProject(project);
-    form.reset({
-      projectId: project.projectId,
+    setEditData({
       name: project.name,
-      description: project.description || "",
-      address: project.address || "",
-      city: project.city || "",
-      vatNumber: project.vatNumber || "",
-      supervisor: project.supervisor || "",
-      budget: project.budget || "",
-      currency: project.currency,
+      address: project.address,
+      city: project.city,
+      vat: project.vat || '',
+      supervisor: project.supervisor || ''
     });
-    setIsEditDialogOpen(true);
+    setShowEditModal(true);
   };
 
-  const handleDelete = (projectId: string) => {
-    if (confirm("Are you sure you want to delete this project? This action cannot be undone.")) {
-      deleteProjectMutation.mutate(projectId);
+  const handleUpdate = () => {
+    if (editingProject) {
+      updateMutation.mutate({
+        id: editingProject.id,
+        data: editData
+      });
     }
   };
-
-  const handleDeleteAll = () => {
-    if (projects.length === 0) {
-      toast({ title: "No Projects", description: "There are no projects to delete.", variant: "destructive" });
-      return;
-    }
-    
-    if (confirm(`Are you sure you want to delete ALL ${projects.length} projects? This action cannot be undone.`)) {
-      deleteAllProjectsMutation.mutate();
-    }
-  };
-
-  const getValidationStatusBadge = (status: string) => {
-    switch (status) {
-      case "validated":
-        return <Badge className="bg-green-100 text-green-800"><CheckCircle size={12} className="mr-1" />Validated</Badge>;
-      case "rejected":
-        return <Badge className="bg-red-100 text-red-800">Rejected</Badge>;
-      case "pending":
-      default:
-        return <Badge className="bg-yellow-100 text-yellow-800"><Clock size={12} className="mr-1" />Pending</Badge>;
-    }
-  };
-
-  const filteredProjects = projects.filter(project => {
-    if (statusFilter === "all") return true;
-    return project.validationStatus === statusFilter;
-  });
-
-  const totalRecords = projects.length;
-  const validatedRecords = projects.filter(p => p.isValidated).length;
-  const pendingRecords = projects.filter(p => p.validationStatus === "pending").length;
 
   if (isLoading) {
     return (
@@ -325,8 +169,8 @@ export default function ProjectValidation() {
         <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
           <div className="animate-pulse space-y-4">
-            {[...Array(3)].map((_, i) => (
-              <div key={i} className="bg-white rounded-lg h-32"></div>
+            {[...Array(5)].map((_, i) => (
+              <div key={i} className="bg-white rounded-lg h-16"></div>
             ))}
           </div>
         </div>
@@ -338,468 +182,189 @@ export default function ProjectValidation() {
     <div className="min-h-screen bg-gray-50">
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header Section */}
         <div className="mb-8">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-2">
-                <Building2 className="text-blue-600" size={32} />
-                <span>Validation Criteria</span>
-              </h1>
-              <p className="text-gray-600 mt-2">Configure custom validation rules for invoice-to-contract matching</p>
-            </div>
-            <div className="flex space-x-2">
-              <Button variant="outline" size="sm" onClick={handleDownloadTemplate}>
-                <Download size={16} className="mr-2" />
-                Download Template
-              </Button>
-              <div>
-                <input
-                  type="file"
-                  accept=".xlsx,.xls"
-                  onChange={handleExcelImport}
-                  style={{ display: 'none' }}
-                  id="excel-upload"
-                  disabled={isImporting}
-                />
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  onClick={() => document.getElementById('excel-upload')?.click()}
-                  disabled={isImporting}
-                >
-                  <Upload size={16} className="mr-2" />
-                  {isImporting ? 'Importing...' : 'Import Excel'}
-                </Button>
-              </div>
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={handleDeleteAll}
-                disabled={deleteAllProjectsMutation.isPending || projects.length === 0}
-                className="text-red-600 hover:text-red-700 border-red-200 hover:border-red-300"
-              >
-                {deleteAllProjectsMutation.isPending ? 'Deleting...' : 'Delete All'}
-              </Button>
-              <Dialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button className="bg-blue-600 hover:bg-blue-700">
-                    <Plus size={16} className="mr-2" />
-                    Add Criteria
-                  </Button>
-                </DialogTrigger>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Add New Project Validation Criteria</DialogTitle>
-                  </DialogHeader>
-                  <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="projectId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Project ID</FormLabel>
-                              <FormControl>
-                                <Input placeholder="PROJ-2024-001" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Project Name</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Project name" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="address"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Address</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Project address" {...field} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="city"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>City</FormLabel>
-                              <FormControl>
-                                <Input placeholder="City" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="vatNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>VAT Number</FormLabel>
-                              <FormControl>
-                                <Input placeholder="VAT Number" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="supervisor"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Supervisor</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Project supervisor" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="budget"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Budget</FormLabel>
-                              <FormControl>
-                                <Input placeholder="0.00" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="description"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                              <Textarea placeholder="Project description" {...field} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="flex justify-end space-x-2 pt-4">
-                        <Button type="button" variant="outline" onClick={() => setIsAddDialogOpen(false)}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={createProjectMutation.isPending}>
-                          {createProjectMutation.isPending ? "Creating..." : "Create Project"}
-                        </Button>
-                      </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-              
-              {/* Edit Project Dialog */}
-              <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-                <DialogContent className="max-w-2xl">
-                  <DialogHeader>
-                    <DialogTitle>Edit Project Validation Criteria</DialogTitle>
-                  </DialogHeader>
-                  <Form {...form}>
-                    <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="projectId"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Project ID</FormLabel>
-                              <FormControl>
-                                <Input placeholder="PROJ-2024-001" {...field} disabled />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="name"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Project Name</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Project name" {...field} />
-                              </FormControl>
-                              <FormMessage />
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="address"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Address</FormLabel>
-                            <FormControl>
-                              <Input placeholder="Project address" {...field} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="city"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>City</FormLabel>
-                              <FormControl>
-                                <Input placeholder="City" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="vatNumber"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>VAT Number</FormLabel>
-                              <FormControl>
-                                <Input placeholder="VAT Number" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <div className="grid grid-cols-2 gap-4">
-                        <FormField
-                          control={form.control}
-                          name="supervisor"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Supervisor</FormLabel>
-                              <FormControl>
-                                <Input placeholder="Project supervisor" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                        <FormField
-                          control={form.control}
-                          name="budget"
-                          render={({ field }) => (
-                            <FormItem>
-                              <FormLabel>Budget</FormLabel>
-                              <FormControl>
-                                <Input placeholder="0.00" {...field} />
-                              </FormControl>
-                            </FormItem>
-                          )}
-                        />
-                      </div>
-
-                      <FormField
-                        control={form.control}
-                        name="description"
-                        render={({ field }) => (
-                          <FormItem>
-                            <FormLabel>Description</FormLabel>
-                            <FormControl>
-                              <Textarea placeholder="Project description" {...field} />
-                            </FormControl>
-                          </FormItem>
-                        )}
-                      />
-
-                      <div className="flex justify-end space-x-2 pt-4">
-                        <Button type="button" variant="outline" onClick={() => {
-                          setIsEditDialogOpen(false);
-                          setEditingProject(null);
-                          form.reset();
-                        }}>
-                          Cancel
-                        </Button>
-                        <Button type="submit" disabled={updateProjectMutation.isPending}>
-                          {updateProjectMutation.isPending ? "Updating..." : "Update Project"}
-                        </Button>
-                      </div>
-                    </form>
-                  </Form>
-                </DialogContent>
-              </Dialog>
-            </div>
-          </div>
+          <h1 className="text-3xl font-bold text-gray-900">Validation Input Records</h1>
+          <p className="text-gray-600 mt-2">Records automatically populated when validation criteria are applied to invoices</p>
         </div>
 
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Total Records</p>
-                  <p className="text-3xl font-bold text-gray-900">{totalRecords}</p>
-                </div>
-                <FileText className="h-8 w-8 text-blue-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Validated</p>
-                  <p className="text-3xl font-bold text-green-600">{validatedRecords}</p>
-                </div>
-                <CheckCircle className="h-8 w-8 text-green-600" />
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-6">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm font-medium text-gray-600">Pending</p>
-                  <p className="text-3xl font-bold text-yellow-600">{pendingRecords}</p>
-                </div>
-                <Clock className="h-8 w-8 text-yellow-600" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Filter Section */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-4">
-              <Filter size={16} className="text-gray-500" />
-              <Label>Filter by status:</Label>
-              <Select value={statusFilter} onValueChange={setStatusFilter}>
-                <SelectTrigger className="w-48">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">All Projects</SelectItem>
-                  <SelectItem value="pending">Pending</SelectItem>
-                  <SelectItem value="validated">Validated</SelectItem>
-                  <SelectItem value="rejected">Rejected</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Projects Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Validation Input Records</CardTitle>
-            <p className="text-sm text-gray-600">Records automatically populated when validation criteria are applied to invoices</p>
-          </CardHeader>
-          <CardContent>
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse">
-                <thead>
-                  <tr className="border-b border-gray-200">
-                    <th className="text-left p-3 font-medium text-gray-600">Project</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Address</th>
-                    <th className="text-left p-3 font-medium text-gray-600">City</th>
-                    <th className="text-left p-3 font-medium text-gray-600">VAT</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Supervisor</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Status</th>
-                    <th className="text-left p-3 font-medium text-gray-600">Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredProjects.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="text-center py-8 text-gray-500">
-                        {projects.length === 0 ? "No projects found. Create your first project to get started." : "No projects match the selected filter."}
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredProjects.map((project) => (
-                      <tr key={project.id} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="p-3">
-                          <div>
-                            <p className="font-medium text-gray-900">{project.name}</p>
-                            <p className="text-sm text-gray-500">{project.projectId}</p>
+        <Card className="bg-white shadow-sm border border-gray-200">
+          <CardContent className="p-0">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-gray-50">
+                  <TableHead className="font-semibold text-gray-900">Project</TableHead>
+                  <TableHead className="font-semibold text-gray-900">Address</TableHead>
+                  <TableHead className="font-semibold text-gray-900">City</TableHead>
+                  <TableHead className="font-semibold text-gray-900">VAT</TableHead>
+                  <TableHead className="font-semibold text-gray-900">Supervisor</TableHead>
+                  <TableHead className="font-semibold text-gray-900">Status</TableHead>
+                  <TableHead className="font-semibold text-gray-900">Actions</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {projects.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={7} className="text-center py-12">
+                      <div className="text-gray-500">
+                        <CheckCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                        <h3 className="text-lg font-medium text-gray-900 mb-2">No validation records found</h3>
+                        <p className="text-gray-600">Validation records will appear here when invoices are processed.</p>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  projects.map((project) => (
+                    <TableRow key={project.id} className="hover:bg-gray-50">
+                      <TableCell>
+                        <div>
+                          <div className="font-semibold text-gray-900">{project.name}</div>
+                          <div className="text-sm text-gray-500">{project.projectId}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-gray-700">{project.address}</TableCell>
+                      <TableCell className="text-gray-700">{project.city}</TableCell>
+                      <TableCell className="text-gray-700">
+                        {project.vat ? (
+                          <div className="flex items-center">
+                            <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
+                            {project.vat}
                           </div>
-                        </td>
-                        <td className="p-3 text-sm text-gray-600">{project.address || "—"}</td>
-                        <td className="p-3 text-sm text-gray-600">{project.city || "—"}</td>
-                        <td className="p-3 text-sm text-gray-600">
-                          {project.vatNumber === 'true' ? (
-                            <CheckCircle size={16} className="text-green-500" />
-                          ) : project.vatNumber === 'false' ? (
-                            <X size={16} className="text-red-500" />
-                          ) : (
-                            <span className="text-gray-400">—</span>
-                          )}
-                        </td>
-                        <td className="p-3 text-sm text-gray-600">{project.supervisor || "—"}</td>
-                        <td className="p-3">{getValidationStatusBadge(project.validationStatus)}</td>
-                        <td className="p-3">
-                          <div className="flex space-x-2">
-                            {!project.isValidated && (
+                        ) : (
+                          <span className="text-gray-400">—</span>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-gray-700">
+                        {project.supervisor || <span className="text-gray-400">—</span>}
+                      </TableCell>
+                      <TableCell>
+                        <Badge className={getStatusColor(project.status)}>
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          {project.status === 'validated' ? 'Validated' : 
+                           project.status === 'pending' ? 'Pending' : 'Rejected'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex items-center space-x-2">
+                          <Dialog open={showEditModal && editingProject?.id === project.id} onOpenChange={(open) => {
+                            if (!open) {
+                              setShowEditModal(false);
+                              setEditingProject(null);
+                            }
+                          }}>
+                            <DialogTrigger asChild>
                               <Button
+                                variant="ghost"
                                 size="sm"
-                                variant="outline"
-                                className="text-green-600 hover:text-green-700"
-                                onClick={() => validateProjectMutation.mutate({ projectId: project.projectId, action: "validate" })}
+                                onClick={() => handleEdit(project)}
+                                className="text-gray-600 hover:text-blue-600"
                               >
-                                <CheckCircle size={14} className="mr-1" />
-                                Validate
+                                <Edit className="w-4 h-4" />
+                                Edit
                               </Button>
-                            )}
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              onClick={() => handleEdit(project)}
-                            >
-                              <Settings size={14} className="mr-1" />
-                              Edit
-                            </Button>
-                            <Button 
-                              size="sm" 
-                              variant="outline"
-                              className="text-red-600 hover:text-red-700"
-                              onClick={() => handleDelete(project.projectId)}
-                              disabled={deleteProjectMutation.isPending}
-                            >
-                              Delete
-                            </Button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
+                            </DialogTrigger>
+                            <DialogContent>
+                              <DialogHeader>
+                                <DialogTitle>Edit Project</DialogTitle>
+                                <DialogDescription>
+                                  Update project validation information
+                                </DialogDescription>
+                              </DialogHeader>
+                              <div className="space-y-4">
+                                <div>
+                                  <Label htmlFor="name">Project Name</Label>
+                                  <Input
+                                    id="name"
+                                    value={editData.name}
+                                    onChange={(e) => setEditData({ ...editData, name: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="address">Address</Label>
+                                  <Input
+                                    id="address"
+                                    value={editData.address}
+                                    onChange={(e) => setEditData({ ...editData, address: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="city">City</Label>
+                                  <Input
+                                    id="city"
+                                    value={editData.city}
+                                    onChange={(e) => setEditData({ ...editData, city: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="vat">VAT</Label>
+                                  <Input
+                                    id="vat"
+                                    value={editData.vat}
+                                    onChange={(e) => setEditData({ ...editData, vat: e.target.value })}
+                                  />
+                                </div>
+                                <div>
+                                  <Label htmlFor="supervisor">Supervisor</Label>
+                                  <Input
+                                    id="supervisor"
+                                    value={editData.supervisor}
+                                    onChange={(e) => setEditData({ ...editData, supervisor: e.target.value })}
+                                  />
+                                </div>
+                              </div>
+                              <div className="flex justify-end space-x-2 pt-4">
+                                <Button 
+                                  variant="outline" 
+                                  onClick={() => setShowEditModal(false)}
+                                >
+                                  Cancel
+                                </Button>
+                                <Button 
+                                  onClick={handleUpdate}
+                                  disabled={updateMutation.isPending}
+                                >
+                                  {updateMutation.isPending ? "Updating..." : "Update"}
+                                </Button>
+                              </div>
+                            </DialogContent>
+                          </Dialog>
+
+                          <AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="text-red-600 hover:text-red-700"
+                              >
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Delete Project</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  Are you sure you want to delete this project validation record? 
+                                  This action cannot be undone.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction
+                                  onClick={() => deleteMutation.mutate(project.id)}
+                                  className="bg-red-600 hover:bg-red-700"
+                                  disabled={deleteMutation.isPending}
+                                >
+                                  {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                                </AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
           </CardContent>
         </Card>
       </div>
