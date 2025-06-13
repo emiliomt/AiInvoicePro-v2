@@ -833,7 +833,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Create line items if present
           let createdLineItems: any[] = [];
-```text
           if (extractedData.lineItems && extractedData.lineItems.length > 0) {
             const lineItemsData = extractedData.lineItems.map((item: any) => ({
               invoiceId: invoice.id,
@@ -1407,7 +1406,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Get invoice with project match details
       const invoiceWithProject = await storage.getInvoiceWithProjectMatch(invoiceId);
-
+      
       if (!invoiceWithProject || invoiceWithProject.userId !== userId) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -1445,7 +1444,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const match = await storage.getProjectMatchByInvoiceId(invoiceId);
-
+      
       if (!match) {
         return res.json([]);
       }
@@ -1471,7 +1470,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const matchId = parseInt(req.params.id);
       const updates = req.body;
-
+      
       const updatedMatch = await storage.updateProjectMatch(matchId, updates);
       res.json(updatedMatch);
     } catch (error) {
