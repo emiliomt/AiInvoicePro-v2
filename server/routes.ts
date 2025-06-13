@@ -816,19 +816,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       // Check if we have a stored file path, otherwise create a demo PDF
       if (invoice.fileUrl && fs.existsSync(invoice.fileUrl)) {
+        const stat = fs.statSync(invoice.fileUrl);
         res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Length', stat.size.toString());
         res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
-        fs.createReadStream(invoice.fileUrl).pipe(res);
+        res.setHeader('Accept-Ranges', 'bytes');
+        
+        const stream = fs.createReadStream(invoice.fileUrl);
+        stream.pipe(res);
+        
+        stream.on('error', (err) => {
+          console.error('Stream error:', err);
+          if (!res.headersSent) {
+            res.status(500).send('Error reading file');
+          }
+        });
       } else {
         // Create a minimal PDF for demonstration
         const PDFDocument = await import('pdfkit');
         const doc = new PDFDocument.default();
         
+        // Set headers before piping
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
         
+        // Pipe the PDF to response
         doc.pipe(res);
         
         // Add content to the PDF
@@ -841,12 +855,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
         doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
+        doc.text('You can download this file using the download button.', 100, 300);
         
+        // Add some more content to make it a proper PDF
+        doc.addPage();
+        doc.fontSize(16).text('Additional Information', 100, 100);
+        doc.fontSize(12).text('This is page 2 of the demo invoice.', 100, 140);
+        doc.text('Status: ' + (invoice.status || 'Unknown'), 100, 160);
+        doc.text('Created: ' + (invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'Unknown'), 100, 180);
+        
+        // Finalize the PDF
         doc.end();
       }
     } catch (error) {
       console.error("Error serving PDF file:", error);
-      res.status(500).send('Failed to serve PDF file');
+      if (!res.headersSent) {
+        res.status(500).send('Failed to serve PDF file');
+      }
     }
   });
 
