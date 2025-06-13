@@ -433,18 +433,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         for (let i = 0; i < data.length; i++) {
           const row = data[i] as any;
           try {
-            // Handle VAT Number as boolean
-            const vatNumberField = row['VAT Number'] || row['vatNumber'] || row['VAT'] || row['vat'];
-            let vatNumber = 'false';
+            // Handle VAT Reimbursement as boolean
+            const vatReimbursement = row['VAT Reimbursement'] || row['vatReimbursement'] || row['VAT'] || row['vat'];
+            let vatNumber = '';
             
-            if (typeof vatNumberField === 'boolean') {
-              vatNumber = vatNumberField.toString();
-            } else if (typeof vatNumberField === 'string') {
-              const lowerVal = vatNumberField.toLowerCase();
+            if (typeof vatReimbursement === 'boolean') {
+              vatNumber = vatReimbursement.toString();
+            } else if (typeof vatReimbursement === 'string') {
+              const lowerVal = vatReimbursement.toLowerCase();
               if (lowerVal === 'true' || lowerVal === 'yes' || lowerVal === '1' || lowerVal === 'si') {
                 vatNumber = 'true';
               } else if (lowerVal === 'false' || lowerVal === 'no' || lowerVal === '0') {
                 vatNumber = 'false';
+              } else {
+                vatNumber = vatReimbursement;
               }
             }
 
@@ -499,7 +501,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Notes': 'Complete office renovation project',
           'Invoice Address': 'Calle 1B No. 20-59 Urbanización',
           'City': 'Puertocotonue',
-          'VAT Number': true,
+          'VAT Reimbursement': true,
           'Superintendent Name': 'Diana Martinez',
           'Budget': '50000',
           'Currency': 'USD'
@@ -510,7 +512,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           'Notes': 'Network upgrade and security implementation',
           'Invoice Address': 'Diagonal 32 No 80-966 Supermanzana',
           'City': 'Cartagena',
-          'VAT Number': false,
+          'VAT Reimbursement': false,
           'Superintendent Name': 'Indira Garcia',
           'Budget': '75000',
           'Currency': 'USD'

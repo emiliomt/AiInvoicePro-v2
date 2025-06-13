@@ -1,7 +1,3 @@
-The code is modified to handle VAT number as a boolean field using a switch component and the VATreimbursment variable is not used in the original code, so I will skip the removal of it.
-```
-
-```replit_final_file
 import { useState } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -12,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
-import { Form, FormControl, FormField, FormItem, FormLabel, FormDescription } from "@/components/ui/form";
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useToast } from "@/hooks/use-toast";
@@ -33,7 +29,6 @@ import {
 } from "lucide-react";
 import Header from "@/components/Header";
 import { z } from "zod";
-import { Switch } from "@/components/ui/switch";
 
 const projectSchema = z.object({
   projectId: z.string().min(1, "Project ID is required"),
@@ -90,7 +85,7 @@ export default function ProjectValidation() {
       description: "",
       address: "",
       city: "",
-      vatNumber: "false",
+      vatNumber: "",
       supervisor: "",
       budget: "",
       currency: "USD",
@@ -239,7 +234,7 @@ export default function ProjectValidation() {
       if (data.message) {
         toast({ title: "Import Complete", description: data.message });
         queryClient.invalidateQueries({ queryKey: ["/api/projects"] });
-
+        
         if (data.errorDetails && data.errorDetails.length > 0) {
           console.log('Import errors:', data.errorDetails);
           toast({ 
@@ -276,12 +271,10 @@ export default function ProjectValidation() {
       description: project.description || "",
       address: project.address || "",
       city: project.city || "",
-      vatNumber: project.vatNumber || "false",
+      vatNumber: project.vatNumber || "",
       supervisor: project.supervisor || "",
       budget: project.budget || "",
       currency: project.currency,
-      startDate: project.startDate || "",
-      endDate: project.endDate || "",
     });
     setIsEditDialogOpen(true);
   };
@@ -297,7 +290,7 @@ export default function ProjectValidation() {
       toast({ title: "No Projects", description: "There are no projects to delete.", variant: "destructive" });
       return;
     }
-
+    
     if (confirm(`Are you sure you want to delete ALL ${projects.length} projects? This action cannot be undone.`)) {
       deleteAllProjectsMutation.mutate();
     }
@@ -458,18 +451,10 @@ export default function ProjectValidation() {
                           control={form.control}
                           name="vatNumber"
                           render={({ field }) => (
-                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                              <div className="space-y-0.5">
-                                <FormLabel className="text-base">VAT Number</FormLabel>
-                                <FormDescription>
-                                  Enable VAT number requirement for this project
-                                </FormDescription>
-                              </div>
+                            <FormItem>
+                              <FormLabel>VAT Number</FormLabel>
                               <FormControl>
-                                <Switch
-                                  checked={field.value === 'true'}
-                                  onCheckedChange={(checked) => field.onChange(checked ? 'true' : 'false')}
-                                />
+                                <Input placeholder="VAT Number" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -528,7 +513,7 @@ export default function ProjectValidation() {
                   </Form>
                 </DialogContent>
               </Dialog>
-
+              
               {/* Edit Project Dialog */}
               <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
                 <DialogContent className="max-w-2xl">
@@ -596,18 +581,10 @@ export default function ProjectValidation() {
                           control={form.control}
                           name="vatNumber"
                           render={({ field }) => (
-                            <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
-                              <div className="space-y-0.5">
-                                <FormLabel className="text-base">VAT Number</FormLabel>
-                                <FormDescription>
-                                  Enable VAT number requirement for this project
-                                </FormDescription>
-                              </div>
+                            <FormItem>
+                              <FormLabel>VAT Number</FormLabel>
                               <FormControl>
-                                <Switch
-                                  checked={field.value === 'true'}
-                                  onCheckedChange={(checked) => field.onChange(checked ? 'true' : 'false')}
-                                />
+                                <Input placeholder="VAT Number" {...field} />
                               </FormControl>
                             </FormItem>
                           )}
@@ -772,10 +749,12 @@ export default function ProjectValidation() {
                         </td>
                         <td className="p-3 text-sm text-gray-600">{project.address || "—"}</td>
                         <td className="p-3 text-sm text-gray-600">{project.city || "—"}</td>
-                        <td className="p-3">
-                          <Badge variant={project.vatNumber === 'true' ? 'default' : 'secondary'}>
-                            {project.vatNumber === 'true' ? 'Yes' : 'No'}
-                          </Badge>
+                        <td className="p-3 text-sm text-gray-600">
+                          {project.isValidated ? (
+                            <CheckCircle size={16} className="text-green-500" />
+                          ) : (
+                            <Clock size={16} className="text-yellow-500" />
+                          )}
                         </td>
                         <td className="p-3 text-sm text-gray-600">{project.supervisor || "—"}</td>
                         <td className="p-3">{getValidationStatusBadge(project.validationStatus)}</td>
