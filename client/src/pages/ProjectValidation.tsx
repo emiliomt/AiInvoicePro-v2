@@ -1,3 +1,4 @@
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -183,64 +184,51 @@ export default function ProjectValidation() {
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Validation Input Records</h1>
-          <p className="text-gray-600 mt-2">Records automatically populated when validation criteria are applied to invoices</p>
+          <h1 className="text-3xl font-bold text-gray-900">Project Validation</h1>
+          <p className="text-gray-600 mt-2">Manage and validate project information</p>
         </div>
 
-        <Card className="bg-white shadow-sm border border-gray-200">
-          <CardContent className="p-0">
+        <Card>
+          <CardHeader>
+            <CardTitle>Projects</CardTitle>
+          </CardHeader>
+          <CardContent>
             <Table>
               <TableHeader>
-                <TableRow className="bg-gray-50">
-                  <TableHead className="font-semibold text-gray-900">Project</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Address</TableHead>
-                  <TableHead className="font-semibold text-gray-900">City</TableHead>
-                  <TableHead className="font-semibold text-gray-900">VAT</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Supervisor</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Status</TableHead>
-                  <TableHead className="font-semibold text-gray-900">Actions</TableHead>
+                <TableRow>
+                  <TableHead>Project</TableHead>
+                  <TableHead>Address</TableHead>
+                  <TableHead>City</TableHead>
+                  <TableHead>VAT</TableHead>
+                  <TableHead>Supervisor</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {projects.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-12">
-                      <div className="text-gray-500">
-                        <CheckCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                        <h3 className="text-lg font-medium text-gray-900 mb-2">No validation records found</h3>
-                        <p className="text-gray-600">Validation records will appear here when invoices are processed.</p>
-                      </div>
+                    <TableCell colSpan={7} className="text-center py-8">
+                      <CheckCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                      <p className="text-gray-600">No projects found</p>
                     </TableCell>
                   </TableRow>
                 ) : (
                   projects.map((project) => (
-                    <TableRow key={project.id} className="hover:bg-gray-50">
+                    <TableRow key={project.id}>
                       <TableCell>
                         <div>
-                          <div className="font-semibold text-gray-900">{project.name}</div>
+                          <div className="font-medium">{project.name}</div>
                           <div className="text-sm text-gray-500">{project.projectId}</div>
                         </div>
                       </TableCell>
-                      <TableCell className="text-gray-700">{project.address}</TableCell>
-                      <TableCell className="text-gray-700">{project.city}</TableCell>
-                      <TableCell className="text-gray-700">
-                        {project.vat ? (
-                          <div className="flex items-center">
-                            <CheckCircle className="w-4 h-4 text-green-500 mr-2" />
-                            {project.vat}
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">—</span>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-gray-700">
-                        {project.supervisor || <span className="text-gray-400">—</span>}
-                      </TableCell>
+                      <TableCell>{project.address}</TableCell>
+                      <TableCell>{project.city}</TableCell>
+                      <TableCell>{project.vat || "—"}</TableCell>
+                      <TableCell>{project.supervisor || "—"}</TableCell>
                       <TableCell>
                         <Badge className={getStatusColor(project.status)}>
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          {project.status === 'validated' ? 'Validated' : 
-                           project.status === 'pending' ? 'Pending' : 'Rejected'}
+                          {project.status}
                         </Badge>
                       </TableCell>
                       <TableCell>
@@ -256,9 +244,8 @@ export default function ProjectValidation() {
                                 variant="ghost"
                                 size="sm"
                                 onClick={() => handleEdit(project)}
-                                className="text-gray-600 hover:text-blue-600"
                               >
-                                <Edit className="w-4 h-4" />
+                                <Edit className="w-4 h-4 mr-1" />
                                 Edit
                               </Button>
                             </DialogTrigger>
@@ -266,7 +253,7 @@ export default function ProjectValidation() {
                               <DialogHeader>
                                 <DialogTitle>Edit Project</DialogTitle>
                                 <DialogDescription>
-                                  Update project validation information
+                                  Update project information
                                 </DialogDescription>
                               </DialogHeader>
                               <div className="space-y-4">
@@ -335,15 +322,14 @@ export default function ProjectValidation() {
                                 size="sm"
                                 className="text-red-600 hover:text-red-700"
                               >
-                                Delete
+                                <Trash2 className="w-4 h-4" />
                               </Button>
                             </AlertDialogTrigger>
                             <AlertDialogContent>
                               <AlertDialogHeader>
                                 <AlertDialogTitle>Delete Project</AlertDialogTitle>
                                 <AlertDialogDescription>
-                                  Are you sure you want to delete this project validation record? 
-                                  This action cannot be undone.
+                                  Are you sure you want to delete this project? This action cannot be undone.
                                 </AlertDialogDescription>
                               </AlertDialogHeader>
                               <AlertDialogFooter>
