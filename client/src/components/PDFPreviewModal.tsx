@@ -296,45 +296,43 @@ export default function PDFPreviewModal({
           </div>
         </DialogHeader>
         
-        <div className="flex-1 overflow-y-auto overflow-x-hidden" ref={containerRef} style={{ maxHeight: 'calc(90vh - 140px)' }}>
-          <div className="p-4">
-            <div className="bg-gray-100 rounded-lg p-8 min-h-[600px] flex items-center justify-center">
-              {isLoading && (
-                <div className="text-center">
-                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                  <p className="text-gray-600">Loading PDF...</p>
+        <div className="flex-1 overflow-auto p-4" ref={containerRef}>
+          <div className="bg-gray-100 rounded-lg p-8 min-h-[600px] flex items-center justify-center">
+            {isLoading && (
+              <div className="text-center">
+                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                <p className="text-gray-600">Loading PDF...</p>
+              </div>
+            )}
+            
+            {error && (
+              <div className="text-center">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+                  <h3 className="text-lg font-medium text-red-900 mb-2">
+                    Error Loading PDF
+                  </h3>
+                  <p className="text-sm text-red-700">{error}</p>
                 </div>
-              )}
-              
-              {error && (
-                <div className="text-center">
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-6">
-                    <h3 className="text-lg font-medium text-red-900 mb-2">
-                      Error Loading PDF
-                    </h3>
-                    <p className="text-sm text-red-700">{error}</p>
+              </div>
+            )}
+            
+            {!isLoading && !error && (
+              <div className="bg-white shadow-lg rounded border overflow-hidden flex items-center justify-center">
+                <canvas 
+                  ref={canvasRef}
+                  className="max-w-full max-h-full"
+                  style={{ 
+                    display: pdfDoc ? 'block' : 'none',
+                    margin: 'auto'
+                  }}
+                />
+                {!pdfDoc && (
+                  <div className="p-8 text-center">
+                    <p className="text-gray-600">No PDF loaded</p>
                   </div>
-                </div>
-              )}
-              
-              {!isLoading && !error && (
-                <div className="bg-white shadow-lg rounded border overflow-hidden flex items-center justify-center">
-                  <canvas 
-                    ref={canvasRef}
-                    className="max-w-full h-auto block"
-                    style={{ 
-                      display: pdfDoc ? 'block' : 'none',
-                      margin: 'auto'
-                    }}
-                  />
-                  {!pdfDoc && (
-                    <div className="p-8 text-center">
-                      <p className="text-gray-600">No PDF loaded</p>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </DialogContent>
