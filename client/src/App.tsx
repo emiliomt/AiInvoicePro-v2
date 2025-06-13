@@ -11,7 +11,6 @@ import Dashboard from "@/pages/Dashboard";
 import Invoices from "./pages/Invoices";
 import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
-import ProjectMatching from "./pages/ProjectMatching";
 import Approvals from "./pages/Approvals";
 import Reports from "./pages/Reports";
 import ValidationRules from "./pages/ValidationRules";
@@ -64,7 +63,6 @@ function Router() {
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
-          <Route path="/project-matching" component={ProjectMatching} />
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
