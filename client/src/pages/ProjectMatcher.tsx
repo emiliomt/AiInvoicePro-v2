@@ -584,6 +584,8 @@ export default function ProjectMatcher() {
                       <TableHead>Extracted City</TableHead>
                       <TableHead>Extracted Project</TableHead>
                       <TableHead>Best Match</TableHead>
+                      <TableHead>Best Match Address</TableHead>
+                      <TableHead>Best Match City</TableHead>
                       <TableHead>Confidence</TableHead>
                       <TableHead>Status</TableHead>
                       <TableHead>Actions</TableHead>
@@ -632,10 +634,10 @@ export default function ProjectMatcher() {
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">
-                                {getExtractedProject(invoice, projects) || 'N/A'}
+                                {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}
                               </div>
                               <div className="text-sm text-muted-foreground">
-                                Inferred from address/city
+                                {invoice.extractedData?.projectName ? 'From extracted data' : 'Inferred from address/city'}
                               </div>
                             </div>
                           </TableCell>
@@ -649,6 +651,15 @@ export default function ProjectMatcher() {
                                 {bestMatch?.project?.projectId || 'From validation records'}
                               </div>
                             </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {bestMatch?.project?.address || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {bestMatch?.project?.city || 'N/A'}
                           </TableCell>
                           <TableCell>
                             <div className="space-y-2">
@@ -877,8 +888,8 @@ function InvoiceMatchingDialog({
             <div><strong>File:</strong> {invoice.fileName}</div>
             <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
             <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
-            <div><strong>Extracted Project:</strong> {getExtractedProject(invoice, projects) || 'N/A'}</div>
-            <div><strong>Original Project Name:</strong> {invoice.extractedData?.projectName || 'N/A'}</div>
+            <div><strong>Extracted Project:</strong> {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}</div>
+            <div><strong>Alternative Project Name:</strong> {invoice.extractedData?.projectName ? getExtractedProject(invoice, projects) || 'N/A' : 'N/A'}</div>
             <div><strong>Extracted Project Address:</strong> {invoice.extractedData?.projectAddress || 'N/A'}</div>
             <div><strong>Extracted Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
             <div><strong>Extracted Project City:</strong> {invoice.extractedData?.projectCity || 'N/A'}</div>
