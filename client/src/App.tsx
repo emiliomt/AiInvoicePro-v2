@@ -11,7 +11,7 @@ import Dashboard from "@/pages/Dashboard";
 import Invoices from "./pages/Invoices";
 import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
-import Approvals from "./pages/Approvals";
+
 import Reports from "./pages/Reports";
 import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
@@ -59,7 +59,6 @@ function Router() {
           <Route path="/dashboard" component={Dashboard} />
           <Route path="/invoices" component={Invoices} />
           <Route path="/preview/:id" component={InvoicePreview} />
-          <Route path="/approvals" component={Approvals} />
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
