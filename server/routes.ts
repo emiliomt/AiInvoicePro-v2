@@ -10,6 +10,7 @@ import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predicti
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
+import { RequestHandler } from "express";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -49,6 +50,24 @@ const excelUpload = multer({
     }
   },
 });
+
+// Bypassed authentication for testing - allows access without login
+export const isAuthenticated: RequestHandler = async (req, res, next) => {
+  // Create a mock user for testing purposes
+  const mockUser = {
+    claims: {
+      sub: "test-user-123",
+      email: "test@example.com",
+      first_name: "Test",
+      last_name: "User"
+    }
+  };
+
+  // Attach mock user to request
+  (req as any).user = mockUser;
+
+  return next();
+};
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -806,8 +825,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
 
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) {
+      const invoice = await storage.getInvoice(invoiceId);      if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
