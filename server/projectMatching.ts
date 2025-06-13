@@ -168,13 +168,13 @@ async function calculateFinalScores(
     const vendorMatch = calculateVendorMatch(metadata.vendorName || undefined, project);
     const amountMatch = calculateAmountMatch(metadata.totalAmount, project.budget || undefined);
     
-    // Weighted final score
+    // Weighted final score - prioritizing address, city, and project name
     const finalScore = Math.round(
-      (aiScore * 0.4) +           // 40% AI analysis
-      (nameMatch * 0.25) +        // 25% name similarity
-      (addressMatch * 0.15) +     // 15% location match
-      (vendorMatch * 0.10) +      // 10% vendor relationship
-      (amountMatch * 0.10)        // 10% budget alignment
+      (nameMatch * 0.40) +        // 40% project name similarity
+      (addressMatch * 0.30) +     // 30% address/city match
+      (aiScore * 0.20) +          // 20% AI analysis
+      (vendorMatch * 0.05) +      // 5% vendor relationship
+      (amountMatch * 0.05)        // 5% budget alignment
     );
     
     const reasonings = [
@@ -210,35 +210,89 @@ function calculateStringMatch(str1?: string, str2?: string): number {
   // Check for substring matches
   if (s1.includes(s2) || s2.includes(s1)) return 85;
   
+  // Enhanced project name matching - check for word-level matches
+  const words1 = s1.split(/[\s\-_.,;:]+/).filter(w => w.length > 2);
+  const words2 = s2.split(/[\s\-_.,;:]+/).filter(w => w.length > 2);
+  
+  let wordMatches = 0;
+  const totalWords = Math.max(words1.length, words2.length);
+  
+  for (const word1 of words1) {
+    for (const word2 of words2) {
+      if (word1 === word2) {
+        wordMatches += 2; // Exact word match
+      } else if (word1.includes(word2) || word2.includes(word1)) {
+        wordMatches += 1; // Partial word match
+      }
+    }
+  }
+  
+  const wordScore = totalWords > 0 ? Math.min((wordMatches / totalWords) * 100, 90) : 0;
+  
   // Calculate Levenshtein distance similarity
   const distance = levenshteinDistance(s1, s2);
   const maxLength = Math.max(s1.length, s2.length);
-  const similarity = ((maxLength - distance) / maxLength) * 100;
+  const levenshteinScore = ((maxLength - distance) / maxLength) * 100;
   
-  return Math.max(0, Math.round(similarity));
+  // Return the higher of word-based or character-based matching
+  return Math.max(0, Math.round(Math.max(wordScore, levenshteinScore)));
 }
 
 function calculateAddressMatch(metadata: MatchingMetadata, project: Project): number {
   let score = 0;
   let checks = 0;
   
-  // City match
+  // City match - exact and partial matching
   if (metadata.city && project.city) {
     checks++;
-    if (metadata.city.toLowerCase().includes(project.city.toLowerCase()) ||
-        project.city.toLowerCase().includes(metadata.city.toLowerCase())) {
-      score += 100;
+    const cityInvoice = metadata.city.toLowerCase().trim();
+    const cityProject = project.city.toLowerCase().trim();
+    
+    if (cityInvoice === cityProject) {
+      score += 100; // Perfect city match
+    } else if (cityInvoice.includes(cityProject) || cityProject.includes(cityInvoice)) {
+      score += 80; // Partial city match
+    } else {
+      // Check for common city abbreviations or variations
+      const cityWords = cityInvoice.split(/[\s,.-]+/);
+      const projectWords = cityProject.split(/[\s,.-]+/);
+      
+      for (const invoiceWord of cityWords) {
+        for (const projectWord of projectWords) {
+          if (invoiceWord.length > 2 && projectWord.length > 2 && 
+              (invoiceWord.includes(projectWord) || projectWord.includes(invoiceWord))) {
+            score += 60;
+            break;
+          }
+        }
+      }
     }
   }
   
-  // Address match
+  // Address match - enhanced string matching
   if (metadata.address && project.address) {
     checks++;
     const addressSimilarity = calculateStringMatch(metadata.address, project.address);
     score += addressSimilarity;
+    
+    // Bonus for exact street number or street name matches
+    const invoiceAddress = metadata.address.toLowerCase();
+    const projectAddress = project.address.toLowerCase();
+    
+    // Extract potential street numbers and names
+    const invoiceNumbers = invoiceAddress.match(/\b\d+\b/g) || [];
+    const projectNumbers = projectAddress.match(/\b\d+\b/g) || [];
+    
+    // Bonus for matching street numbers
+    for (const num of invoiceNumbers) {
+      if (projectNumbers.includes(num)) {
+        score += 20;
+        break;
+      }
+    }
   }
   
-  return checks > 0 ? score / checks : 0;
+  return checks > 0 ? Math.min(score / checks, 100) : 0;
 }
 
 function calculateVendorMatch(vendorName?: string, project?: Project): number {
