@@ -1,5 +1,5 @@
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Document, Page, pdfjs } from 'react-pdf';
 import {
   Dialog,
@@ -15,7 +15,9 @@ import 'react-pdf/dist/Page/AnnotationLayer.css';
 import 'react-pdf/dist/Page/TextLayer.css';
 
 // Set up PDF.js worker - using CDN for reliability
-pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
+if (typeof window !== 'undefined' && !pdfjs.GlobalWorkerOptions.workerSrc) {
+  pdfjs.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@3.11.174/build/pdf.worker.min.js`;
+}
 
 interface PDFPreviewModalProps {
   isOpen: boolean;
@@ -46,16 +48,18 @@ export default function PDFPreviewModal({
     setError(null);
   };
 
-  const onDocumentLoadError = (error: Error) => {
+  const onDocumentLoadError = (error: any) => {
     console.error('Error loading PDF:', error);
     let errorMessage = 'Failed to load PDF. The file may not be available or is corrupted.';
     
-    if (error.message.includes('cors') || error.message.includes('CORS')) {
-      errorMessage = 'PDF loading blocked by CORS policy. Please try refreshing the page.';
-    } else if (error.message.includes('worker')) {
-      errorMessage = 'PDF worker failed to load. Please check your internet connection.';
-    } else if (error.message.includes('network') || error.message.includes('fetch')) {
-      errorMessage = 'Network error loading PDF. Please check your connection and try again.';
+    if (error?.message) {
+      if (error.message.includes('cors') || error.message.includes('CORS')) {
+        errorMessage = 'PDF loading blocked by CORS policy. Please try refreshing the page.';
+      } else if (error.message.includes('worker')) {
+        errorMessage = 'PDF worker failed to load. Please check your internet connection.';
+      } else if (error.message.includes('network') || error.message.includes('fetch')) {
+        errorMessage = 'Network error loading PDF. Please check your connection and try again.';
+      }
     }
     
     setError(errorMessage);
@@ -240,45 +244,46 @@ export default function PDFPreviewModal({
             )}
             
             {!error && (
-              <Document
-                file={{
-                  url: fileUrl,
-                  httpHeaders: {
-                    'Accept': 'application/pdf',
-                  },
-                  withCredentials: false,
-                }}
-                onLoadSuccess={onDocumentLoadSuccess}
-                onLoadError={onDocumentLoadError}
-                loading={
-                  <div className="flex items-center justify-center h-96">
-                    <div className="text-center">
-                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                      <p className="text-gray-600">Loading PDF...</p>
-                    </div>
-                  </div>
-                }
-                className="pdf-document"
-                options={{
-                  cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
-                  cMapPacked: true,
-                  standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
-                }}
-              >
-                <div className="bg-white shadow-lg border rounded-lg overflow-hidden">
-                  <Page
-                    pageNumber={pageNumber}
-                    scale={scale}
-                    loading={
-                      <div className="flex items-center justify-center h-96">
-                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <div className="pdf-container">
+                <Document
+                  file={fileUrl}
+                  onLoadSuccess={onDocumentLoadSuccess}
+                  onLoadError={onDocumentLoadError}
+                  loading={
+                    <div className="flex items-center justify-center h-96">
+                      <div className="text-center">
+                        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                        <p className="text-gray-600">Loading PDF...</p>
                       </div>
-                    }
-                    renderTextLayer={true}
-                    renderAnnotationLayer={true}
-                  />
-                </div>
-              </Document>
+                    </div>
+                  }
+                  className="pdf-document"
+                  options={{
+                    cMapUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/cmaps/',
+                    cMapPacked: true,
+                    standardFontDataUrl: 'https://unpkg.com/pdfjs-dist@3.11.174/standard_fonts/',
+                    verbosity: 0,
+                  }}
+                >
+                  <div className="bg-white shadow-lg border rounded-lg overflow-hidden">
+                    <Page
+                      pageNumber={pageNumber}
+                      scale={scale}
+                      loading={
+                        <div className="flex items-center justify-center h-96">
+                          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                        </div>
+                      }
+                      renderTextLayer={false}
+                      renderAnnotationLayer={false}
+                      onLoadError={(error) => {
+                        console.error('Page load error:', error);
+                        setError('Failed to load PDF page');
+                      }}
+                    />
+                  </div>
+                </Document>
+              </div>
             )}
           </div>
         </div>
