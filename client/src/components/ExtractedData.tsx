@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,7 +13,8 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
 import ProjectAssignment from "@/components/ProjectAssignment";
 import DiscrepancyDisplay from "@/components/DiscrepancyDisplay";
-import { InfoIcon, DollarSign } from "lucide-react";
+import { InfoIcon, DollarSign, FileText } from "lucide-react";
+import PDFPreview from "./PDFPreview";
 
 interface Invoice {
   id: number;
@@ -27,6 +28,7 @@ interface Invoice {
   confidenceScore: string | null;
   status: string;
   lineItems?: LineItem[];
+  fileName?: string;
 }
 
 interface LineItem {
@@ -42,6 +44,7 @@ export default function ExtractedData() {
   const [rejectionComments, setRejectionComments] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [showPreview, setShowPreview] = useState(false);
 
   // Get latest invoices
   const { data: invoices } = useQuery<Invoice[]>({
@@ -85,7 +88,7 @@ export default function ExtractedData() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Approval Failed",
         description: error.message,
@@ -121,7 +124,7 @@ export default function ExtractedData() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Rejection Failed",
         description: error.message,
@@ -144,7 +147,8 @@ export default function ExtractedData() {
 
   if (!invoiceToShow) {
     return (
-      <Card className="bg-white shadow-sm border border-gray-200">
+        <>
+        <Card className="bg-white shadow-sm border border-gray-200">
         <CardHeader>
           <CardTitle className="text-lg font-semibold text-gray-900">Extracted Invoice Data</CardTitle>
         </CardHeader>
@@ -157,6 +161,7 @@ export default function ExtractedData() {
           </div>
         </CardContent>
       </Card>
+        </>
     );
   }
 
@@ -165,17 +170,22 @@ export default function ExtractedData() {
   const isPettyCash = invoice.totalAmount && parseFloat(invoice.totalAmount) < 1000;
 
   return (
+    <>
     <div className="space-y-4">
       <Card className="bg-white shadow-sm border border-gray-200">
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle className="text-lg font-semibold text-gray-900">Extracted Invoice Data</CardTitle>
-            {isPettyCash && (
-              <Badge variant="secondary" className="bg-green-100 text-green-800">
-                <DollarSign size={14} className="mr-1" />
-                Petty Cash
-              </Badge>
-            )}
+            <div className="flex items-center space-x-2">
+              <Button 
+                variant="outline" 
+                size="sm"
+                onClick={() => setShowPreview(true)}
+              >
+                <FileText className="w-4 h-4 mr-1" />
+                Preview
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent className="space-y-6">
@@ -375,7 +385,7 @@ export default function ExtractedData() {
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
-      
+
       {/* Project Assignment and PO Matching for regular invoices */}
       {!isPettyCash && (
         <ProjectAssignment 
@@ -387,5 +397,14 @@ export default function ExtractedData() {
       {/* Discrepancy Detection Display */}
       <DiscrepancyDisplay invoiceId={invoice.id} />
     </div>
+
+    {/* PDF Preview Modal */}
+    <PDFPreview
+      isOpen={showPreview}
+      onClose={() => setShowPreview(false)}
+      invoiceId={invoice.id}
+      fileName={invoice.fileName}
+    />
+  </>
   );
 }

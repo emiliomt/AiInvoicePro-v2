@@ -1,31 +1,13 @@
+import { useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2 } from "lucide-react";
-import { useState } from "react";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Badge } from "@/components/ui/badge";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { useToast } from "@/hooks/use-toast";
-import Header from "@/components/Header";
-import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+import { FileText, Eye, Download, Trash2 } from "lucide-react";
+import PDFPreview from "@/components/PDFPreview";
 
 interface Invoice {
   id: number;
@@ -44,7 +26,9 @@ interface Invoice {
 export default function Invoices() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
-  
+  const [showPreview, setShowPreview] = useState(false);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
   });
@@ -185,6 +169,17 @@ export default function Invoices() {
                         variant="outline" 
                         size="sm"
                         onClick={() => {
+                          setPreviewInvoice(invoice);
+                          setShowPreview(true);
+                        }}
+                      >
+                        <FileText size={16} className="mr-2" />
+                        Preview
+                      </Button>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
                           setSelectedInvoice(invoice);
                           setShowDetailsModal(true);
                         }}
@@ -297,6 +292,28 @@ export default function Invoices() {
                 </div>
               </div>
             )}
+          </DialogContent>
+        </Dialog>
+
+        {/* PDF Preview Modal */}
+        <Dialog open={showPreview} onOpenChange={setShowPreview}>
+          <DialogContent className="max-w-4xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle>Invoice Preview</DialogTitle>
+              <DialogDescription>
+                Previewing {previewInvoice?.fileName}
+              </DialogDescription>
+            </DialogHeader>
+            <PDFPreview invoiceId={previewInvoice?.id} />
+            <div className="flex justify-end space-x-2 pt-4 border-t">
+              <Button variant="outline" onClick={() => setShowPreview(false)}>
+                Close
+              </Button>
+              <Button variant="outline">
+                <Download size={16} className="mr-2" />
+                Download
+              </Button>
+            </div>
           </DialogContent>
         </Dialog>
       </div>
