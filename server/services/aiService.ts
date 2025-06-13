@@ -16,6 +16,7 @@ interface ExtractedInvoiceData {
   taxId: string | null;
   companyName: string | null;
   concept: string | null;
+  projectName: string | null;
   lineItems: Array<{
     description: string;
     quantity: string;
@@ -27,7 +28,7 @@ interface ExtractedInvoiceData {
 
 export async function extractInvoiceData(ocrText: string): Promise<ExtractedInvoiceData> {
   try {
-    const prompt = `Extract structured data from this invoice OCR text. Respond with JSON in the exact format specified:
+    const prompt = `Extract structured data from this invoice OCR text. The invoice may be in Spanish or English. Respond with JSON in the exact format specified:
 
 OCR Text:
 ${ocrText}
@@ -45,6 +46,7 @@ Extract the following information and return as JSON:
   "taxId": "string or null",
   "companyName": "string or null",
   "concept": "string or null",
+  "projectName": "string or null",
   "lineItems": [
     {
       "description": "string",
@@ -56,15 +58,25 @@ Extract the following information and return as JSON:
   "confidenceScore": "decimal string 0-1"
 }
 
+Field Mapping (English/Spanish):
+- vendorName: Look for "Vendor", "Supplier", "From" OR "Proveedor", "De", "Empresa"
+- invoiceNumber: Look for "Invoice Number", "Invoice #" OR "Número de Factura", "Factura No.", "Orden de Compra"
+- invoiceDate: Look for "Invoice Date", "Date" OR "Fecha de Emisión", "Fecha de Factura", "Fecha"
+- dueDate: Look for "Due Date", "Payment Due" OR "Fecha de Vencimiento", "Vence", "Fecha Límite"
+- totalAmount: Look for "Total", "Amount Due", "Total Amount" OR "Valor de Venta", "Total", "Importe Total"
+- taxAmount: Look for "Tax", "VAT", "Sales Tax" OR "Valor Impto", "Valor de Impuesto", "IVA", "Impuesto"
+- taxId: Look for "Tax ID", "VAT Number" OR "NIT" (for vendor), "No." (for buyer), "RUT", "RFC"
+- companyName: Look for "Bill To", "Customer", "Client" OR "Razón Social", "Cliente", "Empresa Cliente"
+- concept: Look for "Description", "Services", "Purpose" OR "Descripción", "Concepto", "Servicios"
+- projectName: Look for "Project", "Project Name" OR "Proyecto", "Nombre del Proyecto"
+- lineItems descriptions: Look under "Items", "Products", "Services" OR "Artículos", "Productos", "Descripción"
+
 Rules:
 - Extract actual values from the text, don't invent data
 - Use null if information is not found
 - Convert dates to YYYY-MM-DD format
 - Extract amounts as decimal strings without currency symbols
-- taxId: Extract tax identification number, VAT number, or similar tax registration number
-- companyName: Extract the buyer/client company name (not the vendor)
-- concept: Extract the main purpose or description of the invoice (summary of services/products)
-- Include all line items found in the invoice
+- Handle both Spanish and English field labels
 - Provide confidence score based on text clarity and completeness`;
 
     const response = await openai.chat.completions.create({
@@ -98,12 +110,13 @@ Rules:
       taxId: extractedData.taxId || null,
       companyName: extractedData.companyName || null,
       concept: extractedData.concept || null,
+      projectName: extractedData.projectName || null,
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
       confidenceScore: extractedData.confidenceScore || "0.0",
     };
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI extraction failed:", error);
-    throw new Error(`AI data extraction failed: ${error.message}`);
+    throw new Error(`AI data extraction failed: ${error?.message || 'Unknown error'}`);
   }
 }
 

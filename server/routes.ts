@@ -754,6 +754,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             totalAmount: extractedData.totalAmount,
             taxAmount: extractedData.taxAmount,
             subtotal: extractedData.subtotal,
+            projectName: extractedData.projectName,
             confidenceScore: extractedData.confidenceScore,
           });
 

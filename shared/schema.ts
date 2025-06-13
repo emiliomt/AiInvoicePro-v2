@@ -73,6 +73,7 @@ export const invoices = pgTable("invoices", {
   currency: varchar("currency").default("USD"),
   ocrText: text("ocr_text"),
   extractedData: jsonb("extracted_data"),
+  projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
