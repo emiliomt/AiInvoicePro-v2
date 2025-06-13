@@ -47,7 +47,7 @@ export default function Invoices() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
-  
+
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
   });
@@ -216,14 +216,6 @@ export default function Invoices() {
                           >
                             <FileIcon size={16} className="mr-2" />
                             Preview
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm"
-                            onClick={() => window.open(`/preview/${invoice.id}`, '_blank')}
-                          >
-                            <FileIcon size={16} className="mr-2" />
-                            View in Tab
                           </Button>
                         </>
                       )}
@@ -481,13 +473,6 @@ export default function Invoices() {
                       >
                         <FileIcon size={16} className="mr-2" />
                         Preview PDF
-                      </Button>
-                      <Button 
-                        variant="outline"
-                        onClick={() => window.open(`/preview/${selectedInvoice.id}`, '_blank')}
-                      >
-                        <FileIcon size={16} className="mr-2" />
-                        View in Tab
                       </Button>
                     </>
                   )}
