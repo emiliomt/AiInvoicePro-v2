@@ -466,7 +466,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }),
           description: 'User preferences and settings'
         };
-        await storage.setSetting(defaultSettings);
+        await storage.updateSetting('user_preferences', defaultSettings.value);
         res.json(defaultSettings);
       } else {
         res.json(setting);
@@ -485,15 +485,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Settings value is required" });
       }
 
-      // Validate that value is a valid JSON string
-      try {
-        JSON.parse(value);
-      } catch (parseError) {
-        return res.status(400).json({ message: "Invalid JSON format for settings value" });
+      // If value is an object, stringify it; if it's already a string, validate it
+      let settingsJson: string;
+      if (typeof value === 'object') {
+        settingsJson = JSON.stringify(value);
+      } else {
+        settingsJson = value;
+        // Validate that it's valid JSON
+        try {
+          JSON.parse(settingsJson);
+        } catch (parseError) {
+          return res.status(400).json({ message: "Invalid JSON format for settings value" });
+        }
       }
       
-      const setting = await storage.updateSetting('user_preferences', value);
-      res.json(setting);
+      const setting = await storage.updateSetting('user_preferences', settingsJson);
+      res.json({ 
+        message: "Settings updated successfully",
+        setting 
+      });
     } catch (error) {
       console.error("Error updating user settings:", error);
       res.status(500).json({ 
