@@ -16,6 +16,7 @@ interface ExtractedInvoiceData {
   taxId: string | null;
   companyName: string | null;
   concept: string | null;
+  projectName: string | null;
   lineItems: Array<{
     description: string;
     quantity: string;
@@ -45,6 +46,7 @@ Extract the following information and return as JSON:
   "taxId": "string or null",
   "companyName": "string or null",
   "concept": "string or null",
+  "projectName": "string or null",
   "lineItems": [
     {
       "description": "string",
@@ -56,6 +58,18 @@ Extract the following information and return as JSON:
   "confidenceScore": "decimal string 0-1"
 }
 
+Field Recognition (English and Spanish):
+- vendorName: Look for "Vendor", "Supplier", "Proveedor", "Vendedor"
+- invoiceNumber: Look for "Invoice Number", "Invoice #", "Orden de compra", "Número de Factura", "Factura No."
+- invoiceDate: Look for "Invoice Date", "Date", "Fecha de Emisión", "Fecha de Factura", "Fecha"
+- dueDate: Look for "Due Date", "Payment Due", "Fecha de Vencimiento", "Vencimiento"
+- totalAmount: Look for "Total", "Amount Due", "Total Amount", "Valor de Venta", "Total a Pagar", "Importe Total"
+- taxAmount: Look for "Tax", "VAT", "Sales Tax", "Valor Impto", "Valor de Impuesto", "IVA", "Impuesto"
+- taxId: Look for "Tax ID", "VAT Number", "EIN", "NIT" (vendor), "No." (buyer), "RFC", "CUIT"
+- companyName: Look for "Bill To", "Customer", "Client", "Razón Social", "Cliente", "Empresa"
+- concept: Look for "Description", "Services", "Concept", "Descripción", "Artículos", "Concepto", "Detalle"
+- projectName: Look for "Project", "Project Name", "Proyecto", "Nombre del Proyecto"
+
 Rules:
 - Extract actual values from the text, don't invent data
 - Use null if information is not found
@@ -64,8 +78,10 @@ Rules:
 - taxId: Extract tax identification number, VAT number, or similar tax registration number
 - companyName: Extract the buyer/client company name (not the vendor)
 - concept: Extract the main purpose or description of the invoice (summary of services/products)
+- projectName: Extract project name if mentioned near "Proyecto" or "Project"
 - Include all line items found in the invoice
-- Provide confidence score based on text clarity and completeness`;
+- Provide confidence score based on text clarity and completeness
+- Handle both English and Spanish invoices equally`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
@@ -98,6 +114,7 @@ Rules:
       taxId: extractedData.taxId || null,
       companyName: extractedData.companyName || null,
       concept: extractedData.concept || null,
+      projectName: extractedData.projectName || null,
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
       confidenceScore: extractedData.confidenceScore || "0.0",
     };
