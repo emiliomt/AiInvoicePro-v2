@@ -198,6 +198,7 @@ export default function Settings() {
                     <SelectItem value="eur">EUR (€)</SelectItem>
                     <SelectItem value="gbp">GBP (£)</SelectItem>
                     <SelectItem value="cad">CAD ($)</SelectItem>
+                    <SelectItem value="cop">COP ($)</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
