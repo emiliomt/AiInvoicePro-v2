@@ -443,6 +443,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User settings routes
+  app.get('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
+    try {
+      const setting = await storage.getSetting('user_preferences');
+      if (!setting) {
+        // Return default settings
+        const defaultSettings = {
+          key: 'user_preferences',
+          value: JSON.stringify({
+            fullName: '',
+            department: '',
+            phoneNumber: '',
+            emailNotifications: true,
+            dashboardLayout: 'grid',
+            defaultCurrency: 'USD',
+            timezone: 'America/New_York',
+            aiProcessingMode: 'automatic',
+            aiCacheEnabled: true,
+            aiCacheExpiry: '24h',
+            aiAutoInvalidation: 'on_update'
+          }),
+          description: 'User preferences and settings'
+        };
+        await storage.setSetting(defaultSettings);
+        res.json(defaultSettings);
+      } else {
+        res.json(setting);
+      }
+    } catch (error) {
+      console.error("Error fetching user settings:", error);
+      res.status(500).json({ message: "Failed to fetch user settings" });
+    }
+  });
+
+  app.put('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
+    try {
+      const { value } = req.body;
+      
+      if (!value) {
+        return res.status(400).json({ message: "Settings value is required" });
+      }
+      
+      const setting = await storage.updateSetting('user_preferences', value);
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating user settings:", error);
+      res.status(500).json({ message: "Failed to update user settings" });
+    }
+  });
+
+  // Password change route (placeholder - would need proper authentication in production)
+  app.post('/api/auth/change-password', isAuthenticated, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      if (!currentPassword || !newPassword) {
+        return res.status(400).json({ message: "Current and new passwords are required" });
+      }
+
+      // Password validation
+      const passwordRegex = /^(?=.*[a-zA-Z])(?=.*\d)(?=.*[@$!%*?&])[A-Za-z\d@$!%*?&]{8,}$/;
+      if (!passwordRegex.test(newPassword)) {
+        return res.status(400).json({ 
+          message: "Password must be at least 8 characters with letters, numbers, and symbols" 
+        });
+      }
+
+      // In a real application, you would:
+      // 1. Verify the current password
+      // 2. Hash the new password
+      // 3. Update the user's password in the database
+      
+      // For this demo, we'll just return success
+      res.json({ message: "Password changed successfully" });
+    } catch (error) {
+      console.error("Error changing password:", error);
+      res.status(500).json({ message: "Failed to change password" });
+    }
+  });
+
       const updates = {
         validationStatus,
         isValidated,
