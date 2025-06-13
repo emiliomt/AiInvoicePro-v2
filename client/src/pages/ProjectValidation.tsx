@@ -25,7 +25,8 @@ import {
   User,
   FileText,
   DollarSign,
-  Filter
+  Filter,
+  X
 } from "lucide-react";
 import Header from "@/components/Header";
 import { z } from "zod";
@@ -751,10 +752,12 @@ export default function ProjectValidation() {
                         <td className="p-3 text-sm text-gray-600">{project.address || "—"}</td>
                         <td className="p-3 text-sm text-gray-600">{project.city || "—"}</td>
                         <td className="p-3 text-sm text-gray-600">
-                          {project.isValidated ? (
+                          {project.vatNumber === 'true' ? (
                             <CheckCircle size={16} className="text-green-500" />
+                          ) : project.vatNumber === 'false' ? (
+                            <X size={16} className="text-red-500" />
                           ) : (
-                            <Clock size={16} className="text-yellow-500" />
+                            <span className="text-gray-400">—</span>
                           )}
                         </td>
                         <td className="p-3 text-sm text-gray-600">{project.supervisor || "—"}</td>
