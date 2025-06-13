@@ -1428,6 +1428,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Project match management endpoints
+  app.get("/api/project-matches", isAuthenticated, async (req, res) => {
+    try {
+      const status = req.query.status as string;
+      const matches = await storage.getProjectMatches(status);
+      res.json(matches);
+    } catch (error) {
+      console.error("Error fetching project matches:", error);
+      res.status(500).json({ error: "Failed to fetch project matches" });
+    }
+  });
+
+  app.get("/api/invoices/:id/project-match", isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const match = await storage.getProjectMatchByInvoiceId(invoiceId);
+      
+      if (!match) {
+        return res.json([]);
+      }
+
+      // Get related invoice and project data
+      const invoice = await storage.getInvoice(invoiceId);
+      const project = match.projectId ? await storage.getProject(match.projectId) : null;
+
+      const result = {
+        ...match,
+        invoice,
+        project
+      };
+
+      res.json([result]);
+    } catch (error) {
+      console.error("Error fetching invoice project match:", error);
+      res.status(500).json({ error: "Failed to fetch project match" });
+    }
+  });
+
+  app.put("/api/project-matches/:id", isAuthenticated, async (req, res) => {
+    try {
+      const matchId = parseInt(req.params.id);
+      const updates = req.body;
+      
+      const updatedMatch = await storage.updateProjectMatch(matchId, updates);
+      res.json(updatedMatch);
+    } catch (error) {
+      console.error("Error updating project match:", error);
+      res.status(500).json({ error: "Failed to update project match" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

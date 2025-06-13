@@ -1127,7 +1127,7 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getProjectMatches(status?: string): Promise<(ProjectMatch & { invoice: Invoice; project?: Project })[]> {
-    let query = db
+    const baseQuery = db
       .select({
         id: projectMatches.id,
         invoiceId: projectMatches.invoiceId,
@@ -1147,10 +1147,10 @@ export class DatabaseStorage implements IStorage {
       .leftJoin(projects, eq(projectMatches.projectId, projects.projectId));
 
     if (status) {
-      query = query.where(eq(projectMatches.matchStatus, status));
+      return await baseQuery.where(eq(projectMatches.matchStatus, status));
     }
 
-    return await query;
+    return await baseQuery;
   }
 }
 
