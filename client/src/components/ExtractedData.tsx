@@ -351,7 +351,7 @@ export default function ExtractedData() {
                 </Label>
                 <Input
                   id="projectName"
-                  value={(invoice as any).extractedData?.projectName || invoice.projectName || ""}
+                  value={(invoice as any).extractedData?.projectName || ""}
                   className="mt-2"
                   readOnly
                 />

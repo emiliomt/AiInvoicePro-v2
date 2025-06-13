@@ -61,7 +61,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error: any) {
@@ -73,10 +73,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       const stats = await storage.getDashboardStats(userId);
       res.json(stats);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching dashboard stats:", error);
       res.status(500).json({ message: "Failed to fetch dashboard stats" });
     }
@@ -88,7 +88,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const pettyCashData = req.body;
       const pettyCash = await storage.createPettyCashLog(pettyCashData);
       res.json(pettyCash);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating petty cash log:", error);
       res.status(500).json({ message: "Failed to create petty cash log" });
     }
@@ -106,7 +106,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const pettyCash = await storage.updatePettyCashLog(id, updates);
       res.json(pettyCash);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating petty cash log:", error);
       res.status(500).json({ message: "Failed to update petty cash log", error: error.message });
     }
@@ -117,7 +117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const status = req.query.status as string;
       const pettyCashLogs = await storage.getPettyCashLogs(status);
       res.json(pettyCashLogs);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching petty cash logs:", error);
       res.status(500).json({ message: "Failed to fetch petty cash logs" });
     }
@@ -128,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.invoiceId);
       const pettyCash = await storage.getPettyCashLogByInvoiceId(invoiceId);
       res.json(pettyCash);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching petty cash by invoice:", error);
       res.status(500).json({ message: "Failed to fetch petty cash log" });
     }
@@ -140,7 +140,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const key = req.params.key;
       const setting = await storage.getSetting(key);
       res.json(setting);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching setting:", error);
       res.status(500).json({ message: "Failed to fetch setting" });
     }
@@ -152,7 +152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { value } = req.body;
       const setting = await storage.updateSetting(key, value);
       res.json(setting);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating setting:", error);
       res.status(500).json({ message: "Failed to update setting" });
     }
@@ -163,7 +163,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projects = await storage.getProjects();
       res.json(projects);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching projects:", error);
       res.status(500).json({ message: "Failed to fetch projects" });
     }
@@ -177,7 +177,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Project not found" });
       }
       res.json(project);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching project:", error);
       res.status(500).json({ message: "Failed to fetch project" });
     }
@@ -188,7 +188,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const projectData = req.body;
       const project = await storage.createProject(projectData);
       res.json(project);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating project:", error);
       res.status(500).json({ message: "Failed to create project" });
     }
@@ -200,7 +200,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates = req.body;
       const project = await storage.updateProject(projectId, updates);
       res.json(project);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating project:", error);
       res.status(500).json({ message: "Failed to update project" });
     }
@@ -211,7 +211,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const projectId = req.params.projectId;
       await storage.deleteProject(projectId);
       res.json({ message: "Project deleted successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting project:", error);
 
       // Handle specific constraint violation errors
@@ -235,7 +235,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       await storage.deleteAllProjects();
       res.json({ message: "All projects deleted successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting all projects:", error);
 
       if (error instanceof Error) {
@@ -258,7 +258,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const purchaseOrders = await storage.getPurchaseOrders();
       res.json(purchaseOrders);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching purchase orders:", error);
       res.status(500).json({ message: "Failed to fetch purchase orders" });
     }
@@ -268,7 +268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const purchaseOrders = await storage.getPurchaseOrders();
       res.json(purchaseOrders);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching purchase orders:", error);
       res.status(500).json({ message: "Failed to fetch purchase orders" });
     }
@@ -279,7 +279,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const poData = req.body;
       const purchaseOrder = await storage.createPurchaseOrder(poData);
       res.json(purchaseOrder);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating purchase order:", error);
       res.status(500).json({ message: "Failed to create purchase order" });
     }
@@ -290,7 +290,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const poId = parseInt(req.params.id);
       await storage.deletePurchaseOrder(poId);
       res.json({ message: "Purchase order deleted successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting purchase order:", error);
       res.status(500).json({ message: "Failed to delete purchase order" });
     }
@@ -302,7 +302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const matches = await storage.getInvoicePoMatches(invoiceId);
       res.json(matches);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching invoice matches:", error);
       res.status(500).json({ message: "Failed to fetch invoice matches" });
     }
@@ -314,7 +314,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId } = req.body;
       await storage.assignProjectToInvoice(invoiceId, projectId);
       res.json({ message: "Project assigned successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error assigning project:", error);
       res.status(500).json({ message: "Failed to assign project" });
     }
@@ -326,7 +326,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updates = req.body;
       const match = await storage.updateInvoicePoMatch(matchId, updates);
       res.json(match);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating invoice match:", error);
       res.status(500).json({ message: "Failed to update invoice match" });
     }
@@ -336,7 +336,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const unresolvedMatches = await storage.getUnresolvedMatches();
       res.json(unresolvedMatches);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching unresolved matches:", error);
       res.status(500).json({ message: "Failed to fetch unresolved matches" });
     }
@@ -348,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.invoiceId);
       const flags = await storage.getInvoiceFlags(invoiceId);
       res.json(flags);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching invoice flags:", error);
       res.status(500).json({ message: "Failed to fetch invoice flags" });
     }
@@ -357,10 +357,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/flags/:flagId/resolve", isAuthenticated, async (req, res) => {
     try {
       const flagId = parseInt(req.params.flagId);
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       const flag = await storage.resolveInvoiceFlag(flagId, userId);
       res.json(flag);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error resolving flag:", error);
       res.status(500).json({ message: "Failed to resolve flag" });
     }
@@ -372,7 +372,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.invoiceId);
       const alerts = await storage.getPredictiveAlerts(invoiceId);
       res.json(alerts);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching predictive alerts:", error);
       res.status(500).json({ message: "Failed to fetch predictive alerts" });
     }
@@ -382,7 +382,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const issues = await storage.getTopIssuesThisMonth();
       res.json(issues);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching top issues:", error);
       res.status(500).json({ message: "Failed to fetch top issues" });
     }
@@ -411,7 +411,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json(setting);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching setting:", error);
       res.status(500).json({ message: "Failed to fetch setting" });
     }
@@ -428,7 +428,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const setting = await storage.updateSetting(key, value);
       res.json(setting);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating setting:", error);
       res.status(500).json({ message: "Failed to update setting" });
     }
@@ -462,7 +462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else {
         res.json(setting);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching user settings:", error);
       res.status(500).json({ message: "Failed to fetch user settings" });
     }
@@ -503,7 +503,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Settings updated successfully",
         setting 
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating user settings:", error);
       res.status(500).json({ 
         message: "Failed to update user settings",
@@ -536,7 +536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // For this demo, we'll just return success
       res.json({ message: "Password changed successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error changing password:", error);
       res.status(500).json({ message: "Failed to change password" });
     }
@@ -551,7 +551,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const project = await storage.updateProject(projectId, updates);
       res.json(project);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating project validation:", error);
       res.status(500).json({ message: "Failed to update project validation" });
     }
@@ -621,7 +621,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             const project = await storage.createProject(projectData);
             importedProjects.push(project);
-          } catch (error) {
+          } catch (error: any) {
             errors.push({
               row: i + 1,
               error: error instanceof Error ? error.message : 'Unknown error',
@@ -636,7 +636,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: errors.length,
           errorDetails: errors
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error('Excel processing error:', error);
         res.status(500).json({ message: 'Failed to process Excel file' });
       }
@@ -682,7 +682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
       res.setHeader('Content-Disposition', 'attachment; filename=project_validation_template.xlsx');
       res.send(buffer);
-    } catch (error) {
+    } catch (error: any) {
       console.error('Template generation error:', error);
       res.status(500).json({ message: 'Failed to generate template' });
     }
@@ -697,7 +697,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        const userId = req.user.claims.sub;
+        const userId = req.user?.id || req.user?.claims?.sub;
         const file = req.file;
 
         console.log("Upload request received:", { 
@@ -852,7 +852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             extractedData: { error: error.message },
           });
         });
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error uploading invoice:", error);
         res.status(500).json({ message: "Failed to upload invoice" });
       }
@@ -865,13 +865,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== req.user?.id || req.user?.claims?.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
       // Start OCR processing manually
       res.json({ message: "OCR processing started" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting OCR:", error);
       res.status(500).json({ message: "Failed to start OCR processing" });
     }
@@ -882,12 +882,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== req.user?.id || req.user?.claims?.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
       res.json({ message: "Data extraction started" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting data extraction:", error);
       res.status(500).json({ message: "Failed to start data extraction" });
     }
@@ -898,12 +898,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== req.user?.id || req.user?.claims?.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
       res.json({ message: "PO matching started" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error starting PO matching:", error);
       res.status(500).json({ message: "Failed to start PO matching" });
     }
@@ -922,7 +922,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -937,7 +937,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileName: invoice.fileName,
         previewUrl: `/api/invoices/${invoiceId}/preview/file`
       });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error serving invoice preview:", error);
       res.status(500).json({ message: "Failed to serve invoice preview" });
     }
@@ -954,7 +954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       if (invoice.userId !== userId) {
         return res.status(403).send('Access denied');
       }
@@ -1022,7 +1022,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Finalize the PDF
         doc.end();
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error serving PDF file:", error);
       if (!res.headersSent) {
         res.status(500).send('Failed to serve PDF file');
@@ -1041,7 +1041,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -1050,7 +1050,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const lineItems = await storage.getLineItemsByInvoiceId(invoiceId);
 
       res.json({ ...invoice, lineItems });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching invoice:", error);
       res.status(500).json({ message: "Failed to fetch invoice" });
     }
@@ -1059,10 +1059,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user's invoices
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       const invoices = await storage.getInvoicesByUserId(userId);
       res.json(invoices);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching invoices:", error);
       res.status(500).json({ message: "Failed to fetch invoices" });
     }
@@ -1072,7 +1072,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -1087,7 +1087,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const updatedInvoice = await storage.updateInvoice(invoiceId, updates);
 
       res.json(updatedInvoice);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating invoice:", error);
       res.status(500).json({ message: "Failed to update invoice" });
     }
@@ -1097,7 +1097,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/approve', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
 
       const invoice = await storage.getInvoice(invoiceId);      if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
@@ -1120,7 +1120,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "Invoice approved successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error approving invoice:", error);
       res.status(500).json({ message: "Failed to approve invoice" });
     }
@@ -1130,7 +1130,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/reject', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
       const { comments } = req.body;
 
       const invoice = await storage.getInvoice(invoiceId);
@@ -1156,7 +1156,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       res.json({ message: "Invoice rejected successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error rejecting invoice:", error);
       res.status(500).json({ message: "Failed to reject invoice" });
     }
@@ -1166,7 +1166,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = req.user?.id || req.user?.claims?.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -1179,7 +1179,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.deleteInvoice(invoiceId);
       res.json({ message: "Invoice deleted successfully" });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting invoice:", error);
       res.status(500).json({ message: "Failed to delete invoice" });
     }
@@ -1190,7 +1190,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const pendingApprovals = await storage.getPendingApprovals();
       res.json(pendingApprovals);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching pending approvals:", error);
       res.status(500).json({ message: "Failed to fetch pending approvals" });
     }
@@ -1201,7 +1201,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const rules = await storage.getValidationRules();
       res.json(rules);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching validation rules:", error);
       res.status(500).json({ message: "Failed to fetch validation rules" });
     }
@@ -1217,7 +1217,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       res.json(rule);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching validation rule:", error);
       res.status(500).json({ message: "Failed to fetch validation rule" });
     }
@@ -1236,7 +1236,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const rule = await storage.createValidationRule(ruleData);
       res.status(201).json(rule);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error creating validation rule:", error);
       res.status(500).json({ message: "Failed to create validation rule" });
     }
@@ -1254,7 +1254,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const updatedRule = await storage.updateValidationRule(ruleId, updates);
       res.json(updatedRule);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating validation rule:", error);
       res.status(500).json({ message: "Failed to update validation rule" });
     }
@@ -1271,7 +1271,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       await storage.deleteValidationRule(ruleId);
       res.status(204).send();
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting validation rule:", error);
       res.status(500).json({ message: "Failed to delete validation rule" });
     }
@@ -1283,7 +1283,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceData = req.body;
       const validationResult = await storage.validateInvoiceData(invoiceData);
       res.json(validationResult);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
     }
