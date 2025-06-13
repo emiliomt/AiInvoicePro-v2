@@ -14,6 +14,7 @@ import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { ResizablePanelGroup, ResizablePanel, ResizableHandle } from "@/components/ui/resizable";
 import { useToast } from "@/hooks/use-toast";
 import { 
   Search, 
@@ -89,8 +90,33 @@ export default function ProjectMatcher() {
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
   
+  // Column width management
+  const defaultColumnWidths = [12, 15, 10, 15, 15, 12, 8, 8, 8, 5]; // percentages
+  const [columnWidths, setColumnWidths] = useState<number[]>(defaultColumnWidths);
+  
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  // Load column widths from localStorage on mount
+  useEffect(() => {
+    const savedWidths = localStorage.getItem('projectMatcher-columnWidths');
+    if (savedWidths) {
+      try {
+        const parsedWidths = JSON.parse(savedWidths);
+        if (Array.isArray(parsedWidths) && parsedWidths.length === defaultColumnWidths.length) {
+          setColumnWidths(parsedWidths);
+        }
+      } catch (error) {
+        console.warn('Failed to parse saved column widths, using defaults');
+      }
+    }
+  }, []);
+
+  // Save column widths to localStorage when they change
+  const handleColumnResize = (newWidths: number[]) => {
+    setColumnWidths(newWidths);
+    localStorage.setItem('projectMatcher-columnWidths', JSON.stringify(newWidths));
+  };
 
   // Fetch all invoices
   const { data: invoices = [] } = useQuery<Invoice[]>({
@@ -576,160 +602,315 @@ export default function ProjectMatcher() {
                 <CardTitle>Invoice Project Matching</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice</TableHead>
-                      <TableHead>Extracted Address</TableHead>
-                      <TableHead>Extracted City</TableHead>
-                      <TableHead>Extracted Project</TableHead>
-                      <TableHead>Best Match</TableHead>
-                      <TableHead>Best Match Address</TableHead>
-                      <TableHead>Best Match City</TableHead>
-                      <TableHead>Confidence</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInvoices.map((invoice) => {
-                      const status = getMatchStatus(invoice, confidenceThreshold[0]);
-                      const isMatching = matchingInProgress === invoice.id;
-                      const bestMatch = getBestProjectMatch(invoice, projects);
-                      
-                      return (
-                        <TableRow key={invoice.id}>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="font-medium">
-                                {invoice.extractedData?.invoiceNumber || invoice.id}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                {invoice.vendorName || 'N/A'}
+                <div className="w-full overflow-hidden">
+                  <ResizablePanelGroup
+                    direction="horizontal"
+                    className="min-h-[400px] w-full"
+                    onLayout={handleColumnResize}
+                  >
+                    {/* Invoice Column */}
+                    <ResizablePanel defaultSize={columnWidths[0]} minSize={8}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Invoice
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => (
+                            <div key={`invoice-${invoice.id}`} className="p-4 border-b border-gray-100">
+                              <div className="space-y-1">
+                                <div className="font-medium">
+                                  {invoice.extractedData?.invoiceNumber || invoice.id}
+                                </div>
+                                <div className="text-sm text-muted-foreground">
+                                  {invoice.vendorName || 'N/A'}
+                                </div>
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="w-4 h-4 text-muted-foreground" />
-                              {invoice.extractedData?.projectAddress || invoice.extractedData?.address || 'N/A'}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {(() => {
-                              // Use projectCity if available, otherwise derive from vendor address
-                              let city = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-                              
-                              if (!city && invoice.extractedData?.vendorAddress) {
-                                const vendorAddress = invoice.extractedData.vendorAddress;
-                                const addressParts = vendorAddress.split(',').map(part => part.trim());
-                                if (addressParts.length >= 2) {
-                                  city = addressParts.slice(1).join(', ');
-                                }
-                              }
-                              
-                              return city || 'N/A';
-                            })()}
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="font-medium">
-                                {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                {invoice.extractedData?.projectName ? 'From extracted data' : 'Inferred from address/city'}
+                          ))}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Extracted Address Column */}
+                    <ResizablePanel defaultSize={columnWidths[1]} minSize={10}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Extracted Address
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => (
+                            <div key={`address-${invoice.id}`} className="p-4 border-b border-gray-100">
+                              <div className="flex items-center gap-2">
+                                <MapPin className="w-4 h-4 text-muted-foreground" />
+                                <span className="text-sm">
+                                  {invoice.extractedData?.projectAddress || invoice.extractedData?.address || 'N/A'}
+                                </span>
                               </div>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-1">
-                              <div className="font-medium">
-                                {bestMatch?.project?.name || 'No match found'}
-                              </div>
-                              <div className="text-sm text-muted-foreground">
-                                <Building2 className="w-3 h-3 inline mr-1" />
-                                {bestMatch?.project?.projectId || 'From validation records'}
-                              </div>
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <MapPin className="w-4 h-4 text-muted-foreground" />
-                              {bestMatch?.project?.address || 'N/A'}
-                            </div>
-                          </TableCell>
-                          <TableCell>
-                            {bestMatch?.project?.city || 'N/A'}
-                          </TableCell>
-                          <TableCell>
-                            <div className="space-y-2">
-                              <Progress value={bestMatch?.confidence || 0} className="w-20" />
+                          ))}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Extracted City Column */}
+                    <ResizablePanel defaultSize={columnWidths[2]} minSize={8}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Extracted City
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => (
+                            <div key={`city-${invoice.id}`} className="p-4 border-b border-gray-100">
                               <span className="text-sm">
-                                {bestMatch?.confidence || 0}%
+                                {(() => {
+                                  let city = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+                                  
+                                  if (!city && invoice.extractedData?.vendorAddress) {
+                                    const vendorAddress = invoice.extractedData.vendorAddress;
+                                    const addressParts = vendorAddress.split(',').map(part => part.trim());
+                                    if (addressParts.length >= 2) {
+                                      city = addressParts.slice(1).join(', ');
+                                    }
+                                  }
+                                  
+                                  return city || 'N/A';
+                                })()}
                               </span>
                             </div>
-                          </TableCell>
-                          <TableCell>
-                            <Badge 
-                              variant={status.color === "green" ? "default" : "secondary"}
-                              className={
-                                status.color === "green" 
-                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                                  : status.color === "yellow"
-                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                                  : ""
-                              }
-                            >
-                              {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
-                              {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
-                              {status.label}
-                            </Badge>
-                          </TableCell>
-                          <TableCell>
-                            <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleFindMatches(invoice)}
-                                disabled={isMatching}
-                              >
-                                {isMatching ? (
-                                  <>
-                                    <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                    Matching...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap className="w-4 h-4 mr-2" />
-                                    Find Matches
-                                  </>
-                                )}
-                              </Button>
-                              
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button size="sm" variant="ghost">
-                                    <Eye className="w-4 h-4" />
-                                  </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-4xl">
-                                  <DialogHeader>
-                                    <DialogTitle>Invoice Details & Manual Matching</DialogTitle>
-                                  </DialogHeader>
-                                  <InvoiceMatchingDialog 
-                                    invoice={invoice} 
-                                    projects={projects}
-                                    onManualMatch={handleManualMatch}
-                                  />
-                                </DialogContent>
-                              </Dialog>
+                          ))}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Extracted Project Column */}
+                    <ResizablePanel defaultSize={columnWidths[3]} minSize={10}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Extracted Project
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => (
+                            <div key={`project-${invoice.id}`} className="p-4 border-b border-gray-100">
+                              <div className="space-y-1">
+                                <div className="font-medium text-sm">
+                                  {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}
+                                </div>
+                                <div className="text-xs text-muted-foreground">
+                                  {invoice.extractedData?.projectName ? 'From extracted data' : 'Inferred from address/city'}
+                                </div>
+                              </div>
                             </div>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
+                          ))}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Best Match Column */}
+                    <ResizablePanel defaultSize={columnWidths[4]} minSize={10}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Best Match
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const bestMatch = getBestProjectMatch(invoice, projects);
+                            return (
+                              <div key={`match-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <div className="space-y-1">
+                                  <div className="font-medium text-sm">
+                                    {bestMatch?.project?.name || 'No match found'}
+                                  </div>
+                                  <div className="text-xs text-muted-foreground">
+                                    <Building2 className="w-3 h-3 inline mr-1" />
+                                    {bestMatch?.project?.projectId || 'From validation records'}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Best Match Address Column */}
+                    <ResizablePanel defaultSize={columnWidths[5]} minSize={10}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Best Match Address
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const bestMatch = getBestProjectMatch(invoice, projects);
+                            return (
+                              <div key={`match-address-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <div className="flex items-center gap-2">
+                                  <MapPin className="w-4 h-4 text-muted-foreground" />
+                                  <span className="text-sm">
+                                    {bestMatch?.project?.address || 'N/A'}
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Best Match City Column */}
+                    <ResizablePanel defaultSize={columnWidths[6]} minSize={8}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Best Match City
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const bestMatch = getBestProjectMatch(invoice, projects);
+                            return (
+                              <div key={`match-city-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <span className="text-sm">
+                                  {bestMatch?.project?.city || 'N/A'}
+                                </span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Confidence Column */}
+                    <ResizablePanel defaultSize={columnWidths[7]} minSize={6}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Confidence
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const bestMatch = getBestProjectMatch(invoice, projects);
+                            return (
+                              <div key={`confidence-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <div className="space-y-2">
+                                  <Progress value={bestMatch?.confidence || 0} className="w-full h-2" />
+                                  <span className="text-xs">
+                                    {bestMatch?.confidence || 0}%
+                                  </span>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Status Column */}
+                    <ResizablePanel defaultSize={columnWidths[8]} minSize={6}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Status
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const status = getMatchStatus(invoice, confidenceThreshold[0]);
+                            return (
+                              <div key={`status-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <Badge 
+                                  variant={status.color === "green" ? "default" : "secondary"}
+                                  className={
+                                    status.color === "green" 
+                                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                                      : status.color === "yellow"
+                                      ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+                                      : ""
+                                  }
+                                >
+                                  {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
+                                  {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
+                                  {status.label}
+                                </Badge>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                    
+                    <ResizableHandle withHandle />
+                    
+                    {/* Actions Column */}
+                    <ResizablePanel defaultSize={columnWidths[9]} minSize={4}>
+                      <div className="h-full flex flex-col">
+                        <div className="border-b border-gray-200 p-4 font-medium text-muted-foreground bg-gray-50">
+                          Actions
+                        </div>
+                        <div className="flex-1 overflow-y-auto">
+                          {filteredInvoices.map((invoice) => {
+                            const isMatching = matchingInProgress === invoice.id;
+                            return (
+                              <div key={`actions-${invoice.id}`} className="p-4 border-b border-gray-100">
+                                <div className="flex flex-col gap-2">
+                                  <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleFindMatches(invoice)}
+                                    disabled={isMatching}
+                                    className="w-full text-xs"
+                                  >
+                                    {isMatching ? (
+                                      <>
+                                        <Clock className="w-3 h-3 mr-1 animate-spin" />
+                                        Matching...
+                                      </>
+                                    ) : (
+                                      <>
+                                        <Zap className="w-3 h-3 mr-1" />
+                                        Find
+                                      </>
+                                    )}
+                                  </Button>
+                                  
+                                  <Dialog>
+                                    <DialogTrigger asChild>
+                                      <Button size="sm" variant="ghost" className="w-full text-xs">
+                                        <Eye className="w-3 h-3 mr-1" />
+                                        View
+                                      </Button>
+                                    </DialogTrigger>
+                                    <DialogContent className="max-w-4xl">
+                                      <DialogHeader>
+                                        <DialogTitle>Invoice Details & Manual Matching</DialogTitle>
+                                      </DialogHeader>
+                                      <InvoiceMatchingDialog 
+                                        invoice={invoice} 
+                                        projects={projects}
+                                        onManualMatch={handleManualMatch}
+                                      />
+                                    </DialogContent>
+                                  </Dialog>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </ResizablePanel>
+                  </ResizablePanelGroup>
+                </div>
+                    
               </CardContent>
             </Card>
           </TabsContent>
