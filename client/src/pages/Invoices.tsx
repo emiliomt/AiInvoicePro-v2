@@ -272,8 +272,10 @@ export default function Invoices() {
             </DialogHeader>
             {selectedInvoice && (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="space-y-4">
+                {/* Core Invoice Information */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">Core Invoice Information</h4>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700">File Name</label>
                       <p className="text-sm text-gray-900 mt-1">{selectedInvoice.fileName}</p>
@@ -287,20 +289,40 @@ export default function Invoices() {
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Vendor Name</label>
-                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.vendorName || "N/A"}</p>
+                      <label className="text-sm font-medium text-gray-700">Upload Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.createdAt)}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Invoice Number</label>
-                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.invoiceNumber || "N/A"}</p>
+                      <label className="text-sm font-medium text-gray-700">Currency</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.currency || "USD"}</p>
                     </div>
                   </div>
-                  <div className="space-y-4">
+                </div>
+
+                {/* Vendor Details */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Vendor Details</h4>
+                  <p className="text-sm text-gray-600 mb-3">Vendor name and tax ID/VAT number</p>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Total Amount</label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount(selectedInvoice.totalAmount, selectedInvoice.currency)}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.vendorName || "Not extracted"}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Tax ID/VAT Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.taxId || "Not extracted"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Invoice Identification */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Invoice Identification</h4>
+                  <p className="text-sm text-gray-600 mb-3">Invoice number, invoice date, due date</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Invoice Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.invoiceNumber || "Not extracted"}</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Invoice Date</label>
@@ -310,9 +332,57 @@ export default function Invoices() {
                       <label className="text-sm font-medium text-gray-700">Due Date</label>
                       <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.dueDate)}</p>
                     </div>
+                  </div>
+                </div>
+
+                {/* Financial Data */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Financial Data</h4>
+                  <p className="text-sm text-gray-600 mb-3">Total amount, tax amount, subtotal, and currency</p>
+                  <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Upload Date</label>
-                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.createdAt)}</p>
+                      <label className="text-sm font-medium text-gray-700">Total Amount</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {formatAmount(selectedInvoice.totalAmount, selectedInvoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Tax Amount</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {formatAmount(selectedInvoice.taxAmount, selectedInvoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Subtotal</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {formatAmount(selectedInvoice.subtotal, selectedInvoice.currency)}
+                      </p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Confidence Score</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {selectedInvoice.confidenceScore ? `${(parseFloat(selectedInvoice.confidenceScore) * 100).toFixed(1)}%` : "Not available"}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Business Context */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Business Context</h4>
+                  <p className="text-sm text-gray-600 mb-3">Company name (buyer) and concept/description of services</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Company Name (Buyer)</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.companyName || "Not extracted"}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Project Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).projectName || "Not extracted"}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-gray-700">Concept/Description</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.concept || "Not extracted"}</p>
                     </div>
                   </div>
                 </div>
