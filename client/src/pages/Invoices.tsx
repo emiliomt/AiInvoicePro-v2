@@ -382,15 +382,90 @@ export default function Invoices() {
                       <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.companyName || "Not extracted"}</p>
                     </div>
                     <div>
+                      <label className="text-sm font-medium text-gray-700">Buyer Tax ID</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.buyerTaxId || "Not extracted"}</p>
+                    </div>
+                    <div>
                       <label className="text-sm font-medium text-gray-700">Project Name</label>
-                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).projectName || "Not extracted"}</p>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).projectName || (selectedInvoice as any).extractedData?.projectName || "Not extracted"}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Project City</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.projectCity || "Not extracted"}</p>
                     </div>
                     <div className="col-span-2">
                       <label className="text-sm font-medium text-gray-700">Concept/Description</label>
                       <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.concept || "Not extracted"}</p>
                     </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-gray-700">Description Summary</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.descriptionSummary || "Not extracted"}</p>
+                    </div>
                   </div>
                 </div>
+
+                {/* Addresses */}
+                <div>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Address Information</h4>
+                  <p className="text-sm text-gray-600 mb-3">Vendor and buyer address details</p>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Vendor Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.vendorAddress || "Not extracted"}</p>
+                    </div>
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Buyer Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.buyerAddress || "Not extracted"}</p>
+                    </div>
+                    <div className="col-span-2">
+                      <label className="text-sm font-medium text-gray-700">Project Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.projectAddress || "Not extracted"}</p>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Line Items */}
+                {(selectedInvoice as any).extractedData?.lineItems && Array.isArray((selectedInvoice as any).extractedData.lineItems) && (selectedInvoice as any).extractedData.lineItems.length > 0 && (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">• Line Items</h4>
+                    <p className="text-sm text-gray-600 mb-3">Detailed breakdown of services and materials</p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {(selectedInvoice as any).extractedData.lineItems.map((item: any, index: number) => (
+                            <tr key={index}>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.description || "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.quantity || "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.unitPrice ? formatAmount(item.unitPrice, selectedInvoice.currency) : "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.totalPrice ? formatAmount(item.totalPrice, selectedInvoice.currency) : "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.itemType || "N/A"}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional Notes */}
+                {(selectedInvoice as any).extractedData?.notes && (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">• Additional Notes</h4>
+                    <p className="text-sm text-gray-600 mb-3">Additional observations or terms</p>
+                    <div className="bg-gray-50 p-3 rounded-md">
+                      <p className="text-sm text-gray-900">{(selectedInvoice as any).extractedData.notes}</p>
+                    </div>
+                  </div>
+                )}
                 <div className="flex justify-end space-x-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close
