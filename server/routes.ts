@@ -1,7 +1,7 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
+import { setupAuth, isAuthenticated as authMiddleware } from "./replitAuth";
 import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
@@ -51,23 +51,8 @@ const excelUpload = multer({
   },
 });
 
-// Bypassed authentication for testing - allows access without login
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  // Create a mock user for testing purposes
-  const mockUser = {
-    claims: {
-      sub: "test-user-123",
-      email: "test@example.com",
-      first_name: "Test",
-      last_name: "User"
-    }
-  };
-
-  // Attach mock user to request
-  (req as any).user = mockUser;
-
-  return next();
-};
+// Use the authentication middleware from replitAuth
+const isAuthenticated = authMiddleware;
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
@@ -79,7 +64,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = req.user.claims.sub;
       const user = await storage.getUser(userId);
       res.json(user);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching user:", error);
       res.status(500).json({ message: "Failed to fetch user" });
     }

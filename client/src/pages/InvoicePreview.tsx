@@ -1,5 +1,5 @@
 
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useLocation } from "wouter";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ declare global {
 
 export default function InvoicePreview() {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
+  const [, setLocation] = useLocation();
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -209,7 +209,7 @@ export default function InvoicePreview() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => navigate('/invoices')}
+                onClick={() => setLocation('/invoices')}
               >
                 <ArrowLeft size={16} className="mr-2" />
                 Back to Invoices
