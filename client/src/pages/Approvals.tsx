@@ -51,7 +51,12 @@ export default function Approvals() {
 
   const formatAmount = (amount: string | null, currency: string) => {
     if (!amount) return "N/A";
-    return `${currency} ${parseFloat(amount).toFixed(2)}`;
+    const numericAmount = parseFloat(amount);
+    const formattedNumber = numericAmount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return `${currency} ${formattedNumber}`;
   };
 
   const formatDate = (dateString: string | null) => {
