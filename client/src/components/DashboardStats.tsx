@@ -46,17 +46,13 @@ export default function DashboardStats() {
     } else if (num >= 1000) {
       return `$${(num / 1000).toFixed(1)}K`;
     }
-    return `$${num.toLocaleString()}`;
-  };
-
-  const formatNumber = (value: number) => {
-    return value.toLocaleString();
+    return `$${num.toFixed(0)}`;
   };
 
   const statsData = [
     {
       title: "Total Invoices",
-      value: formatNumber(stats?.totalInvoices || 0),
+      value: stats?.totalInvoices?.toLocaleString() || "0",
       change: "+12.5%",
       changeType: "positive" as const,
       icon: FileText,
@@ -65,7 +61,7 @@ export default function DashboardStats() {
     },
     {
       title: "Pending Approval",
-      value: formatNumber(stats?.pendingApproval || 0),
+      value: stats?.pendingApproval?.toString() || "0",
       change: "-5.2%",
       changeType: "negative" as const,
       icon: Clock,
@@ -74,7 +70,7 @@ export default function DashboardStats() {
     },
     {
       title: "Processed Today",
-      value: formatNumber(stats?.processedToday || 0),
+      value: stats?.processedToday?.toString() || "0",
       change: "+8.1%",
       changeType: "positive" as const,
       icon: CheckCircle,
