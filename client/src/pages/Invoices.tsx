@@ -101,7 +101,7 @@ export default function Invoices() {
   };
 
   const isPDFFile = (fileName: string | null) => {
-    return fileName && fileName.toLowerCase().endsWith('.pdf');
+    return fileName ? fileName.toLowerCase().endsWith('.pdf') : false;
   };
 
   const handlePreviewClick = (invoice: Invoice) => {

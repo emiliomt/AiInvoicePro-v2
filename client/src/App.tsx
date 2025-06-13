@@ -17,17 +17,7 @@ import ValidationRules from "./pages/ValidationRules";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
-import Profile from "./pages/Profile";
-import NotFound from "./pages/not-found";
 import React from "react";
-
-// Placeholder components for Profile and Settings pages
-const Profile = () => (
-  <div>
-    <h1>Profile</h1>
-    <p>This is the profile page.</p>
-  </div>
-);
 
 const Settings = () => (
   <div>

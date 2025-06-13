@@ -28,7 +28,7 @@ export default function PDFPreviewModal({
   isOpen, 
   onClose, 
   invoiceId, 
-  fileName 
+  fileName = "Invoice Document"
 }: PDFPreviewModalProps) {
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
