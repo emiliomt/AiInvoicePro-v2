@@ -256,7 +256,9 @@ export default function ProjectMatcher() {
     const searchMatch = !searchTerm || 
       invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.extractedData?.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
+      invoice.extractedData?.projectName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.extractedData?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.id.toString().includes(searchTerm);
     
     return statusMatch && searchMatch;
   });
@@ -453,7 +455,9 @@ export default function ProjectMatcher() {
                         <TableRow key={invoice.id}>
                           <TableCell>
                             <div className="space-y-1">
-                              <div className="font-medium">{invoice.fileName}</div>
+                              <div className="font-medium">
+                                {invoice.extractedData?.invoiceNumber || invoice.id}
+                              </div>
                               <div className="text-sm text-muted-foreground">
                                 {invoice.vendorName || 'N/A'}
                               </div>
@@ -575,6 +579,7 @@ function InvoiceMatchingDialog({
         <div>
           <h3 className="font-semibold mb-3">Invoice Information</h3>
           <div className="space-y-2 text-sm">
+            <div><strong>Invoice #:</strong> {invoice.extractedData?.invoiceNumber || invoice.id}</div>
             <div><strong>File:</strong> {invoice.fileName}</div>
             <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
             <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
