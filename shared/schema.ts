@@ -397,6 +397,33 @@ export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 
+export const projectMatches = pgTable("project_matches", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").notNull().references(() => invoices.id, { onDelete: "cascade" }),
+  projectId: text("project_id").references(() => projects.projectId),
+  confidence: integer("confidence"), // AI confidence score 0-100
+  matchedBy: text("matched_by"), // 'ai', 'manual'
+  matchStatus: text("match_status").default("pending"), // 'pending', 'matched', 'rejected', 'auto_matched'
+  matchNotes: text("match_notes"),
+  matchedAt: timestamp("matched_at"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const projectMatchesRelations = relations(projectMatches, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [projectMatches.invoiceId],
+    references: [invoices.id],
+  }),
+  project: one(projects, {
+    fields: [projectMatches.projectId],
+    references: [projects.projectId],
+  }),
+}));
+
+export type InsertProjectMatch = typeof projectMatches.$inferInsert;
+export type ProjectMatch = typeof projectMatches.$inferSelect;
+
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
@@ -445,6 +472,12 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 });
 
 export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertProjectMatchSchema = createInsertSchema(projectMatches).omit({
   id: true,
   createdAt: true,
   updatedAt: true,

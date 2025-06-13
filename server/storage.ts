@@ -153,6 +153,12 @@ export interface IStorage {
     manualMatched: number;
     unmatched: number;
   }>;
+
+  // Project match management operations
+  createProjectMatch(match: InsertProjectMatch): Promise<ProjectMatch>;
+  updateProjectMatch(id: number, updates: Partial<InsertProjectMatch>): Promise<ProjectMatch>;
+  getProjectMatchByInvoiceId(invoiceId: number): Promise<ProjectMatch | undefined>;
+  getProjectMatches(status?: string): Promise<(ProjectMatch & { invoice: Invoice; project?: Project })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
