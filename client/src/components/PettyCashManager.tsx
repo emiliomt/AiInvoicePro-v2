@@ -65,11 +65,11 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
         },
         body: JSON.stringify(updates),
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to update petty cash log");
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -104,7 +104,7 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
       id: log.id,
       updates: {
         status: "approved",
-        approvedAt: new Date().toISOString(),
+        approvedAt: new Date(),
         approvalNotes: formData.approvalNotes,
       },
     });
@@ -122,7 +122,7 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
 
   const handleUpdateAssignment = () => {
     if (!editingLog) return;
-    
+
     updateMutation.mutate({
       id: editingLog.id,
       updates: {
@@ -152,7 +152,7 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false }: Pet
   // Single invoice view
   if (!showAllLogs && invoiceId) {
     const pettyCashLog = pettyCashLogs as PettyCashLog;
-    
+
     if (!pettyCashLog) {
       return null; // Not a petty cash invoice
     }
