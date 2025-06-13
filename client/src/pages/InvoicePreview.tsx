@@ -1,5 +1,5 @@
 
-import { useParams, useLocation } from "wouter";
+import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
@@ -14,7 +14,7 @@ declare global {
 
 export default function InvoicePreview() {
   const { id } = useParams<{ id: string }>();
-  const [, setLocation] = useLocation();
+  const navigate = useNavigate();
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
@@ -155,7 +155,7 @@ export default function InvoicePreview() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = (invoice as any)?.fileName || 'invoice.pdf';
+      link.download = invoice?.fileName || 'invoice.pdf';
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -163,7 +163,7 @@ export default function InvoicePreview() {
 
       toast({
         title: "Download Started",
-        description: `Downloading ${(invoice as any)?.fileName}...`,
+        description: `Downloading ${invoice?.fileName}...`,
       });
     } catch (error) {
       toast({
@@ -209,16 +209,16 @@ export default function InvoicePreview() {
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={() => setLocation('/invoices')}
+                onClick={() => navigate('/invoices')}
               >
                 <ArrowLeft size={16} className="mr-2" />
                 Back to Invoices
               </Button>
               <div>
                 <h1 className="text-lg font-semibold text-gray-900">
-                  {(invoice as any)?.invoiceNumber ? `Invoice ${(invoice as any).invoiceNumber}` : 'Invoice Preview'}
+                  {invoice?.invoiceNumber ? `Invoice ${invoice.invoiceNumber}` : 'Invoice Preview'}
                 </h1>
-                <p className="text-sm text-gray-600">{(invoice as any)?.fileName || `Document ID: ${id}`}</p>
+                <p className="text-sm text-gray-600">{invoice?.fileName || `Document ID: ${id}`}</p>
               </div>
             </div>
 

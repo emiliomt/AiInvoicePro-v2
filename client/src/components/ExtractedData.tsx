@@ -8,13 +8,12 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle, InfoIcon } from "lucide-react";
+import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
 import ProjectAssignment from "@/components/ProjectAssignment";
 import DiscrepancyDisplay from "@/components/DiscrepancyDisplay";
-import ProjectMatcher from "@/components/ProjectMatcher";
 
 interface Invoice {
   id: number;
@@ -352,7 +351,7 @@ export default function ExtractedData() {
                 </Label>
                 <Input
                   id="projectName"
-                  value={(invoice as any).extractedData?.projectName || ""}
+                  value={(invoice as any).extractedData?.projectName || invoice.projectName || ""}
                   className="mt-2"
                   readOnly
                 />
@@ -587,15 +586,6 @@ export default function ExtractedData() {
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
-
-      {/* AI Project Matching for all invoices */}
-      <ProjectMatcher 
-        invoiceId={invoice.id}
-        onMatchComplete={() => {
-          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-          queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id] });
-        }}
-      />
 
       {/* Project Assignment and PO Matching for regular invoices */}
       {!isPettyCash && (

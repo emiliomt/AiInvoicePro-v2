@@ -496,7 +496,7 @@ export default function Invoices() {
             }}
             invoiceId={previewInvoice.id}
             fileName={previewInvoice.fileName || 'Unknown File'}
-            invoiceNumber={previewInvoice.invoiceNumber ?? undefined}
+            invoiceNumber={previewInvoice.invoiceNumber}
           />
         )}
       </div>
