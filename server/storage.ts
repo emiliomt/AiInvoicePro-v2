@@ -612,8 +612,9 @@ export class DatabaseStorage implements IStorage {
         throw new Error(`Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.`);
       }
 
-      const result = await db.delete(projects).where(inArray(projects.projectId, projectIds));
-      console.log("Projects deleted successfully:", result);
+      // Delete all projects using sql condition instead of where clause
+      const result = await db.delete(projects);
+      console.log("All projects deleted successfully:", result);
     } catch (error) {
       console.error("Error deleting all projects:", error);
       throw error;
