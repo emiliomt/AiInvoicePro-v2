@@ -66,7 +66,7 @@ Rules:
 - concept: Extract the main purpose or description of the invoice (summary of services/products)
 - Include all line items found in the invoice
 - Provide confidence score based on text clarity and completeness
-- Common currency mappings: $ = USD, € = EUR, £ = GBP, ¥ = JPY, C$ = CAD, A$ = AUD, peso = MXN, real = BRL, sol = PEN, peso colombiano = COP, COP$ = COP`;
+- Common currency mappings: $ = USD, € = EUR, £ = GBP, ¥ = JPY, C$ = CAD, A$ = AUD, peso = MXN, real = BRL, sol = PEN, Peso Colombiano = COP, COP$ = COP`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
