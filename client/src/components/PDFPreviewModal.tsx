@@ -1,5 +1,6 @@
 
-import { useState, useEffect, useRef } from "react";
+import { useState } from "react";
+import { Document, Page, pdfjs } from 'react-pdf';
 import {
   Dialog,
   DialogContent,
@@ -8,8 +9,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { X, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from "lucide-react";
+import { X, Download, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import 'react-pdf/dist/Page/AnnotationLayer.css';
+import 'react-pdf/dist/Page/TextLayer.css';
+
+// Set up PDF.js worker
+pdfjs.GlobalWorkerOptions.workerSrc = `//unpkg.com/pdfjs-dist@${pdfjs.version}/build/pdf.worker.min.js`;
 
 interface PDFPreviewModalProps {
   isOpen: boolean;
@@ -18,104 +24,42 @@ interface PDFPreviewModalProps {
   fileName: string;
 }
 
-declare global {
-  interface Window {
-    pdfjsLib: any;
-  }
-}
-
 export default function PDFPreviewModal({ 
   isOpen, 
   onClose, 
   invoiceId, 
   fileName = "Invoice Document"
 }: PDFPreviewModalProps) {
-  const [zoom, setZoom] = useState(100);
-  const [isLoading, setIsLoading] = useState(false);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [totalPages, setTotalPages] = useState(0);
-  const [pdfDoc, setPdfDoc] = useState<any>(null);
+  const [numPages, setNumPages] = useState<number>(0);
+  const [pageNumber, setPageNumber] = useState<number>(1);
+  const [scale, setScale] = useState<number>(1.0);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const { toast } = useToast();
 
-  useEffect(() => {
-    if (isOpen && window.pdfjsLib) {
-      loadPDF();
-    }
-    return () => {
-      if (pdfDoc) {
-        pdfDoc.destroy();
-      }
-    };
-  }, [isOpen, invoiceId]);
+  const fileUrl = `/api/invoices/${invoiceId}/preview/file`;
 
-  useEffect(() => {
-    if (pdfDoc && currentPage) {
-      renderPage(currentPage);
-    }
-  }, [pdfDoc, currentPage, zoom]);
-
-  const loadPDF = async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      
-      // Configure PDF.js worker
-      if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
-        window.pdfjsLib.GlobalWorkerOptions.workerSrc = 
-          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
-      }
-
-      const url = `/api/invoices/${invoiceId}/preview/file`;
-      const loadingTask = window.pdfjsLib.getDocument(url);
-      
-      const pdf = await loadingTask.promise;
-      setPdfDoc(pdf);
-      setTotalPages(pdf.numPages);
-      setCurrentPage(1);
-    } catch (err) {
-      console.error('Error loading PDF:', err);
-      setError('Failed to load PDF. The file may not be available or is corrupted.');
-      toast({
-        title: "PDF Load Error",
-        description: "Failed to load the PDF file",
-        variant: "destructive",
-      });
-    } finally {
-      setIsLoading(false);
-    }
+  const onDocumentLoadSuccess = ({ numPages }: { numPages: number }) => {
+    setNumPages(numPages);
+    setPageNumber(1);
+    setIsLoading(false);
+    setError(null);
   };
 
-  const renderPage = async (pageNum: number) => {
-    if (!pdfDoc || !canvasRef.current) return;
-
-    try {
-      const page = await pdfDoc.getPage(pageNum);
-      const scale = zoom / 100;
-      const viewport = page.getViewport({ scale });
-
-      const canvas = canvasRef.current;
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      const renderContext = {
-        canvasContext: context,
-        viewport: viewport,
-      };
-
-      await page.render(renderContext).promise;
-    } catch (err) {
-      console.error('Error rendering page:', err);
-      setError('Failed to render PDF page');
-    }
+  const onDocumentLoadError = (error: Error) => {
+    console.error('Error loading PDF:', error);
+    setError('Failed to load PDF. The file may not be available or is corrupted.');
+    setIsLoading(false);
+    toast({
+      title: "PDF Load Error",
+      description: "Failed to load the PDF file",
+      variant: "destructive",
+    });
   };
 
   const handleDownload = async () => {
     try {
-      setIsLoading(true);
-      const response = await fetch(`/api/invoices/${invoiceId}/preview/file`);
+      const response = await fetch(fileUrl);
       
       if (!response.ok) {
         throw new Error('Failed to download file');
@@ -141,59 +85,75 @@ export default function PDFPreviewModal({
         description: "Failed to download the file",
         variant: "destructive",
       });
-    } finally {
-      setIsLoading(false);
     }
   };
 
   const handleZoomIn = () => {
-    setZoom(prev => Math.min(prev + 25, 200));
+    setScale(prev => Math.min(prev + 0.25, 3.0));
   };
 
   const handleZoomOut = () => {
-    setZoom(prev => Math.max(prev - 25, 50));
+    setScale(prev => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleZoomReset = () => {
+    setScale(1.0);
   };
 
   const handlePrevPage = () => {
-    setCurrentPage(prev => Math.max(prev - 1, 1));
+    setPageNumber(prev => Math.max(prev - 1, 1));
   };
 
   const handleNextPage = () => {
-    setCurrentPage(prev => Math.min(prev + 1, totalPages));
+    setPageNumber(prev => Math.min(prev + 1, numPages));
+  };
+
+  const goToPage = (page: number) => {
+    if (page >= 1 && page <= numPages) {
+      setPageNumber(page);
+    }
   };
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] p-0">
-        <DialogHeader className="p-6 pb-4 border-b">
+      <DialogContent className="max-w-6xl max-h-[95vh] p-0 flex flex-col">
+        <DialogHeader className="p-4 pb-3 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-lg font-semibold">
                 PDF Preview
               </DialogTitle>
-              <DialogDescription className="mt-1">
+              <DialogDescription className="mt-1 truncate max-w-md">
                 {fileName}
               </DialogDescription>
             </div>
             <div className="flex items-center space-x-2">
-              {totalPages > 1 && (
+              {numPages > 1 && (
                 <>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handlePrevPage}
-                    disabled={currentPage <= 1}
+                    disabled={pageNumber <= 1}
                   >
                     <ChevronLeft size={16} />
                   </Button>
-                  <span className="text-sm font-medium min-w-[80px] text-center">
-                    {currentPage} / {totalPages}
-                  </span>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="number"
+                      value={pageNumber}
+                      onChange={(e) => goToPage(parseInt(e.target.value))}
+                      className="w-16 text-center text-sm border rounded px-2 py-1"
+                      min={1}
+                      max={numPages}
+                    />
+                    <span className="text-sm text-gray-600">of {numPages}</span>
+                  </div>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={handleNextPage}
-                    disabled={currentPage >= totalPages}
+                    disabled={pageNumber >= numPages}
                   >
                     <ChevronRight size={16} />
                   </Button>
@@ -204,26 +164,34 @@ export default function PDFPreviewModal({
                 variant="outline"
                 size="sm"
                 onClick={handleZoomOut}
-                disabled={zoom <= 50}
+                disabled={scale <= 0.5}
               >
                 <ZoomOut size={16} />
               </Button>
               <span className="text-sm font-medium min-w-[60px] text-center">
-                {zoom}%
+                {Math.round(scale * 100)}%
               </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={handleZoomIn}
-                disabled={zoom >= 200}
+                disabled={scale >= 3.0}
               >
                 <ZoomIn size={16} />
               </Button>
               <Button
                 variant="outline"
                 size="sm"
+                onClick={handleZoomReset}
+                title="Reset zoom"
+              >
+                <RotateCcw size={16} />
+              </Button>
+              <div className="border-l h-6 mx-2"></div>
+              <Button
+                variant="outline"
+                size="sm"
                 onClick={handleDownload}
-                disabled={isLoading}
               >
                 <Download size={16} className="mr-2" />
                 Download
@@ -239,18 +207,20 @@ export default function PDFPreviewModal({
           </div>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-4">
-          <div className="bg-gray-100 rounded-lg p-8 min-h-[600px] flex items-center justify-center">
+        <div className="flex-1 overflow-auto bg-gray-100 p-4">
+          <div className="flex justify-center">
             {isLoading && (
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading PDF...</p>
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading PDF...</p>
+                </div>
               </div>
             )}
             
             {error && (
-              <div className="text-center">
-                <div className="bg-red-50 border border-red-200 rounded-lg p-6">
+              <div className="flex items-center justify-center h-96">
+                <div className="bg-red-50 border border-red-200 rounded-lg p-6 max-w-md">
                   <h3 className="text-lg font-medium text-red-900 mb-2">
                     Error Loading PDF
                   </h3>
@@ -259,19 +229,35 @@ export default function PDFPreviewModal({
               </div>
             )}
             
-            {!isLoading && !error && (
-              <div className="bg-white shadow-lg rounded border overflow-hidden">
-                <canvas 
-                  ref={canvasRef}
-                  className="max-w-full h-auto"
-                  style={{ display: pdfDoc ? 'block' : 'none' }}
-                />
-                {!pdfDoc && (
-                  <div className="p-8 text-center">
-                    <p className="text-gray-600">No PDF loaded</p>
+            {!error && (
+              <Document
+                file={fileUrl}
+                onLoadSuccess={onDocumentLoadSuccess}
+                onLoadError={onDocumentLoadError}
+                loading={
+                  <div className="flex items-center justify-center h-96">
+                    <div className="text-center">
+                      <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                      <p className="text-gray-600">Loading PDF...</p>
+                    </div>
                   </div>
-                )}
-              </div>
+                }
+                className="pdf-document"
+              >
+                <div className="bg-white shadow-lg border rounded-lg overflow-hidden">
+                  <Page
+                    pageNumber={pageNumber}
+                    scale={scale}
+                    loading={
+                      <div className="flex items-center justify-center h-96">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+                      </div>
+                    }
+                    renderTextLayer={true}
+                    renderAnnotationLayer={true}
+                  />
+                </div>
+              </Document>
             )}
           </div>
         </div>

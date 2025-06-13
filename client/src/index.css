@@ -23,15 +23,15 @@
   --destructive-foreground: hsl(60, 9.1%, 97.8%);
   --ring: hsl(20, 14.3%, 4.1%);
   --radius: 0.5rem;
-  
+
   /* Success colors */
   --success: hsl(120, 61%, 50%);
   --success-foreground: hsl(120, 100%, 95%);
-  
+
   /* Warning colors */
   --warning: hsl(38, 92%, 50%);
   --warning-foreground: hsl(48, 100%, 95%);
-  
+
   /* Chart colors */
   --chart-1: hsl(207, 90%, 54%);
   --chart-2: hsl(120, 61%, 50%);
@@ -61,11 +61,11 @@
   --destructive-foreground: hsl(0, 0%, 98%);
   --ring: hsl(240, 4.9%, 83.9%);
   --radius: 0.5rem;
-  
+
   /* Success colors */
   --success: hsl(120, 61%, 50%);
   --success-foreground: hsl(120, 100%, 95%);
-  
+
   /* Warning colors */
   --warning: hsl(38, 92%, 50%);
   --warning-foreground: hsl(48, 100%, 95%);
@@ -86,107 +86,136 @@
   .text-success {
     color: var(--success);
   }
-  
+
   .text-success-foreground {
     color: var(--success-foreground);
   }
-  
+
   .bg-success {
     background-color: var(--success);
   }
-  
+
   .bg-success-foreground {
     background-color: var(--success-foreground);
   }
-  
+
   .text-warning {
     color: var(--warning);
   }
-  
+
   .text-warning-foreground {
     color: var(--warning-foreground);
   }
-  
+
   .bg-warning {
     background-color: var(--warning);
   }
-  
+
   .bg-warning-foreground {
     background-color: var(--warning-foreground);
   }
-  
+
   /* Success color variations */
   .text-success-600 {
     color: hsl(120, 61%, 50%);
   }
-  
+
   .bg-success-50 {
     background-color: hsl(120, 100%, 95%);
   }
-  
+
   .bg-success-600 {
     background-color: hsl(120, 61%, 50%);
   }
-  
+
   .bg-success-700 {
     background-color: hsl(120, 61%, 40%);
   }
-  
+
   /* Warning color variations */
   .text-warning-600 {
     color: hsl(38, 92%, 50%);
   }
-  
+
   .bg-warning-50 {
     background-color: hsl(48, 100%, 95%);
   }
-  
+
   .bg-warning-100 {
     background-color: hsl(48, 100%, 90%);
   }
-  
+
   .text-warning-800 {
     color: hsl(32, 81%, 29%);
   }
-  
+
   /* Primary color variations */
   .text-primary-600 {
     color: hsl(207, 90%, 54%);
   }
-  
+
   .text-primary-700 {
     color: hsl(207, 90%, 44%);
   }
-  
+
   .bg-primary-50 {
     background-color: hsl(210, 100%, 95%);
   }
-  
+
   .bg-primary-600 {
     background-color: hsl(207, 90%, 54%);
   }
-  
+
   .bg-primary-700 {
     background-color: hsl(207, 90%, 44%);
   }
-  
+
   .hover\:bg-primary-700:hover {
     background-color: hsl(207, 90%, 44%);
   }
-  
+
   .hover\:text-primary-700:hover {
     color: hsl(207, 90%, 44%);
   }
-  
+
   .border-primary-400 {
     border-color: hsl(207, 90%, 64%);
   }
-  
+
   .border-primary-600 {
     border-color: hsl(207, 90%, 54%);
   }
-  
+
   .hover\:border-primary-400:hover {
     border-color: hsl(207, 90%, 64%);
   }
+}
+
+.prose {
+  max-width: none;
+}
+
+/* PDF Viewer Styles */
+.pdf-document {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.react-pdf__Page {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+  margin-bottom: 1rem;
+}
+
+.react-pdf__Page__canvas {
+  max-width: 100%;
+  height: auto !important;
+}
+
+.react-pdf__Page__textContent {
+  user-select: text;
+}
+
+.react-pdf__Page__annotations {
+  pointer-events: all;
 }
