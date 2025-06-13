@@ -585,17 +585,29 @@ export class DatabaseStorage implements IStorage {
 
   async deleteAllProjects(): Promise<void> {
     try {
-      // Check if any projects have associated purchase orders
-      const projectList = await db.select({projectId: projects.projectId}).from(projects);
-      if(projectList.length === 0){
+      console.log("Starting deleteAllProjects operation...");
+      
+      // First get count of existing projects
+      const [existingCount] = await db.select({ count: count() }).from(projects);
+      console.log(`Found ${existingCount.count} projects to delete`);
+      
+      if (existingCount.count === 0) {
+        console.log("No projects to delete");
         return;
       }
-      const projectIds = projectList.map((project)=> project.projectId);
 
+      // Get all project IDs for constraint checking
+      const projectList = await db.select({projectId: projects.projectId}).from(projects);
+      const projectIds = projectList.map((project) => project.projectId);
+      console.log("Project IDs to check:", projectIds);
+
+      // Check if any projects have associated purchase orders
       const [associatedPOs] = await db
         .select({ count: count() })
         .from(purchaseOrders)
         .where(inArray(purchaseOrders.projectId, projectIds));
+
+      console.log(`Found ${associatedPOs.count} associated purchase orders`);
 
       if (associatedPOs.count > 0) {
         throw new Error(`Cannot delete projects because ${associatedPOs.count} project(s) have associated purchase orders. Please remove or reassign the purchase orders first.`);
@@ -608,13 +620,26 @@ export class DatabaseStorage implements IStorage {
         .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
         .where(inArray(purchaseOrders.projectId, projectIds));
 
+      console.log(`Found ${associatedInvoiceMatches.length > 0 ? associatedInvoiceMatches[0].count : 0} associated invoice matches`);
+
       if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
         throw new Error(`Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.`);
       }
 
-      // Delete all projects using sql condition instead of where clause
-      const result = await db.delete(projects);
-      console.log("All projects deleted successfully:", result);
+      // Execute the delete operation
+      console.log("Executing delete operation...");
+      const result = await db.delete(projects).execute();
+      console.log("Delete operation result:", result);
+      
+      // Verify deletion worked
+      const [remainingCount] = await db.select({ count: count() }).from(projects);
+      console.log(`Projects remaining after delete: ${remainingCount.count}`);
+      
+      if (remainingCount.count > 0) {
+        throw new Error(`Delete operation failed. ${remainingCount.count} projects still remain.`);
+      }
+      
+      console.log("All projects deleted successfully");
     } catch (error) {
       console.error("Error deleting all projects:", error);
       throw error;
