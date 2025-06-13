@@ -756,6 +756,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   
 
+  // Serve invoice file for preview
+  app.get('/api/invoices/:id/preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check if user owns the invoice
+      const userId = req.user.claims.sub;
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Check if file exists and is a PDF
+      if (!invoice.fileUrl || !invoice.fileName?.toLowerCase().endsWith('.pdf')) {
+        return res.status(400).json({ message: "File not available for preview or not a PDF" });
+      }
+
+      // In a real implementation, you would serve from secure storage
+      // For now, we'll return a placeholder response indicating the file would be served
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+      res.setHeader('Cache-Control', 'private, no-cache');
+      
+      // This is a placeholder - in production you would stream the actual file
+      res.status(200).json({ 
+        message: "PDF preview endpoint ready", 
+        fileName: invoice.fileName,
+        previewUrl: `/api/invoices/${invoiceId}/preview`
+      });
+    } catch (error) {
+      console.error("Error serving invoice preview:", error);
+      res.status(500).json({ message: "Failed to serve invoice preview" });
+    }
+  });
+
   // Get invoice by ID
   app.get('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {

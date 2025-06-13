@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2 } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon } from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -26,6 +26,7 @@ import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/Header";
 import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
+import PDFPreviewModal from "@/components/PDFPreviewModal";
 
 interface Invoice {
   id: number;
@@ -44,6 +45,8 @@ interface Invoice {
 export default function Invoices() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [showDetailsModal, setShowDetailsModal] = useState(false);
+  const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
+  const [showPreviewModal, setShowPreviewModal] = useState(false);
   
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -95,6 +98,15 @@ export default function Invoices() {
     } catch {
       return "Invalid date";
     }
+  };
+
+  const isPDFFile = (fileName: string | null) => {
+    return fileName && fileName.toLowerCase().endsWith('.pdf');
+  };
+
+  const handlePreviewClick = (invoice: Invoice) => {
+    setPreviewInvoice(invoice);
+    setShowPreviewModal(true);
   };
 
   if (isLoading) {
@@ -192,6 +204,16 @@ export default function Invoices() {
                         <Eye size={16} className="mr-2" />
                         View Details
                       </Button>
+                      {isPDFFile(invoice.fileName) && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handlePreviewClick(invoice)}
+                        >
+                          <FileIcon size={16} className="mr-2" />
+                          Preview
+                        </Button>
+                      )}
                       <Button variant="outline" size="sm">
                         <Download size={16} className="mr-2" />
                         Download
@@ -290,6 +312,18 @@ export default function Invoices() {
                   <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close
                   </Button>
+                  {isPDFFile(selectedInvoice.fileName) && (
+                    <Button 
+                      variant="outline"
+                      onClick={() => {
+                        setShowDetailsModal(false);
+                        handlePreviewClick(selectedInvoice);
+                      }}
+                    >
+                      <FileIcon size={16} className="mr-2" />
+                      Preview PDF
+                    </Button>
+                  )}
                   <Button variant="outline">
                     <Download size={16} className="mr-2" />
                     Download
@@ -299,6 +333,19 @@ export default function Invoices() {
             )}
           </DialogContent>
         </Dialog>
+
+        {/* PDF Preview Modal */}
+        {previewInvoice && (
+          <PDFPreviewModal
+            isOpen={showPreviewModal}
+            onClose={() => {
+              setShowPreviewModal(false);
+              setPreviewInvoice(null);
+            }}
+            invoiceId={previewInvoice.id}
+            fileName={previewInvoice.fileName || 'Unknown File'}
+          />
+        )}
       </div>
     </div>
   );
