@@ -104,18 +104,27 @@ export default function ProjectMatcher() {
 
   // Calculate stats for the dashboard cards
   const { data: stats } = useQuery({
-    queryKey: ["/api/invoices"],
-    select: (data: Invoice[]) => {
-      const totalInvoices = data.length;
-      const matched = data.filter(invoice => 
-        invoice.extractedData?.projectName && 
+    queryKey: ["/api/invoices", "/api/projects"],
+    select: () => {
+      if (!invoices.length || !projects.length) {
+        return {
+          totalInvoices: 0,
+          matched: 0,
+          needsReview: 0,
+          unmatched: 0,
+          totalValue: "0.00",
+        };
+      }
+
+      const totalInvoices = invoices.length;
+      const matched = invoices.filter(invoice => 
         getMatchStatus(invoice, confidenceThreshold[0]).status === "matched"
       ).length;
-      const needsReview = data.filter(invoice => 
+      const needsReview = invoices.filter(invoice => 
         getMatchStatus(invoice, confidenceThreshold[0]).status === "needs_review"
       ).length;
       const unmatched = totalInvoices - matched - needsReview;
-      const totalValue = data.reduce((sum, invoice) => 
+      const totalValue = invoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.totalAmount || "0"), 0
       );
       
@@ -235,19 +244,152 @@ export default function ProjectMatcher() {
     });
   };
 
-  const getMatchStatus = (invoice: Invoice, threshold: number = 85) => {
-    const hasExtractedData = invoice.extractedData?.projectName || invoice.extractedData?.address;
+  // Helper function to calculate string similarity
+  const calculateStringSimilarity = (str1: string, str2: string): number => {
+    if (!str1 || !str2) return 0;
     
-    if (!hasExtractedData) {
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+    
+    if (s1 === s2) return 100;
+    
+    const distance = levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    
+    if (maxLength === 0) return 100;
+    
+    return Math.round(((maxLength - distance) / maxLength) * 100);
+  };
+
+  const levenshteinDistance = (str1: string, str2: string): number => {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + indicator
+        );
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  };
+
+  // Get extracted project based on address/city matching with validation records
+  const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+    
+    // If no explicit project city, try to extract from vendor address
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1]; // Take the city part
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) return '';
+
+    let bestMatch = { project: null, score: 0 };
+
+    for (const project of projects) {
+      let score = 0;
+      let matchCount = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        if (addressSimilarity > 60) {
+          score += addressSimilarity * 0.7; // 70% weight for address
+          matchCount++;
+        }
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        if (citySimilarity > 80) {
+          score += citySimilarity * 0.3; // 30% weight for city
+          matchCount++;
+        }
+      }
+
+      const finalScore = matchCount > 0 ? score / matchCount : 0;
+      
+      if (finalScore > bestMatch.score && finalScore > 70) {
+        bestMatch = { project, score: finalScore };
+      }
+    }
+
+    return bestMatch.project?.name || '';
+  };
+
+  // Get best project match from validation records only
+  const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+    
+    // If no explicit project city, try to extract from vendor address
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1]; // Take the city part
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) {
+      return { project: null, confidence: 0 };
+    }
+
+    let bestMatch = { project: null, confidence: 0 };
+
+    for (const project of projects) {
+      let totalScore = 0;
+      let weightSum = 0;
+
+      // Address matching (70% weight)
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        totalScore += addressSimilarity * 0.7;
+        weightSum += 0.7;
+      }
+
+      // City matching (30% weight)
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        totalScore += citySimilarity * 0.3;
+        weightSum += 0.3;
+      }
+
+      const finalConfidence = weightSum > 0 ? Math.round(totalScore / weightSum) : 0;
+      
+      if (finalConfidence > bestMatch.confidence) {
+        bestMatch = { project, confidence: finalConfidence };
+      }
+    }
+
+    return bestMatch;
+  };
+
+  const getMatchStatus = (invoice: Invoice, threshold: number = 85) => {
+    const bestMatch = getBestProjectMatch(invoice, projects);
+    
+    if (!bestMatch.project) {
       return { status: "needs_review", label: "Needs Review", color: "yellow" };
     }
     
-    // For demo purposes, simulate match confidence
-    const mockConfidence = Math.random() * 100;
-    if (mockConfidence >= threshold) {
+    if (bestMatch.confidence >= threshold) {
       return { status: "matched", label: "Matched", color: "green" };
-    } else {
+    } else if (bestMatch.confidence >= 60) {
       return { status: "needs_review", label: "Needs Review", color: "yellow" };
+    } else {
+      return { status: "unmatched", label: "Unmatched", color: "red" };
     }
   };
 
@@ -440,6 +582,7 @@ export default function ProjectMatcher() {
                       <TableHead>Invoice</TableHead>
                       <TableHead>Extracted Address</TableHead>
                       <TableHead>Extracted City</TableHead>
+                      <TableHead>Extracted Project</TableHead>
                       <TableHead>Best Match</TableHead>
                       <TableHead>Confidence</TableHead>
                       <TableHead>Status</TableHead>
@@ -450,6 +593,7 @@ export default function ProjectMatcher() {
                     {filteredInvoices.map((invoice) => {
                       const status = getMatchStatus(invoice, confidenceThreshold[0]);
                       const isMatching = matchingInProgress === invoice.id;
+                      const bestMatch = getBestProjectMatch(invoice, projects);
                       
                       return (
                         <TableRow key={invoice.id}>
@@ -488,19 +632,29 @@ export default function ProjectMatcher() {
                           <TableCell>
                             <div className="space-y-1">
                               <div className="font-medium">
-                                {invoice.extractedData?.projectName || 'No match found'}
+                                {getExtractedProject(invoice, projects) || 'N/A'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                Inferred from address/city
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {bestMatch?.project?.name || 'No match found'}
                               </div>
                               <div className="text-sm text-muted-foreground">
                                 <Building2 className="w-3 h-3 inline mr-1" />
-                                Project matching needed
+                                {bestMatch?.project?.projectId || 'From validation records'}
                               </div>
                             </div>
                           </TableCell>
                           <TableCell>
                             <div className="space-y-2">
-                              <Progress value={Math.random() * 100} className="w-20" />
+                              <Progress value={bestMatch?.confidence || 0} className="w-20" />
                               <span className="text-sm">
-                                {Math.round(Math.random() * 100)}%
+                                {bestMatch?.confidence || 0}%
                               </span>
                             </div>
                           </TableCell>
@@ -586,6 +740,133 @@ function InvoiceMatchingDialog({
 }) {
   const [selectedProject, setSelectedProject] = useState<string>("");
 
+  // Helper functions for the dialog
+  const calculateStringSimilarity = (str1: string, str2: string): number => {
+    if (!str1 || !str2) return 0;
+    
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+    
+    if (s1 === s2) return 100;
+    
+    const distance = levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+    
+    if (maxLength === 0) return 100;
+    
+    return Math.round(((maxLength - distance) / maxLength) * 100);
+  };
+
+  const levenshteinDistance = (str1: string, str2: string): number => {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+
+    for (let j = 1; j <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + indicator
+        );
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  };
+
+  const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+    
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1];
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) return '';
+
+    let bestMatch = { project: null, score: 0 };
+
+    for (const project of projects) {
+      let score = 0;
+      let matchCount = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        if (addressSimilarity > 60) {
+          score += addressSimilarity * 0.7;
+          matchCount++;
+        }
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        if (citySimilarity > 80) {
+          score += citySimilarity * 0.3;
+          matchCount++;
+        }
+      }
+
+      const finalScore = matchCount > 0 ? score / matchCount : 0;
+      
+      if (finalScore > bestMatch.score && finalScore > 70) {
+        bestMatch = { project, score: finalScore };
+      }
+    }
+
+    return bestMatch.project?.name || '';
+  };
+
+  const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+    
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1];
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) {
+      return { project: null, confidence: 0 };
+    }
+
+    let bestMatch = { project: null, confidence: 0 };
+
+    for (const project of projects) {
+      let totalScore = 0;
+      let weightSum = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        totalScore += addressSimilarity * 0.7;
+        weightSum += 0.7;
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        totalScore += citySimilarity * 0.3;
+        weightSum += 0.3;
+      }
+
+      const finalConfidence = weightSum > 0 ? Math.round(totalScore / weightSum) : 0;
+      
+      if (finalConfidence > bestMatch.confidence) {
+        bestMatch = { project, confidence: finalConfidence };
+      }
+    }
+
+    return bestMatch;
+  };
+
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-2 gap-6">
@@ -596,12 +877,15 @@ function InvoiceMatchingDialog({
             <div><strong>File:</strong> {invoice.fileName}</div>
             <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
             <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
-            <div><strong>Extracted Project:</strong> {invoice.extractedData?.projectName || 'N/A'}</div>
+            <div><strong>Extracted Project:</strong> {getExtractedProject(invoice, projects) || 'N/A'}</div>
+            <div><strong>Original Project Name:</strong> {invoice.extractedData?.projectName || 'N/A'}</div>
             <div><strong>Extracted Project Address:</strong> {invoice.extractedData?.projectAddress || 'N/A'}</div>
             <div><strong>Extracted Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
             <div><strong>Extracted Project City:</strong> {invoice.extractedData?.projectCity || 'N/A'}</div>
             <div><strong>Extracted City:</strong> {invoice.extractedData?.city || 'N/A'}</div>
             <div><strong>Vendor Address:</strong> {invoice.extractedData?.vendorAddress || 'N/A'}</div>
+            <div><strong>Best Match:</strong> {getBestProjectMatch(invoice, projects)?.project?.name || 'N/A'}</div>
+            <div><strong>Match Confidence:</strong> {getBestProjectMatch(invoice, projects)?.confidence || 0}%</div>
           </div>
         </div>
 
