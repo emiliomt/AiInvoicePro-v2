@@ -18,6 +18,21 @@ import ProjectValidation from "@/pages/ProjectValidation";
 import { ErrorBoundary } from "react-error-boundary";
 import React from "react";
 
+// Placeholder components for Profile and Settings pages
+const Profile = () => (
+  <div>
+    <h1>Profile</h1>
+    <p>This is the profile page.</p>
+  </div>
+);
+
+const Settings = () => (
+  <div>
+    <h1>Settings</h1>
+    <p>This is the settings page.</p>
+  </div>
+);
+
 function ErrorFallback({ error }) {
   return (
     <div className="flex items-center justify-center min-h-screen">
@@ -56,6 +71,8 @@ function Router() {
           <Route path="/purchase-orders" component={PurchaseOrders} />
           <Route path="/reports" component={Reports} />
           <Route path="/project-validation" component={ProjectValidation} />
+          <Route path="/profile" component={Profile} />
+          <Route path="/settings" component={Settings} />
         </>
       )}
       <Route component={NotFound} />
