@@ -82,8 +82,11 @@ export class ProjectMatcherService {
 
         Invoice Data:
         - Project Name: ${invoiceData.extractedData?.projectName || invoiceData.projectName || 'N/A'}
+        - Project Address: ${invoiceData.extractedData?.projectAddress || 'N/A'}
         - Address: ${invoiceData.extractedData?.address || 'N/A'}
+        - Project City: ${invoiceData.extractedData?.projectCity || 'N/A'}
         - City: ${invoiceData.extractedData?.city || 'N/A'}
+        - Vendor Address: ${invoiceData.extractedData?.vendorAddress || 'N/A'}
         - Vendor: ${invoiceData.extractedData?.vendorName || invoiceData.vendorName || 'N/A'}
 
         Project Information:
@@ -213,8 +216,8 @@ export class ProjectMatcherService {
       }
     }
 
-    // Address matching
-    const invoiceAddress = invoiceData.extractedData?.address;
+    // Address matching - use projectAddress if available, otherwise fall back to address
+    const invoiceAddress = invoiceData.extractedData?.projectAddress || invoiceData.extractedData?.address;
     if (invoiceAddress && project.address) {
       matchDetails.addressSimilarity = this.calculateStringSimilarity(invoiceAddress, project.address);
       if (matchDetails.addressSimilarity > 60) {
@@ -223,8 +226,19 @@ export class ProjectMatcherService {
       }
     }
 
-    // City matching
-    const invoiceCity = invoiceData.extractedData?.city;
+    // City matching - use projectCity if available, otherwise derive from vendor address
+    let invoiceCity = invoiceData.extractedData?.projectCity || invoiceData.extractedData?.city;
+    
+    // If no explicit project city, try to extract from vendor address
+    if (!invoiceCity && invoiceData.extractedData?.vendorAddress) {
+      const vendorAddress = invoiceData.extractedData.vendorAddress;
+      // Extract city from vendor address (e.g., "CRA 64 N79 117, BARRANQUILLA, ATLANTICO, COLOMBIA")
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts.slice(1).join(', '); // Take everything after the first comma
+      }
+    }
+    
     if (invoiceCity && project.city) {
       matchDetails.citySimilarity = this.calculateStringSimilarity(invoiceCity, project.city);
       if (matchDetails.citySimilarity > 80) {

@@ -466,11 +466,24 @@ export default function ProjectMatcher() {
                           <TableCell>
                             <div className="flex items-center gap-2">
                               <MapPin className="w-4 h-4 text-muted-foreground" />
-                              {invoice.extractedData?.address || 'N/A'}
+                              {invoice.extractedData?.projectAddress || invoice.extractedData?.address || 'N/A'}
                             </div>
                           </TableCell>
                           <TableCell>
-                            {invoice.extractedData?.city || 'N/A'}
+                            {(() => {
+                              // Use projectCity if available, otherwise derive from vendor address
+                              let city = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+                              
+                              if (!city && invoice.extractedData?.vendorAddress) {
+                                const vendorAddress = invoice.extractedData.vendorAddress;
+                                const addressParts = vendorAddress.split(',').map(part => part.trim());
+                                if (addressParts.length >= 2) {
+                                  city = addressParts.slice(1).join(', ');
+                                }
+                              }
+                              
+                              return city || 'N/A';
+                            })()}
                           </TableCell>
                           <TableCell>
                             <div className="space-y-1">
@@ -584,8 +597,11 @@ function InvoiceMatchingDialog({
             <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
             <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
             <div><strong>Extracted Project:</strong> {invoice.extractedData?.projectName || 'N/A'}</div>
+            <div><strong>Extracted Project Address:</strong> {invoice.extractedData?.projectAddress || 'N/A'}</div>
             <div><strong>Extracted Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
+            <div><strong>Extracted Project City:</strong> {invoice.extractedData?.projectCity || 'N/A'}</div>
             <div><strong>Extracted City:</strong> {invoice.extractedData?.city || 'N/A'}</div>
+            <div><strong>Vendor Address:</strong> {invoice.extractedData?.vendorAddress || 'N/A'}</div>
           </div>
         </div>
 

@@ -45,7 +45,7 @@ ${ocrText}
 {
   "vendorName": "...",                      // Emisor / Proveedor / Razón Social
   "taxId": "...",                           // Vendor NIT / RFC / CUIT
-  "vendorAddress": "...",
+  "vendorAddress": "...",                   // Full vendor address including city, state, country
   "companyName": "...",                     // Cliente / Adquiriente / Buyer
   "buyerTaxId": "...",                      // Buyer NIT / RFC / CUIT
   "buyerAddress": "...",
@@ -59,8 +59,8 @@ ${ocrText}
   "concept": "...",                         // Raw line item descriptions
   "descriptionSummary": "...",              // One-line summary of services/goods
   "projectName": "...",                     // Project or Obra (e.g. Etapa II)
-  "projectAddress": "...",                  // Street name and number
-  "projectCity": "...",                     // City (e.g. Bogotá, Barranquilla)
+  "projectAddress": "...",                  // Extract specific project address (e.g., CALLE 98 # 65 A 54)
+  "projectCity": "...",                     // Extract city from vendor address if project city not explicit (e.g., BARRANQUILLA, ATLANTICO, COLOMBIA)
   "notes": "...",                           // Additional observations or terms
   "lineItems": [
     {
@@ -78,6 +78,8 @@ ${ocrText}
 - Use consistent label recognition across LatAm formats (Colombia, Mexico, etc.)
 - Extract buyerTaxId from fields labeled as "NIT del Cliente", "RFC Cliente", or similar
 - Use spatial proximity to companyName to identify the correct field
+- For projectAddress: Look for specific project location addresses (street addresses like "CALLE 98 # 65 A 54")
+- For projectCity: If project city is not explicit, extract city/region from vendorAddress (e.g., "BARRANQUILLA, ATLANTICO, COLOMBIA")
 - Return null for any field that is not found in the document
 - Extract actual values from the text, don't invent data
 - Convert dates to YYYY-MM-DD format
