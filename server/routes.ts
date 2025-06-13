@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema } from "@shared/schema";
+import { insertInvoiceSchema, insertLineItemSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
@@ -1109,74 +1109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Send invoice for approval
-  app.post('/api/invoices/:id/approve', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
-
-      const invoice = await storage.getInvoice(invoiceId);      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      if (invoice.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Create approval record
-      await storage.createApproval({
-        invoiceId,
-        approverId: userId, // For now, self-approval
-        status: "approved",
-      });
-
-      // Update invoice status
-      await storage.updateInvoice(invoiceId, {
-        status: "approved",
-      });
-
-      res.json({ message: "Invoice approved successfully" });
-    } catch (error) {
-      console.error("Error approving invoice:", error);
-      res.status(500).json({ message: "Failed to approve invoice" });
-    }
-  });
-
-  // Reject invoice
-  app.post('/api/invoices/:id/reject', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
-      const { comments } = req.body;
-
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      if (invoice.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      // Create approval record with rejection
-      await storage.createApproval({
-        invoiceId,
-        approverId: userId,
-        status: "rejected",
-        comments,
-      });
-
-      // Update invoice status
-      await storage.updateInvoice(invoiceId, {
-        status: "rejected",
-      });
-
-      res.json({ message: "Invoice rejected successfully" });
-    } catch (error) {
-      console.error("Error rejecting invoice:", error);
-      res.status(500).json({ message: "Failed to reject invoice" });
-    }
-  });
+  
 
   // Delete invoice
   app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
@@ -1201,16 +1134,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get pending approvals
-  app.get('/api/approvals/pending', isAuthenticated, async (req: any, res) => {
-    try {
-      const pendingApprovals = await storage.getPendingApprovals();
-      res.json(pendingApprovals);
-    } catch (error) {
-      console.error("Error fetching pending approvals:", error);
-      res.status(500).json({ message: "Failed to fetch pending approvals" });
-    }
-  });
+  
 
   // Validation rules CRUD endpoints
   app.get('/api/validation-rules', isAuthenticated, async (req: any, res) => {

@@ -112,17 +112,6 @@ export const lineItems = pgTable("line_items", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-// Approvals table
-export const approvals = pgTable("approvals", {
-  id: serial("id").primaryKey(),
-  invoiceId: integer("invoice_id").notNull(),
-  approverId: varchar("approver_id").notNull(),
-  status: approvalStatusEnum("status").default("pending"),
-  comments: text("comments"),
-  approvedAt: timestamp("approved_at"),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
 // Validation rule severity enum
 export const validationSeverityEnum = pgEnum("validation_severity", [
   "low",
@@ -305,7 +294,6 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
     references: [users.id],
   }),
   lineItems: many(lineItems),
-  approvals: many(approvals),
   pettyCash: one(pettyCashLog, {
     fields: [invoices.id],
     references: [pettyCashLog.invoiceId],
@@ -319,17 +307,6 @@ export const lineItemsRelations = relations(lineItems, ({ one }) => ({
   invoice: one(invoices, {
     fields: [lineItems.invoiceId],
     references: [invoices.id],
-  }),
-}));
-
-export const approvalsRelations = relations(approvals, ({ one }) => ({
-  invoice: one(invoices, {
-    fields: [approvals.invoiceId],
-    references: [invoices.id],
-  }),
-  approver: one(users, {
-    fields: [approvals.approverId],
-    references: [users.id],
   }),
 }));
 
@@ -387,9 +364,6 @@ export type Invoice = typeof invoices.$inferSelect;
 export type InsertLineItem = typeof lineItems.$inferInsert;
 export type LineItem = typeof lineItems.$inferSelect;
 
-export type InsertApproval = typeof approvals.$inferInsert;
-export type Approval = typeof approvals.$inferSelect;
-
 export type InsertValidationRule = typeof validationRules.$inferInsert;
 export type ValidationRule = typeof validationRules.$inferSelect;
 
@@ -424,12 +398,6 @@ export const insertInvoiceSchema = createInsertSchema(invoices).omit({
 export const insertLineItemSchema = createInsertSchema(lineItems).omit({
   id: true,
   createdAt: true,
-});
-
-export const insertApprovalSchema = createInsertSchema(approvals).omit({
-  id: true,
-  createdAt: true,
-  approvedAt: true,
 });
 
 export const insertValidationRuleSchema = createInsertSchema(validationRules).omit({
