@@ -39,9 +39,10 @@ The system uses PostgreSQL with the following key entities:
 ### AI-Powered Processing Pipeline
 1. **OCR Service**: Tesseract.js processes PDF/image invoices
 2. **AI Extraction**: OpenAI GPT extracts structured data from OCR text
-3. **Validation Engine**: Rule-based validation with configurable business rules
-4. **Discrepancy Detection**: Automated flagging of potential issues
-5. **Predictive Analytics**: ML-based issue prediction and alerts
+3. **Project Matching**: AI-powered project assignment using GPT-4 with confidence scoring
+4. **Validation Engine**: Rule-based validation with configurable business rules
+5. **Discrepancy Detection**: Automated flagging of potential issues
+6. **Predictive Analytics**: ML-based issue prediction and alerts
 
 ### Authentication & Security
 - Replit Auth integration with OpenID Connect
@@ -53,10 +54,11 @@ The system uses PostgreSQL with the following key entities:
 1. Invoice upload (PDF/JPG/PNG)
 2. OCR text extraction
 3. AI-powered data extraction
-4. Validation rule application
-5. PO matching and project assignment
-6. Approval workflow routing
-7. Discrepancy flagging and resolution
+4. AI project matching with confidence scoring
+5. Validation rule application
+6. PO matching and project assignment
+7. Approval workflow routing
+8. Discrepancy flagging and resolution
 
 ### User Interface Components
 - **Dashboard**: Real-time stats and processing overview
@@ -113,6 +115,7 @@ The system uses PostgreSQL with the following key entities:
 
 ## Changelog
 - June 13, 2025. Initial setup
+- June 13, 2025. Added AI-powered project matching feature using OpenAI GPT-4 for intelligent invoice-to-project assignment with confidence scoring and automatic flagging
 
 ## User Preferences
 

@@ -1340,7 +1340,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           invoiceId,
           flagType: 'low_confidence_project_match',
           severity: matchResult.confidence_score < 0.3 ? 'high' : 'medium',
-          description: `Project matching ${matchResult.flagged ? 'flagged' : 'low confidence'}: ${matchResult.match_reason}`,
+          message: `Project matching ${matchResult.flagged ? 'flagged' : 'low confidence'}: ${matchResult.match_reason}`,
           resolvedAt: null,
           resolvedBy: null
         }]);

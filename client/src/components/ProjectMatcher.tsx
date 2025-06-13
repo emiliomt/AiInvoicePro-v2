@@ -136,7 +136,7 @@ export default function ProjectMatcher({ invoiceId, onMatchComplete }: ProjectMa
             ) : (
               <>
                 <Target className="h-4 w-4 mr-2" />
-                {matchStatus?.assignedProject ? 'Re-match' : 'Match Project'}
+                {(matchStatus as any)?.assignedProject ? 'Re-match' : 'Match Project'}
               </>
             )}
           </Button>
@@ -153,13 +153,13 @@ export default function ProjectMatcher({ invoiceId, onMatchComplete }: ProjectMa
           </div>
         )}
 
-        {matchStatus?.assignedProject && (
+        {(matchStatus as any)?.assignedProject && (
           <Alert>
             <Building2 className="h-4 w-4" />
             <AlertDescription>
               <div className="flex items-center justify-between">
                 <span>
-                  Currently assigned to project: <strong>{matchStatus.assignedProject}</strong>
+                  Currently assigned to project: <strong>{(matchStatus as any).assignedProject}</strong>
                 </span>
                 <Button variant="ghost" size="sm">
                   <Eye className="h-4 w-4 mr-1" />
@@ -170,13 +170,13 @@ export default function ProjectMatcher({ invoiceId, onMatchComplete }: ProjectMa
           </Alert>
         )}
 
-        {matchStatus?.hasMatchingIssues && (
+        {(matchStatus as any)?.hasMatchingIssues && (
           <Alert variant="destructive">
             <AlertTriangle className="h-4 w-4" />
             <AlertDescription>
               This invoice has project matching issues that require review.
               <div className="mt-2">
-                {matchStatus.matchingFlags?.map((flag: any, index: number) => (
+                {(matchStatus as any).matchingFlags?.map((flag: any, index: number) => (
                   <div key={index} className="text-sm">
                     • {flag.description}
                   </div>

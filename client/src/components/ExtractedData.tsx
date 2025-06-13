@@ -14,6 +14,7 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
 import ProjectAssignment from "@/components/ProjectAssignment";
 import DiscrepancyDisplay from "@/components/DiscrepancyDisplay";
+import ProjectMatcher from "@/components/ProjectMatcher";
 
 interface Invoice {
   id: number;
@@ -586,6 +587,15 @@ export default function ExtractedData() {
 
       {/* Petty Cash Manager for petty cash invoices */}
       {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
+
+      {/* AI Project Matching for all invoices */}
+      <ProjectMatcher 
+        invoiceId={invoice.id}
+        onMatchComplete={() => {
+          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoice.id] });
+        }}
+      />
 
       {/* Project Assignment and PO Matching for regular invoices */}
       {!isPettyCash && (
