@@ -421,6 +421,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const sheetName = workbook.SheetNames[0];
         const worksheet = workbook.Sheets[sheetName];
         const data = XLSX.utils.sheet_to_json(worksheet);
+        
+        // Debug: Log the first row to see available column names
+        if (data.length > 0) {
+          console.log('Excel columns available:', Object.keys(data[0]));
+        }
 
         const importedProjects = [];
         const errors = [];
@@ -429,15 +434,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const row = data[i] as any;
           try {
             const projectData = {
-              projectId: row['Project ID'] || row['projectId'] || `PROJ-${Date.now()}-${i}`,
-              name: row['Project Name'] || row['name'] || 'Imported Project',
-              description: row['Description'] || row['description'] || '',
-              address: row['Address'] || row['address'] || '',
-              city: row['City'] || row['city'] || '',
-              vatNumber: row['VAT Number'] || row['vatNumber'] || '',
-              supervisor: row['Supervisor'] || row['supervisor'] || '',
-              budget: row['Budget'] || row['budget'] || '0',
-              currency: row['Currency'] || row['currency'] || 'USD',
+              projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || `PROJ-${Date.now()}-${i}`,
+              name: row['Project Name'] || row['name'] || row['Name'] || row['Project'] || row['project'] || 'Imported Project',
+              description: row['Description'] || row['description'] || row['Desc'] || row['desc'] || '',
+              address: row['Address'] || row['address'] || row['Location'] || row['location'] || '',
+              city: row['City'] || row['city'] || row['Ciudad'] || row['ciudad'] || '',
+              vatNumber: row['VAT Number'] || row['vatNumber'] || row['VAT'] || row['vat'] || row['NIT'] || row['nit'] || '',
+              supervisor: row['Supervisor'] || row['supervisor'] || row['Manager'] || row['manager'] || row['Responsable'] || row['responsable'] || '',
+              budget: (row['Budget'] || row['budget'] || row['Presupuesto'] || row['presupuesto'] || '0').toString(),
+              currency: row['Currency'] || row['currency'] || row['Moneda'] || row['moneda'] || 'USD',
               status: 'active',
               validationStatus: 'pending',
               isValidated: false
