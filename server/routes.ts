@@ -275,6 +275,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.delete('/api/purchase-orders/:id', isAuthenticated, async (req, res) => {
+    try {
+      const poId = parseInt(req.params.id);
+      await storage.deletePurchaseOrder(poId);
+      res.json({ message: "Purchase order deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting purchase order:", error);
+      res.status(500).json({ message: "Failed to delete purchase order" });
+    }
+  });
+
   // Invoice-PO matching routes
   app.get('/api/invoices/:id/matches', isAuthenticated, async (req, res) => {
     try {

@@ -11,7 +11,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, DollarSign, Building, Package } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2 } from "lucide-react";
 import { useState } from "react";
 
 interface PurchaseOrder {
@@ -108,6 +108,36 @@ export default function PurchaseOrders() {
     },
   });
 
+  // Delete purchase order mutation
+  const deletePOMutation = useMutation({
+    mutationFn: async (poId: number) => {
+      const response = await fetch(`/api/purchase-orders/${poId}`, {
+        method: "DELETE",
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to delete purchase order");
+      }
+      
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      toast({
+        title: "Success",
+        description: "Purchase order deleted successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreatePO = () => {
     // Validate required fields
     if (!newPO.poId || !newPO.vendorName || !newPO.amount) {
@@ -135,6 +165,12 @@ export default function PurchaseOrders() {
     };
 
     createPOMutation.mutate(poData);
+  };
+
+  const handleDeletePO = (poId: number, poNumber: string) => {
+    if (window.confirm(`Are you sure you want to delete purchase order ${poNumber}? This action cannot be undone.`)) {
+      deletePOMutation.mutate(poId);
+    }
   };
 
   const addItem = () => {
@@ -382,9 +418,20 @@ export default function PurchaseOrders() {
                         </CardTitle>
                         <p className="text-gray-600 mt-1">{po.vendorName}</p>
                       </div>
-                      <Badge className={getStatusColor(po.status)}>
-                        {po.status.toUpperCase()}
-                      </Badge>
+                      <div className="flex items-center space-x-2">
+                        <Badge className={getStatusColor(po.status)}>
+                          {po.status.toUpperCase()}
+                        </Badge>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => handleDeletePO(po.id, po.poId)}
+                          disabled={deletePOMutation.isPending}
+                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                        >
+                          <Trash2 size={16} />
+                        </Button>
+                      </div>
                     </div>
                   </CardHeader>
                   <CardContent>

@@ -113,6 +113,7 @@ export interface IStorage {
   getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | undefined>;
   createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: number, updates: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder>;
+  deletePurchaseOrder(id: number): Promise<void>;
 
   // Invoice-PO matching operations
   createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch>;
@@ -618,6 +619,20 @@ export class DatabaseStorage implements IStorage {
       .where(eq(purchaseOrders.id, id))
       .returning();
     return updatedPo;
+  }
+
+  async deletePurchaseOrder(id: number): Promise<void> {
+    // Check if PO has associated invoice matches
+    const [associatedMatches] = await db
+      .select({ count: count() })
+      .from(invoicePoMatches)
+      .where(eq(invoicePoMatches.poId, id));
+
+    if (associatedMatches.count > 0) {
+      throw new Error(`Cannot delete purchase order because it has ${associatedMatches.count} associated invoice match(es). Please resolve these matches first.`);
+    }
+
+    await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
   }
 
   // Invoice-PO matching operations
