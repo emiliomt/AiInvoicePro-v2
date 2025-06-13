@@ -88,7 +88,7 @@ export default function Invoices() {
 
   const formatAmount = (amount: string | null, currency: string) => {
     if (!amount) return "N/A";
-    return `${currency} ${parseFloat(amount).toFixed(2)}`;
+    return `${currency} ${parseFloat(amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   const formatDate = (dateString: string | null) => {
