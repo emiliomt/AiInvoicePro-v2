@@ -28,6 +28,8 @@ import Header from "@/components/Header";
 import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
+import PettyCashManager from "@/components/PettyCashManager";
+import ProjectMatchingManager from "@/components/ProjectMatchingManager";
 
 interface Invoice {
   id: number;
@@ -519,6 +521,13 @@ export default function Invoices() {
                     </div>
                   </div>
                 )}
+
+                {/* Petty Cash Management */}
+                <PettyCashManager invoiceId={selectedInvoice.id} />
+
+                {/* Project Matching Management */}
+                <ProjectMatchingManager invoiceId={selectedInvoice.id} />
+
                 <div className="flex justify-end space-x-2 pt-4 border-t">
                   <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close
