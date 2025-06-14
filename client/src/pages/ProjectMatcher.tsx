@@ -192,41 +192,7 @@ export default function ProjectMatcher() {
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success",
-        description: "Project assigned successfully",
-      });
-    },
-  });
-
-  // Auto-assign project for matched invoices
-  const autoAssignMutation = useMutation({
-    mutationFn: async ({ invoiceId, project, confidence }: {
-      invoiceId: number;
-      project: Project;
-      confidence: number;
-    }) => {
-      const response = await fetch(`/api/invoices/${invoiceId}/create-project-match`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ 
-          projectId: project.projectId, 
-          matchScore: confidence, 
-          matchDetails: {
-            type: 'auto',
-            reason: 'Automatically assigned based on high confidence match',
-            matchedFields: ['address', 'city'],
-          },
-          status: 'auto' 
-        }),
-      });
-      if (!response.ok) throw new Error("Failed to auto-assign project");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
-      toast({
-        title: "Auto-Assigned",
-        description: "Project automatically assigned based on high confidence match",
+        description: "Project match created successfully",
       });
     },
   });
@@ -276,27 +242,6 @@ export default function ProjectMatcher() {
         matchedFields: ['manual'],
       },
     });
-  };
-
-  const handleAutoAssign = (invoice: Invoice, project: Project, confidence: number) => {
-    autoAssignMutation.mutate({
-      invoiceId: invoice.id,
-      project,
-      confidence,
-    });
-  };
-
-  // Check if invoice already has an active project match
-  const useActiveMatch = (invoiceId: number) => {
-    return useQuery<{ hasActiveMatch: boolean }>({
-      queryKey: ["/api/invoices", invoiceId, "has-active-match"],
-      enabled: !!invoiceId,
-    });
-  };
-
-  const isInvoiceMatched = (invoiceId: number): boolean => {
-    const { data } = useActiveMatch(invoiceId);
-    return data?.hasActiveMatch || false;
   };
 
   // Helper function to calculate string similarity
@@ -742,98 +687,24 @@ export default function ProjectMatcher() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              {(() => {
-                                const hasActiveMatch = isInvoiceMatched(invoice.id);
-                                
-                                if (hasActiveMatch) {
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <Badge variant="default" className="bg-green-100 text-green-800">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        Assigned
-                                      </Badge>
-                                      <Button size="sm" variant="ghost" disabled>
-                                        <CheckCircle className="w-4 h-4 mr-2" />
-                                        Assigned
-                                      </Button>
-                                    </div>
-                                  );
-                                }
-                                
-                                if (status.status === "matched" && bestMatch?.project) {
-                                  return (
-                                    <div className="flex items-center gap-2">
-                                      <Button
-                                        size="sm"
-                                        variant="outline"
-                                        onClick={() => handleAutoAssign(invoice, bestMatch.project, bestMatch.confidence)}
-                                        disabled={autoAssignMutation.isPending}
-                                      >
-                                        {autoAssignMutation.isPending ? (
-                                          <>
-                                            <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                            Assigning...
-                                          </>
-                                        ) : (
-                                          <>
-                                            <CheckCircle className="w-4 h-4 mr-2" />
-                                            Auto-Assign
-                                          </>
-                                        )}
-                                      </Button>
-                                      <Badge variant="secondary" className="text-green-600">
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        Ready to Assign
-                                      </Badge>
-                                    </div>
-                                  );
-                                }
-                                
-                                if (status.status === "needs_review") {
-                                  return (
-                                    <Dialog>
-                                      <DialogTrigger asChild>
-                                        <Button size="sm" variant="outline">
-                                          <Target className="w-4 h-4 mr-2" />
-                                          Assign Project
-                                        </Button>
-                                      </DialogTrigger>
-                                      <DialogContent className="max-w-4xl">
-                                        <DialogHeader>
-                                          <DialogTitle>Manual Project Assignment</DialogTitle>
-                                        </DialogHeader>
-                                        <ManualProjectAssignment 
-                                          invoice={invoice} 
-                                          projects={projects}
-                                          onManualMatch={handleManualMatch}
-                                          bestMatch={bestMatch}
-                                        />
-                                      </DialogContent>
-                                    </Dialog>
-                                  );
-                                }
-                                
-                                return (
-                                  <Button
-                                    size="sm"
-                                    variant="outline"
-                                    onClick={() => handleFindMatches(invoice)}
-                                    disabled={isMatching}
-                                  >
-                                    {isMatching ? (
-                                      <>
-                                        <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                        Matching...
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Zap className="w-4 h-4 mr-2" />
-                                        Find Matches
-                                      </>
-                                    )}
-                                  </Button>
-                                );
-                              })()}
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => handleFindMatches(invoice)}
+                                disabled={isMatching}
+                              >
+                                {isMatching ? (
+                                  <>
+                                    <Clock className="w-4 h-4 mr-2 animate-spin" />
+                                    Matching...
+                                  </>
+                                ) : (
+                                  <>
+                                    <Zap className="w-4 h-4 mr-2" />
+                                    Find Matches
+                                  </>
+                                )}
+                              </Button>
                               
                               <Dialog>
                                 <DialogTrigger asChild>
@@ -863,111 +734,6 @@ export default function ProjectMatcher() {
             </Card>
           </TabsContent>
         </Tabs>
-      </div>
-    </div>
-  );
-}
-
-// Manual Project Assignment Component
-function ManualProjectAssignment({ 
-  invoice, 
-  projects, 
-  onManualMatch,
-  bestMatch
-}: { 
-  invoice: Invoice; 
-  projects: Project[];
-  onManualMatch: (invoice: Invoice, project: Project) => void;
-  bestMatch?: { project: Project | null; confidence: number };
-}) {
-  const [selectedProject, setSelectedProject] = useState<string>("");
-  const [searchTerm, setSearchTerm] = useState("");
-
-  const filteredProjects = projects.filter(project => 
-    project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.projectId.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.address?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    project.city?.toLowerCase().includes(searchTerm.toLowerCase())
-  );
-
-  return (
-    <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-6">
-        <div>
-          <h3 className="font-semibold mb-3">Invoice Information</h3>
-          <div className="space-y-2 text-sm">
-            <div><strong>Invoice #:</strong> {invoice.extractedData?.invoiceNumber || invoice.id}</div>
-            <div><strong>File:</strong> {invoice.fileName}</div>
-            <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
-            <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
-            <div><strong>Extracted Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
-            <div><strong>Extracted City:</strong> {invoice.extractedData?.city || 'N/A'}</div>
-            {bestMatch?.project && (
-              <>
-                <div className="pt-2 border-t">
-                  <div><strong>Suggested Match:</strong> {bestMatch.project.name}</div>
-                  <div><strong>Confidence:</strong> {bestMatch.confidence}%</div>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-
-        <div>
-          <h3 className="font-semibold mb-3">Select Project</h3>
-          <div className="space-y-4">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-              <Input
-                placeholder="Search projects..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-            
-            <div className="max-h-64 overflow-y-auto border rounded-md">
-              {filteredProjects.map((project) => (
-                <div
-                  key={project.projectId}
-                  className={`p-3 cursor-pointer hover:bg-gray-50 border-b last:border-b-0 ${
-                    selectedProject === project.projectId ? 'bg-blue-50 border-blue-200' : ''
-                  }`}
-                  onClick={() => setSelectedProject(project.projectId)}
-                >
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <div className="font-medium">{project.name}</div>
-                      <div className="text-sm text-muted-foreground">
-                        {project.projectId} • {project.city}
-                      </div>
-                      <div className="text-xs text-muted-foreground">
-                        {project.address}
-                      </div>
-                    </div>
-                    {selectedProject === project.projectId && (
-                      <CheckCircle className="w-5 h-5 text-blue-600" />
-                    )}
-                  </div>
-                </div>
-              ))}
-            </div>
-            
-            <Button 
-              onClick={() => {
-                if (selectedProject) {
-                  const project = projects.find(p => p.projectId === selectedProject);
-                  if (project) onManualMatch(invoice, project);
-                }
-              }}
-              disabled={!selectedProject}
-              className="w-full"
-            >
-              <Target className="w-4 h-4 mr-2" />
-              Assign Selected Project
-            </Button>
-          </div>
-        </div>
       </div>
     </div>
   );
