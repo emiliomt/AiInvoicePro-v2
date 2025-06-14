@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
@@ -88,9 +87,38 @@ export default function ProjectMatcher() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
-  
+  const [invoicesWithMatches, setInvoicesWithMatches] = useState<any[]>([]);
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+    // Mock API request function
+    const apiRequest = async (method: string, url: string, data: any = null) => {
+      const options: RequestInit = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          // Add any other headers as needed
+        },
+      };
+  
+      if (data) {
+        options.body = JSON.stringify(data);
+      }
+  
+      // Simulate an asynchronous API request
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          // Simulate a successful response
+          const mockResponse = {
+            ok: true,
+            status: 200,
+            json: async () => ({ message: 'Operation successful', data: data }),
+          };
+          resolve(mockResponse);
+        }, 500); // Simulate a 500ms delay
+      });
+    };
 
   // Fetch all invoices
   const { data: invoices = [] } = useQuery<Invoice[]>({
@@ -127,7 +155,7 @@ export default function ProjectMatcher() {
       const totalValue = invoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.totalAmount || "0"), 0
       );
-      
+
       return {
         totalInvoices,
         matched,
@@ -151,11 +179,11 @@ export default function ProjectMatcher() {
     onSuccess: (matches, invoiceId) => {
       queryClient.setQueryData(["/api/invoices", invoiceId, "project-matches"], matches);
       setMatchingInProgress(null);
-      
+
       // Invalidate related queries to update stats across modules
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
-      
+
       toast({
         title: "Matching Complete",
         description: `Found ${matches.length} potential project matches`,
@@ -185,7 +213,7 @@ export default function ProjectMatcher() {
         body: JSON.stringify({ projectId, matchScore, matchDetails, status: 'manual' }),
       });
       if (!response.ok) throw new Error("Failed to create match");
-      
+
       // Update invoice status to 'matched' after successful project match
       const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
         method: "PATCH",
@@ -193,7 +221,7 @@ export default function ProjectMatcher() {
         body: JSON.stringify({ status: 'matched' }),
       });
       if (!updateResponse.ok) throw new Error("Failed to update invoice status");
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -240,33 +268,92 @@ export default function ProjectMatcher() {
     findMatchesMutation.mutate(invoice.id);
   };
 
-  const handleManualMatch = (invoice: Invoice, project: Project) => {
-    createMatchMutation.mutate({
-      invoiceId: invoice.id,
-      projectId: project.projectId,
-      matchScore: 100, // Manual matches get 100% score
-      matchDetails: {
-        type: 'manual',
-        reason: 'Manually assigned by user',
-        matchedFields: ['manual'],
-      },
-    });
+  const handleApproveMatch = async (invoiceId: number, projectId: string) => {
+    try {
+      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/create-project-match`, {
+        projectId: projectId,
+        matchScore: 95, // High confidence for approved matches
+        matchDetails: {
+          type: 'approved',
+          reason: 'Best match approved by user',
+          timestamp: new Date().toISOString()
+        },
+        status: 'manual'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Match Approved",
+          description: "Invoice has been matched to the selected project",
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setInvoicesWithMatches(prev => 
+          prev.map(item => 
+            item.invoice.id === invoiceId 
+              ? { ...item, status: 'matched' }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to approve project match",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleManualMatch = async (invoice: Invoice, project: Project) => {
+    try {
+      const response = await apiRequest('POST', `/api/invoices/${invoice.id}/create-project-match`, {
+        projectId: project.id,
+        matchScore: 100, // Manual matches get 100% score
+        matchDetails: {
+          type: 'manual',
+          reason: 'Manually assigned by user',
+          timestamp: new Date().toISOString()
+        },
+        status: 'manual'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Project Assigned",
+          description: `Invoice matched to project: ${project.name}`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setInvoicesWithMatches(prev => 
+          prev.map(item => 
+            item.invoice.id === invoice.id 
+              ? { ...item, status: 'matched' }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to assign project to invoice",
+        variant: "destructive",
+      });
+    }
   };
 
   // Helper function to calculate string similarity
   const calculateStringSimilarity = (str1: string, str2: string): number => {
     if (!str1 || !str2) return 0;
-    
+
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
-    
+
     if (s1 === s2) return 100;
-    
+
     const distance = levenshteinDistance(s1, s2);
     const maxLength = Math.max(s1.length, s2.length);
-    
+
     if (maxLength === 0) return 100;
-    
+
     return Math.round(((maxLength - distance) / maxLength) * 100);
   };
 
@@ -294,7 +381,7 @@ export default function ProjectMatcher() {
   const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
     const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
     let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-    
+
     // If no explicit project city, try to extract from vendor address
     if (!invoiceCity && invoice.extractedData?.vendorAddress) {
       const vendorAddress = invoice.extractedData.vendorAddress;
@@ -329,7 +416,7 @@ export default function ProjectMatcher() {
       }
 
       const finalScore = matchCount > 0 ? score / matchCount : 0;
-      
+
       if (finalScore > bestMatch.score && finalScore > 70) {
         bestMatch = { project, score: finalScore };
       }
@@ -342,7 +429,7 @@ export default function ProjectMatcher() {
   const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
     const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
     let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-    
+
     // If no explicit project city, try to extract from vendor address
     if (!invoiceCity && invoice.extractedData?.vendorAddress) {
       const vendorAddress = invoice.extractedData.vendorAddress;
@@ -377,7 +464,7 @@ export default function ProjectMatcher() {
       }
 
       const finalConfidence = weightSum > 0 ? Math.round(totalScore / weightSum) : 0;
-      
+
       if (finalConfidence > bestMatch.confidence) {
         bestMatch = { project, confidence: finalConfidence };
       }
@@ -388,11 +475,11 @@ export default function ProjectMatcher() {
 
   const getMatchStatus = (invoice: Invoice, threshold: number = 85) => {
     const bestMatch = getBestProjectMatch(invoice, projects);
-    
+
     if (!bestMatch.project) {
       return { status: "needs_review", label: "Needs Review", color: "yellow" };
     }
-    
+
     if (bestMatch.confidence >= threshold) {
       return { status: "matched", label: "Matched", color: "green" };
     } else if (bestMatch.confidence >= 60) {
@@ -410,14 +497,14 @@ export default function ProjectMatcher() {
       invoice.extractedData?.projectName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.extractedData?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.id.toString().includes(searchTerm);
-    
+
     return statusMatch && searchMatch;
   });
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Project Matcher</h1>
@@ -605,7 +692,7 @@ export default function ProjectMatcher() {
                       const status = getMatchStatus(invoice, confidenceThreshold[0]);
                       const isMatching = matchingInProgress === invoice.id;
                       const bestMatch = getBestProjectMatch(invoice, projects);
-                      
+
                       return (
                         <TableRow key={invoice.id}>
                           <TableCell>
@@ -628,7 +715,7 @@ export default function ProjectMatcher() {
                             {(() => {
                               // Use projectCity if available, otherwise derive from vendor address
                               let city = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-                              
+
                               if (!city && invoice.extractedData?.vendorAddress) {
                                 const vendorAddress = invoice.extractedData.vendorAddress;
                                 const addressParts = vendorAddress.split(',').map(part => part.trim());
@@ -636,7 +723,7 @@ export default function ProjectMatcher() {
                                   city = addressParts.slice(1).join(', ');
                                 }
                               }
-                              
+
                               return city || 'N/A';
                             })()}
                           </TableCell>
@@ -707,7 +794,7 @@ export default function ProjectMatcher() {
                                   Approve Best Match
                                 </Button>
                               ) : null}
-                              
+
                               <Dialog>
                                 <DialogTrigger asChild>
                                   <Button size="sm" variant="outline">
@@ -757,17 +844,17 @@ function InvoiceMatchingDialog({
   // Helper functions for the dialog
   const calculateStringSimilarity = (str1: string, str2: string): number => {
     if (!str1 || !str2) return 0;
-    
+
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
-    
+
     if (s1 === s2) return 100;
-    
+
     const distance = levenshteinDistance(s1, s2);
     const maxLength = Math.max(s1.length, s2.length);
-    
+
     if (maxLength === 0) return 100;
-    
+
     return Math.round(((maxLength - distance) / maxLength) * 100);
   };
 
@@ -777,7 +864,7 @@ function InvoiceMatchingDialog({
     for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
     for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
 
-    for (let j = 1; j <= str2.length; j++) {
+    for (let i = 1; i <= str2.length; j++) {
       for (let i = 1; i <= str1.length; i++) {
         const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
         matrix[j][i] = Math.min(
@@ -794,7 +881,7 @@ function InvoiceMatchingDialog({
   const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
     const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
     let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-    
+
     if (!invoiceCity && invoice.extractedData?.vendorAddress) {
       const vendorAddress = invoice.extractedData.vendorAddress;
       const addressParts = vendorAddress.split(',').map(part => part.trim());
@@ -828,7 +915,7 @@ function InvoiceMatchingDialog({
       }
 
       const finalScore = matchCount > 0 ? score / matchCount : 0;
-      
+
       if (finalScore > bestMatch.score && finalScore > 70) {
         bestMatch = { project, score: finalScore };
       }
@@ -840,7 +927,7 @@ function InvoiceMatchingDialog({
   const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
     const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
     let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
-    
+
     if (!invoiceCity && invoice.extractedData?.vendorAddress) {
       const vendorAddress = invoice.extractedData.vendorAddress;
       const addressParts = vendorAddress.split(',').map(part => part.trim());
@@ -872,7 +959,7 @@ function InvoiceMatchingDialog({
       }
 
       const finalConfidence = weightSum > 0 ? Math.round(totalScore / weightSum) : 0;
-      
+
       if (finalConfidence > bestMatch.confidence) {
         bestMatch = { project, confidence: finalConfidence };
       }
@@ -923,7 +1010,7 @@ function InvoiceMatchingDialog({
                 ))}
               </SelectContent>
             </Select>
-            
+
             <Button 
               onClick={() => {
                 if (selectedProject) {
