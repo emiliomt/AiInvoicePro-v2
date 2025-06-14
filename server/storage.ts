@@ -1119,6 +1119,48 @@ export class DatabaseStorage implements IStorage {
       .set({ isActive: true, status: 'manual', updatedAt: new Date() })
       .where(eq(invoiceProjectMatches.id, matchId));
   }
+
+  async hasActiveProjectMatch(invoiceId: number): Promise<boolean> {
+    const match = await db
+      .select()
+      .from(invoiceProjectMatches)
+      .where(
+        and(
+          eq(invoiceProjectMatches.invoiceId, invoiceId),
+          eq(invoiceProjectMatches.isActive, true)
+        )
+      )
+      .limit(1);
+    
+    return match.length > 0;
+  }
+
+  async getActiveProjectMatch(invoiceId: number): Promise<(InvoiceProjectMatch & { project: Project }) | null> {
+    const matches = await db
+      .select({
+        id: invoiceProjectMatches.id,
+        invoiceId: invoiceProjectMatches.invoiceId,
+        projectId: invoiceProjectMatches.projectId,
+        matchScore: invoiceProjectMatches.matchScore,
+        status: invoiceProjectMatches.status,
+        matchDetails: invoiceProjectMatches.matchDetails,
+        isActive: invoiceProjectMatches.isActive,
+        createdAt: invoiceProjectMatches.createdAt,
+        updatedAt: invoiceProjectMatches.updatedAt,
+        project: projects,
+      })
+      .from(invoiceProjectMatches)
+      .innerJoin(projects, eq(invoiceProjectMatches.projectId, projects.projectId))
+      .where(
+        and(
+          eq(invoiceProjectMatches.invoiceId, invoiceId),
+          eq(invoiceProjectMatches.isActive, true)
+        )
+      )
+      .limit(1);
+
+    return matches.length > 0 ? matches[0] : null;
+  }
 }
 
 export const storage = new DatabaseStorage();

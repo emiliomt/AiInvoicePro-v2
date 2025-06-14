@@ -442,6 +442,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.get('/api/invoices/:id/has-active-match', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const hasMatch = await storage.hasActiveProjectMatch(invoiceId);
+      res.json({ hasActiveMatch: hasMatch });
+    } catch (error) {
+      console.error("Error checking active project match:", error);
+      res.status(500).json({ message: "Failed to check active project match" });
+    }
+  });
+
+  app.get('/api/invoices/:id/active-match', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const activeMatch = await storage.getActiveProjectMatch(invoiceId);
+      res.json(activeMatch);
+    } catch (error) {
+      console.error("Error fetching active project match:", error);
+      res.status(500).json({ message: "Failed to fetch active project match" });
+    }
+  });
+
   // Discrepancy detection routes
   app.get("/api/flags/:invoiceId", isAuthenticated, async (req, res) => {
     try {
