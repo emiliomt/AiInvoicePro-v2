@@ -687,34 +687,28 @@ export default function ProjectMatcher() {
                           </TableCell>
                           <TableCell>
                             <div className="flex items-center gap-2">
-                              <Button
-                                size="sm"
-                                variant="outline"
-                                onClick={() => handleFindMatches(invoice)}
-                                disabled={isMatching}
-                              >
-                                {isMatching ? (
-                                  <>
-                                    <Clock className="w-4 h-4 mr-2 animate-spin" />
-                                    Matching...
-                                  </>
-                                ) : (
-                                  <>
-                                    <Zap className="w-4 h-4 mr-2" />
-                                    Find Matches
-                                  </>
-                                )}
-                              </Button>
+                              {bestMatch?.project && bestMatch.confidence >= 60 ? (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleManualMatch(invoice, bestMatch.project)}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Approve Best Match
+                                </Button>
+                              ) : null}
                               
                               <Dialog>
                                 <DialogTrigger asChild>
-                                  <Button size="sm" variant="ghost">
-                                    <Eye className="w-4 h-4" />
+                                  <Button size="sm" variant="outline">
+                                    <Target className="w-4 h-4 mr-2" />
+                                    Assign Manual Project
                                   </Button>
                                 </DialogTrigger>
                                 <DialogContent className="max-w-4xl">
                                   <DialogHeader>
-                                    <DialogTitle>Invoice Details & Manual Matching</DialogTitle>
+                                    <DialogTitle>Manual Project Assignment</DialogTitle>
                                   </DialogHeader>
                                   <InvoiceMatchingDialog 
                                     invoice={invoice} 
