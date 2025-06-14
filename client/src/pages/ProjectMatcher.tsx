@@ -185,6 +185,15 @@ export default function ProjectMatcher() {
         body: JSON.stringify({ projectId, matchScore, matchDetails, status: 'manual' }),
       });
       if (!response.ok) throw new Error("Failed to create match");
+      
+      // Update invoice status to 'matched' after successful project match
+      const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: 'matched' }),
+      });
+      if (!updateResponse.ok) throw new Error("Failed to update invoice status");
+      
       return response.json();
     },
     onSuccess: () => {
@@ -192,7 +201,7 @@ export default function ProjectMatcher() {
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success",
-        description: "Project match created successfully",
+        description: "Project match approved and invoice status updated to matched",
       });
     },
   });
