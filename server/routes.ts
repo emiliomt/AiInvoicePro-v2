@@ -796,7 +796,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
-    upload.single('invoice')(req, res, async (err) => {
+    upload.array('invoice', 10)(req, res, async (err) => {
       if (err) {
         console.error("Multer error:", err);
         return res.status(400).json({ message: err.message });
@@ -804,163 +804,142 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       try {
         const userId = req.user.claims.sub;
-        const file = req.file;
+        const files = req.files as Express.Multer.File[];
 
         console.log("Upload request received:", { 
-          hasFile: !!file, 
-          fieldname: file?.fieldname,
-          originalname: file?.originalname,
-          mimetype: file?.mimetype,
-          size: file?.size 
+          hasFiles: !!files && files.length > 0, 
+          fileCount: files?.length || 0,
+          files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype }))
         });
 
-        if (!file) {
-          return res.status(400).json({ message: "No file uploaded" });
+        if (!files || files.length === 0) {
+          return res.status(400).json({ message: "No files uploaded" });
         }
 
-      // Store file temporarily for preview functionality
-      const fs = await import('fs');
-      const path = await import('path');
-      const uploadsDir = path.join(process.cwd(), 'uploads');
+        const fs = await import('fs');
+        const path = await import('path');
+        const uploadsDir = path.join(process.cwd(), 'uploads');
 
-      // Ensure uploads directory exists
-      if (!fs.existsSync(uploadsDir)) {
-        fs.mkdirSync(uploadsDir, { recursive: true });
-      }
+        // Ensure uploads directory exists
+        if (!fs.existsSync(uploadsDir)) {
+          fs.mkdirSync(uploadsDir, { recursive: true });
+        }
 
-      // Generate unique filename
-      const fileExt = path.extname(file.originalname);
-      const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
-      const filePath = path.join(uploadsDir, uniqueFileName);
+        const uploadedInvoices = [];
 
-      // Write file to disk
-      fs.writeFileSync(filePath, file.buffer);
+        // Process each file
+        for (const file of files) {
+          try {
+            // Generate unique filename
+            const fileExt = path.extname(file.originalname);
+            const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+            const filePath = path.join(uploadsDir, uniqueFileName);
 
-      // Create initial invoice record with file path
-      const invoice = await storage.createInvoice({
-        userId,
-        fileName: file.originalname,
-        status: "processing",
-        fileUrl: filePath,
-      });
+            // Write file to disk
+            fs.writeFileSync(filePath, file.buffer);
 
-      res.json({ invoiceId: invoice.id, message: "Invoice uploaded successfully. Processing started." });
-
-      // Start OCR and data extraction processing
-      processInvoiceOCR(file.buffer, invoice.id)
-        .then(async (ocrText) => {
-          // Extract structured data using AI
-          const extractedData = await extractInvoiceData(ocrText);
-
-          // Update invoice with extracted data
-          await storage.updateInvoice(invoice.id, {
-            status: "extracted",
-            ocrText,
-            extractedData,
-            vendorName: extractedData.vendorName,
-            invoiceNumber: extractedData.invoiceNumber,
-            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-            dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-            totalAmount: extractedData.totalAmount,
-            taxAmount: extractedData.taxAmount,
-            subtotal: extractedData.subtotal,
-            projectName: extractedData.projectName,
-            confidenceScore: extractedData.confidenceScore,
-          });
-
-          // Check if this is a petty cash invoice
-          const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
-
-          if (isPettyCash) {
-            // Create petty cash log entry
-            await storage.createPettyCashLog({
-              invoiceId: invoice.id,
-              status: "pending_approval",
+            // Create initial invoice record with file path
+            const invoice = await storage.createInvoice({
+              userId,
+              fileName: file.originalname,
+              status: "processing",
+              fileUrl: filePath,
             });
 
-            // Update invoice status to indicate petty cash
-            await storage.updateInvoice(invoice.id, {
-              status: "petty_cash_pending" as any,
-            });
-          } else {
-            // For non-petty cash invoices, perform PO matching
-            const lineItems = extractedData.lineItems && extractedData.lineItems.length > 0 
-              ? extractedData.lineItems.map((item: any) => ({
-                  id: 0,
-                  invoiceId: invoice.id,
-                  description: item.description,
-                  quantity: item.quantity,
-                  unitPrice: item.unitPrice,
-                  totalPrice: item.totalPrice,
-                  createdAt: new Date(),
-                }))
-              : [];
+            uploadedInvoices.push(invoice);
 
-            // Find potential PO matches
-            const potentialMatches = await storage.findPotentialMatches(invoice, lineItems);
+            // Start OCR and data extraction processing (async)
+            setImmediate(async () => {
+              try {
+                console.log(`Starting OCR processing for invoice ${invoice.id} (${file.originalname})`);
+                
+                const ocrText = await processInvoiceOCR(file.buffer, invoice.id);
+                console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
 
-            if (potentialMatches.length > 0) {
-              // Create match records for all potential matches
-              for (const match of potentialMatches) {
-                const matchStatus = match.matchScore >= 80 ? 'auto' : 'unresolved';
+                if (!ocrText || ocrText.trim().length < 10) {
+                  throw new Error("OCR did not extract sufficient text from the document");
+                }
 
-                await storage.createInvoicePoMatch({
-                  invoiceId: invoice.id,
-                  poId: match.purchaseOrder.id,
-                  matchScore: match.matchScore.toString(),
-                  status: matchStatus as any,
-                  matchDetails: match.matchDetails,
+                // Extract structured data using AI
+                console.log(`Starting AI extraction for invoice ${invoice.id}`);
+                const extractedData = await extractInvoiceData(ocrText);
+                console.log(`AI extraction completed for invoice ${invoice.id}:`, {
+                  vendor: extractedData.vendorName,
+                  amount: extractedData.totalAmount,
+                  invoiceNumber: extractedData.invoiceNumber
+                });
+
+                // Update invoice with extracted data
+                await storage.updateInvoice(invoice.id, {
+                  status: "extracted",
+                  ocrText,
+                  extractedData,
+                  vendorName: extractedData.vendorName,
+                  invoiceNumber: extractedData.invoiceNumber,
+                  invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+                  dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+                  totalAmount: extractedData.totalAmount,
+                  taxAmount: extractedData.taxAmount,
+                  subtotal: extractedData.subtotal,
+                  projectName: extractedData.projectName,
+                  confidenceScore: extractedData.confidenceScore,
+                  currency: extractedData.currency || "USD",
+                });
+
+                // Check if this is a petty cash invoice
+                const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
+
+                if (isPettyCash) {
+                  // Create petty cash log entry
+                  await storage.createPettyCashLog({
+                    invoiceId: invoice.id,
+                    status: "pending_approval",
+                  });
+
+                  // Update invoice status to indicate petty cash
+                  await storage.updateInvoice(invoice.id, {
+                    status: "petty_cash_pending" as any,
+                  });
+                }
+
+                // Create line items if present
+                let createdLineItems: any[] = [];
+                if (extractedData.lineItems && extractedData.lineItems.length > 0) {
+                  const lineItemsData = extractedData.lineItems.map((item: any) => ({
+                    invoiceId: invoice.id,
+                    description: item.description || "Line item",
+                    quantity: item.quantity || "1",
+                    unitPrice: item.unitPrice || "0",
+                    totalPrice: item.totalPrice || "0",
+                  }));
+                  createdLineItems = await storage.createLineItems(lineItemsData);
+                }
+
+                console.log(`Invoice ${invoice.id} processing completed successfully`);
+              } catch (processingError: any) {
+                console.error(`Error processing invoice ${invoice.id}:`, processingError);
+                await storage.updateInvoice(invoice.id, {
+                  status: "rejected",
+                  extractedData: { 
+                    error: processingError.message,
+                    errorType: processingError.name || "ProcessingError",
+                    timestamp: new Date().toISOString()
+                  },
                 });
               }
-
-              // If we have a high-confidence match, assign the project automatically
-              const bestMatch = potentialMatches[0];
-              if (bestMatch.matchScore >= 80 && bestMatch.purchaseOrder.projectId) {
-                await storage.assignProjectToInvoice(invoice.id, bestMatch.purchaseOrder.projectId);
-              }
-            }
+            });
+          } catch (fileError) {
+            console.error(`Error processing file ${file.originalname}:`, fileError);
           }
+        }
 
-          // Create line items if present
-          let createdLineItems: any[] = [];
-          if (extractedData.lineItems && extractedData.lineItems.length > 0) {
-            const lineItemsData = extractedData.lineItems.map((item: any) => ({
-              invoiceId: invoice.id,
-              description: item.description,
-              quantity: item.quantity,
-              unitPrice: item.unitPrice,
-              totalPrice: item.totalPrice,
-            }));
-            createdLineItems = await storage.createLineItems(lineItemsData);
-          }
-
-          // Get the updated invoice for discrepancy detection
-          const updatedInvoice = await storage.getInvoice(invoice.id);
-
-          if (updatedInvoice) {
-            // Run discrepancy detection
-            const discrepancyResult = await checkInvoiceDiscrepancies(updatedInvoice, createdLineItems);
-            if (discrepancyResult.hasDiscrepancies) {
-              await storeInvoiceFlags(discrepancyResult.flags);
-            }
-
-            // Run predictive analysis
-            const predictions = await predictInvoiceIssues(updatedInvoice, createdLineItems);
-            if (predictions.length > 0) {
-              await storePredictiveAlerts(invoice.id, predictions);
-            }
-          }
-        })
-        .catch(async (error) => {
-          console.error("Error processing invoice:", error);
-          await storage.updateInvoice(invoice.id, {
-            status: "rejected",
-            extractedData: { error: error.message },
-          });
+        res.json({ 
+          message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
+          invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
         });
       } catch (error) {
-        console.error("Error uploading invoice:", error);
-        res.status(500).json({ message: "Failed to upload invoice" });
+        console.error("Error uploading invoices:", error);
+        res.status(500).json({ message: "Failed to upload invoices" });
       }
     });
   });
@@ -975,10 +954,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Start OCR processing manually
-      res.json({ message: "OCR processing started" });
+      if (!invoice.fileUrl || !require('fs').existsSync(invoice.fileUrl)) {
+        return res.status(400).json({ message: "Invoice file not found on disk" });
+      }
+
+      // Reset status to processing
+      await storage.updateInvoice(invoiceId, { status: "processing" });
+
+      res.json({ message: "OCR processing started manually" });
+
+      // Start processing in background
+      setImmediate(async () => {
+        try {
+          const fs = require('fs');
+          const fileBuffer = fs.readFileSync(invoice.fileUrl);
+          
+          console.log(`Manual OCR processing started for invoice ${invoiceId}`);
+          const ocrText = await processInvoiceOCR(fileBuffer, invoiceId);
+          
+          if (!ocrText || ocrText.trim().length < 10) {
+            throw new Error("OCR did not extract sufficient text from the document");
+          }
+
+          console.log(`Manual AI extraction started for invoice ${invoiceId}`);
+          const extractedData = await extractInvoiceData(ocrText);
+
+          // Update invoice with extracted data
+          await storage.updateInvoice(invoiceId, {
+            status: "extracted",
+            ocrText,
+            extractedData,
+            vendorName: extractedData.vendorName,
+            invoiceNumber: extractedData.invoiceNumber,
+            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+            dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+            totalAmount: extractedData.totalAmount,
+            taxAmount: extractedData.taxAmount,
+            subtotal: extractedData.subtotal,
+            projectName: extractedData.projectName,
+            confidenceScore: extractedData.confidenceScore,
+            currency: extractedData.currency || "USD",
+          });
+
+          console.log(`Manual processing completed successfully for invoice ${invoiceId}`);
+        } catch (error: any) {
+          console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
+          await storage.updateInvoice(invoiceId, {
+            status: "rejected",
+            extractedData: { 
+              error: error.message,
+              errorType: "ManualProcessingError",
+              timestamp: new Date().toISOString()
+            },
+          });
+        }
+      });
     } catch (error) {
-      console.error("Error starting OCR:", error);
+      console.error("Error starting manual OCR:", error);
       res.status(500).json({ message: "Failed to start OCR processing" });
     }
   });
