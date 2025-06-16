@@ -40,7 +40,7 @@ import {
   type InsertPredictiveAlert,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne } from "drizzle-orm";
+import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -216,6 +216,9 @@ export class DatabaseStorage implements IStorage {
 
     // Delete invoice-PO matches
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
+
+    // Delete invoice-project matches
+    await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
 
     // Delete invoice flags
     await db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id));
