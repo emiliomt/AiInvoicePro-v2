@@ -72,9 +72,29 @@ export default function Header() {
             <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
               Validation Rules
             </Link>
-            <Link href="/project-validation" className={getLinkClassName("/project-validation")}>
-              Project Validation
-            </Link>
+            
+            {/* Project Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Project</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/project-validation'}>
+                  Project Validation
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/project-matcher'}>
+                  Project Matcher
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
               Petty Cash
             </Link>
@@ -83,9 +103,6 @@ export default function Header() {
             </Link>
             <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
               PO Matching
-            </Link>
-            <Link href="/project-matcher" className={getLinkClassName("/project-matcher")}>
-              Project Matcher
             </Link>
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
