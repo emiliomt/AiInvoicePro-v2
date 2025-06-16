@@ -69,9 +69,25 @@ export default function Header() {
             <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
             </Link>
-            <Link href="/validation-rules" className={getLinkClassName("/validation-rules")}>
-              Validation Rules
-            </Link>
+            
+            {/* Information Validation Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/validation-rules")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Information Validation</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/validation-rules'}>
+                  Validation Rules
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             
             {/* Project Dropdown Menu */}
             <DropdownMenu>
