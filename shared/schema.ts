@@ -289,6 +289,19 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Feedback logs table for extraction error reporting
+export const feedbackLogs = pgTable("feedback_logs", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  userId: varchar("user_id").notNull(),
+  originalText: text("original_text"),
+  extractedData: jsonb("extracted_data"),
+  correctedData: jsonb("corrected_data"),
+  reason: text("reason"),
+  fileName: varchar("file_name"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   user: one(users, {
@@ -379,6 +392,17 @@ export const predictiveAlertsRelations = relations(predictiveAlerts, ({ one }) =
   }),
 }));
 
+export const feedbackLogsRelations = relations(feedbackLogs, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [feedbackLogs.invoiceId],
+    references: [invoices.id],
+  }),
+  user: one(users, {
+    fields: [feedbackLogs.userId],
+    references: [users.id],
+  }),
+}));
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -418,6 +442,9 @@ export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
 
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
+
+export type InsertFeedbackLog = typeof feedbackLogs.$inferInsert;
+export type FeedbackLog = typeof feedbackLogs.$inferSelect;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({

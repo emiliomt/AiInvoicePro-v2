@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle } from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -27,6 +27,7 @@ import Header from "@/components/Header";
 import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
+import ExtractionFeedbackModal from "@/components/ExtractionFeedbackModal";
 
 interface Invoice {
   id: number;
@@ -47,6 +48,8 @@ export default function Invoices() {
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
+  const [feedbackInvoice, setFeedbackInvoice] = useState<Invoice | null>(null);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -112,6 +115,11 @@ export default function Invoices() {
   const handlePreviewClick = (invoice: Invoice) => {
     setPreviewInvoice(invoice);
     setShowPreviewModal(true);
+  };
+
+  const handleFeedbackClick = (invoice: Invoice) => {
+    setFeedbackInvoice(invoice);
+    setShowFeedbackModal(true);
   };
 
   if (isLoading) {
@@ -195,7 +203,7 @@ export default function Invoices() {
                         </p>
                       </div>
                     </div>
-                    <div className="flex justify-end space-x-2">
+                    <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
                       <Button 
                         variant="outline" 
                         size="sm"
@@ -223,6 +231,17 @@ export default function Invoices() {
                         <Download size={16} className="mr-2" />
                         Download
                       </Button>
+                      {invoice.status === 'extracted' && (
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleFeedbackClick(invoice)}
+                          className="text-orange-600 hover:text-orange-700 border-orange-200 hover:border-orange-300"
+                        >
+                          <AlertTriangle size={16} className="mr-2" />
+                          Report Error
+                        </Button>
+                      )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
                           <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
@@ -497,6 +516,18 @@ export default function Invoices() {
             invoiceId={previewInvoice.id}
             fileName={previewInvoice.fileName || 'Unknown File'}
             invoiceNumber={previewInvoice.invoiceNumber}
+          />
+        )}
+
+        {/* Extraction Feedback Modal */}
+        {feedbackInvoice && (
+          <ExtractionFeedbackModal
+            isOpen={showFeedbackModal}
+            onClose={() => {
+              setShowFeedbackModal(false);
+              setFeedbackInvoice(null);
+            }}
+            invoice={feedbackInvoice}
           />
         )}
       </div>

@@ -1339,6 +1339,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Report extraction error feedback
+  app.post('/api/invoices/:id/feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const { originalText, extractedData, correctedData, reason } = req.body;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Create feedback log
+      const feedbackLog = await storage.createFeedbackLog({
+        invoiceId,
+        userId,
+        originalText: originalText || invoice.ocrText,
+        extractedData: extractedData || invoice.extractedData,
+        correctedData,
+        reason,
+        fileName: invoice.fileName,
+      });
+
+      // Log for potential model training
+      console.log(`Extraction feedback received for invoice ${invoiceId}:`, {
+        fileName: invoice.fileName,
+        reason,
+        hasCorrections: !!correctedData,
+        userId,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Optional: Write to training data file for future model fine-tuning
+      const fs = await import('fs');
+      const path = await import('path');
+      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
+      
+      const trainingEntry = {
+        invoiceId,
+        fileName: invoice.fileName,
+        originalText: originalText || invoice.ocrText,
+        extractedData: extractedData || invoice.extractedData,
+        correctedData,
+        reason,
+        timestamp: new Date().toISOString(),
+      };
+
+      // Append to JSONL file for potential OpenAI fine-tuning
+      fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
+
+      res.json({ 
+        message: "Feedback submitted successfully. Thank you for helping improve our AI extraction!",
+        feedbackId: feedbackLog.id 
+      });
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      res.status(500).json({ message: "Failed to submit feedback" });
+    }
+  });
+
   // Get pending approvals
   app.get('/api/approvals/pending', isAuthenticated, async (req: any, res) => {
     try {
@@ -1440,6 +1504,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
+    }
+  });
+
+  // Admin: Get feedback logs
+  app.get('/api/admin/feedback-logs', isAuthenticated, async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const logs = await storage.getFeedbackLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching feedback logs:", error);
+      res.status(500).json({ message: "Failed to fetch feedback logs" });
+    }
+  });
+
+  // Admin: Get specific feedback log
+  app.get('/api/admin/feedback-logs/:id', isAuthenticated, async (req, res) => {
+    try {
+      const logId = parseInt(req.params.id);
+      const log = await storage.getFeedbackLog(logId);
+      
+      if (!log) {
+        return res.status(404).json({ message: "Feedback log not found" });
+      }
+      
+      res.json(log);
+    } catch (error) {
+      console.error("Error fetching feedback log:", error);
+      res.status(500).json({ message: "Failed to fetch feedback log" });
     }
   });
 

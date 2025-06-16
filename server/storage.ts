@@ -12,35 +12,24 @@ import {
   invoiceProjectMatches,
   invoiceFlags,
   predictiveAlerts,
-  type User,
+  feedbackLogs,
   type UpsertUser,
-  type Invoice,
   type InsertInvoice,
-  type LineItem,
   type InsertLineItem,
-  type Approval,
   type InsertApproval,
-  type ValidationRule,
   type InsertValidationRule,
-  type Setting,
   type InsertSetting,
-  type PettyCashLog,
   type InsertPettyCashLog,
-  type Project,
   type InsertProject,
-  type PurchaseOrder,
   type InsertPurchaseOrder,
-  type InvoicePoMatch,
   type InsertInvoicePoMatch,
-  type InvoiceProjectMatch,
   type InsertInvoiceProjectMatch,
-  type InvoiceFlag,
   type InsertInvoiceFlag,
-  type PredictiveAlert,
   type InsertPredictiveAlert,
+  type InsertFeedbackLog,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum } from "drizzle-orm";
+import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -152,6 +141,11 @@ export interface IStorage {
     matchDetails: any;
   }[]>;
   setActiveProjectMatch(invoiceId: number, matchId: number): Promise<void>;
+
+    // Feedback log methods
+  createFeedbackLog(feedbackData: InsertFeedbackLog): Promise<any>;
+  getFeedbackLogs(limit?: number): Promise<any>;
+  getFeedbackLog(id: number): Promise<any>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1121,6 +1115,43 @@ export class DatabaseStorage implements IStorage {
       .update(invoiceProjectMatches)
       .set({ isActive: true, status: 'manual', updatedAt: new Date() })
       .where(eq(invoiceProjectMatches.id, matchId));
+  }
+
+    // Feedback log methods
+  async createFeedbackLog(feedbackData: InsertFeedbackLog) {
+    const [feedbackLog] = await db
+      .insert(feedbackLogs)
+      .values(feedbackData)
+      .returning();
+    return feedbackLog;
+  }
+
+  async getFeedbackLogs(limit?: number) {
+    const query = db
+      .select({
+        id: feedbackLogs.id,
+        invoiceId: feedbackLogs.invoiceId,
+        userId: feedbackLogs.userId,
+        fileName: feedbackLogs.fileName,
+        reason: feedbackLogs.reason,
+        createdAt: feedbackLogs.createdAt,
+      })
+      .from(feedbackLogs)
+      .orderBy(desc(feedbackLogs.createdAt));
+
+    if (limit) {
+      query.limit(limit);
+    }
+
+    return await query;
+  }
+
+  async getFeedbackLog(id: number) {
+    const [feedbackLog] = await db
+      .select()
+      .from(feedbackLogs)
+      .where(eq(feedbackLogs.id, id));
+    return feedbackLog;
   }
 }
 
