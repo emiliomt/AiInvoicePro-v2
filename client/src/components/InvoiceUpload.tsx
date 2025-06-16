@@ -15,72 +15,65 @@ export default function InvoiceUpload() {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
-      // Upload files sequentially to avoid overwhelming the server
-      const results = [];
-      for (const file of files) {
-        const formData = new FormData();
+      const formData = new FormData();
+      
+      // Add all files to the same FormData
+      files.forEach(file => {
         formData.append('invoice', file);
-        
-        const response = await apiRequest('POST', '/api/invoices/upload', formData);
-        const result = await response.json();
-        results.push({ file: file.name, ...result });
+      });
+      
+      const response = await apiRequest('POST', '/api/invoices/upload', formData);
+      if (!response.ok) {
+        throw new Error(`Upload failed: ${response.statusText}`);
       }
-      return results;
+      
+      const result = await response.json();
+      return result;
     },
-    onSuccess: (results) => {
-      const successful = results.filter(r => r.invoiceId);
-      const failed = results.filter(r => !r.invoiceId);
-      
-      if (successful.length > 0) {
-        toast({
-          title: "Upload Successful",
-          description: `${successful.length} invoice(s) uploaded and processing started.`,
-        });
-      }
-      
-      if (failed.length > 0) {
-        toast({
-          title: "Some uploads failed",
-          description: `${failed.length} file(s) failed to upload.`,
-          variant: "destructive",
-        });
-      }
+    onSuccess: (result) => {
+      toast({
+        title: "Upload Successful",
+        description: result.message || `${selectedFiles.length} invoice(s) uploaded and processing started.`,
+      });
       
       setSelectedFiles([]);
       
-      // Refresh dashboard stats
+      // Refresh dashboard stats and invoices list
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       
-      // Set up polling for successful uploads
-      successful.forEach((result) => {
-        const checkInvoiceStatus = async () => {
-          try {
-            const response = await apiRequest('GET', `/api/invoices/${result.invoiceId}`);
-            const invoice = await response.json();
-            
-            if (invoice.status === 'extracted') {
-              queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-              toast({
-                title: "Processing Complete",
-                description: `${result.file} data has been extracted and is ready for review.`,
-              });
-            } else if (invoice.status === 'rejected') {
-              toast({
-                title: "Processing Failed",
-                description: `Error processing ${result.file}. Please try again.`,
-                variant: "destructive",
-              });
-            } else {
-              // Continue polling
-              setTimeout(checkInvoiceStatus, 2000);
+      // Set up polling to check processing status
+      if (result.invoices && result.invoices.length > 0) {
+        result.invoices.forEach((invoice: any) => {
+          const checkInvoiceStatus = async () => {
+            try {
+              const response = await apiRequest('GET', `/api/invoices/${invoice.id}`);
+              const invoiceData = await response.json();
+              
+              if (invoiceData.status === 'extracted') {
+                queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                toast({
+                  title: "Processing Complete",
+                  description: `${invoice.fileName} data has been extracted and is ready for review.`,
+                });
+              } else if (invoiceData.status === 'rejected') {
+                toast({
+                  title: "Processing Failed",
+                  description: `Error processing ${invoice.fileName}. Please try again.`,
+                  variant: "destructive",
+                });
+              } else {
+                // Continue polling
+                setTimeout(checkInvoiceStatus, 3000);
+              }
+            } catch (error) {
+              console.error('Error checking invoice status:', error);
             }
-          } catch (error) {
-            console.error('Error checking invoice status:', error);
-          }
-        };
-        
-        setTimeout(checkInvoiceStatus, 2000);
-      });
+          };
+          
+          setTimeout(checkInvoiceStatus, 3000);
+        });
+      }
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
