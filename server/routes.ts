@@ -868,8 +868,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           try {
             console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
             
-            // Update status to show OCR in progress
-            await storage.updateInvoice(invoice.id, { status: "ocr_processing" });
+            // Update status to show processing in progress
+            await storage.updateInvoice(invoice.id, { status: "processing" });
             
             const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
             console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
@@ -880,7 +880,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Extract structured data using AI
             console.log(`Starting AI extraction for invoice ${invoice.id}`);
-            await storage.updateInvoice(invoice.id, { status: "ai_processing" });
+            await storage.updateInvoice(invoice.id, { status: "processing" });
             
             const extractedData = await extractInvoiceData(ocrText);
             console.log(`AI extraction completed for invoice ${invoice.id}:`, {
@@ -916,9 +916,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 status: "pending_approval",
               });
 
-              // Update invoice status to indicate petty cash
+              // Update invoice status to indicate petty cash (use extracted status)
               await storage.updateInvoice(invoice.id, {
-                status: "petty_cash_pending" as any,
+                status: "extracted",
               });
             }
 
