@@ -9,56 +9,78 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import { History, Loader2 } from "lucide-react";
 
 export default function InvoiceUpload() {
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
   const uploadMutation = useMutation({
-    mutationFn: async (file: File) => {
-      const formData = new FormData();
-      formData.append('invoice', file);
-      
-      const response = await apiRequest('POST', '/api/invoices/upload', formData);
-      return response.json();
+    mutationFn: async (files: File[]) => {
+      // Upload files sequentially to avoid overwhelming the server
+      const results = [];
+      for (const file of files) {
+        const formData = new FormData();
+        formData.append('invoice', file);
+        
+        const response = await apiRequest('POST', '/api/invoices/upload', formData);
+        const result = await response.json();
+        results.push({ file: file.name, ...result });
+      }
+      return results;
     },
-    onSuccess: (data) => {
-      toast({
-        title: "Upload Successful",
-        description: "Your invoice has been uploaded and is being processed.",
-      });
-      setSelectedFile(null);
+    onSuccess: (results) => {
+      const successful = results.filter(r => r.invoiceId);
+      const failed = results.filter(r => !r.invoiceId);
+      
+      if (successful.length > 0) {
+        toast({
+          title: "Upload Successful",
+          description: `${successful.length} invoice(s) uploaded and processing started.`,
+        });
+      }
+      
+      if (failed.length > 0) {
+        toast({
+          title: "Some uploads failed",
+          description: `${failed.length} file(s) failed to upload.`,
+          variant: "destructive",
+        });
+      }
+      
+      setSelectedFiles([]);
       
       // Refresh dashboard stats
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
       
-      // Set up polling for the specific invoice
-      const checkInvoiceStatus = async () => {
-        try {
-          const response = await apiRequest('GET', `/api/invoices/${data.invoiceId}`);
-          const invoice = await response.json();
-          
-          if (invoice.status === 'extracted') {
-            queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-            toast({
-              title: "Processing Complete",
-              description: "Your invoice data has been extracted and is ready for review.",
-            });
-          } else if (invoice.status === 'rejected') {
-            toast({
-              title: "Processing Failed",
-              description: "There was an error processing your invoice. Please try again.",
-              variant: "destructive",
-            });
-          } else {
-            // Continue polling
-            setTimeout(checkInvoiceStatus, 2000);
+      // Set up polling for successful uploads
+      successful.forEach((result) => {
+        const checkInvoiceStatus = async () => {
+          try {
+            const response = await apiRequest('GET', `/api/invoices/${result.invoiceId}`);
+            const invoice = await response.json();
+            
+            if (invoice.status === 'extracted') {
+              queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+              toast({
+                title: "Processing Complete",
+                description: `${result.file} data has been extracted and is ready for review.`,
+              });
+            } else if (invoice.status === 'rejected') {
+              toast({
+                title: "Processing Failed",
+                description: `Error processing ${result.file}. Please try again.`,
+                variant: "destructive",
+              });
+            } else {
+              // Continue polling
+              setTimeout(checkInvoiceStatus, 2000);
+            }
+          } catch (error) {
+            console.error('Error checking invoice status:', error);
           }
-        } catch (error) {
-          console.error('Error checking invoice status:', error);
-        }
-      };
-      
-      setTimeout(checkInvoiceStatus, 2000);
+        };
+        
+        setTimeout(checkInvoiceStatus, 2000);
+      });
     },
     onError: (error: Error) => {
       if (isUnauthorizedError(error)) {
@@ -81,13 +103,13 @@ export default function InvoiceUpload() {
     },
   });
 
-  const handleFileSelect = (file: File) => {
-    setSelectedFile(file);
+  const handleFileSelect = (files: File[]) => {
+    setSelectedFiles(files);
   };
 
   const handleUpload = () => {
-    if (selectedFile) {
-      uploadMutation.mutate(selectedFile);
+    if (selectedFiles.length > 0) {
+      uploadMutation.mutate(selectedFiles);
     }
   };
 
@@ -103,27 +125,27 @@ export default function InvoiceUpload() {
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <FileUpload onFileSelect={handleFileSelect} />
+        <FileUpload onFileSelect={handleFileSelect} multiple={true} />
         
         {uploadMutation.isPending && (
           <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
             <div className="flex items-center space-x-3">
               <Loader2 className="animate-spin h-5 w-5 text-primary-600" />
               <div>
-                <p className="text-sm font-medium text-primary-900">Uploading invoice...</p>
-                <p className="text-xs text-primary-700">Automatic processing is disabled</p>
+                <p className="text-sm font-medium text-primary-900">Uploading invoices...</p>
+                <p className="text-xs text-primary-700">Processing {selectedFiles.length} file(s)</p>
               </div>
             </div>
           </div>
         )}
         
-        {selectedFile && !uploadMutation.isPending && (
+        {selectedFiles.length > 0 && !uploadMutation.isPending && (
           <div className="flex justify-end">
             <Button 
               onClick={handleUpload}
               className="bg-primary-600 hover:bg-primary-700"
             >
-              Upload Only
+              Upload {selectedFiles.length} File{selectedFiles.length > 1 ? 's' : ''}
             </Button>
           </div>
         )}
