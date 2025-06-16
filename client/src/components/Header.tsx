@@ -98,12 +98,29 @@ export default function Header() {
             <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
               Petty Cash
             </Link>
-            <Link href="/purchase-orders" className={getLinkClassName("/purchase-orders")}>
-              Purchase Orders
-            </Link>
-            <Link href="/po-matching" className={getLinkClassName("/po-matching")}>
-              PO Matching
-            </Link>
+            
+            {/* Purchases Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/purchase-orders") || isActiveRoute("/po-matching")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Purchases</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/purchase-orders'}>
+                  Purchase Orders
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/po-matching'}>
+                  PO Matching
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+            
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
             </Link>
