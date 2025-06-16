@@ -93,7 +93,7 @@ export default function Header() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
-                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher")
+                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher") || isActiveRoute("/petty-cash")
                     ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
@@ -108,12 +108,11 @@ export default function Header() {
                 <DropdownMenuItem onClick={() => window.location.href = '/project-matcher'}>
                   Project Matcher
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/petty-cash'}>
+                  Petty Cash
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            
-            <Link href="/petty-cash" className={getLinkClassName("/petty-cash")}>
-              Petty Cash
-            </Link>
             
             {/* Purchases Dropdown Menu */}
             <DropdownMenu>
