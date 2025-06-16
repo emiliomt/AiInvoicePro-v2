@@ -87,11 +87,11 @@ ${ocrText}
 - Handle both Spanish and English field labels`;
 
     const response = await openai.chat.completions.create({
-      model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+      model: "gpt-4o-mini", // Faster and cheaper model for invoice extraction
       messages: [
         {
           role: "system",
-          content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON."
+          content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate."
         },
         {
           role: "user",
@@ -99,7 +99,8 @@ ${ocrText}
         }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.1,
+      temperature: 0.0, // Set to 0 for faster, more deterministic responses
+      max_tokens: 2000, // Limit tokens for faster response
     });
 
     const extractedData = JSON.parse(response.choices[0].message.content || '{}');

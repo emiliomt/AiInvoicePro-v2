@@ -24,18 +24,29 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
     console.log(`File type detected for invoice ${invoiceId}: ${isPdf ? 'PDF' : 'Image'}`);
     
     if (isPdf) {
+      // Try text extraction first (much faster for text-based PDFs)
+      try {
+        const pdfParse = await import('pdf-parse');
+        const pdfData = await pdfParse.default(fileBuffer);
+        if (pdfData.text && pdfData.text.trim().length > 50) {
+          console.log(`Fast text extraction successful for invoice ${invoiceId}, text length: ${pdfData.text.length}`);
+          return pdfData.text;
+        }
+      } catch (textExtractionError) {
+        console.log(`Text extraction failed for invoice ${invoiceId}, falling back to OCR`);
+      }
       console.log(`Converting PDF to image for invoice ${invoiceId}`);
       
-      // Convert PDF to images and process with OCR
+      // Convert PDF to images and process with OCR - optimized settings
       let convert;
       try {
         convert = fromBuffer(fileBuffer, {
-          density: 200,
+          density: 150, // Reduced from 200 for faster processing
           saveFilename: `invoice_${invoiceId}_page`,
           savePath: "/tmp",
           format: "png",
-          width: 1600,
-          height: 1600
+          width: 1200, // Reduced from 1600 for faster processing
+          height: 1200 // Reduced from 1600 for faster processing
         });
       } catch (conversionSetupError: any) {
         console.error(`PDF conversion setup failed for invoice ${invoiceId}:`, conversionSetupError);
@@ -58,10 +69,12 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
           
           const { data: { text, confidence } } = await Tesseract.recognize(imageBuffer, 'eng', {
             logger: (m) => {
-              if (m.status === 'recognizing text') {
+              if (m.status === 'recognizing text' && m.progress % 0.1 === 0) { // Log every 10%
                 console.log(`OCR Progress for invoice ${invoiceId}: ${Math.round(m.progress * 100)}%`);
               }
-            }
+            },
+            tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // Faster page segmentation
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY, // Use only LSTM for speed
           });
           
           fullText = text;
@@ -96,10 +109,12 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
       
       const { data: { text, confidence } } = await Tesseract.recognize(fileBuffer, 'eng', {
         logger: (m) => {
-          if (m.status === 'recognizing text') {
+          if (m.status === 'recognizing text' && m.progress % 0.1 === 0) { // Log every 10%
             console.log(`OCR Progress for invoice ${invoiceId}: ${Math.round(m.progress * 100)}%`);
           }
-        }
+        },
+        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK, // Faster page segmentation
+        tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY, // Use only LSTM for speed
       });
       
       console.log(`OCR completed for invoice ${invoiceId}, confidence: ${confidence}%, text length: ${text.length}`);

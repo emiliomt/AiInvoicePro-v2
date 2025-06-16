@@ -827,8 +827,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadedInvoices = [];
 
-        // Process each file
-        for (const file of files) {
+        // Process files in parallel for better performance
+        const processPromises = files.map(async (file) => {
           try {
             // Generate unique filename
             const fileExt = path.extname(file.originalname);
@@ -846,90 +846,106 @@ export async function registerRoutes(app: Express): Promise<Server> {
               fileUrl: filePath,
             });
 
-            uploadedInvoices.push(invoice);
-
-            // Start OCR and data extraction processing (async)
-            setImmediate(async () => {
-              try {
-                console.log(`Starting OCR processing for invoice ${invoice.id} (${file.originalname})`);
-                
-                const ocrText = await processInvoiceOCR(file.buffer, invoice.id);
-                console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
-
-                if (!ocrText || ocrText.trim().length < 10) {
-                  throw new Error("OCR did not extract sufficient text from the document");
-                }
-
-                // Extract structured data using AI
-                console.log(`Starting AI extraction for invoice ${invoice.id}`);
-                const extractedData = await extractInvoiceData(ocrText);
-                console.log(`AI extraction completed for invoice ${invoice.id}:`, {
-                  vendor: extractedData.vendorName,
-                  amount: extractedData.totalAmount,
-                  invoiceNumber: extractedData.invoiceNumber
-                });
-
-                // Update invoice with extracted data
-                await storage.updateInvoice(invoice.id, {
-                  status: "extracted",
-                  ocrText,
-                  extractedData,
-                  vendorName: extractedData.vendorName,
-                  invoiceNumber: extractedData.invoiceNumber,
-                  invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-                  dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-                  totalAmount: extractedData.totalAmount,
-                  taxAmount: extractedData.taxAmount,
-                  subtotal: extractedData.subtotal,
-                  projectName: extractedData.projectName,
-                  confidenceScore: extractedData.confidenceScore,
-                  currency: extractedData.currency || "USD",
-                });
-
-                // Check if this is a petty cash invoice
-                const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
-
-                if (isPettyCash) {
-                  // Create petty cash log entry
-                  await storage.createPettyCashLog({
-                    invoiceId: invoice.id,
-                    status: "pending_approval",
-                  });
-
-                  // Update invoice status to indicate petty cash
-                  await storage.updateInvoice(invoice.id, {
-                    status: "petty_cash_pending" as any,
-                  });
-                }
-
-                // Create line items if present
-                let createdLineItems: any[] = [];
-                if (extractedData.lineItems && extractedData.lineItems.length > 0) {
-                  const lineItemsData = extractedData.lineItems.map((item: any) => ({
-                    invoiceId: invoice.id,
-                    description: item.description || "Line item",
-                    quantity: item.quantity || "1",
-                    unitPrice: item.unitPrice || "0",
-                    totalPrice: item.totalPrice || "0",
-                  }));
-                  createdLineItems = await storage.createLineItems(lineItemsData);
-                }
-
-                console.log(`Invoice ${invoice.id} processing completed successfully`);
-              } catch (processingError: any) {
-                console.error(`Error processing invoice ${invoice.id}:`, processingError);
-                await storage.updateInvoice(invoice.id, {
-                  status: "rejected",
-                  extractedData: { 
-                    error: processingError.message,
-                    errorType: processingError.name || "ProcessingError",
-                    timestamp: new Date().toISOString()
-                  },
-                });
-              }
-            });
+            // Start processing immediately (don't wait for setImmediate)
+            processInvoiceAsync(invoice, file.buffer);
+            
+            return invoice;
           } catch (fileError) {
             console.error(`Error processing file ${file.originalname}:`, fileError);
+            return null;
+          }
+        });
+
+        const results = await Promise.allSettled(processPromises);
+        results.forEach(result => {
+          if (result.status === 'fulfilled' && result.value) {
+            uploadedInvoices.push(result.value);
+          }
+        });
+
+        // Async processing function moved outside for better performance
+        async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
+          try {
+            console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
+            
+            // Update status to show OCR in progress
+            await storage.updateInvoice(invoice.id, { status: "ocr_processing" });
+            
+            const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
+            console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
+
+            if (!ocrText || ocrText.trim().length < 10) {
+              throw new Error("OCR did not extract sufficient text from the document");
+            }
+
+            // Extract structured data using AI
+            console.log(`Starting AI extraction for invoice ${invoice.id}`);
+            await storage.updateInvoice(invoice.id, { status: "ai_processing" });
+            
+            const extractedData = await extractInvoiceData(ocrText);
+            console.log(`AI extraction completed for invoice ${invoice.id}:`, {
+              vendor: extractedData.vendorName,
+              amount: extractedData.totalAmount,
+              invoiceNumber: extractedData.invoiceNumber
+            });
+
+            // Update invoice with extracted data
+            await storage.updateInvoice(invoice.id, {
+              status: "extracted",
+              ocrText,
+              extractedData,
+              vendorName: extractedData.vendorName,
+              invoiceNumber: extractedData.invoiceNumber,
+              invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+              dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+              totalAmount: extractedData.totalAmount,
+              taxAmount: extractedData.taxAmount,
+              subtotal: extractedData.subtotal,
+              projectName: extractedData.projectName,
+              confidenceScore: extractedData.confidenceScore,
+              currency: extractedData.currency || "USD",
+            });
+
+            // Check if this is a petty cash invoice
+            const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
+
+            if (isPettyCash) {
+              // Create petty cash log entry
+              await storage.createPettyCashLog({
+                invoiceId: invoice.id,
+                status: "pending_approval",
+              });
+
+              // Update invoice status to indicate petty cash
+              await storage.updateInvoice(invoice.id, {
+                status: "petty_cash_pending" as any,
+              });
+            }
+
+            // Create line items if present
+            let createdLineItems: any[] = [];
+            if (extractedData.lineItems && extractedData.lineItems.length > 0) {
+              const lineItemsData = extractedData.lineItems.map((item: any) => ({
+                invoiceId: invoice.id,
+                description: item.description || "Line item",
+                quantity: item.quantity || "1",
+                unitPrice: item.unitPrice || "0",
+                totalPrice: item.totalPrice || "0",
+              }));
+              createdLineItems = await storage.createLineItems(lineItemsData);
+            }
+
+            console.log(`Invoice ${invoice.id} processing completed successfully`);
+          } catch (processingError: any) {
+            console.error(`Error processing invoice ${invoice.id}:`, processingError);
+            await storage.updateInvoice(invoice.id, {
+              status: "rejected",
+              extractedData: { 
+                error: processingError.message,
+                errorType: processingError.name || "ProcessingError",
+                timestamp: new Date().toISOString()
+              },
+            });
           }
         }
 
