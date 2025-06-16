@@ -115,8 +115,8 @@ export default function PDFPreviewModal({
       const viewport = page.getViewport({ scale: 1 });
       
       const container = containerRef.current;
-      const containerWidth = container.clientWidth - 64; // Account for padding
-      const containerHeight = container.clientHeight - 64;
+      const containerWidth = container.clientWidth - 100; // Account for padding and scrollbar
+      const containerHeight = container.clientHeight - 100;
       
       const scaleX = containerWidth / viewport.width;
       const scaleY = containerHeight / viewport.height;
@@ -139,8 +139,13 @@ export default function PDFPreviewModal({
 
       const canvas = canvasRef.current;
       const context = canvas.getContext('2d');
+      
+      // Set canvas dimensions to match the viewport
       canvas.height = viewport.height;
       canvas.width = viewport.width;
+      
+      // Clear any previous content
+      context?.clearRect(0, 0, canvas.width, canvas.height);
 
       const renderContext = {
         canvasContext: context,
@@ -213,8 +218,8 @@ export default function PDFPreviewModal({
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="max-w-6xl max-h-[90vh] p-0">
-        <DialogHeader className="p-6 pb-4 border-b">
+      <DialogContent className="max-w-7xl w-[95vw] max-h-[95vh] h-[95vh] p-0 flex flex-col">
+        <DialogHeader className="p-4 pb-3 border-b flex-shrink-0">
           <div className="flex items-center justify-between">
             <div>
               <DialogTitle className="text-lg font-semibold">
@@ -296,17 +301,19 @@ export default function PDFPreviewModal({
           </div>
         </DialogHeader>
         
-        <div className="flex-1 overflow-auto p-4" ref={containerRef}>
-          <div className="bg-gray-100 rounded-lg p-8 min-h-[600px] flex items-center justify-center">
+        <div className="flex-1 overflow-auto bg-gray-100" ref={containerRef}>
+          <div className="p-6 flex justify-center min-h-full">
             {isLoading && (
-              <div className="text-center">
-                <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                <p className="text-gray-600">Loading PDF...</p>
+              <div className="text-center flex items-center justify-center w-full">
+                <div>
+                  <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
+                  <p className="text-gray-600">Loading PDF...</p>
+                </div>
               </div>
             )}
             
             {error && (
-              <div className="text-center">
+              <div className="text-center flex items-center justify-center w-full">
                 <div className="bg-red-50 border border-red-200 rounded-lg p-6">
                   <h3 className="text-lg font-medium text-red-900 mb-2">
                     Error Loading PDF
@@ -317,13 +324,13 @@ export default function PDFPreviewModal({
             )}
             
             {!isLoading && !error && (
-              <div className="bg-white shadow-lg rounded border overflow-hidden flex items-center justify-center">
+              <div className="bg-white shadow-lg rounded border p-4 inline-block">
                 <canvas 
                   ref={canvasRef}
-                  className="max-w-full max-h-full"
+                  className="block"
                   style={{ 
                     display: pdfDoc ? 'block' : 'none',
-                    margin: 'auto'
+                    maxWidth: 'none'
                   }}
                 />
                 {!pdfDoc && (
