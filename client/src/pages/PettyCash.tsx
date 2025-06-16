@@ -22,7 +22,7 @@ export default function PettyCash() {
       const rejected = data.filter(log => log.status === "rejected").length;
       const assigned = data.filter(log => log.costCenter && log.costCenter !== "").length;
       const totalValue = data.reduce((sum, log) => sum + parseFloat(log.invoice.totalAmount || "0"), 0);
-      
+
       return {
         total: data.length,
         pending,
@@ -34,10 +34,18 @@ export default function PettyCash() {
     },
   });
 
+  const formatCurrency = (amount: string | number) => {
+    if (typeof amount === 'string') {
+      const num = parseFloat(amount);
+      return isNaN(num) ? '$0.00' : `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    }
+    return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Petty Cash Management</h1>
@@ -95,7 +103,7 @@ export default function PettyCash() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Value</p>
-                  <p className="text-3xl font-bold text-gray-900">${stats?.totalValue || "0.00"}</p>
+                  <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats?.totalValue || "0.00")}</p>
                 </div>
                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                   <DollarSign className="text-purple-600" size={24} />

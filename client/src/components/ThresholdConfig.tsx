@@ -129,7 +129,7 @@ export default function ThresholdConfig() {
         ) : (
           <>
             <span className="text-lg font-semibold text-gray-900">
-              ${thresholdSetting} MXN
+              ${parseFloat(thresholdSetting).toLocaleString('en-US')} MXN
             </span>
             <Button size="sm" variant="outline" onClick={handleEdit}>
               Edit
