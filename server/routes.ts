@@ -166,6 +166,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const key = req.params.key;
       const { value } = req.body;
       const setting = await storage.updateSetting(key, value);
+      
+      // If updating petty cash threshold, recalculate all invoices
+      if (key === 'petty_cash_threshold') {
+        await storage.recalculatePettyCashInvoices(parseFloat(value));
+      }
+      
       res.json(setting);
     } catch (error) {
       console.error("Error updating setting:", error);

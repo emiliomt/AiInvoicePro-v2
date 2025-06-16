@@ -40,7 +40,7 @@ import {
   type InsertPredictiveAlert,
 } from "@shared/schema";
 import { db } from "./db";
-import { and, count, desc, eq, gte, inArray, isNull, lt, lte, sql, sum } from "drizzle-orm";
+import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -1094,11 +1094,11 @@ export class DatabaseStorage implements IStorage {
   }[]> {
     // Get all active projects
     const allProjects = await this.getProjects();
-    
+
     // Use the project matcher service
     const { projectMatcher } = await import('./projectMatcher.js');
     const matches = await projectMatcher.matchInvoiceWithProjects(invoice, allProjects);
-    
+
     return matches.map(match => ({
       project: match.project,
       matchScore: match.matchScore,
