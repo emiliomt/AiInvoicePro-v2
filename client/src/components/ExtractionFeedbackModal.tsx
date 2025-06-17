@@ -206,7 +206,8 @@ export default function ExtractionFeedbackModal({
               <CardTitle className="text-lg">Current Extracted Data</CardTitle>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Basic Invoice Fields */}
                 <div>
                   <Label className="text-sm font-medium text-gray-700">Vendor Name</Label>
                   <p className="text-sm text-gray-900 mt-1">{invoice.vendorName || "Not extracted"}</p>
@@ -222,12 +223,78 @@ export default function ExtractionFeedbackModal({
                   </p>
                 </div>
                 <div>
-                  <Label className="text-sm font-medium text-gray-700">Tax ID</Label>
+                  <Label className="text-sm font-medium text-gray-700">Currency</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.currency || "Not extracted"}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Tax Amount</Label>
+                  <p className="text-sm text-gray-900 mt-1">
+                    {invoice.taxAmount ? `${invoice.currency} ${parseFloat(invoice.taxAmount).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}` : "Not extracted"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Subtotal</Label>
+                  <p className="text-sm text-gray-900 mt-1">
+                    {invoice.subtotal ? `${invoice.currency} ${parseFloat(invoice.subtotal).toLocaleString('en-US', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}` : "Not extracted"}
+                  </p>
+                </div>
+
+                {/* Dates */}
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Invoice Date</Label>
+                  <p className="text-sm text-gray-900 mt-1">
+                    {invoice.invoiceDate ? new Date(invoice.invoiceDate).toLocaleDateString() : "Not extracted"}
+                  </p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Due Date</Label>
+                  <p className="text-sm text-gray-900 mt-1">
+                    {invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString() : "Not extracted"}
+                  </p>
+                </div>
+
+                {/* Tax and Company Information */}
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Vendor Tax ID</Label>
                   <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.taxId || "Not extracted"}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-700">Company Name (Buyer)</Label>
                   <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.companyName || "Not extracted"}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Buyer Tax ID</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.buyerTaxId || "Not extracted"}</p>
+                </div>
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Project Name</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.projectName || invoice.extractedData?.projectName || "Not extracted"}</p>
+                </div>
+
+                {/* Addresses */}
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Vendor Address</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.vendorAddress || "Not extracted"}</p>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Buyer Address</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.buyerAddress || "Not extracted"}</p>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Project Address</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.projectAddress || "Not extracted"}</p>
+                </div>
+
+                {/* Project Location Details */}
+                <div>
+                  <Label className="text-sm font-medium text-gray-700">Project City</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.projectCity || "Not extracted"}</p>
                 </div>
                 <div>
                   <Label className="text-sm font-medium text-gray-700">Confidence Score</Label>
@@ -238,6 +305,63 @@ export default function ExtractionFeedbackModal({
                     }
                   </p>
                 </div>
+
+                {/* Descriptions and Concepts */}
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Concept/Description</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.concept || "Not extracted"}</p>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Description Summary</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.descriptionSummary || "Not extracted"}</p>
+                </div>
+                <div className="col-span-1 md:col-span-2">
+                  <Label className="text-sm font-medium text-gray-700">Notes</Label>
+                  <p className="text-sm text-gray-900 mt-1">{invoice.extractedData?.notes || "Not extracted"}</p>
+                </div>
+
+                {/* Line Items Summary */}
+                {invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0 && (
+                  <div className="col-span-1 md:col-span-2">
+                    <Label className="text-sm font-medium text-gray-700">Line Items ({invoice.extractedData.lineItems.length})</Label>
+                    <div className="mt-2 space-y-2 max-h-32 overflow-y-auto">
+                      {invoice.extractedData.lineItems.map((item: any, index: number) => (
+                        <div key={index} className="text-xs bg-gray-50 p-2 rounded">
+                          <div><strong>Description:</strong> {item.description || "N/A"}</div>
+                          <div><strong>Qty:</strong> {item.quantity || "N/A"} | <strong>Unit Price:</strong> {item.unitPrice || "N/A"} | <strong>Total:</strong> {item.totalPrice || "N/A"}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional extracted fields */}
+                {invoice.extractedData && Object.keys(invoice.extractedData).map((key) => {
+                  // Skip fields we've already displayed
+                  const displayedFields = [
+                    'taxId', 'companyName', 'buyerTaxId', 'vendorAddress', 'buyerAddress', 
+                    'projectAddress', 'projectCity', 'confidenceScore', 'concept', 
+                    'descriptionSummary', 'notes', 'lineItems', 'projectName'
+                  ];
+                  
+                  if (displayedFields.includes(key) || !invoice.extractedData[key]) {
+                    return null;
+                  }
+
+                  return (
+                    <div key={key} className="col-span-1">
+                      <Label className="text-sm font-medium text-gray-700 capitalize">
+                        {key.replace(/([A-Z])/g, ' $1').replace(/^./, str => str.toUpperCase())}
+                      </Label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {typeof invoice.extractedData[key] === 'object' 
+                          ? JSON.stringify(invoice.extractedData[key]) 
+                          : invoice.extractedData[key]
+                        }
+                      </p>
+                    </div>
+                  );
+                })}
               </div>
             </CardContent>
           </Card>
