@@ -362,8 +362,7 @@ export default function ExtractionFeedbackModal({
                     size="sm"
                     className="mt-1 text-xs"
                     onClick={() => {
-                      const suggestion = getAISuggestions().find(s => s.field === "Vendor Name");
-                      if (suggestion && invoice.vendorName) {
+                      if (invoice.vendorName) {
                         setCorrectedData({ ...correctedData, vendorName: invoice.vendorName });
                       }
                     }}
@@ -379,6 +378,19 @@ export default function ExtractionFeedbackModal({
                         onChange={(e) => setCorrectedData({...correctedData, invoiceNumber: e.target.value})}
                         placeholder="Correct invoice number"
                       />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-1 text-xs"
+                        onClick={() => {
+                          if (invoice.invoiceNumber) {
+                            setCorrectedData({ ...correctedData, invoiceNumber: invoice.invoiceNumber });
+                          }
+                        }}
+                      >
+                        Use Current: {invoice.invoiceNumber}
+                      </Button>
                     </div>
                     <div>
                       <Label htmlFor="corrected-amount">Total Amount</Label>
@@ -388,6 +400,33 @@ export default function ExtractionFeedbackModal({
                         onChange={(e) => setCorrectedData({...correctedData, totalAmount: e.target.value})}
                         placeholder="Correct total amount"
                       />
+                      {/* Show AI suggested amounts */}
+                      {aiSuggestions?.suggestions?.find((s: any) => s.field === "totalAmount")?.suggestion?.includes("Possible values found:") && (
+                        <div className="mt-2 space-y-1">
+                          <div className="text-xs text-gray-600">AI Suggested Amounts:</div>
+                          <div className="flex flex-wrap gap-1">
+                            {aiSuggestions.suggestions
+                              .find((s: any) => s.field === "totalAmount")
+                              ?.suggestion
+                              ?.match(/Possible values found: ([^}]+)/)?.[1]
+                              ?.split(', ')
+                              ?.slice(0, 3)
+                              ?.map((amount: string, idx: number) => (
+                                <Button
+                                  key={idx}
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="text-xs px-2 py-1 h-auto"
+                                  onClick={() => setCorrectedData({...correctedData, totalAmount: amount.trim()})}
+                                >
+                                  {amount.trim()}
+                                </Button>
+                              ))
+                            }
+                          </div>
+                        </div>
+                      )}
                     </div>
                     <div>
                       <Label htmlFor="corrected-tax-id">Tax ID</Label>
@@ -397,6 +436,19 @@ export default function ExtractionFeedbackModal({
                         onChange={(e) => setCorrectedData({...correctedData, taxId: e.target.value})}
                         placeholder="Correct tax ID"
                       />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-1 text-xs"
+                        onClick={() => {
+                          if (invoice.extractedData?.taxId) {
+                            setCorrectedData({ ...correctedData, taxId: invoice.extractedData.taxId });
+                          }
+                        }}
+                      >
+                        Use Current: {invoice.extractedData?.taxId}
+                      </Button>
                     </div>
                     <div className="col-span-2">
                       <Label htmlFor="corrected-company">Company Name (Buyer)</Label>

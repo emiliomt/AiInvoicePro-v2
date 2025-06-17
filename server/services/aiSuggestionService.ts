@@ -91,38 +91,56 @@ export class AISuggestionService {
       /SUBTOTAL[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /NETO\s*A?\s*PAGAR[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /IMPORTE\s*TOTAL[:\s]*\$?\s*([\d,]+\.?\d*)/i,
+      /VALOR\s*FACTURA[:\s]*\$?\s*([\d,]+\.?\d*)/i,
+      /TOTAL\s*FACTURA[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /\$\s*([\d,]+\.?\d*)/g,
       /COP\s*([\d,]+\.?\d*)/g,
       /USD\s*([\d,]+\.?\d*)/g,
-      /([\d,]+\.?\d*)\s*COP/g
+      /([\d,]+\.?\d*)\s*COP/g,
+      // Look for large numeric amounts that could be totals
+      /(?:^|\s)([\d,]{4,}\.?\d{0,2})(?:\s|$)/gm
     ];
 
     const possibleAmounts: string[] = [];
     
     for (const pattern of currencyPatterns) {
-      const matches = ocrText.match(pattern);
-      if (matches) {
-        if (pattern.global) {
-          const globalMatches = [...ocrText.matchAll(pattern)];
-          globalMatches.forEach(match => {
-            if (match[1]) possibleAmounts.push(match[1].replace(/,/g, ''));
-          });
-        } else if (matches[1]) {
-          possibleAmounts.push(matches[1].replace(/,/g, ''));
+      if (pattern.global) {
+        const globalMatches = [...ocrText.matchAll(pattern)];
+        globalMatches.forEach(match => {
+          if (match[1]) {
+            const cleanAmount = match[1].replace(/,/g, '');
+            const numAmount = parseFloat(cleanAmount);
+            // Only include amounts that make sense for invoices
+            if (numAmount > 1000 && numAmount < 50000000) {
+              possibleAmounts.push(cleanAmount);
+            }
+          }
+        });
+      } else {
+        const match = ocrText.match(pattern);
+        if (match && match[1]) {
+          const cleanAmount = match[1].replace(/,/g, '');
+          const numAmount = parseFloat(cleanAmount);
+          if (numAmount > 1000 && numAmount < 50000000) {
+            possibleAmounts.push(cleanAmount);
+          }
         }
       }
     }
 
-    // Filter out obviously wrong amounts (too small or too large)
-    const validAmounts = possibleAmounts
+    // Remove duplicates and sort by value (highest first)
+    const uniqueAmounts = [...new Set(possibleAmounts)]
       .map(a => parseFloat(a))
-      .filter(a => a > 0 && a < 10000000)
-      .sort((a, b) => b - a); // Sort descending, total is usually the largest
+      .filter(a => !isNaN(a))
+      .sort((a, b) => b - a);
+
+    // Format back to strings
+    const formattedAmounts = uniqueAmounts.slice(0, 5).map(a => a.toString());
 
     return {
-      possibleAmounts: possibleAmounts.slice(0, 3),
-      suggestedAmount: validAmounts.length > 0 ? validAmounts[0].toString() : null,
-      confidence: validAmounts.length > 0 ? 85 : 30
+      possibleAmounts: formattedAmounts,
+      suggestedAmount: formattedAmounts.length > 0 ? formattedAmounts[0] : null,
+      confidence: formattedAmounts.length > 0 ? 90 : 30
     };
   }
 
