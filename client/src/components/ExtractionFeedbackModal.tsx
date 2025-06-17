@@ -167,14 +167,7 @@ export default function ExtractionFeedbackModal({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!reason.trim()) {
-      toast({
-        title: "Validation Error",
-        description: "Please describe what's wrong with the extraction",
-        variant: "destructive",
-      });
-      return;
-    }
+    
 
     const feedbackData = {
       reason,
@@ -366,18 +359,7 @@ export default function ExtractionFeedbackModal({
             </CardContent>
           </Card>
 
-          {/* Reason for Reporting */}
-          <div className="space-y-2">
-            <Label htmlFor="reason">What's wrong with the extraction? *</Label>
-            <Textarea
-              id="reason"
-              placeholder="Describe the extraction errors (e.g., 'Incorrect vendor name', 'Missing tax ID', 'Wrong amount extracted')..."
-              value={reason}
-              onChange={(e) => setReason(e.target.value)}
-              rows={3}
-              required
-            />
-          </div>
+          
 
           {/* AI Suggestions */}
           <Card className="bg-blue-50 border-blue-200">
@@ -596,7 +578,7 @@ export default function ExtractionFeedbackModal({
             </Button>
             <Button 
               onClick={handleSubmit}
-              disabled={!reason.trim() || feedbackMutation.isPending}
+              disabled={feedbackMutation.isPending}
               className="bg-orange-600 hover:bg-orange-700"
             >
               {feedbackMutation.isPending ? "Submitting..." : "Submit Feedback"}
