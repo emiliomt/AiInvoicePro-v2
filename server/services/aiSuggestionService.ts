@@ -84,14 +84,17 @@ export class AISuggestionService {
   }
 
   private static suggestTotalAmount(ocrText: string) {
-    // Look for currency patterns in OCR text
+    // Look for currency patterns in OCR text - Colombian peso specific
     const currencyPatterns = [
       /TOTAL\s*A?\s*PAGAR[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /VALOR\s*TOTAL[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /SUBTOTAL[:\s]*\$?\s*([\d,]+\.?\d*)/i,
+      /NETO\s*A?\s*PAGAR[:\s]*\$?\s*([\d,]+\.?\d*)/i,
+      /IMPORTE\s*TOTAL[:\s]*\$?\s*([\d,]+\.?\d*)/i,
       /\$\s*([\d,]+\.?\d*)/g,
       /COP\s*([\d,]+\.?\d*)/g,
-      /USD\s*([\d,]+\.?\d*)/g
+      /USD\s*([\d,]+\.?\d*)/g,
+      /([\d,]+\.?\d*)\s*COP/g
     ];
 
     const possibleAmounts: string[] = [];
