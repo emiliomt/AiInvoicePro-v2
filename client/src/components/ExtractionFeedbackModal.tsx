@@ -44,8 +44,22 @@ export default function ExtractionFeedbackModal({
     vendorName: invoice.vendorName || "",
     invoiceNumber: invoice.invoiceNumber || "",
     totalAmount: invoice.totalAmount || "",
+    currency: invoice.currency || "",
     taxId: invoice.extractedData?.taxId || "",
     companyName: invoice.extractedData?.companyName || "",
+    subtotal: invoice.subtotal || "",
+    taxAmount: invoice.taxAmount || "",
+    invoiceDate: invoice.invoiceDate ? new Date(invoice.invoiceDate).toISOString().split('T')[0] : "",
+    dueDate: invoice.dueDate ? new Date(invoice.dueDate).toISOString().split('T')[0] : "",
+    buyerTaxId: invoice.extractedData?.buyerTaxId || "",
+    projectName: invoice.projectName || invoice.extractedData?.projectName || "",
+    vendorAddress: invoice.extractedData?.vendorAddress || "",
+    buyerAddress: invoice.extractedData?.buyerAddress || "",
+    projectAddress: invoice.extractedData?.projectAddress || "",
+    projectCity: invoice.extractedData?.projectCity || "",
+    concept: invoice.extractedData?.concept || "",
+    descriptionSummary: invoice.extractedData?.descriptionSummary || "",
+    notes: invoice.extractedData?.notes || "",
   });
   const [showCorrections, setShowCorrections] = useState(false);
   const { toast } = useToast();
@@ -67,8 +81,22 @@ export default function ExtractionFeedbackModal({
         vendorName: "",
         invoiceNumber: "",
         totalAmount: "",
+        currency: "",
         taxId: "",
         companyName: "",
+        subtotal: "",
+        taxAmount: "",
+        invoiceDate: "",
+        dueDate: "",
+        buyerTaxId: "",
+        projectName: "",
+        vendorAddress: "",
+        buyerAddress: "",
+        projectAddress: "",
+        projectCity: "",
+        concept: "",
+        descriptionSummary: "",
+        notes: "",
       });
       setShowCorrections(false);
     },
@@ -454,28 +482,30 @@ export default function ExtractionFeedbackModal({
                 </CardHeader>
                 <CardContent>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <Label htmlFor="correctedVendor">Vendor Name</Label>
-                  <Input
-                    id="correctedVendor"
-                    value={correctedData.vendorName}
-                    onChange={(e) => setCorrectedData({ ...correctedData, vendorName: e.target.value })}
-                    placeholder="Correct vendor name"
-                  />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="mt-1 text-xs"
-                    onClick={() => {
-                      if (invoice.vendorName) {
-                        setCorrectedData({ ...correctedData, vendorName: invoice.vendorName });
-                      }
-                    }}
-                  >
-                    Use Current: {invoice.vendorName}
-                  </Button>
-                </div>
+                    {/* Basic Invoice Information */}
+                    <div>
+                      <Label htmlFor="correctedVendor">Vendor Name</Label>
+                      <Input
+                        id="correctedVendor"
+                        value={correctedData.vendorName}
+                        onChange={(e) => setCorrectedData({ ...correctedData, vendorName: e.target.value })}
+                        placeholder="Correct vendor name"
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="mt-1 text-xs"
+                        onClick={() => {
+                          if (invoice.vendorName) {
+                            setCorrectedData({ ...correctedData, vendorName: invoice.vendorName });
+                          }
+                        }}
+                      >
+                        Use Current: {invoice.vendorName}
+                      </Button>
+                    </div>
+                    
                     <div>
                       <Label htmlFor="corrected-invoice-num">Invoice Number</Label>
                       <Input
@@ -498,6 +528,7 @@ export default function ExtractionFeedbackModal({
                         Use Current: {invoice.invoiceNumber}
                       </Button>
                     </div>
+
                     <div>
                       <Label htmlFor="corrected-amount">Total Amount</Label>
                       <Input
@@ -534,13 +565,24 @@ export default function ExtractionFeedbackModal({
                         </div>
                       )}
                     </div>
+
                     <div>
-                      <Label htmlFor="corrected-tax-id">Tax ID</Label>
+                      <Label htmlFor="corrected-currency">Currency</Label>
+                      <Input
+                        id="corrected-currency"
+                        value={correctedData.currency || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, currency: e.target.value})}
+                        placeholder="Correct currency (e.g., COP, USD)"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-tax-id">Vendor Tax ID</Label>
                       <Input
                         id="corrected-tax-id"
                         value={correctedData.taxId}
                         onChange={(e) => setCorrectedData({...correctedData, taxId: e.target.value})}
-                        placeholder="Correct tax ID"
+                        placeholder="Correct vendor tax ID"
                       />
                       <Button
                         type="button"
@@ -556,13 +598,153 @@ export default function ExtractionFeedbackModal({
                         Use Current: {invoice.extractedData?.taxId}
                       </Button>
                     </div>
-                    <div className="col-span-2">
+
+                    <div>
                       <Label htmlFor="corrected-company">Company Name (Buyer)</Label>
                       <Input
                         id="corrected-company"
                         value={correctedData.companyName}
                         onChange={(e) => setCorrectedData({...correctedData, companyName: e.target.value})}
                         placeholder="Correct company name"
+                      />
+                    </div>
+
+                    {/* Financial Information */}
+                    <div>
+                      <Label htmlFor="corrected-subtotal">Subtotal</Label>
+                      <Input
+                        id="corrected-subtotal"
+                        value={correctedData.subtotal || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, subtotal: e.target.value})}
+                        placeholder="Correct subtotal amount"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-tax-amount">Tax Amount</Label>
+                      <Input
+                        id="corrected-tax-amount"
+                        value={correctedData.taxAmount || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, taxAmount: e.target.value})}
+                        placeholder="Correct tax amount"
+                      />
+                    </div>
+
+                    {/* Dates */}
+                    <div>
+                      <Label htmlFor="corrected-invoice-date">Invoice Date</Label>
+                      <Input
+                        id="corrected-invoice-date"
+                        type="date"
+                        value={correctedData.invoiceDate || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, invoiceDate: e.target.value})}
+                        placeholder="Correct invoice date"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-due-date">Due Date</Label>
+                      <Input
+                        id="corrected-due-date"
+                        type="date"
+                        value={correctedData.dueDate || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, dueDate: e.target.value})}
+                        placeholder="Correct due date"
+                      />
+                    </div>
+
+                    {/* Additional Tax and Company Information */}
+                    <div>
+                      <Label htmlFor="corrected-buyer-tax-id">Buyer Tax ID</Label>
+                      <Input
+                        id="corrected-buyer-tax-id"
+                        value={correctedData.buyerTaxId || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, buyerTaxId: e.target.value})}
+                        placeholder="Correct buyer tax ID"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-project-name">Project Name</Label>
+                      <Input
+                        id="corrected-project-name"
+                        value={correctedData.projectName || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, projectName: e.target.value})}
+                        placeholder="Correct project name"
+                      />
+                    </div>
+
+                    {/* Addresses */}
+                    <div className="col-span-2">
+                      <Label htmlFor="corrected-vendor-address">Vendor Address</Label>
+                      <Input
+                        id="corrected-vendor-address"
+                        value={correctedData.vendorAddress || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, vendorAddress: e.target.value})}
+                        placeholder="Correct vendor address"
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label htmlFor="corrected-buyer-address">Buyer Address</Label>
+                      <Input
+                        id="corrected-buyer-address"
+                        value={correctedData.buyerAddress || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, buyerAddress: e.target.value})}
+                        placeholder="Correct buyer address"
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label htmlFor="corrected-project-address">Project Address</Label>
+                      <Input
+                        id="corrected-project-address"
+                        value={correctedData.projectAddress || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, projectAddress: e.target.value})}
+                        placeholder="Correct project address"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-project-city">Project City</Label>
+                      <Input
+                        id="corrected-project-city"
+                        value={correctedData.projectCity || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, projectCity: e.target.value})}
+                        placeholder="Correct project city"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="corrected-concept">Concept/Description</Label>
+                      <Textarea
+                        id="corrected-concept"
+                        value={correctedData.concept || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, concept: e.target.value})}
+                        placeholder="Correct concept or description"
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label htmlFor="corrected-description-summary">Description Summary</Label>
+                      <Textarea
+                        id="corrected-description-summary"
+                        value={correctedData.descriptionSummary || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, descriptionSummary: e.target.value})}
+                        placeholder="Correct description summary"
+                        rows={2}
+                      />
+                    </div>
+
+                    <div className="col-span-2">
+                      <Label htmlFor="corrected-notes">Notes</Label>
+                      <Textarea
+                        id="corrected-notes"
+                        value={correctedData.notes || ""}
+                        onChange={(e) => setCorrectedData({...correctedData, notes: e.target.value})}
+                        placeholder="Additional notes or corrections"
+                        rows={2}
                       />
                     </div>
                   </div>
