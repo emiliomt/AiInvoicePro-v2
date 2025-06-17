@@ -1,5 +1,4 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -14,7 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { AlertTriangle, CheckCircle } from "lucide-react";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -82,7 +81,77 @@ export default function ExtractionFeedbackModal({
     },
   });
 
-  const handleSubmit = () => {
+  const formatAmount = (amount: string | null, currency: string) => {
+    if (!amount) return "N/A";
+    const numericAmount = parseFloat(amount);
+    return `${currency} ${numericAmount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })}`;
+  };
+
+  // Fetch AI suggestions from server
+  const { data: aiSuggestions } = useQuery({
+    queryKey: [`/api/invoices/${invoice.id}/ai-suggestions`],
+    queryFn: async () => {
+      const response = await fetch(`/api/invoices/${invoice.id}/ai-suggestions`);
+      if (!response.ok) throw new Error('Failed to fetch AI suggestions');
+      return response.json();
+    },
+    enabled: isOpen
+  });
+
+  // Get AI suggestions with server-side analysis
+  const getAISuggestions = () => {
+    if (aiSuggestions?.suggestions && aiSuggestions.suggestions.length > 0) {
+      return aiSuggestions.suggestions.map((s: any) => ({
+        field: s.field,
+        issue: s.issue,
+        suggestion: s.suggestion,
+        correctedValue: s.correctedValue,
+        confidence: s.confidence
+      }));
+    }
+
+    // Fallback to client-side analysis
+    const suggestions = [];
+    const extractedData = invoice.extractedData as any;
+
+    if (!extractedData?.totalAmount || extractedData.totalAmount === "0" || extractedData.totalAmount === "0.00") {
+      suggestions.push({
+        field: "Total Amount",
+        issue: "Total amount is zero or missing",
+        suggestion: "Look for 'TOTAL A PAGAR', 'VALOR TOTAL', or currency symbols in the document"
+      });
+    }
+
+    if (!extractedData?.vendorName || extractedData.vendorName.length < 3) {
+      suggestions.push({
+        field: "Vendor Name",
+        issue: "Vendor name appears incomplete",
+        suggestion: "Look for company name near NIT or at the top of the document"
+      });
+    }
+
+    return suggestions.length > 0 ? suggestions : [{
+      field: "General",
+      issue: "Review extraction accuracy",
+      suggestion: "Verify all key fields match the source document"
+    }];
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!reason.trim()) {
+      toast({
+        title: "Validation Error",
+        description: "Please describe what's wrong with the extraction",
+        variant: "destructive",
+      });
+      return;
+    }
+
     const feedbackData = {
       reason,
       originalText: invoice.ocrText,
@@ -91,15 +160,6 @@ export default function ExtractionFeedbackModal({
     };
 
     feedbackMutation.mutate(feedbackData);
-  };
-
-  const formatAmount = (amount: string | null, currency: string) => {
-    if (!amount) return "N/A";
-    const numericAmount = parseFloat(amount);
-    return `${currency} ${numericAmount.toLocaleString('en-US', {
-      minimumFractionDigits: 2,
-      maximumFractionDigits: 2
-    })}`;
   };
 
   return (
@@ -194,16 +254,30 @@ export default function ExtractionFeedbackModal({
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="grid grid-cols-2 gap-4">
-                    <div>
-                      <Label htmlFor="corrected-vendor">Vendor Name</Label>
-                      <Input
-                        id="corrected-vendor"
-                        value={correctedData.vendorName}
-                        onChange={(e) => setCorrectedData({...correctedData, vendorName: e.target.value})}
-                        placeholder="Correct vendor name"
-                      />
-                    </div>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="correctedVendor">Vendor Name</Label>
+                  <Input
+                    id="correctedVendor"
+                    value={correctedData.vendorName}
+                    onChange={(e) => setCorrectedData({ ...correctedData, vendorName: e.target.value })}
+                    placeholder="Correct vendor name"
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    className="mt-1 text-xs"
+                    onClick={() => {
+                      const suggestion = getAISuggestions().find(s => s.field === "Vendor Name");
+                      if (suggestion && invoice.vendorName) {
+                        setCorrectedData({ ...correctedData, vendorName: invoice.vendorName });
+                      }
+                    }}
+                  >
+                    Use Current: {invoice.vendorName}
+                  </Button>
+                </div>
                     <div>
                       <Label htmlFor="corrected-invoice-num">Invoice Number</Label>
                       <Input

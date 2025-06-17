@@ -1339,6 +1339,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get AI suggestions for extraction errors
+  app.get('/api/invoices/:id/ai-suggestions', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { AISuggestionService } = await import('./services/aiSuggestionService');
+      const suggestions = AISuggestionService.analyzeExtractionErrors(invoice, invoice.ocrText || '');
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error getting AI suggestions:", error);
+      res.status(500).json({ message: "Failed to get AI suggestions" });
+    }
+  });
+
   // Report extraction error feedback
   app.post('/api/invoices/:id/feedback', isAuthenticated, async (req: any, res) => {
     try {
