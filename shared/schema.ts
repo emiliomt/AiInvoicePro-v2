@@ -393,7 +393,8 @@ export const predictiveAlertsRelations = relations(predictiveAlerts, ({ one }) =
   invoice: one(invoices, {
     fields: [predictiveAlerts.invoiceId],
     references: [invoices.id],
-
+  }),
+}));
 
 // Classification keyword categories enum
 export const classificationCategoryEnum = pgEnum("classification_category", [
@@ -425,10 +426,6 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
 });
-
-
-  }),
-}));
 
 export const feedbackLogsRelations = relations(feedbackLogs, ({ one }) => ({
   invoice: one(invoices, {
