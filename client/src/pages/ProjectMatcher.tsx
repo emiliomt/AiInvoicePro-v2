@@ -270,7 +270,8 @@ export default function ProjectMatcher() {
 
   const handleApproveMatch = async (invoiceId: number, projectId: string) => {
     try {
-      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/create-project-match`, {
+      // Create the project match
+      const matchResponse = await apiRequest('POST', `/api/invoices/${invoiceId}/create-project-match`, {
         projectId: projectId,
         matchScore: 95, // High confidence for approved matches
         matchDetails: {
@@ -281,19 +282,30 @@ export default function ProjectMatcher() {
         status: 'manual'
       });
 
-      if (response.ok) {
-        toast({
-          title: "Match Approved",
-          description: "Invoice has been matched to the selected project",
+      if (matchResponse.ok) {
+        // Update invoice status to 'matched'
+        const statusResponse = await apiRequest('PATCH', `/api/invoices/${invoiceId}`, {
+          status: 'matched'
         });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        setInvoicesWithMatches(prev => 
-          prev.map(item => 
-            item.invoice.id === invoiceId 
-              ? { ...item, status: 'matched' }
-              : item
-          )
-        );
+
+        if (statusResponse.ok) {
+          toast({
+            title: "Match Approved",
+            description: "Invoice has been matched to the selected project",
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          setInvoicesWithMatches(prev => 
+            prev.map(item => 
+              item.invoice.id === invoiceId 
+                ? { ...item, status: 'matched' }
+                : item
+            )
+          );
+        } else {
+          throw new Error("Failed to update invoice status");
+        }
+      } else {
+        throw new Error("Failed to create project match");
       }
     } catch (error) {
       toast({
@@ -306,8 +318,9 @@ export default function ProjectMatcher() {
 
   const handleManualMatch = async (invoice: Invoice, project: Project) => {
     try {
-      const response = await apiRequest('POST', `/api/invoices/${invoice.id}/create-project-match`, {
-        projectId: project.id,
+      // Create the project match
+      const matchResponse = await apiRequest('POST', `/api/invoices/${invoice.id}/create-project-match`, {
+        projectId: project.projectId,
         matchScore: 100, // Manual matches get 100% score
         matchDetails: {
           type: 'manual',
@@ -317,19 +330,30 @@ export default function ProjectMatcher() {
         status: 'manual'
       });
 
-      if (response.ok) {
-        toast({
-          title: "Project Assigned",
-          description: `Invoice matched to project: ${project.name}`,
+      if (matchResponse.ok) {
+        // Update invoice status to 'matched'
+        const statusResponse = await apiRequest('PATCH', `/api/invoices/${invoice.id}`, {
+          status: 'matched'
         });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        setInvoicesWithMatches(prev => 
-          prev.map(item => 
-            item.invoice.id === invoice.id 
-              ? { ...item, status: 'matched' }
-              : item
-          )
-        );
+
+        if (statusResponse.ok) {
+          toast({
+            title: "Project Assigned",
+            description: `Invoice matched to project: ${project.name}`,
+          });
+          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          setInvoicesWithMatches(prev => 
+            prev.map(item => 
+              item.invoice.id === invoice.id 
+                ? { ...item, status: 'matched' }
+                : item
+            )
+          );
+        } else {
+          throw new Error("Failed to update invoice status");
+        }
+      } else {
+        throw new Error("Failed to create project match");
       }
     } catch (error) {
       toast({
