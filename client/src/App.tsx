@@ -13,7 +13,8 @@ import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
 import ProjectMatcher from "./pages/ProjectMatcher";
 import Reports from "./pages/Reports";
-import ValidationRules from "./pages/ValidationRules";
+import ValidationRules from "@/pages/ValidationRules";
+import LineItemClassification from "@/pages/LineItemClassification";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
@@ -60,6 +61,7 @@ function Router() {
           <Route path="/invoices" component={Invoices} />
           <Route path="/preview/:id" component={InvoicePreview} />
           <Route path="/validation-rules" component={ValidationRules} />
+          <Route path="/classification" component={LineItemClassification} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />
           <Route path="/project-matcher" component={ProjectMatcher} />

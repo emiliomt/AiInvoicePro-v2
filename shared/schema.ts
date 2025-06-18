@@ -319,10 +319,14 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   predictiveAlerts: many(predictiveAlerts),
 }));
 
-export const lineItemsRelations = relations(lineItems, ({ one }) => ({
+export const lineItemsRelations = relations(lineItems, ({ one, many }) => ({
   invoice: one(invoices, {
     fields: [lineItems.invoiceId],
     references: [invoices.id],
+  }),
+  classification: one(lineItemClassifications, {
+    fields: [lineItems.id],
+    references: [lineItemClassifications.lineItemId],
   }),
 }));
 
@@ -389,6 +393,40 @@ export const predictiveAlertsRelations = relations(predictiveAlerts, ({ one }) =
   invoice: one(invoices, {
     fields: [predictiveAlerts.invoiceId],
     references: [invoices.id],
+
+
+// Classification keyword categories enum
+export const classificationCategoryEnum = pgEnum("classification_category", [
+  "consumable_materials",
+  "non_consumable_materials", 
+  "labor",
+  "tools_equipment"
+]);
+
+// Classification keywords table
+export const classificationKeywords = pgTable("classification_keywords", {
+  id: serial("id").primaryKey(),
+  category: classificationCategoryEnum("category").notNull(),
+  keyword: varchar("keyword", { length: 255 }).notNull(),
+  isDefault: boolean("is_default").default(false),
+  userId: varchar("user_id"), // null for system defaults, user ID for custom keywords
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Line item classifications table
+export const lineItemClassifications = pgTable("line_item_classifications", {
+  id: serial("id").primaryKey(),
+  lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
+  category: classificationCategoryEnum("category").notNull(),
+  matchedKeyword: varchar("matched_keyword", { length: 255 }),
+  isManualOverride: boolean("is_manual_override").default(false),
+  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
+  classifiedAt: timestamp("classified_at").defaultNow(),
+  classifiedBy: varchar("classified_by"),
+});
+
+
   }),
 }));
 
@@ -400,6 +438,20 @@ export const feedbackLogsRelations = relations(feedbackLogs, ({ one }) => ({
   user: one(users, {
     fields: [feedbackLogs.userId],
     references: [users.id],
+  }),
+}));
+
+export const classificationKeywordsRelations = relations(classificationKeywords, ({ one }) => ({
+  user: one(users, {
+    fields: [classificationKeywords.userId],
+    references: [users.id],
+  }),
+}));
+
+export const lineItemClassificationsRelations = relations(lineItemClassifications, ({ one }) => ({
+  lineItem: one(lineItems, {
+    fields: [lineItemClassifications.lineItemId],
+    references: [lineItems.id],
   }),
 }));
 
@@ -445,6 +497,12 @@ export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
 
 export type InsertFeedbackLog = typeof feedbackLogs.$inferInsert;
 export type FeedbackLog = typeof feedbackLogs.$inferSelect;
+
+export type InsertClassificationKeyword = typeof classificationKeywords.$inferInsert;
+export type ClassificationKeyword = typeof classificationKeywords.$inferSelect;
+
+export type InsertLineItemClassification = typeof lineItemClassifications.$inferInsert;
+export type LineItemClassification = typeof lineItemClassifications.$inferSelect;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({

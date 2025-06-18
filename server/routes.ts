@@ -70,6 +70,10 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
 };
 
 export async function registerRoutes(app: Express): Promise<Server> {
+  // Initialize classification service
+  const { ClassificationService } = await import('./services/classificationService');
+  await ClassificationService.initializeDefaultKeywords();
+
   // Auth middleware
   await setupAuth(app);
 
@@ -933,6 +937,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 totalPrice: item.totalPrice || "0",
               }));
               createdLineItems = await storage.createLineItems(lineItemsData);
+
+              // Auto-classify line items
+              try {
+                const { ClassificationService } = await import('./services/classificationService');
+                await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
+                console.log(`Auto-classified line items for invoice ${invoice.id}`);
+              } catch (classificationError) {
+                console.error(`Failed to auto-classify line items for invoice ${invoice.id}:`, classificationError);
+                // Continue processing even if classification fails
+              }
             }
 
             console.log(`Invoice ${invoice.id} processing completed successfully`);
@@ -1558,6 +1572,129 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching feedback log:", error);
       res.status(500).json({ message: "Failed to fetch feedback log" });
+    }
+  });
+
+  // Classification routes
+  app.get('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const keywords = await storage.getClassificationKeywords(userId);
+      res.json(keywords);
+    } catch (error) {
+      console.error("Error fetching classification keywords:", error);
+      res.status(500).json({ message: "Failed to fetch classification keywords" });
+    }
+  });
+
+  app.post('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { category, keyword } = req.body;
+
+      if (!category || !keyword) {
+        return res.status(400).json({ message: "Category and keyword are required" });
+      }
+
+      const keywordData = {
+        category,
+        keyword: keyword.toLowerCase().trim(),
+        isDefault: false,
+        userId
+      };
+
+      const result = await storage.addClassificationKeyword(keywordData);
+      res.json(result);
+    } catch (error) {
+      console.error("Error adding classification keyword:", error);
+      res.status(500).json({ message: "Failed to add classification keyword" });
+    }
+  });
+
+  app.delete('/api/classification/keywords/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const keywordId = parseInt(req.params.id);
+
+      await storage.removeClassificationKeyword(keywordId, userId);
+      res.json({ message: "Keyword removed successfully" });
+    } catch (error) {
+      console.error("Error removing classification keyword:", error);
+      res.status(500).json({ message: "Failed to remove classification keyword" });
+    }
+  });
+
+  app.post('/api/classification/keywords/bulk', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const { category, keywords } = req.body;
+
+      if (!category || !Array.isArray(keywords)) {
+        return res.status(400).json({ message: "Category and keywords array are required" });
+      }
+
+      const results = [];
+      for (const keyword of keywords) {
+        if (keyword.trim()) {
+          const keywordData = {
+            category,
+            keyword: keyword.toLowerCase().trim(),
+            isDefault: false,
+            userId
+          };
+          const result = await storage.addClassificationKeyword(keywordData);
+          results.push(result);
+        }
+      }
+
+      res.json({ message: `Added ${results.length} keywords`, results });
+    } catch (error) {
+      console.error("Error bulk adding keywords:", error);
+      res.status(500).json({ message: "Failed to bulk add keywords" });
+    }
+  });
+
+  app.get('/api/invoices/:id/classifications', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const classifications = await storage.getLineItemClassifications(invoiceId);
+      res.json(classifications);
+    } catch (error) {
+      console.error("Error fetching line item classifications:", error);
+      res.status(500).json({ message: "Failed to fetch line item classifications" });
+    }
+  });
+
+  app.post('/api/invoices/:invoiceId/line-items/:lineItemId/classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const lineItemId = parseInt(req.params.lineItemId);
+      const { category } = req.body;
+
+      if (!category) {
+        return res.status(400).json({ message: "Category is required" });
+      }
+
+      await storage.updateLineItemClassification(lineItemId, category, userId);
+      res.json({ message: "Classification updated successfully" });
+    } catch (error) {
+      console.error("Error updating line item classification:", error);
+      res.status(500).json({ message: "Failed to update line item classification" });
+    }
+  });
+
+  app.post('/api/invoices/:id/auto-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const invoiceId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.classifyInvoiceLineItems(invoiceId, userId);
+
+      res.json({ message: "Auto-classification completed" });
+    } catch (error) {
+      console.error("Error auto-classifying invoice:", error);
+      res.status(500).json({ message: "Failed to auto-classify invoice" });
     }
   });
 

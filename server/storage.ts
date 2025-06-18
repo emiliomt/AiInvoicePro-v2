@@ -13,6 +13,8 @@ import {
   invoiceFlags,
   predictiveAlerts,
   feedbackLogs,
+  classificationKeywords,
+  lineItemClassifications,
   type UpsertUser,
   type InsertInvoice,
   type InsertLineItem,
@@ -27,6 +29,7 @@ import {
   type InsertInvoiceFlag,
   type InsertPredictiveAlert,
   type InsertFeedbackLog,
+  type InsertClassificationKeyword,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte } from "drizzle-orm";
@@ -146,6 +149,13 @@ export interface IStorage {
   createFeedbackLog(feedbackData: InsertFeedbackLog): Promise<any>;
   getFeedbackLogs(limit?: number): Promise<any>;
   getFeedbackLog(id: number): Promise<any>;
+
+    // Classification methods
+  getClassificationKeywords(userId?: string): Promise<Record<string, { id: number; keyword: string; isDefault: boolean }[]>>;
+  addClassificationKeyword(data: InsertClassificationKeyword): Promise<any>;
+  removeClassificationKeyword(keywordId: number, userId: string): Promise<void>;
+  getLineItemClassifications(invoiceId: number): Promise<any[]>;
+  updateLineItemClassification(lineItemId: number, category: string, userId: string): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1152,6 +1162,116 @@ export class DatabaseStorage implements IStorage {
       .from(feedbackLogs)
       .where(eq(feedbackLogs.id, id));
     return feedbackLog;
+  }
+
+  // Classification methods
+  async getClassificationKeywords(userId?: string): Promise<Record<string, { id: number; keyword: string; isDefault: boolean }[]>> {
+    const conditions = [];
+
+    if (userId) {
+      conditions.push(
+        or(
+          eq(classificationKeywords.isDefault, true),
+          eq(classificationKeywords.userId, userId)
+        )
+      );
+    } else {
+      conditions.push(eq(classificationKeywords.isDefault, true));
+    }
+
+    const keywords = await db
+      .select()
+      .from(classificationKeywords)
+      .where(conditions.length > 0 ? and(...conditions) : undefined);
+
+    const grouped: Record<string, { id: number; keyword: string; isDefault: boolean }[]> = {
+      consumable_materials: [],
+      non_consumable_materials: [],
+      labor: [],
+      tools_equipment: []
+    };
+
+    for (const keyword of keywords) {
+      grouped[keyword.category].push({
+        id: keyword.id,
+        keyword: keyword.keyword,
+        isDefault: keyword.isDefault || false
+      });
+    }
+
+    return grouped;
+  }
+
+  async addClassificationKeyword(data: InsertClassificationKeyword): Promise<any> {
+    const result = await db
+      .insert(classificationKeywords)
+      .values(data)
+      .returning();
+    return result[0];
+  }
+
+  async removeClassificationKeyword(keywordId: number, userId: string): Promise<void> {
+    await db
+      .delete(classificationKeywords)
+      .where(
+        and(
+          eq(classificationKeywords.id, keywordId),
+          eq(classificationKeywords.userId, userId),
+          eq(classificationKeywords.isDefault, false)
+        )
+      );
+  }
+
+  async getLineItemClassifications(invoiceId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        lineItemId: lineItems.id,
+        description: lineItems.description,
+        quantity: lineItems.quantity,
+        unitPrice: lineItems.unitPrice,
+        totalPrice: lineItems.totalPrice,
+        category: lineItemClassifications.category,
+        matchedKeyword: lineItemClassifications.matchedKeyword,
+        confidence: lineItemClassifications.confidence,
+        isManualOverride: lineItemClassifications.isManualOverride,
+        classificationId: lineItemClassifications.id,
+      })
+      .from(lineItems)
+      .leftJoin(lineItemClassifications, eq(lineItems.id, lineItemClassifications.lineItemId))
+      .where(eq(lineItems.invoiceId, invoiceId));
+
+    return result;
+  }
+
+  async updateLineItemClassification(lineItemId: number, category: string, userId: string): Promise<void> {
+    const existingClassification = await db
+      .select()
+      .from(lineItemClassifications)
+      .where(eq(lineItemClassifications.lineItemId, lineItemId))
+      .limit(1);
+
+    if (existingClassification.length > 0) {
+      await db
+        .update(lineItemClassifications)
+        .set({
+          category: category as any,
+          isManualOverride: true,
+          matchedKeyword: 'manual override',
+          confidence: '1.00',
+          classifiedAt: new Date(),
+          classifiedBy: userId
+        })
+        .where(eq(lineItemClassifications.lineItemId, lineItemId));
+    } else {
+      await db.insert(lineItemClassifications).values({
+        lineItemId,
+        category: category as any,
+        isManualOverride: true,
+        matchedKeyword: 'manual override',
+        confidence: '1.00',
+        classifiedBy: userId
+      });
+    }
   }
 }
 

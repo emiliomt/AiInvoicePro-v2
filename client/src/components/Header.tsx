@@ -69,7 +69,7 @@ export default function Header() {
             <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
             </Link>
-            
+
             {/* Information Validation Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -88,7 +88,7 @@ export default function Header() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            
+
             {/* Project Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -113,7 +113,13 @@ export default function Header() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            
+            <Link href="/project-validation" className={getLinkClassName("/project-validation")}>
+              Project Validation
+            </Link>
+            <Link href="/classification" className={getLinkClassName("/classification")}>
+              Line Item Classification
+            </Link>
+
             {/* Purchases Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -135,7 +141,7 @@ export default function Header() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
-            
+
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
             </Link>
