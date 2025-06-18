@@ -46,6 +46,10 @@ export default function Reports() {
     queryKey: ["/api/invoices"],
   });
 
+  const formatCurrency = (value: number) => {
+    return `$${value.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+  };
+
   // Calculate additional metrics from invoices data
   const calculateMetrics = () => {
     if (!invoices.length) return null;
@@ -69,13 +73,13 @@ export default function Reports() {
       .map(([name, data]: [string, any]) => ({
         name,
         count: data.count,
-        totalValue: `$${data.totalValue.toFixed(2)}`,
+        totalValue: formatCurrency(data.totalValue),
       }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
     return {
-      totalValue: `$${totalValue.toFixed(2)}`,
+      totalValue: formatCurrency(totalValue),
       topVendors,
     };
   };
@@ -248,7 +252,7 @@ export default function Reports() {
                     </div>
                     <div className="text-right">
                       <p className="font-medium text-gray-900">
-                        {invoice.currency} {parseFloat(invoice.totalAmount || "0").toFixed(2)}
+                        {invoice.currency} {parseFloat(invoice.totalAmount || "0").toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </p>
                       <Badge 
                         className={
