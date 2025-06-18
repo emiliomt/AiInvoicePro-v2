@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
@@ -21,6 +21,7 @@ import {
   AlertTriangle, 
   Clock, 
   Building2, 
+  MapPin, 
   Settings,
   Eye,
   Zap,
@@ -40,7 +41,6 @@ interface Invoice {
     address?: string;
     city?: string;
     vendorName?: string;
-    invoiceNumber?: string;
   };
   projectName?: string;
   createdAt: string;
@@ -54,6 +54,19 @@ interface Project {
   address?: string;
   city?: string;
   status: string;
+}
+
+interface ProjectMatch {
+  project: Project;
+  matchScore: number;
+  matchDetails: {
+    addressSimilarity: number;
+    citySimilarity: number;
+    projectNameSimilarity: number;
+    overallConfidence: number;
+    matchedFields: string[];
+    reasons: string[];
+  };
 }
 
 interface InvoiceProjectMatch {
@@ -75,9 +88,38 @@ export default function ProjectMatcher() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
+  const [invoicesWithMatches, setInvoicesWithMatches] = useState<any[]>([]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+    // Mock API request function
+    const apiRequest = async (method: string, url: string, data: any = null) => {
+      const options: RequestInit = {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+          // Add any other headers as needed
+        },
+      };
+
+      if (data) {
+        options.body = JSON.stringify(data);
+      }
+
+      // Simulate an asynchronous API request
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          // Simulate a successful response
+          const mockResponse = {
+            ok: true,
+            status: 200,
+            json: async () => ({ message: 'Operation successful', data: data }),
+          };
+          resolve(mockResponse);
+        }, 500); // Simulate a 500ms delay
+      });
+    };
 
   // Fetch all invoices
   const { data: invoices = [] } = useQuery<Invoice[]>({
@@ -88,6 +130,223 @@ export default function ProjectMatcher() {
   const { data: projects = [] } = useQuery<Project[]>({
     queryKey: ["/api/projects"],
   });
+
+  // Calculate stats for the dashboard cards
+  const { data: stats } = useQuery({
+    queryKey: ["project-matcher-stats", invoices, confidenceThreshold],
+    queryFn: () => {
+      const totalInvoices = invoices.length;
+
+      // Count invoices with approved matches as matched
+      const matched = invoices.filter(invoice => {
+        const hasApprovedMatch = invoice.projectMatches && 
+          invoice.projectMatches.some(match => 
+            match.status === 'manual' || match.status === 'approved'
+          );
+        return hasApprovedMatch;
+      }).length;
+
+      // Count invoices that have potential matches but no approved matches as needs review
+      const needsReview = invoices.filter(invoice => {
+        const hasApprovedMatch = invoice.projectMatches && 
+          invoice.projectMatches.some(match => 
+            match.status === 'manual' || match.status === 'approved'
+          );
+
+        if (hasApprovedMatch) return false;
+
+        const bestMatch = getBestProjectMatch(invoice, projects);
+        return bestMatch.project && bestMatch.confidence >= 60;
+      }).length;
+
+      const unmatched = totalInvoices - matched - needsReview;
+      const totalValue = invoices.reduce((sum, invoice) => 
+        sum + parseFloat(invoice.totalAmount || "0"), 0
+      );
+
+      return {
+        totalInvoices,
+        matched,
+        needsReview,
+        unmatched,
+        totalValue: totalValue.toFixed(2),
+      };
+    },
+  });
+
+  // Find project matches mutation
+  const findMatchesMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const response = await fetch(`/api/invoices/${invoiceId}/find-project-matches`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) throw new Error("Failed to find matches");
+      return response.json();
+    },
+    onSuccess: (matches, invoiceId) => {
+      queryClient.setQueryData(["/api/invoices", invoiceId, "project-matches"], matches);
+      setMatchingInProgress(null);
+
+      // Invalidate related queries to update stats across modules
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+
+      toast({
+        title: "Matching Complete",
+        description: `Found ${matches.length} potential project matches`,
+      });
+    },
+    onError: () => {
+      setMatchingInProgress(null);
+      toast({
+        title: "Error",
+        description: "Failed to find project matches",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Create project match mutation
+  const createMatchMutation = useMutation({
+    mutationFn: async ({ invoiceId, projectId, matchScore, matchDetails }: {
+      invoiceId: number;
+      projectId: string;
+      matchScore: number;
+      matchDetails: any;
+    }) => {
+      const response = await fetch(`/api/invoices/${invoiceId}/create-project-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId, matchScore, matchDetails, status: 'manual' }),
+      });
+      if (!response.ok) throw new Error("Failed to create match");
+
+      // Update invoice status to 'matched' after successful project match
+      const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: 'matched' }),
+      });
+      if (!updateResponse.ok) throw new Error("Failed to update invoice status");
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      toast({
+        title: "Success",
+        description: "Project match approved and invoice status updated to matched",
+      });
+    },
+  });
+
+  // Set active match mutation
+  const setActiveMatchMutation = useMutation({
+    mutationFn: async ({ invoiceId, matchId }: { invoiceId: number; matchId: number }) => {
+      const response = await fetch(`/api/invoices/${invoiceId}/set-active-project-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ matchId }),
+      });
+      if (!response.ok) throw new Error("Failed to set active match");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      toast({
+        title: "Success", 
+        description: "Active project match updated",
+      });
+    },
+  });
+
+  // Get existing matches for an invoice
+  const getInvoiceMatches = (invoiceId: number) => {
+    return useQuery<InvoiceProjectMatch[]>({
+      queryKey: ["/api/invoices", invoiceId, "project-matches"],
+      enabled: false,
+    });
+  };
+
+  const handleFindMatches = async (invoice: Invoice) => {
+    setMatchingInProgress(invoice.id);
+    findMatchesMutation.mutate(invoice.id);
+  };
+
+  const handleApproveMatch = async (invoiceId: number, projectId: string) => {
+    try {
+      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/create-project-match`, {
+        projectId: projectId,
+        matchScore: 95, // High confidence for approved matches
+        matchDetails: {
+          type: 'approved',
+          reason: 'Best match approved by user',
+          timestamp: new Date().toISOString()
+        },
+        status: 'manual'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Match Approved",
+          description: "Invoice has been matched to the selected project",
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setInvoicesWithMatches(prev => 
+          prev.map(item => 
+            item.invoice.id === invoiceId 
+              ? { ...item, status: 'matched' }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to approve project match",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleManualMatch = async (invoice: Invoice, project: Project) => {
+    try {
+      const response = await apiRequest('POST', `/api/invoices/${invoice.id}/create-project-match`, {
+        projectId: project.id,
+        matchScore: 100, // Manual matches get 100% score
+        matchDetails: {
+          type: 'manual',
+          reason: 'Manually assigned by user',
+          timestamp: new Date().toISOString()
+        },
+        status: 'manual'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Project Assigned",
+          description: `Invoice matched to project: ${project.name}`,
+        });
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setInvoicesWithMatches(prev => 
+          prev.map(item => 
+            item.invoice.id === invoice.id 
+              ? { ...item, status: 'matched' }
+              : item
+          )
+        );
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to assign project to invoice",
+        variant: "destructive",
+      });
+    }
+  };
 
   // Helper function to calculate string similarity
   const calculateStringSimilarity = (str1: string, str2: string): number => {
@@ -126,16 +385,73 @@ export default function ProjectMatcher() {
     return matrix[str2.length][str1.length];
   };
 
-  // Get best project match
+  // Get extracted project based on address/city matching with validation records
+  const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+
+    // If no explicit project city, try to extract from vendor address
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1]; // Take the city part
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) return '';
+
+    let bestMatch = { project: null, score: 0 };
+
+    for (const project of projects) {
+      let score = 0;
+      let matchCount = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        if (addressSimilarity > 60) {
+          score += addressSimilarity * 0.7; // 70% weight for address
+          matchCount++;
+        }
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        if (citySimilarity > 80) {
+          score += citySimilarity * 0.3; // 30% weight for city
+          matchCount++;
+        }
+      }
+
+      const finalScore = matchCount > 0 ? score / matchCount : 0;
+
+      if (finalScore > bestMatch.score && finalScore > 70) {
+        bestMatch = { project, score: finalScore };
+      }
+    }
+
+    return bestMatch.project?.name || '';
+  };
+
+  // Get best project match from validation records only
   const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
-    const invoiceAddress = invoice.extractedData?.address;
-    const invoiceCity = invoice.extractedData?.city;
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+
+    // If no explicit project city, try to extract from vendor address
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1]; // Take the city part
+      }
+    }
 
     if (!invoiceAddress && !invoiceCity) {
       return { project: null, confidence: 0 };
     }
 
-    let bestMatch = { project: null as Project | null, confidence: 0 };
+    let bestMatch = { project: null, confidence: 0 };
 
     for (const project of projects) {
       let totalScore = 0;
@@ -181,139 +497,8 @@ export default function ProjectMatcher() {
     }
   };
 
-  // Calculate stats for the dashboard cards
-  const { data: stats } = useQuery({
-    queryKey: ["project-matcher-stats", invoices, confidenceThreshold],
-    queryFn: () => {
-      const totalInvoices = invoices.length;
-
-      // Count invoices with approved matches as matched
-      const matched = invoices.filter(invoice => {
-        const hasApprovedMatch = invoice.projectMatches && 
-          invoice.projectMatches.some(match => 
-            match.status === 'manual'
-          );
-        return hasApprovedMatch;
-      }).length;
-
-      // Count invoices that have potential matches but no approved matches as needs review
-      const needsReview = invoices.filter(invoice => {
-        const hasApprovedMatch = invoice.projectMatches && 
-          invoice.projectMatches.some(match => 
-            match.status === 'manual'
-          );
-
-        if (hasApprovedMatch) return false;
-
-        const bestMatch = getBestProjectMatch(invoice, projects);
-        return bestMatch.project && bestMatch.confidence >= 60;
-      }).length;
-
-      const unmatched = totalInvoices - matched - needsReview;
-      const totalValue = invoices.reduce((sum, invoice) => 
-        sum + parseFloat(invoice.totalAmount || "0"), 0
-      );
-
-      return {
-        totalInvoices,
-        matched,
-        needsReview,
-        unmatched,
-        totalValue: totalValue.toFixed(2),
-      };
-    },
-  });
-
-  // Find project matches mutation
-  const findMatchesMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
-      const response = await fetch(`/api/invoices/${invoiceId}/find-project-matches`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) throw new Error("Failed to find matches");
-      return response.json();
-    },
-    onSuccess: (matches, invoiceId) => {
-      queryClient.setQueryData(["/api/invoices", invoiceId, "project-matches"], matches);
-      setMatchingInProgress(null);
-
-      // Invalidate related queries to update stats across modules
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-
-      toast({
-        title: "Matching Complete",
-        description: `Found ${matches.length} potential project matches`,
-      });
-    },
-    onError: () => {
-      setMatchingInProgress(null);
-      toast({
-        title: "Error",
-        description: "Failed to find project matches",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleFindMatches = async (invoice: Invoice) => {
-    setMatchingInProgress(invoice.id);
-    findMatchesMutation.mutate(invoice.id);
-  };
-
-  const handleApproveMatch = async (invoiceId: number, projectId: string) => {
-    try {
-      const response = await fetch(`/api/invoices/${invoiceId}/create-project-match`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: projectId,
-          matchScore: 95,
-          matchDetails: {
-            type: 'approved',
-            reason: 'Best match approved by user',
-            timestamp: new Date().toISOString()
-          },
-          status: 'manual'
-        })
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Match Approved",
-          description: "Invoice has been matched to the selected project",
-        });
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to approve project match",
-        variant: "destructive",
-      });
-    }
-  };
-
   const filteredInvoices = invoices.filter(invoice => {
-    const status = getMatchStatus(invoice, confidenceThreshold[0]);
-    
-    // Filter by tab
-    let tabMatch = true;
-    if (activeTab === "matched") {
-      tabMatch = status.status === "matched";
-    } else if (activeTab === "needs_review") {
-      tabMatch = status.status === "needs_review";
-    } else if (activeTab === "unmatched") {
-      tabMatch = status.status === "unmatched";
-    }
-
-    // Filter by status
-    let statusMatch = true;
-    if (filterStatus !== "all") {
-      statusMatch = invoice.status === filterStatus;
-    }
-
-    // Filter by search term
+    const statusMatch = activeTab === "all" || getMatchStatus(invoice, confidenceThreshold[0]).status === activeTab;
     const searchMatch = !searchTerm || 
       invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -321,36 +506,23 @@ export default function ProjectMatcher() {
       invoice.extractedData?.invoiceNumber?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.id.toString().includes(searchTerm);
 
-    return tabMatch && statusMatch && searchMatch;
+    return statusMatch && searchMatch;
   });
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {/* Header Section */}
         <div className="mb-8">
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 flex items-center space-x-2">
-                <Target className="text-blue-600" size={32} />
-                <span>AI Project Matcher</span>
-              </h1>
-              <p className="text-gray-600 mt-2">
-                Match invoices to projects using intelligent algorithms and AI-powered insights
-              </p>
-            </div>
-            <div className="flex space-x-3">
-              <Button variant="outline" size="sm">
-                <Settings size={16} className="mr-2" />
-                Settings
-              </Button>
-            </div>
-          </div>
+          <h1 className="text-2xl font-bold text-gray-900">Project Matcher</h1>
+          <p className="text-gray-600 mt-2">
+            Match invoices with projects using AI-powered analysis
+          </p>
         </div>
 
-        {/* Statistics Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        {/* Stats Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
@@ -358,7 +530,9 @@ export default function ProjectMatcher() {
                   <p className="text-sm font-medium text-gray-600">Total Invoices</p>
                   <p className="text-3xl font-bold text-gray-900">{stats?.totalInvoices || 0}</p>
                 </div>
-                <Building2 className="h-8 w-8 text-blue-600" />
+                <div className="w-12 h-12 bg-blue-100 rounded-lg flex items-center justify-center">
+                  <Building2 className="text-blue-600" size={24} />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -370,7 +544,9 @@ export default function ProjectMatcher() {
                   <p className="text-sm font-medium text-gray-600">Matched</p>
                   <p className="text-3xl font-bold text-green-600">{stats?.matched || 0}</p>
                 </div>
-                <CheckCircle className="h-8 w-8 text-green-600" />
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-green-600" size={24} />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -382,7 +558,9 @@ export default function ProjectMatcher() {
                   <p className="text-sm font-medium text-gray-600">Needs Review</p>
                   <p className="text-3xl font-bold text-yellow-600">{stats?.needsReview || 0}</p>
                 </div>
-                <AlertTriangle className="h-8 w-8 text-yellow-600" />
+                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="text-yellow-600" size={24} />
+                </div>
               </div>
             </CardContent>
           </Card>
@@ -392,244 +570,470 @@ export default function ProjectMatcher() {
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Value</p>
-                  <p className="text-2xl font-bold text-gray-900">${stats?.totalValue || '0.00'}</p>
+                  <p className="text-3xl font-bold text-gray-900">${stats?.totalValue || "0.00"}</p>
                 </div>
-                <DollarSign className="h-8 w-8 text-purple-600" />
+                <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
+                  <DollarSign className="text-purple-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Threshold</p>
+                  <p className="text-3xl font-bold text-indigo-600">{confidenceThreshold[0]}%</p>
+                </div>
+                <div className="w-12 h-12 bg-indigo-100 rounded-lg flex items-center justify-center">
+                  <Target className="text-indigo-600" size={24} />
+                </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Tabs and Filters */}
+        {/* Matching Configuration */}
         <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <Tabs value={activeTab} onValueChange={setActiveTab}>
-                <TabsList>
-                  <TabsTrigger value="all">All Invoices</TabsTrigger>
-                  <TabsTrigger value="matched">Matched</TabsTrigger>
-                  <TabsTrigger value="needs_review">Needs Review</TabsTrigger>
-                  <TabsTrigger value="unmatched">Unmatched</TabsTrigger>
-                </TabsList>
-              </Tabs>
+          <CardHeader>
+            <CardTitle className="text-lg">Project Matching Configuration</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-2">
+                <Label>Confidence Threshold</Label>
+                <div className="px-4 py-2 border rounded-md">
+                  <Slider
+                    value={confidenceThreshold}
+                    onValueChange={setConfidenceThreshold}
+                    max={100}
+                    min={0}
+                    step={5}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-sm text-muted-foreground mt-1">
+                    <span>0%</span>
+                    <span className="font-medium">{confidenceThreshold[0]}%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+              </div>
 
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <Search size={16} className="text-gray-500" />
+              <div className="space-y-2">
+                <Label>Filter by Status</Label>
+                <Select value={filterStatus} onValueChange={setFilterStatus}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Invoices</SelectItem>
+                    <SelectItem value="matched">Matched</SelectItem>
+                    <SelectItem value="needs_review">Needs Review</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+
+              <div className="space-y-2">
+                <Label>Search</Label>
+                <div className="relative">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                   <Input
                     placeholder="Search invoices..."
                     value={searchTerm}
                     onChange={(e) => setSearchTerm(e.target.value)}
-                    className="w-64"
+                    className="pl-10"
                   />
                 </div>
-                
-                <div className="flex items-center space-x-2">
-                  <Filter size={16} className="text-gray-500" />
-                  <Select value={filterStatus} onValueChange={setFilterStatus}>
-                    <SelectTrigger className="w-32">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Status</SelectItem>
-                      <SelectItem value="pending">Pending</SelectItem>
-                      <SelectItem value="approved">Approved</SelectItem>
-                      <SelectItem value="rejected">Rejected</SelectItem>
-                      <SelectItem value="matched">Matched</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
               </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Confidence Threshold Setting */}
-        <Card className="mb-6">
-          <CardContent className="p-4">
-            <div className="flex items-center space-x-4">
-              <Label className="text-sm font-medium">Confidence Threshold:</Label>
-              <div className="flex-1 max-w-xs">
-                <Slider
-                  value={confidenceThreshold}
-                  onValueChange={setConfidenceThreshold}
-                  max={100}
-                  min={50}
-                  step={5}
-                  className="w-full"
-                />
-              </div>
-              <span className="text-sm font-medium text-gray-600 min-w-12">{confidenceThreshold[0]}%</span>
-            </div>
-          </CardContent>
-        </Card>
+        {/* Tabs for filtering project matching records */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="all" className="flex items-center space-x-2">
+              <span>All</span>
+              <Badge variant="secondary" className="ml-1">{stats?.totalInvoices || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="matched" className="flex items-center space-x-2">
+              <CheckCircle size={16} />
+              <span>Matched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.matched || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="needs_review" className="flex items-center space-x-2">
+              <AlertTriangle size={16} />
+              <span>Needs Review</span>
+              <Badge variant="secondary" className="ml-1">{stats?.needsReview || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="unmatched" className="flex items-center space-x-2">
+              <Clock size={16} />
+              <span>Unmatched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.unmatched || 0}</Badge>
+            </TabsTrigger>
+          </TabsList>
 
-        {/* Invoice Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>Invoice Project Matching</CardTitle>
-            <p className="text-sm text-gray-600">
-              AI-powered project matching with intelligent confidence scoring
-            </p>
-          </CardHeader>
-          <CardContent>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Invoice Details</TableHead>
-                  <TableHead>Extracted Data</TableHead>
-                  <TableHead>Best Match</TableHead>
-                  <TableHead>Confidence</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredInvoices.map((invoice) => {
-                  const status = getMatchStatus(invoice, confidenceThreshold[0]);
-                  const isMatching = matchingInProgress === invoice.id;
-                  const bestMatch = getBestProjectMatch(invoice, projects);
-
-                  return (
-                    <TableRow key={invoice.id}>
-                      <TableCell>
-                        <div>
-                          <p className="font-medium text-gray-900">{invoice.fileName}</p>
-                          <p className="text-sm text-gray-500">
-                            {invoice.vendorName} • ${invoice.totalAmount} {invoice.currency}
-                          </p>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="space-y-1 text-sm">
-                          <div><strong>Project:</strong> {invoice.extractedData?.projectName || 'N/A'}</div>
-                          <div><strong>Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
-                          <div><strong>City:</strong> {invoice.extractedData?.city || 'N/A'}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          {bestMatch.project ? (
-                            <div>
-                              <p className="font-medium text-gray-900">{bestMatch.project.name}</p>
-                              <p className="text-sm text-gray-500">{bestMatch.project.city}</p>
-                            </div>
-                          ) : (
-                            <span className="text-gray-500">No match found</span>
-                          )}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex items-center space-x-2">
-                          <Progress value={bestMatch.confidence} className="w-16" />
-                          <span className="text-sm font-medium">{bestMatch.confidence}%</span>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge 
-                          className={
-                            status.color === "green" 
-                              ? "bg-green-100 text-green-800"
-                              : status.color === "yellow"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-red-100 text-red-800"
-                          }
-                        >
-                          {status.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex space-x-2">
-                          <Dialog>
-                            <DialogTrigger asChild>
-                              <Button 
-                                size="sm" 
-                                variant="outline"
-                                onClick={() => setSelectedInvoice(invoice)}
-                              >
-                                <Eye size={14} className="mr-1" />
-                                Review
-                              </Button>
-                            </DialogTrigger>
-                            <DialogContent className="max-w-4xl">
-                              <DialogHeader>
-                                <DialogTitle>Invoice Matching Review</DialogTitle>
-                              </DialogHeader>
-                              {selectedInvoice && (
-                                <div className="space-y-6">
-                                  <div className="grid grid-cols-2 gap-6">
-                                    <div>
-                                      <h3 className="font-semibold mb-3">Invoice Information</h3>
-                                      <div className="space-y-2 text-sm">
-                                        <div><strong>Invoice #:</strong> {selectedInvoice.extractedData?.invoiceNumber || selectedInvoice.id}</div>
-                                        <div><strong>File:</strong> {selectedInvoice.fileName}</div>
-                                        <div><strong>Vendor:</strong> {selectedInvoice.vendorName || 'N/A'}</div>
-                                        <div><strong>Amount:</strong> {selectedInvoice.totalAmount} {selectedInvoice.currency}</div>
-                                        <div><strong>Extracted Project:</strong> {selectedInvoice.extractedData?.projectName || 'N/A'}</div>
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <h3 className="font-semibold mb-3">Best Match Details</h3>
-                                      <div className="space-y-2 text-sm">
-                                        {bestMatch.project ? (
-                                          <>
-                                            <div><strong>Project:</strong> {bestMatch.project.name}</div>
-                                            <div><strong>Project ID:</strong> {bestMatch.project.projectId}</div>
-                                            <div><strong>Address:</strong> {bestMatch.project.address || 'N/A'}</div>
-                                            <div><strong>City:</strong> {bestMatch.project.city || 'N/A'}</div>
-                                            <div><strong>Confidence:</strong> {bestMatch.confidence}%</div>
-                                          </>
-                                        ) : (
-                                          <div>No suitable match found</div>
-                                        )}
-                                      </div>
-                                    </div>
-                                  </div>
-                                  {bestMatch.project && bestMatch.confidence >= 60 && (
-                                    <div className="flex justify-end space-x-2">
-                                      <Button
-                                        onClick={() => handleApproveMatch(selectedInvoice.id, bestMatch.project!.projectId)}
-                                        className="bg-green-600 hover:bg-green-700 text-white"
-                                      >
-                                        <CheckCircle size={16} className="mr-2" />
-                                        Approve Match
-                                      </Button>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </DialogContent>
-                          </Dialog>
-                          
-                          {status.status !== "matched" && (
-                            <Button
-                              size="sm"
-                              onClick={() => handleFindMatches(invoice)}
-                              disabled={isMatching}
-                              className="bg-blue-600 hover:bg-blue-700 text-white"
-                            >
-                              {isMatching ? (
-                                <>
-                                  <Clock size={14} className="mr-1 animate-spin" />
-                                  Matching...
-                                </>
-                              ) : (
-                                <>
-                                  <Zap size={14} className="mr-1" />
-                                  Find Matches
-                                </>
-                              )}
-                            </Button>
-                          )}
-                        </div>
-                      </TableCell>
+          <TabsContent value={activeTab} className="mt-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Invoice Project Matching</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice</TableHead>
+                      <TableHead>Extracted Address</TableHead>
+                      <TableHead>Extracted City</TableHead>
+                      <TableHead>Extracted Project</TableHead>
+                      <TableHead>Best Match</TableHead>
+                      <TableHead>Best Match Address</TableHead>
+                      <TableHead>Best Match City</TableHead>
+                      <TableHead>Confidence</TableHead>
+                      <TableHead>Status</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInvoices.map((invoice) => {
+                      const status = getMatchStatus(invoice, confidenceThreshold[0]);
+                      const isMatching = matchingInProgress === invoice.id;
+                      const bestMatch = getBestProjectMatch(invoice, projects);
+
+                      return (
+                        <TableRow key={invoice.id}>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {invoice.extractedData?.invoiceNumber || invoice.id}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {invoice.vendorName || 'N/A'}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {invoice.extractedData?.projectAddress || invoice.extractedData?.address || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {(() => {
+                              // Use projectCity if available, otherwise derive from vendor address
+                              let city = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+
+                              if (!city && invoice.extractedData?.vendorAddress) {
+                                const vendorAddress = invoice.extractedData.vendorAddress;
+                                const addressParts = vendorAddress.split(',').map(part => part.trim());
+                                if (addressParts.length >= 2) {
+                                  city = addressParts.slice(1).join(', ');
+                                }
+                              }
+
+                              return city || 'N/A';
+                            })()}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                {invoice.extractedData?.projectName ? 'From extracted data' : 'Inferred from address/city'}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-1">
+                              <div className="font-medium">
+                                {bestMatch?.project?.name || 'No match found'}
+                              </div>
+                              <div className="text-sm text-muted-foreground">
+                                <Building2 className="w-3 h-3 inline mr-1" />
+                                {bestMatch?.project?.projectId || 'From validation records'}
+                              </div>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              <MapPin className="w-4 h-4 text-muted-foreground" />
+                              {bestMatch?.project?.address || 'N/A'}
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            {bestMatch?.project?.city || 'N/A'}
+                          </TableCell>
+                          <TableCell>
+                            <div className="space-y-2">
+                              <Progress value={bestMatch?.confidence || 0} className="w-20" />
+                              <span className="text-sm">
+                                {bestMatch?.confidence || 0}%
+                              </span>
+                            </div>
+                          </TableCell>
+                          <TableCell>
+                            <Badge 
+                              variant={status.color === "green" ? "default" : "secondary"}
+                              className={
+                                status.color === "green" 
+                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                                  : status.color === "yellow"
+                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+                                  : ""
+                              }
+                            >
+                              {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
+                              {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
+                              {status.label}
+                            </Badge>
+                          </TableCell>
+                          <TableCell>
+                            <div className="flex items-center gap-2">
+                              {bestMatch?.project && bestMatch.confidence >= 60 ? (
+                                <Button
+                                  size="sm"
+                                  variant="default"
+                                  onClick={() => handleManualMatch(invoice, bestMatch.project)}
+                                  className="bg-green-600 hover:bg-green-700"
+                                >
+                                  <CheckCircle className="w-4 h-4 mr-2" />
+                                  Approve Best Match
+                                </Button>
+                              ) : null}
+
+                              <Dialog>
+                                <DialogTrigger asChild>
+                                  <Button size="sm" variant="outline">
+                                    <Target className="w-4 h-4 mr-2" />
+                                    Assign Manual Project
+                                  </Button>
+                                </DialogTrigger>
+                                <DialogContent className="max-w-4xl">
+                                  <DialogHeader>
+                                    <DialogTitle>Manual Project Assignment</DialogTitle>
+                                  </DialogHeader>
+                                  <InvoiceMatchingDialog 
+                                    invoice={invoice} 
+                                    projects={projects}
+                                    onManualMatch={handleManualMatch}
+                                  />
+                                </DialogContent>
+                              </Dialog>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })}
+                  </TableBody>
+                </Table>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+      </div>
+    </div>
+  );
+}
+
+// Invoice Matching Dialog Component
+function InvoiceMatchingDialog({ 
+  invoice, 
+  projects, 
+  onManualMatch 
+}: { 
+  invoice: Invoice; 
+  projects: Project[];
+  onManualMatch: (invoice: Invoice, project: Project) => void;
+}) {
+  const [selectedProject, setSelectedProject] = useState<string>("");
+
+  // Helper functions for the dialog
+  const calculateStringSimilarity = (str1: string, str2: string): number => {
+    if (!str1 || !str2) return 0;
+
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+
+    if (s1 === s2) return 100;
+
+    const distance = levenshteinDistance(s1, s2);
+    const maxLength = Math.max(s1.length, s2.length);
+
+    if (maxLength === 0) return 100;
+
+    return Math.round(((maxLength - distance) / maxLength) * 100);
+  };
+
+  const levenshteinDistance = (str1: string, str2: string): number => {
+    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+
+    for (Line by line generation.
+let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
+
+    for (let i = 1; i <= str2.length; j++) {
+      for (let i = 1; i <= str1.length; i++) {
+        const indicator = str1[i - 1] === str2[j - 1] ? 0 : 1;
+        matrix[j][i] = Math.min(
+          matrix[j][i - 1] + 1,
+          matrix[j - 1][i] + 1,
+          matrix[j - 1][i - 1] + indicator
+        );
+      }
+    }
+
+    return matrix[str2.length][str1.length];
+  };
+
+  const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1];
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) return '';
+
+    let bestMatch = { project: null, score: 0 };
+
+    for (const project of projects) {
+      let score = 0;
+      let matchCount = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        if (addressSimilarity > 60) {
+          score += addressSimilarity * 0.7;
+          matchCount++;
+        }
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        if (citySimilarity > 80) {
+          score += citySimilarity * 0.3;
+          matchCount++;
+        }
+      }
+
+      const finalScore = matchCount > 0 ? score / matchCount : 0;
+
+      if (finalScore > bestMatch.score && finalScore > 70) {
+        bestMatch = { project, score: finalScore };
+      }
+    }
+
+    return bestMatch.project?.name || '';
+  };
+
+  const getBestProjectMatch = (invoice: Invoice, projects: Project[]) => {
+    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
+    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+
+    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
+      const vendorAddress = invoice.extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      if (addressParts.length >= 2) {
+        invoiceCity = addressParts[1];
+      }
+    }
+
+    if (!invoiceAddress && !invoiceCity) {
+      return { project: null, confidence: 0 };
+    }
+
+    let bestMatch = { project: null, confidence: 0 };
+
+    for (const project of projects) {
+      let totalScore = 0;
+      let weightSum = 0;
+
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        totalScore += addressSimilarity * 0.7;
+        weightSum += 0.7;
+      }
+
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        totalScore += citySimilarity * 0.3;
+        weightSum += 0.3;
+      }
+
+      const finalConfidence = weightSum > 0 ? Math.round(totalScore / weightSum) : 0;
+
+      if (finalConfidence > bestMatch.confidence) {
+        bestMatch = { project, confidence: finalConfidence };
+      }
+    }
+
+    return bestMatch;
+  };
+
+  return (
+    <div className="space-y-6">
+      <div className="grid grid-cols-2 gap-6">
+        <div>
+          <h3 className="font-semibold mb-3">Invoice Information</h3>
+          <div className="space-y-2 text-sm">
+            <div><strong>Invoice #:</strong> {invoice.extractedData?.invoiceNumber || invoice.id}</div>
+            <div><strong>File:</strong> {invoice.fileName}</div>
+            <div><strong>Vendor:</strong> {invoice.vendorName || 'N/A'}</div>
+            <div><strong>Amount:</strong> {invoice.totalAmount} {invoice.currency}</div>
+            <div><strong>Extracted Project:</strong> {invoice.extractedData?.projectName || getExtractedProject(invoice, projects) || 'N/A'}</div>
+            <div><strong>Alternative Project Name:</strong> {invoice.extractedData?.projectName ? getExtractedProject(invoice, projects) || 'N/A' : 'N/A'}</div>
+            <div><strong>Extracted Project Address:</strong> {invoice.extractedData?.projectAddress || 'N/A'}</div>
+            <div><strong>Extracted Address:</strong> {invoice.extractedData?.address || 'N/A'}</div>
+            <div><strong>Extracted Project City:</strong> {invoice.extractedData?.projectCity || 'N/A'}</div>
+            <div><strong>Extracted City:</strong> {invoice.extractedData?.city || 'N/A'}</div>
+            <div><strong>Vendor Address:</strong> {invoice.extractedData?.vendorAddress || 'N/A'}</div>
+            <div><strong>Best Match:</strong> {getBestProjectMatch(invoice, projects)?.project?.name || 'N/A'}</div>
+            <div><strong>Match Confidence:</strong> {getBestProjectMatch(invoice, projects)?.confidence || 0}%</div>
+          </div>
+        </div>
+
+        <div>
+          <h3 className="font-semibold mb-3">Manual Project Assignment</h3>
+          <div className="space-y-4">
+            <Select value={selectedProject} onValueChange={setSelectedProject}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a project" />
+              </SelectTrigger>
+              <SelectContent>
+                {projects.map((project) => (
+                  <SelectItem key={project.projectId} value={project.projectId}>
+                    <div>
+                      <div className="font-medium">{project.name}</div>
+                      <div className="text-sm text-muted-foreground">
+                        {project.city} • {project.projectId}
+                      </div>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+
+            <Button 
+              onClick={() => {
+                if (selectedProject) {
+                  const project = projects.find(p => p.projectId === selectedProject);
+                  if (project) onManualMatch(invoice, project);
+                }
+              }}
+              disabled={!selectedProject}
+              className="w-full"
+            >
+              Assign Project
+            </Button>
+          </div>
+        </div>
       </div>
     </div>
   );
