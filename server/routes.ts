@@ -51,23 +51,58 @@ const excelUpload = multer({
   },
 });
 
-// Bypassed authentication for testing - allows access without login
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  // Create a mock user for testing purposes
-  const mockUser = {
-    claims: {
-      sub: "test-user-123",
-      email: "test@example.com",
-      first_name: "Test",
-      last_name: "User"
+// Using isAuthenticated from replitAuth.ts
+
+// Async processing function for invoice handling
+async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
+  try {
+    console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
+
+    // Update status to show processing in progress
+    await storage.updateInvoice(invoice.id, { status: "processing" });
+
+    const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
+    console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
+
+    if (!ocrText || ocrText.trim().length < 10) {
+      throw new Error("OCR did not extract sufficient text from the document");
     }
-  };
 
-  // Attach mock user to request
-  (req as any).user = mockUser;
+    // Extract structured data using AI
+    console.log(`Starting AI extraction for invoice ${invoice.id}`);
+    await storage.updateInvoice(invoice.id, { status: "processing" });
 
-  return next();
-};
+    const extractedData = await extractInvoiceData(ocrText);
+    console.log(`AI extraction completed for invoice ${invoice.id}:`, {
+      vendor: extractedData.vendorName,
+      amount: extractedData.totalAmount,
+      invoiceNumber: extractedData.invoiceNumber
+    });
+
+    // Update invoice with extracted data
+    await storage.updateInvoice(invoice.id, {
+      status: "extracted",
+      ocrText,
+      extractedData,
+      vendorName: extractedData.vendorName,
+      invoiceNumber: extractedData.invoiceNumber,
+      invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+      dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+      totalAmount: extractedData.totalAmount,
+      taxAmount: extractedData.taxAmount,
+      subtotalAmount: extractedData.subtotalAmount,
+      currency: extractedData.currency || 'USD',
+    });
+
+    console.log(`Invoice ${invoice.id} processing completed successfully`);
+  } catch (error) {
+    console.error(`Error processing invoice ${invoice.id}:`, error);
+    await storage.updateInvoice(invoice.id, { 
+      status: "error",
+      extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
+    });
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize classification service
@@ -818,7 +853,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!files || files.length === 0) {
           return res.status(400).json({ message: "No files uploaded" });
-        ```cpp
         }
 
         const fs = await import('fs');
@@ -1707,11 +1741,5 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
-   // Update invoice status to 'approved' after successful project match
-      const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: 'approved' }),
-      });
   return httpServer;
 }
