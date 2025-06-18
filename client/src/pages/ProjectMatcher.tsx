@@ -44,7 +44,6 @@ interface Invoice {
   };
   projectName?: string;
   createdAt: string;
-  projectMatches?: InvoiceProjectMatch[];
 }
 
 interface Project {
@@ -102,11 +101,11 @@ export default function ProjectMatcher() {
           // Add any other headers as needed
         },
       };
-
+  
       if (data) {
         options.body = JSON.stringify(data);
       }
-
+  
       // Simulate an asynchronous API request
       return new Promise((resolve) => {
         setTimeout(() => {
@@ -133,32 +132,25 @@ export default function ProjectMatcher() {
 
   // Calculate stats for the dashboard cards
   const { data: stats } = useQuery({
-    queryKey: ["project-matcher-stats", invoices, confidenceThreshold],
-    queryFn: () => {
+    queryKey: ["/api/invoices", "/api/projects"],
+    select: () => {
+      if (!invoices.length || !projects.length) {
+        return {
+          totalInvoices: 0,
+          matched: 0,
+          needsReview: 0,
+          unmatched: 0,
+          totalValue: "0.00",
+        };
+      }
+
       const totalInvoices = invoices.length;
-
-      // Count invoices with approved matches as matched
-      const matched = invoices.filter(invoice => {
-        const hasApprovedMatch = invoice.projectMatches && 
-          invoice.projectMatches.some(match => 
-            match.status === 'manual' || match.status === 'approved'
-          );
-        return hasApprovedMatch;
-      }).length;
-
-      // Count invoices that have potential matches but no approved matches as needs review
-      const needsReview = invoices.filter(invoice => {
-        const hasApprovedMatch = invoice.projectMatches && 
-          invoice.projectMatches.some(match => 
-            match.status === 'manual' || match.status === 'approved'
-          );
-
-        if (hasApprovedMatch) return false;
-
-        const bestMatch = getBestProjectMatch(invoice, projects);
-        return bestMatch.project && bestMatch.confidence >= 60;
-      }).length;
-
+      const matched = invoices.filter(invoice => 
+        getMatchStatus(invoice, confidenceThreshold[0]).status === "matched"
+      ).length;
+      const needsReview = invoices.filter(invoice => 
+        getMatchStatus(invoice, confidenceThreshold[0]).status === "needs_review"
+      ).length;
       const unmatched = totalInvoices - matched - needsReview;
       const totalValue = invoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.totalAmount || "0"), 0
@@ -869,8 +861,7 @@ function InvoiceMatchingDialog({
   const levenshteinDistance = (str1: string, str2: string): number => {
     const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
 
-    for (Line by line generation.
-let i = 0; i <= str1.length; i++) matrix[0][i] = i;
+    for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
     for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
 
     for (let i = 1; i <= str2.length; j++) {
