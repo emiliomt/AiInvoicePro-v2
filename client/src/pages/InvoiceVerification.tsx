@@ -93,11 +93,13 @@ export default function InvoiceVerification() {
     const matchesVerification = verificationFilter === "all" || 
       (invoice.verificationStatus || "pending") === verificationFilter;
     
-    // Only show invoices that have been matched to projects (have extractedData with project info)
-    const hasProjectMatch = invoice.extractedData && 
-      (invoice.extractedData.projectName || invoice.extractedData.projectId);
+    // Only show invoices that have approved project matches
+    const hasApprovedProjectMatch = invoice.projectMatches && 
+      invoice.projectMatches.some(match => 
+        match.status === 'manual' || match.status === 'approved'
+      );
     
-    return matchesSearch && matchesStatus && matchesVerification && hasProjectMatch;
+    return matchesSearch && matchesStatus && matchesVerification && hasApprovedProjectMatch;
   });
 
   const verificationStats = {
