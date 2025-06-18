@@ -47,6 +47,7 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "approved",
   "rejected",
   "paid",
+  "matched",
 ]);
 
 // Approval status enum
