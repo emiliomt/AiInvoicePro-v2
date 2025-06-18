@@ -87,38 +87,9 @@ export default function ProjectMatcher() {
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [searchTerm, setSearchTerm] = useState("");
   const [activeTab, setActiveTab] = useState("all");
-  const [invoicesWithMatches, setInvoicesWithMatches] = useState<any[]>([]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
-
-    // Mock API request function
-    const apiRequest = async (method: string, url: string, data: any = null) => {
-      const options: RequestInit = {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          // Add any other headers as needed
-        },
-      };
-  
-      if (data) {
-        options.body = JSON.stringify(data);
-      }
-  
-      // Simulate an asynchronous API request
-      return new Promise((resolve) => {
-        setTimeout(() => {
-          // Simulate a successful response
-          const mockResponse = {
-            ok: true,
-            status: 200,
-            json: async () => ({ message: 'Operation successful', data: data }),
-          };
-          resolve(mockResponse);
-        }, 500); // Simulate a 500ms delay
-      });
-    };
 
   // Fetch all invoices
   const { data: invoices = [] } = useQuery<Invoice[]>({
@@ -270,43 +241,17 @@ export default function ProjectMatcher() {
 
   const handleApproveMatch = async (invoiceId: number, projectId: string) => {
     try {
-      // Create the project match
-      const matchResponse = await apiRequest('POST', `/api/invoices/${invoiceId}/create-project-match`, {
-        projectId: projectId,
-        matchScore: 95, // High confidence for approved matches
+      // Create the project match using the existing mutation
+      await createMatchMutation.mutateAsync({
+        invoiceId,
+        projectId,
+        matchScore: 95,
         matchDetails: {
           type: 'approved',
           reason: 'Best match approved by user',
           timestamp: new Date().toISOString()
-        },
-        status: 'manual'
-      });
-
-      if (matchResponse.ok) {
-        // Update invoice status to 'matched'
-        const statusResponse = await apiRequest('PATCH', `/api/invoices/${invoiceId}`, {
-          status: 'matched'
-        });
-
-        if (statusResponse.ok) {
-          toast({
-            title: "Match Approved",
-            description: "Invoice has been matched to the selected project",
-          });
-          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-          setInvoicesWithMatches(prev => 
-            prev.map(item => 
-              item.invoice.id === invoiceId 
-                ? { ...item, status: 'matched' }
-                : item
-            )
-          );
-        } else {
-          throw new Error("Failed to update invoice status");
         }
-      } else {
-        throw new Error("Failed to create project match");
-      }
+      });
     } catch (error) {
       toast({
         title: "Error",
@@ -318,43 +263,17 @@ export default function ProjectMatcher() {
 
   const handleManualMatch = async (invoice: Invoice, project: Project) => {
     try {
-      // Create the project match
-      const matchResponse = await apiRequest('POST', `/api/invoices/${invoice.id}/create-project-match`, {
+      // Create the project match using the existing mutation
+      await createMatchMutation.mutateAsync({
+        invoiceId: invoice.id,
         projectId: project.projectId,
-        matchScore: 100, // Manual matches get 100% score
+        matchScore: 100,
         matchDetails: {
           type: 'manual',
           reason: 'Manually assigned by user',
           timestamp: new Date().toISOString()
-        },
-        status: 'manual'
-      });
-
-      if (matchResponse.ok) {
-        // Update invoice status to 'matched'
-        const statusResponse = await apiRequest('PATCH', `/api/invoices/${invoice.id}`, {
-          status: 'matched'
-        });
-
-        if (statusResponse.ok) {
-          toast({
-            title: "Project Assigned",
-            description: `Invoice matched to project: ${project.name}`,
-          });
-          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-          setInvoicesWithMatches(prev => 
-            prev.map(item => 
-              item.invoice.id === invoice.id 
-                ? { ...item, status: 'matched' }
-                : item
-            )
-          );
-        } else {
-          throw new Error("Failed to update invoice status");
         }
-      } else {
-        throw new Error("Failed to create project match");
-      }
+      });
     } catch (error) {
       toast({
         title: "Error",
