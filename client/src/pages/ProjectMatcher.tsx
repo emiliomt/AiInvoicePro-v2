@@ -145,12 +145,12 @@ export default function ProjectMatcher() {
       }
 
       const totalInvoices = invoices.length;
-      const matched = invoices.filter(invoice => 
-        getMatchStatus(invoice, confidenceThreshold[0]).status === "matched"
-      ).length;
-      const needsReview = invoices.filter(invoice => 
-        getMatchStatus(invoice, confidenceThreshold[0]).status === "needs_review"
-      ).length;
+      // Only count as matched if invoice has status 'matched' (approved project match)
+      const matched = invoices.filter(invoice => invoice.status === 'matched').length;
+      const needsReview = invoices.filter(invoice => {
+        const status = getMatchStatus(invoice, confidenceThreshold[0]);
+        return invoice.status !== 'matched' && status.status === "needs_review";
+      }).length;
       const unmatched = totalInvoices - matched - needsReview;
       const totalValue = invoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.totalAmount || "0"), 0
@@ -490,7 +490,23 @@ export default function ProjectMatcher() {
   };
 
   const filteredInvoices = invoices.filter(invoice => {
-    const statusMatch = activeTab === "all" || getMatchStatus(invoice, confidenceThreshold[0]).status === activeTab;
+    let statusMatch = false;
+    
+    if (activeTab === "all") {
+      statusMatch = true;
+    } else if (activeTab === "matched") {
+      // Only show invoices that have been actually matched (approved)
+      statusMatch = invoice.status === 'matched';
+    } else if (activeTab === "needs_review") {
+      // Show invoices that are not matched but have potential matches
+      const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
+      statusMatch = invoice.status !== 'matched' && matchStatus.status === "needs_review";
+    } else if (activeTab === "unmatched") {
+      // Show invoices with no good matches and not already matched
+      const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
+      statusMatch = invoice.status !== 'matched' && matchStatus.status === "unmatched";
+    }
+
     const searchMatch = !searchTerm || 
       invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -767,54 +783,67 @@ export default function ProjectMatcher() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            <Badge 
-                              variant={status.color === "green" ? "default" : "secondary"}
-                              className={
-                                status.color === "green" 
-                                  ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
-                                  : status.color === "yellow"
-                                  ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
-                                  : ""
-                              }
-                            >
-                              {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
-                              {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
-                              {status.label}
-                            </Badge>
+                            {invoice.status === 'matched' ? (
+                              <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
+                                <CheckCircle className="w-3 h-3 mr-1" />
+                                Matched
+                              </Badge>
+                            ) : (
+                              <Badge 
+                                variant={status.color === "green" ? "default" : "secondary"}
+                                className={
+                                  status.color === "green" 
+                                    ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100"
+                                    : status.color === "yellow"
+                                    ? "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-100"
+                                    : ""
+                                }
+                              >
+                                {status.color === "green" && <CheckCircle className="w-3 h-3 mr-1" />}
+                                {status.color === "yellow" && <AlertTriangle className="w-3 h-3 mr-1" />}
+                                {status.label}
+                              </Badge>
+                            )}
                           </TableCell>
                           <TableCell>
-                            <div className="flex items-center gap-2">
-                              {bestMatch?.project && bestMatch.confidence >= 60 ? (
-                                <Button
-                                  size="sm"
-                                  variant="default"
-                                  onClick={() => handleManualMatch(invoice, bestMatch.project)}
-                                  className="bg-green-600 hover:bg-green-700"
-                                >
-                                  <CheckCircle className="w-4 h-4 mr-2" />
-                                  Approve Best Match
-                                </Button>
-                              ) : null}
-
-                              <Dialog>
-                                <DialogTrigger asChild>
-                                  <Button size="sm" variant="outline">
-                                    <Target className="w-4 h-4 mr-2" />
-                                    Assign Manual Project
+                            {invoice.status === 'matched' ? (
+                              <Badge variant="outline" className="text-green-600 border-green-600">
+                                Project Assigned
+                              </Badge>
+                            ) : (
+                              <div className="flex items-center gap-2">
+                                {bestMatch?.project && bestMatch.confidence >= 60 ? (
+                                  <Button
+                                    size="sm"
+                                    variant="default"
+                                    onClick={() => handleManualMatch(invoice, bestMatch.project)}
+                                    className="bg-green-600 hover:bg-green-700"
+                                  >
+                                    <CheckCircle className="w-4 h-4 mr-2" />
+                                    Approve Best Match
                                   </Button>
-                                </DialogTrigger>
-                                <DialogContent className="max-w-4xl">
-                                  <DialogHeader>
-                                    <DialogTitle>Manual Project Assignment</DialogTitle>
-                                  </DialogHeader>
-                                  <InvoiceMatchingDialog 
-                                    invoice={invoice} 
-                                    projects={projects}
-                                    onManualMatch={handleManualMatch}
-                                  />
-                                </DialogContent>
-                              </Dialog>
-                            </div>
+                                ) : null}
+
+                                <Dialog>
+                                  <DialogTrigger asChild>
+                                    <Button size="sm" variant="outline">
+                                      <Target className="w-4 h-4 mr-2" />
+                                      Assign Manual Project
+                                    </Button>
+                                  </DialogTrigger>
+                                  <DialogContent className="max-w-4xl">
+                                    <DialogHeader>
+                                      <DialogTitle>Manual Project Assignment</DialogTitle>
+                                    </DialogHeader>
+                                    <InvoiceMatchingDialog 
+                                      invoice={invoice} 
+                                      projects={projects}
+                                      onManualMatch={handleManualMatch}
+                                    />
+                                  </DialogContent>
+                                </Dialog>
+                              </div>
+                            )}
                           </TableCell>
                         </TableRow>
                       );
