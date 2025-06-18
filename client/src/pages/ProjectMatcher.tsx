@@ -521,6 +521,31 @@ export default function ProjectMatcher() {
           </p>
         </div>
 
+                {/* Tabs for filtering project matching records */}
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
+          <TabsList className="grid w-full grid-cols-4">
+            <TabsTrigger value="all" className="flex items-center space-x-2">
+              <span>All</span>
+              <Badge variant="secondary" className="ml-1">{stats?.totalInvoices || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="matched" className="flex items-center space-x-2">
+              <CheckCircle size={16} />
+              <span>Matched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.matched || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="needs_review" className="flex items-center space-x-2">
+              <AlertTriangle size={16} />
+              <span>Needs Review</span>
+              <Badge variant="secondary" className="ml-1">{stats?.needsReview || 0}</Badge>
+            </TabsTrigger>
+            <TabsTrigger value="unmatched" className="flex items-center space-x-2">
+              <Clock size={16} />
+              <span>Unmatched</span>
+              <Badge variant="secondary" className="ml-1">{stats?.unmatched || 0}</Badge>
+            </TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
           <Card>
@@ -650,29 +675,7 @@ export default function ProjectMatcher() {
           </CardContent>
         </Card>
 
-        {/* Tabs for filtering project matching records */}
-        <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="all" className="flex items-center space-x-2">
-              <span>All</span>
-              <Badge variant="secondary" className="ml-1">{stats?.totalInvoices || 0}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="matched" className="flex items-center space-x-2">
-              <CheckCircle size={16} />
-              <span>Matched</span>
-              <Badge variant="secondary" className="ml-1">{stats?.matched || 0}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="needs_review" className="flex items-center space-x-2">
-              <AlertTriangle size={16} />
-              <span>Needs Review</span>
-              <Badge variant="secondary" className="ml-1">{stats?.needsReview || 0}</Badge>
-            </TabsTrigger>
-            <TabsTrigger value="unmatched" className="flex items-center space-x-2">
-              <Clock size={16} />
-              <span>Unmatched</span>
-              <Badge variant="secondary" className="ml-1">{stats?.unmatched || 0}</Badge>
-            </TabsTrigger>
-          </TabsList>
+        
 
           <TabsContent value={activeTab} className="mt-6">
             <Card>
