@@ -170,12 +170,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const key = req.params.key;
       const { value } = req.body;
       const setting = await storage.updateSetting(key, value);
-      
+
       // If updating petty cash threshold, recalculate all invoices
       if (key === 'petty_cash_threshold') {
         await storage.recalculatePettyCashInvoices(parseFloat(value));
       }
-      
+
       res.json(setting);
     } catch (error) {
       console.error("Error updating setting:", error);
@@ -383,7 +383,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -818,6 +818,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         if (!files || files.length === 0) {
           return res.status(400).json({ message: "No files uploaded" });
+        ```cpp
         }
 
         const fs = await import('fs');
@@ -852,7 +853,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
             // Start processing immediately (don't wait for setImmediate)
             processInvoiceAsync(invoice, file.buffer);
-            
+
             return invoice;
           } catch (fileError) {
             console.error(`Error processing file ${file.originalname}:`, fileError);
@@ -871,10 +872,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           try {
             console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
-            
+
             // Update status to show processing in progress
             await storage.updateInvoice(invoice.id, { status: "processing" });
-            
+
             const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
             console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
 
@@ -885,7 +886,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             // Extract structured data using AI
             console.log(`Starting AI extraction for invoice ${invoice.id}`);
             await storage.updateInvoice(invoice.id, { status: "processing" });
-            
+
             const extractedData = await extractInvoiceData(ocrText);
             console.log(`AI extraction completed for invoice ${invoice.id}:`, {
               vendor: extractedData.vendorName,
@@ -998,10 +999,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           const fs = require('fs');
           const fileBuffer = fs.readFileSync(invoice.fileUrl);
-          
+
           console.log(`Manual OCR processing started for invoice ${invoiceId}`);
           const ocrText = await processInvoiceOCR(fileBuffer, invoiceId);
-          
+
           if (!ocrText || ocrText.trim().length < 10) {
             throw new Error("OCR did not extract sufficient text from the document");
           }
@@ -1229,7 +1230,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
       const includeMatches = req.query.includeMatches === 'true';
-      
+
       if (includeMatches) {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches);
@@ -1425,7 +1426,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fs = await import('fs');
       const path = await import('path');
       const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
-      
+
       const trainingEntry = {
         invoiceId,
         fileName: invoice.fileName,
@@ -1570,11 +1571,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const logId = parseInt(req.params.id);
       const log = await storage.getFeedbackLog(logId);
-      
+
       if (!log) {
         return res.status(404).json({ message: "Feedback log not found" });
       }
-      
+
       res.json(log);
     } catch (error) {
       console.error("Error fetching feedback log:", error);
@@ -1706,5 +1707,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   const httpServer = createServer(app);
+   // Update invoice status to 'approved' after successful project match
+      const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: 'approved' }),
+      });
   return httpServer;
 }

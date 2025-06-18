@@ -116,8 +116,8 @@ export default function ProjectMatcher() {
       }
 
       const totalInvoices = invoices.length;
-      // Only count as matched if invoice has status 'matched' (approved project match)
-      const matched = invoices.filter(invoice => invoice.status === 'matched').length;
+      // Only count as matched if invoice has status 'approved' (approved project match)
+      const matched = invoices.filter(invoice => invoice.status === 'approved').length;
       const needsReview = invoices.filter(invoice => {
         const status = getMatchStatus(invoice, confidenceThreshold[0]);
         return invoice.status !== 'matched' && status.status === "needs_review";
@@ -439,15 +439,15 @@ export default function ProjectMatcher() {
       statusMatch = true;
     } else if (activeTab === "matched") {
       // Only show invoices that have been actually matched (approved)
-      statusMatch = invoice.status === 'matched';
+      statusMatch = invoice.status === 'approved';
     } else if (activeTab === "needs_review") {
-      // Show invoices that are not matched but have potential matches
+      // Show invoices that are not approved but have potential matches
       const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
-      statusMatch = invoice.status !== 'matched' && matchStatus.status === "needs_review";
+      statusMatch = invoice.status !== 'approved' && matchStatus.status === "needs_review";
     } else if (activeTab === "unmatched") {
-      // Show invoices with no good matches and not already matched
+      // Show invoices with no good matches and not already approved
       const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
-      statusMatch = invoice.status !== 'matched' && matchStatus.status === "unmatched";
+      statusMatch = invoice.status !== 'approved' && matchStatus.status === "unmatched";
     }
 
     const searchMatch = !searchTerm || 
