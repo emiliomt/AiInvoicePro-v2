@@ -1228,8 +1228,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
-      const invoices = await storage.getInvoicesByUserId(userId);
-      res.json(invoices);
+      const includeMatches = req.query.includeMatches === 'true';
+      
+      if (includeMatches) {
+        const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
+        res.json(invoicesWithMatches);
+      } else {
+        const invoices = await storage.getInvoicesByUserId(userId);
+        res.json(invoices);
+      }
     } catch (error) {
       console.error("Error fetching invoices:", error);
       res.status(500).json({ message: "Failed to fetch invoices" });

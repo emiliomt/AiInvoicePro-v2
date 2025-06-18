@@ -200,6 +200,23 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(invoices.createdAt));
   }
 
+  async getInvoicesWithProjectMatches(userId: string): Promise<(Invoice & { projectMatches: any[] })[]> {
+    const invoicesList = await this.getInvoicesByUserId(userId);
+    
+    const invoicesWithMatches = await Promise.all(
+      invoicesList.map(async (invoice) => {
+        const matches = await this.getInvoiceProjectMatches(invoice.id);
+        return {
+          ...invoice,
+          projectMatches: matches
+        };
+      })
+    );
+
+    // Filter to only include invoices that have project matches
+    return invoicesWithMatches.filter(invoice => invoice.projectMatches.length > 0);
+  }
+
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<Invoice> {
     const [updated] = await db
       .update(invoices)

@@ -41,6 +41,11 @@ export default function InvoiceVerification() {
 
   const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
+    queryFn: async () => {
+      const response = await fetch("/api/invoices?includeMatches=true");
+      if (!response.ok) throw new Error("Failed to fetch invoices");
+      return response.json();
+    },
   });
 
   const getVerificationStatusBadge = (status?: string) => {
@@ -88,7 +93,11 @@ export default function InvoiceVerification() {
     const matchesVerification = verificationFilter === "all" || 
       (invoice.verificationStatus || "pending") === verificationFilter;
     
-    return matchesSearch && matchesStatus && matchesVerification;
+    // Only show invoices that have been matched to projects (have extractedData with project info)
+    const hasProjectMatch = invoice.extractedData && 
+      (invoice.extractedData.projectName || invoice.extractedData.projectId);
+    
+    return matchesSearch && matchesStatus && matchesVerification && hasProjectMatch;
   });
 
   const verificationStats = {
@@ -281,6 +290,11 @@ export default function InvoiceVerification() {
                           <div>
                             <p className="font-medium text-gray-900">{invoice.fileName}</p>
                             <p className="text-sm text-gray-500">{invoice.invoiceNumber || "—"}</p>
+                            {invoice.projectMatches && invoice.projectMatches.length > 0 && (
+                              <p className="text-xs text-blue-600 mt-1">
+                                Matched to: {invoice.projectMatches[0].project.name}
+                              </p>
+                            )}
                           </div>
                         </td>
                         <td className="p-3">
