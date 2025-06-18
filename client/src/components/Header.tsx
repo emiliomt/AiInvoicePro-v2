@@ -86,6 +86,9 @@ export default function Header() {
                 <DropdownMenuItem onClick={() => window.location.href = '/validation-rules'}>
                   Validation Rules
                 </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/invoice-verification'}>
+                  Invoice Verification
+                </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
