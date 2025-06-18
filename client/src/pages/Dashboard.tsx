@@ -4,7 +4,7 @@ import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/Header";
 import DashboardStats from "@/components/DashboardStats";
 import InvoiceUpload from "@/components/InvoiceUpload";
-import ExtractedData from "@/components/ExtractedData";
+
 import TopIssuesWidget from "@/components/TopIssuesWidget";
 import Sidebar from "@/components/Sidebar";
 
@@ -53,7 +53,6 @@ export default function Dashboard() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <InvoiceUpload />
-            <ExtractedData />
           </div>
           
           <div className="lg:col-span-1 space-y-6">
