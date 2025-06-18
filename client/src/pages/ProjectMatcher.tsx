@@ -672,7 +672,8 @@ export default function ProjectMatcher() {
                 <CardTitle>Invoice Project Matching</CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
+                <div className="overflow-x-auto">
+                  <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Invoice</TableHead>
@@ -820,6 +821,7 @@ export default function ProjectMatcher() {
                     })}
                   </TableBody>
                 </Table>
+                </div>
               </CardContent>
             </Card>
           </TabsContent>
