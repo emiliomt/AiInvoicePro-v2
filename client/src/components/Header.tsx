@@ -1,6 +1,13 @@
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { FileText, Bell, ChevronDown, LogOut, User, Settings } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { 
+  DropdownMenu, 
+  DropdownMenuContent, 
+  DropdownMenuItem, 
+  DropdownMenuTrigger 
+} from "@/components/ui/dropdown-menu";
+import { FileText, Bell, ChevronDown, LogOut, User, Settings, Brain } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 export default function Header() {
