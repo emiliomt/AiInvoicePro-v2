@@ -32,7 +32,7 @@ import {
   type InsertClassificationKeyword,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte } from "drizzle-orm";
+import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte, lte } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -156,6 +156,15 @@ export interface IStorage {
   removeClassificationKeyword(keywordId: number, userId: string): Promise<void>;
   getLineItemClassifications(invoiceId: number): Promise<any[]>;
   updateLineItemClassification(lineItemId: number, category: string, userId: string): Promise<void>;
+
+    // Learning tracking methods
+  getFeedbackLogsInTimeframe(startDate: Date): Promise<any>;
+  getExtractionsInTimeframe(startDate: Date): Promise<number>;
+  getRecentFeedbackLogs(days: number): Promise<any>;
+  getFeedbackLogsInRange(olderThanDays: number, newerThanDays: number): Promise<any>;
+  getExtractionsForDate(date: Date): Promise<number>;
+  getFeedbackLogsForDate(date: Date): Promise<any>;
+  getTotalFeedbackCount(): Promise<number>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -202,7 +211,7 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoicesWithProjectMatches(userId: string): Promise<(Invoice & { projectMatches: any[] })[]> {
     const invoicesList = await this.getInvoicesByUserId(userId);
-    
+
     const invoicesWithMatches = await Promise.all(
       invoicesList.map(async (invoice) => {
         const matches = await this.getInvoiceProjectMatches(invoice.id);
@@ -1179,6 +1188,104 @@ export class DatabaseStorage implements IStorage {
       .from(feedbackLogs)
       .where(eq(feedbackLogs.id, id));
     return feedbackLog;
+  }
+
+  // Learning tracking methods
+  async getFeedbackLogsInTimeframe(startDate: Date) {
+    return await db
+      .select()
+      .from(feedbackLogs)
+      .where(gte(feedbackLogs.createdAt, startDate));
+  }
+
+  async getExtractionsInTimeframe(startDate: Date) {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoices)
+      .where(
+        and(
+          gte(invoices.createdAt, startDate),
+          eq(invoices.status, "extracted")
+        )
+      );
+
+    return result[0]?.count || 0;
+  }
+
+  async getRecentFeedbackLogs(days: number) {
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    return await db
+      .select()
+      .from(feedbackLogs)
+      .where(gte(feedbackLogs.createdAt, startDate))
+      .orderBy(desc(feedbackLogs.createdAt));
+  }
+
+  async getFeedbackLogsInRange(olderThanDays: number, newerThanDays: number) {
+    const olderDate = new Date();
+    olderDate.setDate(olderDate.getDate() - olderThanDays);
+
+    const newerDate = new Date();
+    newerDate.setDate(newerDate.getDate() - newerThanDays);
+
+    return await db
+      .select()
+      .from(feedbackLogs)
+      .where(
+        and(
+          gte(feedbackLogs.createdAt, olderDate),
+          lte(feedbackLogs.createdAt, newerDate)
+        )
+      );
+  }
+
+  async getExtractionsForDate(date: Date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(invoices)
+      .where(
+        and(
+          gte(invoices.createdAt, startOfDay),
+          lte(invoices.createdAt, endOfDay),
+          eq(invoices.status, "extracted")
+        )
+      );
+
+    return result[0]?.count || 0;
+  }
+
+  async getFeedbackLogsForDate(date: Date) {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    return await db
+      .select()
+      .from(feedbackLogs)
+      .where(
+        and(
+          gte(feedbackLogs.createdAt, startOfDay),
+          lte(feedbackLogs.createdAt, endOfDay)
+        )
+      );
+  }
+
+  async getTotalFeedbackCount() {
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(feedbackLogs);
+
+    return result[0]?.count || 0;
   }
 
   // Classification methods

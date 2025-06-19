@@ -1617,6 +1617,51 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Learning tracker endpoints
+  app.get('/api/ai/learning-metrics', isAuthenticated, async (req, res) => {
+    try {
+      const { LearningTracker } = await import('./services/learningTracker');
+      
+      const accuracy = await LearningTracker.calculateExtractionAccuracy();
+      const improvementRate = await LearningTracker.calculateImprovementRate();
+      const commonErrors = await LearningTracker.analyzeCommonErrors();
+      const performanceHistory = await LearningTracker.getPerformanceHistory();
+      
+      res.json({
+        accuracy,
+        improvementRate,
+        commonErrors,
+        performanceHistory
+      });
+    } catch (error) {
+      console.error("Error fetching learning metrics:", error);
+      res.status(500).json({ message: "Failed to fetch learning metrics" });
+    }
+  });
+
+  app.get('/api/ai/learning-insights', isAuthenticated, async (req, res) => {
+    try {
+      const { LearningTracker } = await import('./services/learningTracker');
+      const insights = await LearningTracker.generateLearningInsights();
+      res.json(insights);
+    } catch (error) {
+      console.error("Error generating learning insights:", error);
+      res.status(500).json({ message: "Failed to generate learning insights" });
+    }
+  });
+
+  app.get('/api/ai/performance-history/:days', isAuthenticated, async (req, res) => {
+    try {
+      const days = parseInt(req.params.days) || 30;
+      const { LearningTracker } = await import('./services/learningTracker');
+      const history = await LearningTracker.getPerformanceHistory(days);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching performance history:", error);
+      res.status(500).json({ message: "Failed to fetch performance history" });
+    }
+  });
+
   // Classification routes
   app.get('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
     try {

@@ -13,7 +13,8 @@ import InvoicePreview from "./pages/InvoicePreview";
 import POMatching from "./pages/POMatching";
 import ProjectMatcher from "./pages/ProjectMatcher";
 import Reports from "./pages/Reports";
-import ValidationRules from "@/pages/ValidationRules";
+import ValidationRules from "./pages/ValidationRules";
+import AILearningDashboard from "./pages/AILearningDashboard";
 import InvoiceVerification from "./pages/InvoiceVerification";
 import LineItemClassification from "@/pages/LineItemClassification";
 import PurchaseOrders from "./pages/PurchaseOrders";
@@ -72,6 +73,7 @@ function Router() {
           <Route path="/project-validation" component={ProjectValidation} />
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
+          <Route path="/ai-learning" component={AILearningDashboard} />
         </>
       )}
       <Route component={NotFound} />
