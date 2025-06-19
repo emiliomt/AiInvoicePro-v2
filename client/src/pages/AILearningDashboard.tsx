@@ -8,6 +8,7 @@ import { Alert, AlertDescription } from "@/components/ui/alert";
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import { TrendingUp, TrendingDown, Minus, Brain, AlertTriangle, CheckCircle, Info } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
+import Header from "@/components/Header";
 
 interface LearningMetrics {
   accuracy: number;
@@ -104,15 +105,19 @@ export default function AILearningDashboard() {
   }
 
   return (
-    <div className="p-8 space-y-6">
-      {/* Header */}
-      <div className="flex items-center space-x-3">
-        <Brain className="w-8 h-8 text-blue-600" />
-        <div>
-          <h1 className="text-3xl font-bold">AI Learning Dashboard</h1>
-          <p className="text-gray-600">Track AI extraction accuracy and learning progress</p>
-        </div>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-6">
+          {/* Page Header */}
+          <div className="flex items-center space-x-3">
+            <Brain className="w-8 h-8 text-blue-600" />
+            <div>
+              <h1 className="text-3xl font-bold">AI Learning Dashboard</h1>
+              <p className="text-gray-600">Track AI extraction accuracy and learning progress</p>
+            </div>
+          </div>
 
       {/* AI Insights Summary */}
       {insights && (
@@ -317,6 +322,8 @@ export default function AILearningDashboard() {
           </CardContent>
         </Card>
       )}
+        </div>
+      </main>
     </div>
   );
 }
