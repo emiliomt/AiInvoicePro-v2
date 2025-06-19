@@ -63,9 +63,28 @@ export default function Header() {
 
           {/* Navigation */}
           <nav className="hidden md:flex space-x-6 lg:space-x-8">
-            <Link href="/" className={getLinkClassName("/")}>
-              Dashboard
-            </Link>
+            {/* Dashboard Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/") || isActiveRoute("/ai-learning")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Dashboard</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/'}>
+                  Overview
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/ai-learning'}>
+                  <Brain className="mr-2 h-4 w-4" />
+                  AI Learning
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
             </Link>

@@ -212,16 +212,7 @@ export default function Sidebar() {
               </div>
               <span className="font-medium text-gray-900">Validation Rules</span>
             </Button>
-            <Button
-              variant="ghost"
-              className="w-full justify-start text-left hover:bg-gray-50"
-              onClick={() => window.location.href = '/ai-learning'}
-            >
-              <div className="w-8 h-8 bg-blue-50 rounded-lg flex items-center justify-center mr-3">
-                <Brain className="text-blue-600" size={16} />
-              </div>
-              <span className="font-medium text-gray-900">AI Learning</span>
-            </Button>
+            
           </div>
         </CardContent>
       </Card>
