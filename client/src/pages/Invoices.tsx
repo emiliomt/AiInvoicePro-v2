@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp } from "lucide-react";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -13,7 +13,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -120,6 +119,35 @@ export default function Invoices() {
   const handleFeedbackClick = (invoice: Invoice) => {
     setFeedbackInvoice(invoice);
     setShowFeedbackModal(true);
+  };
+
+  const handleFeedback = (invoice: Invoice) => {
+    setFeedbackInvoice(invoice);
+    setShowFeedbackModal(true);
+  };
+
+  const positiveFeedbackMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/positive-feedback`);
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Feedback Submitted",
+        description: "Thanks! Your positive feedback helps improve our AI extraction.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Feedback Failed",
+        description: "Failed to submit positive feedback",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handlePositiveFeedback = (invoiceId: number) => {
+    positiveFeedbackMutation.mutate(invoiceId);
   };
 
   if (isLoading) {
@@ -232,15 +260,26 @@ export default function Invoices() {
                         Download
                       </Button>
                       {invoice.status === 'extracted' && (
-                        <Button 
-                          variant="outline" 
-                          size="sm"
-                          onClick={() => handleFeedbackClick(invoice)}
-                          className="text-orange-600 hover:text-orange-700 border-orange-200 hover:border-orange-300"
-                        >
-                          <AlertTriangle size={16} className="mr-2" />
-                          Report Error
-                        </Button>
+                        <>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handlePositiveFeedback(invoice.id)}
+                            className="text-green-600 border-green-300 hover:bg-green-50"
+                          >
+                            <ThumbsUp size={14} className="mr-1" />
+                            Good Job AI!
+                          </Button>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleFeedback(invoice)}
+                            className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                          >
+                            <AlertTriangle size={16} className="mr-2" />
+                            Report Error
+                          </Button>
+                        </>
                       )}
                       <AlertDialog>
                         <AlertDialogTrigger asChild>

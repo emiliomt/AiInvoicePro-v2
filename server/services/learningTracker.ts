@@ -189,6 +189,19 @@ export class LearningTracker {
     };
   }
 
+  // Record positive feedback for successful extractions
+  static async recordPositiveFeedback(invoiceId: number, userId: string): Promise<void> {
+    try {
+      // This helps balance the learning data with positive examples
+      console.log(`Recording positive feedback for invoice ${invoiceId} from user ${userId}`);
+      
+      // Could be used to update confidence scores or model training data
+      // For now, we log it for future ML pipeline improvements
+    } catch (error) {
+      console.error('Error recording positive feedback:', error);
+    }
+  }
+
   private static categorizeError(reason: string): string {
     const lowerReason = reason.toLowerCase();
     

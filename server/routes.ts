@@ -1502,6 +1502,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Submit positive feedback for AI extraction
+  app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Create positive feedback log
+      const feedbackLog = await storage.createFeedbackLog({
+        invoiceId,
+        userId,
+        originalText: invoice.ocrText || '',
+        extractedData: invoice.extractedData,
+        correctedData: null,
+        reason: 'POSITIVE_FEEDBACK',
+        fileName: invoice.fileName,
+      });
+
+      // Track positive feedback for learning system
+      const { LearningTracker } = await import('./services/learningTracker');
+      await LearningTracker.recordPositiveFeedback(invoiceId, userId);
+
+      // Log successful extraction for model improvement
+      console.log(`Positive feedback received for invoice ${invoiceId}:`, {
+        fileName: invoice.fileName,
+        userId,
+        timestamp: new Date().toISOString(),
+        confidenceScore: invoice.confidenceScore,
+      });
+
+      // Optional: Write positive training data
+      const fs = await import('fs');
+      const path = await import('path');
+      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
+
+      const positiveTrainingEntry = {
+        invoiceId,
+        fileName: invoice.fileName,
+        originalText: invoice.ocrText,
+        extractedData: invoice.extractedData,
+        feedbackType: 'positive',
+        timestamp: new Date().toISOString(),
+      };
+
+      fs.appendFileSync(trainingDataPath, JSON.stringify(positiveTrainingEntry) + '\n');
+
+      res.json({ 
+        message: "Thank you for the positive feedback! This helps us improve our AI extraction.",
+        feedbackId: feedbackLog.id 
+      });
+    } catch (error) {
+      console.error("Error submitting positive feedback:", error);
+      res.status(500).json({ message: "Failed to submit positive feedback" });
+    }
+  });
+
   // Get pending approvals
   app.get('/api/approvals/pending', isAuthenticated, async (req: any, res) => {
     try {
