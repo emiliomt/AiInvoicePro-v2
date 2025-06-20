@@ -124,6 +124,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // User endpoint for authentication check
+  app.get('/api/user', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const user = await storage.getUser(userId);
+      res.json({
+        id: userId,
+        email: req.user.claims.email,
+        firstName: req.user.claims.given_name || user?.firstName || '',
+        lastName: req.user.claims.family_name || user?.lastName || '',
+        profileImageUrl: req.user.claims.picture || user?.profileImageUrl
+      });
+    } catch (error) {
+      console.error("Error fetching user:", error);
+      res.status(500).json({ message: "Failed to fetch user" });
+    }
+  });
+
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {

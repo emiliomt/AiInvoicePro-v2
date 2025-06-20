@@ -1,18 +1,23 @@
 import { useQuery } from "@tanstack/react-query";
 
+interface User {
+  id: string;
+  email: string;
+  firstName: string;
+  lastName: string;
+  profileImageUrl?: string;
+}
+
 export function useAuth() {
-  // Mock user data for testing - bypasses actual authentication
-  const mockUser = {
-    id: "test-user-123",
-    email: "test@example.com",
-    firstName: "Test",
-    lastName: "User",
-    profileImageUrl: null
-  };
+  const { data: user, isLoading, error } = useQuery<User>({
+    queryKey: ["/api/user"],
+    retry: false,
+    refetchOnWindowFocus: false,
+  });
 
   return {
-    user: mockUser,
-    isLoading: false,
-    isAuthenticated: true,
+    user,
+    isLoading,
+    isAuthenticated: !!user && !error,
   };
 }
