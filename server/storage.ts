@@ -16,6 +16,7 @@ import {
   feedbackLogs,
   classificationKeywords,
   lineItemClassifications,
+  type User,
   type UpsertUser,
   type InsertInvoice,
   type Invoice,
@@ -1032,7 +1033,7 @@ await db
         count: count()
       })
       .from(invoiceFlags)
-      .where(sql`${invoiceFlags.createdAt} >= ${currentMonth}`)
+      .where(gte(invoiceFlags.createdAt, currentMonth))
       .groupBy(invoiceFlags.flagType, invoiceFlags.severity)
       .orderBy(desc(count()));
 
@@ -1096,7 +1097,7 @@ await db
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(invoiceProjectMatches.id, id))
       .returning();
-    return updatedMatch;
+    return updated;
   }
 
   async getInvoiceProjectMatches(invoiceId: number): Promise<(InvoiceProjectMatch & { project: Project })[]> {
@@ -1280,7 +1281,7 @@ await db
 
   async getExtractionsInTimeframe(startDate: Date) {
     const result = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(invoices)
       .where(
         and(
@@ -1329,7 +1330,7 @@ await db
     endOfDay.setHours(23, 59, 59, 999);
 
     const result = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(invoices)
       .where(
         and(
@@ -1362,7 +1363,7 @@ await db
 
   async getTotalFeedbackCount() {
     const result = await db
-      .select({ count: sql<number>`count(*)` })
+      .select({ count: count() })
       .from(feedbackLogs);
 
     return result[0]?.count || 0;
