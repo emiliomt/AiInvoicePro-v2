@@ -108,7 +108,7 @@ export default function ValidationRules() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Save Failed",
         description: error.message,
@@ -141,7 +141,7 @@ export default function ValidationRules() {
         }, 500);
         return;
       }
-      
+
       toast({
         title: "Delete Failed",
         description: error.message,
@@ -185,7 +185,7 @@ export default function ValidationRules() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    
+
     if (!formData.name || !formData.fieldName || !formData.ruleType || !formData.ruleValue) {
       toast({
         title: "Validation Error",
@@ -233,7 +233,7 @@ export default function ValidationRules() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Validation Rules</h1>
@@ -259,7 +259,7 @@ export default function ValidationRules() {
                   {editingRule ? "Edit Validation Rule" : "Create New Validation Rule"}
                 </DialogTitle>
               </DialogHeader>
-              
+
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div>
@@ -272,7 +272,7 @@ export default function ValidationRules() {
                       required
                     />
                   </div>
-                  
+
                   <div>
                     <Label htmlFor="fieldName">Field Name *</Label>
                     <Select 
@@ -283,15 +283,33 @@ export default function ValidationRules() {
                         <SelectValue placeholder="Select field" />
                       </SelectTrigger>
                       <SelectContent>
-                        {FIELD_OPTIONS.map((field) => (
-                          <SelectItem key={field.value} value={field.value}>
-                            {field.label}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="vendorName">Vendor Name</SelectItem>
+                        <SelectItem value="totalAmount">Total Amount</SelectItem>
+                        <SelectItem value="taxAmount">Tax Amount</SelectItem>
+                        <SelectItem value="subtotal">Subtotal</SelectItem>
+                        <SelectItem value="currency">Currency</SelectItem>
+                        <SelectItem value="invoiceDate">Invoice Date</SelectItem>
+                        <SelectItem value="dueDate">Due Date</SelectItem>
+                        <SelectItem value="invoiceNumber">Invoice Number</SelectItem>
+                        <SelectItem value="projectName">Project Name</SelectItem>
+                        <SelectItem value="confidenceScore">Confidence Score</SelectItem>
+                        <SelectItem value="extractedData.taxId">Vendor Tax ID</SelectItem>
+                        <SelectItem value="extractedData.companyName">Company Name (Buyer)</SelectItem>
+                        <SelectItem value="extractedData.buyerTaxId">Buyer Tax ID</SelectItem>
+                        <SelectItem value="extractedData.vendorAddress">Vendor Address</SelectItem>
+                        <SelectItem value="extractedData.buyerAddress">Buyer Address</SelectItem>
+                        <SelectItem value="extractedData.projectAddress">Project Address</SelectItem>
+                        <SelectItem value="extractedData.projectCity">Project City</SelectItem>
+                        <SelectItem value="extractedData.concept">Concept/Description</SelectItem>
+                        <SelectItem value="extractedData.descriptionSummary">Description Summary</SelectItem>
+                        <SelectItem value="extractedData.notes">Notes</SelectItem>
+                        <SelectItem value="extractedData.projectName">Extracted Project Name</SelectItem>
+                        <SelectItem value="status">Invoice Status</SelectItem>
+                        <SelectItem value="fileName">File Name</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <Label htmlFor="ruleType">Rule Type *</Label>
                     <Select 
@@ -313,7 +331,7 @@ export default function ValidationRules() {
                       </SelectContent>
                     </Select>
                   </div>
-                  
+
                   <div>
                     <Label htmlFor="severity">Severity</Label>
                     <Select 
@@ -333,7 +351,7 @@ export default function ValidationRules() {
                     </Select>
                   </div>
                 </div>
-                
+
                 <div>
                   <Label htmlFor="ruleValue">Rule Value *</Label>
                   <Input
@@ -361,7 +379,7 @@ export default function ValidationRules() {
                     </p>
                   )}
                 </div>
-                
+
                 <div>
                   <Label htmlFor="description">Description</Label>
                   <Textarea
@@ -372,7 +390,7 @@ export default function ValidationRules() {
                     rows={2}
                   />
                 </div>
-                
+
                 <div>
                   <Label htmlFor="errorMessage">Custom Error Message</Label>
                   <Input
@@ -382,7 +400,7 @@ export default function ValidationRules() {
                     placeholder="Custom message to show when validation fails"
                   />
                 </div>
-                
+
                 <div className="flex justify-end space-x-3 pt-4">
                   <Button 
                     type="button" 
