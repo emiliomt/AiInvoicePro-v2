@@ -146,18 +146,49 @@ export default function InvoiceVerification() {
 
   const handleValidationClick = async (invoice: any) => {
     try {
-      const response = await fetch(`/api/validation-rules/validate/${invoice.id}`);
-      if (!response.ok) throw new Error("Failed to fetch validation results");
-      const validationData = await response.json();
+      // First validate the invoice data directly instead of using the problematic endpoint
+      const validationData = {
+        vendorName: invoice.vendorName,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: invoice.totalAmount,
+        taxAmount: invoice.taxAmount,
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        currency: invoice.currency
+      };
+
+      const response = await fetch('/api/validation-rules/validate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(validationData),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Validation request failed: ${response.status}`);
+      }
+
+      const validationResults = await response.json();
+      
       setSelectedInvoiceForValidation({
         ...invoice,
-        validationResults: validationData
+        validationResults: {
+          isValid: validationResults.isValid,
+          violations: validationResults.violations || [],
+          passedRules: [], // We can enhance this later
+          metadata: {
+            validatedAt: new Date().toISOString(),
+            totalRules: validationResults.violations ? validationResults.violations.length : 0
+          }
+        }
       });
       setShowValidationDialog(true);
     } catch (error) {
+      console.error("Validation error:", error);
       toast({
         title: "Error",
-        description: "Failed to fetch validation results",
+        description: "Failed to fetch validation results. Please try again.",
         variant: "destructive",
       });
     }
