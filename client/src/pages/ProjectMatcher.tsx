@@ -185,11 +185,11 @@ export default function ProjectMatcher() {
       });
       if (!response.ok) throw new Error("Failed to create match");
 
-      // Update invoice status to 'matched' after successful project match
+      // Update invoice status to 'approved' after successful project match
       const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: 'matched' }),
+        body: JSON.stringify({ status: 'approved' }),
       });
       if (!updateResponse.ok) throw new Error("Failed to update invoice status");
 
