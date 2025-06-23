@@ -865,7 +865,7 @@ export class DatabaseStorage implements IStorage {
       .from(purchaseOrders)
       .where(eq(purchaseOrders.status, 'open'));
 
-    const matchesare [];
+    const matches = [];
 
     for (const po of openPOs) {
       let matchScore = 0;
