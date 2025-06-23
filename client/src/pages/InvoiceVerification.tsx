@@ -1,10 +1,13 @@
+import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Search, CheckCircle, XCircle, AlertTriangle, Clock } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download } from "lucide-react";
 import Header from "@/components/Header";
+import { CardDescription } from "@/components/ui/card";
 
 interface ApprovedInvoiceProject {
   id: number;
