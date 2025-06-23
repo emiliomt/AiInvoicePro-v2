@@ -16,6 +16,7 @@ import Reports from "./pages/Reports";
 import ValidationRules from "./pages/ValidationRules";
 import AILearningDashboard from "./pages/AILearningDashboard";
 import InvoiceVerification from "./pages/InvoiceVerification";
+import VerifiedInvoices from "./pages/VerifiedInvoices";
 import LineItemClassification from "@/pages/LineItemClassification";
 import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
@@ -64,6 +65,7 @@ function Router() {
           <Route path="/preview/:id" component={InvoicePreview} />
           <Route path="/validation-rules" component={ValidationRules} />
           <Route path="/invoice-verification" component={InvoiceVerification} />
+          <Route path="/verified-invoices" component={VerifiedInvoices} />
           <Route path="/classification" component={LineItemClassification} />
           <Route path="/petty-cash" component={PettyCash} />
           <Route path="/po-matching" component={POMatching} />

@@ -56,9 +56,14 @@ export default function VerifiedInvoices() {
   });
 
   const processValidationsMutation = useMutation({
-    mutationFn: () => apiRequest("/api/process-approved-validations", {
-      method: "POST",
-    }),
+    mutationFn: async () => {
+      const response = await fetch("/api/process-approved-validations", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) throw new Error("Failed to process validations");
+      return response.json();
+    },
     onSuccess: (data) => {
       toast({
         title: "Processing Complete",

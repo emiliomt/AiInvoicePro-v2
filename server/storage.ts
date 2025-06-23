@@ -557,7 +557,8 @@ export class DatabaseStorage implements IStorage {
     let needsReview = 0;
     let pending = 0;
 
-    for (const { invoice } of approvedInvoices) {
+    for (const approvedData of approvedInvoices) {
+      const { invoice } = approvedData;
       // Create validation data object from invoice extracted data
       const validationData: any = {};
       
@@ -599,9 +600,19 @@ export class DatabaseStorage implements IStorage {
 
       validationResults.push(invoiceValidation);
 
-      // Categorize validation results
+      // Categorize validation results and automatically move valid invoices to verified status
       if (validationResult.isValid) {
         verified++;
+        // Automatically move to verified status
+        try {
+          await this.moveApprovedToVerified(approvedData.approvedId, {
+            isValid: true,
+            violations: validationResult.violations,
+            validatedAt: new Date(),
+          });
+        } catch (error) {
+          console.error(`Error moving invoice ${invoice.id} to verified:`, error);
+        }
       } else {
         const hasCriticalViolations = validationResult.violations.some(v => v.severity === 'critical');
         const hasHighViolations = validationResult.violations.some(v => v.severity === 'high');

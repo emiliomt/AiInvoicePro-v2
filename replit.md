@@ -113,6 +113,7 @@ The system uses PostgreSQL with the following key entities:
 
 ## Changelog
 - June 13, 2025. Initial setup
+- June 23, 2025. Added verified invoices system: automatic validation processing moves approved invoices to verified status when they pass validation criteria, displayed in Unresolved Invoice-PO Matches section
 
 ## User Preferences
 
