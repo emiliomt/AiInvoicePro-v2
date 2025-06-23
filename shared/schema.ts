@@ -182,6 +182,24 @@ export const matchStatusEnum = pgEnum("match_status", [
   "unresolved"
 ]);
 
+// Approved invoice project table
+export const approvedInvoiceProject = pgTable("approved_invoice_project", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  projectId: varchar("project_id", { length: 100 }).notNull(),
+  matchedProjectCode: varchar("matched_project_code", { length: 100 }),
+  matchedProjectName: varchar("matched_project_name", { length: 255 }),
+  matchedAddress: text("matched_address"),
+  matchedCity: varchar("matched_city", { length: 100 }),
+  confidence: integer("confidence"),
+  matchType: matchStatusEnum("match_type").default("manual"),
+  approvedBy: varchar("approved_by", { length: 255 }),
+  approvedAt: timestamp("approved_at").defaultNow(),
+  notes: text("notes"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Projects table with validation criteria
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
