@@ -1,13 +1,15 @@
 import { useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download } from "lucide-react";
+import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw } from "lucide-react";
 import Header from "@/components/Header";
 import { CardDescription } from "@/components/ui/card";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest } from "@/lib/queryClient";
 
 interface ApprovedInvoiceProject {
   id: number;
@@ -36,16 +38,47 @@ interface ApprovedInvoiceProject {
   };
 }
 
+interface ValidationResults {
+  totalInvoices: number;
+  verified: number;
+  flagged: number;
+  needsReview: number;
+  pending: number;
+  invoiceValidations: Array<{
+    invoiceId: number;
+    fileName: string;
+    vendorName: string;
+    isValid: boolean;
+    violations: Array<{
+      field: string;
+      ruleType: string;
+      message: string;
+      severity: string;
+    }>;
+  }>;
+}
+
 export default function InvoiceVerification() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [verificationFilter, setVerificationFilter] = useState("all");
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: approvedAssignments = [], isLoading } = useQuery<ApprovedInvoiceProject[]>({
     queryKey: ["/api/approved-invoice-projects"],
     queryFn: async () => {
       const response = await fetch("/api/approved-invoice-projects");
       if (!response.ok) throw new Error("Failed to fetch approved invoice projects");
+      return response.json();
+    },
+  });
+
+  const { data: validationResults, isLoading: isValidationLoading } = useQuery<ValidationResults>({
+    queryKey: ["/api/validation-rules/validate-all"],
+    queryFn: async () => {
+      const response = await fetch("/api/validation-rules/validate-all");
+      if (!response.ok) throw new Error("Failed to fetch validation results");
       return response.json();
     },
   });

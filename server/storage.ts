@@ -568,7 +568,12 @@ export class DatabaseStorage implements IStorage {
         fileName: invoice.fileName || 'Unknown',
         vendorName: validationData.vendorName || 'Unknown',
         isValid: validationResult.isValid,
-        violations: validationResult.violations,
+        violations: validationResult.violations.map(v => ({
+          field: v.fieldName,
+          ruleType: v.ruleName,
+          message: v.message,
+          severity: v.severity,
+        })),
       };
 
       validationResults.push(invoiceValidation);
