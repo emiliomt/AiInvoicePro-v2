@@ -752,7 +752,7 @@ export default function ProjectMatcher() {
                             </div>
                           </TableCell>
                           <TableCell>
-                            {invoice.status === 'matched' ? (
+                            {invoice.status === 'matched' || invoice.status === 'approved' ? (
                               <Badge className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-100">
                                 <CheckCircle className="w-3 h-3 mr-1" />
                                 Matched
@@ -775,7 +775,7 @@ export default function ProjectMatcher() {
                             )}
                           </TableCell>
                           <TableCell>
-                            {invoice.status === 'matched' ? (
+                            {invoice.status === 'matched' || invoice.status === 'approved' ? (
                               <Badge variant="outline" className="text-green-600 border-green-600">
                                 Project Assigned
                               </Badge>
