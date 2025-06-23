@@ -268,10 +268,7 @@ export default function InvoiceVerification() {
                       <tr key={assignment.id} className="border-b hover:bg-muted/50">
                         <td className="p-4">
                           <div>
-                            <div className="font-medium">{assignment.invoice.fileName}</div>
-                            <div className="text-sm text-muted-foreground">
-                              ID: {assignment.invoice.id}
-                            </div>
+                            <div className="font-medium">ID: {assignment.invoice.id}</div>
                             <div className="text-sm text-muted-foreground">
                               {assignment.invoice.invoiceDate 
                                 ? new Date(assignment.invoice.invoiceDate).toLocaleDateString()
