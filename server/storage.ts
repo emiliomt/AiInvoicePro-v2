@@ -391,7 +391,18 @@ export class DatabaseStorage implements IStorage {
     }> = [];
 
     for (const rule of rules) {
-      const fieldValue = invoiceData[rule.fieldName];
+      // Handle nested field paths like extractedData.companyName
+      let fieldValue;
+      if (rule.fieldName.includes('.')) {
+        const fieldPath = rule.fieldName.split('.');
+        fieldValue = invoiceData;
+        for (const path of fieldPath) {
+          fieldValue = fieldValue?.[path];
+        }
+      } else {
+        fieldValue = invoiceData[rule.fieldName];
+      }
+      
       let isViolation = false;
       let errorMessage = rule.errorMessage || `Validation failed for ${rule.fieldName}`;
 

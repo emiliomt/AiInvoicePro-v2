@@ -169,18 +169,18 @@ export default function InvoiceVerification() {
         throw new Error(`Validation request failed: ${response.status}`);
       }
 
-      const validationResults = await response.json();
-      
+      const validationResult = await response.json();
+
+      // Get the current validation rules to show which ones were applied
+      const rulesResponse = await fetch('/api/validation-rules');
+      const allRules = rulesResponse.ok ? await rulesResponse.json() : [];
+
       setSelectedInvoiceForValidation({
         ...invoice,
         validationResults: {
-          isValid: validationResults.isValid,
-          violations: validationResults.violations || [],
-          passedRules: [], // We can enhance this later
-          metadata: {
-            validatedAt: new Date().toISOString(),
-            totalRules: validationResults.violations ? validationResults.violations.length : 0
-          }
+          ...validationResult,
+          rulesApplied: allRules.length,
+          appliedRules: allRules.map((rule: any) => rule.name)
         }
       });
       setShowValidationDialog(true);
@@ -612,21 +612,33 @@ export default function InvoiceVerification() {
                     )}
 
                     {/* Additional Information */}
-                    {selectedInvoiceForValidation.validationResults.metadata && (
-                      <div className="bg-blue-50 p-4 rounded-lg">
-                        <h5 className="font-medium text-blue-800 mb-2">Validation Metadata</h5>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-blue-700">Validation Date:</span>
-                            <p className="text-blue-900">{new Date(selectedInvoiceForValidation.validationResults.metadata.validatedAt || Date.now()).toLocaleString()}</p>
-                          </div>
-                          <div>
-                            <span className="text-blue-700">Rules Applied:</span>
-                            <p className="text-blue-900">{selectedInvoiceForValidation.validationResults.metadata.totalRules || 'N/A'}</p>
-                          </div>
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <div className="grid grid-cols-2 gap-4 text-sm">
+                        <div>
+                          <span className="font-medium text-gray-700">Validation Date:</span>
+                          <p className="text-gray-900">{new Date().toLocaleString()}</p>
+                        </div>
+                        <div>
+                          <span className="font-medium text-gray-700">Rules Applied:</span>
+                          <p className="text-gray-900">
+                            {selectedInvoiceForValidation.validationResults?.rulesApplied || 0} rule(s)
+                          </p>
                         </div>
                       </div>
-                    )}
+                      {selectedInvoiceForValidation.validationResults?.appliedRules && 
+                       selectedInvoiceForValidation.validationResults.appliedRules.length > 0 && (
+                        <div className="mt-3">
+                          <span className="font-medium text-gray-700 text-sm">Applied Rules:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {selectedInvoiceForValidation.validationResults.appliedRules.map((ruleName: string, index: number) => (
+                              <Badge key={index} variant="outline" className="text-xs">
+                                {ruleName}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 ) : (
                   <div className="text-center py-8">
