@@ -403,7 +403,7 @@ export class DatabaseStorage implements IStorage {
 
         case 'regex':
           if (fieldValue) {
-            const regex = new RegExp(rule.ruleData);
+            const regex = new RegExp(rule.ruleValue || rule.ruleData);
             isViolation = !regex.test(String(fieldValue));
             errorMessage = rule.errorMessage || `${rule.fieldName} format is invalid`;
           }
@@ -411,7 +411,8 @@ export class DatabaseStorage implements IStorage {
 
         case 'range':
           if (fieldValue) {
-            const [min, max] = rule.ruleData.split(',').map(v => parseFloat(v.trim()));
+            const ruleValueData = rule.ruleValue || rule.ruleData;
+            const [min, max] = ruleValueData?.split(',').map(v => parseFloat(v.trim())) || [0, 0];
             const numValue = parseFloat(String(fieldValue));
             isViolation = isNaN(numValue) || numValue < min || numValue > max;
             errorMessage = rule.errorMessage || `${rule.fieldName} must be between ${min} and ${max}`;
@@ -420,17 +421,21 @@ export class DatabaseStorage implements IStorage {
 
         case 'enum':
           if (fieldValue) {
-            const allowedValues = rule.ruleData.split(',').map(v => v.trim());
+            const ruleValueData = rule.ruleValue || rule.ruleData;
+            const allowedValues = ruleValueData?.split(',').map(v => v.trim()) || [];
             isViolation = !allowedValues.includes(String(fieldValue));
-            errorMessage = rule.errorMessage || `${rule.fieldName} must be one of: ${rule.ruleData}`;
+            errorMessage = rule.errorMessage || `${rule.fieldName} must be one of: ${ruleValueData}`;
           }
           break;
 
         case 'format':
-          if (fieldValue && rule.ruleData === 'email') {
-            const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-            isViolation = !emailRegex.test(String(fieldValue));
-            errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid email address`;
+          if (fieldValue) {
+            const ruleValueData = rule.ruleValue || rule.ruleData;
+            if (ruleValueData === 'email') {
+              const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+              isViolation = !emailRegex.test(String(fieldValue));
+              errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid email address`;
+            }
           }
           break;
 
@@ -438,8 +443,9 @@ export class DatabaseStorage implements IStorage {
           if (fieldValue) {
             const numValue = parseFloat(String(fieldValue));
             if (!isNaN(numValue)) {
-              // Parse comparison operator and value from rule.ruleData
-              const comparisonMatch = rule.ruleData.match(/^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
+              // Parse comparison operator and value from rule.ruleValue
+              const ruleValueData = rule.ruleValue || rule.ruleData;
+              const comparisonMatch = ruleValueData?.match(/^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
               if (comparisonMatch) {
                 const [, operator, targetValue] = comparisonMatch;
                 const targetNum = parseFloat(targetValue);
@@ -493,6 +499,104 @@ export class DatabaseStorage implements IStorage {
     return {
       isValid: violations.length === 0,
       violations,
+    };
+  }
+
+  async validateAllApprovedInvoices(): Promise<{
+    totalInvoices: number;
+    verified: number;
+    flagged: number;
+    needsReview: number;
+    pending: number;
+    invoiceValidations: Array<{
+      invoiceId: number;
+      fileName: string;
+      vendorName: string;
+      isValid: boolean;
+      violations: Array<{
+        field: string;
+        ruleType: string;
+        message: string;
+        severity: string;
+      }>;
+    }>;
+  }> {
+    // Get all invoices with approved project assignments
+    const approvedInvoices = await db
+      .select({
+        invoiceId: approvedInvoiceProject.invoiceId,
+        invoice: invoices,
+      })
+      .from(approvedInvoiceProject)
+      .innerJoin(invoices, eq(approvedInvoiceProject.invoiceId, invoices.id));
+
+    const validationResults = [];
+    let verified = 0;
+    let flagged = 0;
+    let needsReview = 0;
+    let pending = 0;
+
+    for (const { invoice } of approvedInvoices) {
+      // Create validation data object from invoice extracted data
+      const validationData: any = {};
+      
+      if (invoice.extractedData) {
+        try {
+          const extracted = typeof invoice.extractedData === 'string' 
+            ? JSON.parse(invoice.extractedData) 
+            : invoice.extractedData;
+          
+          // Map extracted data fields to validation fields
+          validationData.vendorName = extracted.vendorName || extracted.companyName;
+          validationData.invoiceNumber = extracted.invoiceNumber;
+          validationData.totalAmount = extracted.totalAmount;
+          validationData.taxAmount = extracted.taxAmount;
+          validationData.invoiceDate = extracted.invoiceDate;
+          validationData.dueDate = extracted.dueDate;
+          validationData.taxId = extracted.taxId;
+          validationData.currency = extracted.currency;
+        } catch (error) {
+          console.error('Error parsing extracted data for invoice', invoice.id, error);
+        }
+      }
+
+      // Run validation
+      const validationResult = await this.validateInvoiceData(validationData);
+      
+      const invoiceValidation = {
+        invoiceId: invoice.id,
+        fileName: invoice.fileName || 'Unknown',
+        vendorName: validationData.vendorName || 'Unknown',
+        isValid: validationResult.isValid,
+        violations: validationResult.violations,
+      };
+
+      validationResults.push(invoiceValidation);
+
+      // Categorize validation results
+      if (validationResult.isValid) {
+        verified++;
+      } else {
+        const hasCriticalViolations = validationResult.violations.some(v => v.severity === 'critical');
+        const hasHighViolations = validationResult.violations.some(v => v.severity === 'high');
+        
+        if (hasCriticalViolations) {
+          flagged++;
+        } else if (hasHighViolations || validationResult.violations.length > 0) {
+          needsReview++;
+        } else {
+          pending++;
+        }
+      }
+    }
+
+    return {
+      totalInvoices: approvedInvoices.length,
+      verified,
+      flagged,
+      needsReview,
+      pending,
+      invoiceValidations: validationResults,
     };
   }
 

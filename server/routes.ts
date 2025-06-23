@@ -1678,6 +1678,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Validate all approved invoices against validation rules
+  app.get('/api/validation-rules/validate-all', isAuthenticated, async (req: any, res) => {
+    try {
+      const validationResults = await storage.validateAllApprovedInvoices();
+      res.json(validationResults);
+    } catch (error) {
+      console.error("Error validating all approved invoices:", error);
+      res.status(500).json({ message: "Failed to validate approved invoices" });
+    }
+  });
+
   // Admin: Get feedback logs
   app.get('/api/admin/feedback-logs', isAuthenticated, async (req, res) => {
     try {
