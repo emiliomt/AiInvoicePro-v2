@@ -558,7 +558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const { projectId } = req.params;
       const { action } = req.body;
-      const userId = req.user?.id || "unknown";
+      const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id || "unknown";
 
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
