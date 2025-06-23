@@ -116,11 +116,11 @@ export default function ProjectMatcher() {
       }
 
       const totalInvoices = invoices.length;
-      // Only count as matched if invoice has status 'approved' (approved project match)
-      const matched = invoices.filter(invoice => invoice.status === 'approved').length;
+      // Count as matched if invoice has status 'matched' or 'approved'
+      const matched = invoices.filter(invoice => invoice.status === 'matched' || invoice.status === 'approved').length;
       const needsReview = invoices.filter(invoice => {
         const status = getMatchStatus(invoice, confidenceThreshold[0]);
-        return invoice.status !== 'approved' && status.status === "needs_review";
+        return invoice.status !== 'approved' && invoice.status !== 'matched' && status.status === "needs_review";
       }).length;
       const unmatched = totalInvoices - matched - needsReview;
       const totalValue = invoices.reduce((sum, invoice) => 
@@ -438,16 +438,16 @@ export default function ProjectMatcher() {
     if (activeTab === "all") {
       statusMatch = true;
     } else if (activeTab === "matched") {
-      // Only show invoices that have been actually matched (approved)
-      statusMatch = invoice.status === 'approved';
+      // Show invoices that have been matched (both 'matched' and 'approved' status)
+      statusMatch = invoice.status === 'approved' || invoice.status === 'matched';
     } else if (activeTab === "needs_review") {
-      // Show invoices that are not approved but have potential matches
+      // Show invoices that are not matched/approved but have potential matches
       const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
-      statusMatch = invoice.status !== 'approved' && matchStatus.status === "needs_review";
+      statusMatch = invoice.status !== 'approved' && invoice.status !== 'matched' && matchStatus.status === "needs_review";
     } else if (activeTab === "unmatched") {
-      // Show invoices with no good matches and not already approved
+      // Show invoices with no good matches and not already matched/approved
       const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
-      statusMatch = invoice.status !== 'approved' && matchStatus.status === "unmatched";
+      statusMatch = invoice.status !== 'approved' && invoice.status !== 'matched' && matchStatus.status === "unmatched";
     }
 
     const searchMatch = !searchTerm || 
