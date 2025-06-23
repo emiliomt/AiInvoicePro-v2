@@ -170,7 +170,7 @@ export default function ValidationRules() {
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleValue,
+      ruleValue: rule.ruleData || rule.ruleValue || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -195,7 +195,13 @@ export default function ValidationRules() {
       return;
     }
 
-    saveRuleMutation.mutate(formData);
+    // Map ruleValue to ruleData for backend compatibility
+    const ruleData = {
+      ...formData,
+      ruleData: formData.ruleValue
+    };
+
+    saveRuleMutation.mutate(ruleData);
   };
 
   const getSeverityIcon = (severity: string) => {
@@ -500,7 +506,7 @@ export default function ValidationRules() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue)}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleData || rule.ruleValue || '')}
                       </p>
                     </div>
                   </div>

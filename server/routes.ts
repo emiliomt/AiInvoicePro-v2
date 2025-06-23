@@ -1611,10 +1611,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const ruleData = req.body;
 
       // Validate required fields
-      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
+      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || (!ruleData.ruleValue && !ruleData.ruleData)) {
         return res.status(400).json({ 
-          message: "Missing required fields: name, fieldName, ruleType, ruleValue" 
+          message: "Missing required fields: name, fieldName, ruleType, ruleValue/ruleData" 
         });
+      }
+
+      // Ensure ruleData is set (map from ruleValue if needed)
+      if (!ruleData.ruleData && ruleData.ruleValue) {
+        ruleData.ruleData = ruleData.ruleValue;
       }
 
       const rule = await storage.createValidationRule(ruleData);

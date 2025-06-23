@@ -402,7 +402,7 @@ export class DatabaseStorage implements IStorage {
 
         case 'regex':
           if (fieldValue) {
-            const regex = new RegExp(rule.ruleValue);
+            const regex = new RegExp(rule.ruleData);
             isViolation = !regex.test(String(fieldValue));
             errorMessage = rule.errorMessage || `${rule.fieldName} format is invalid`;
           }
@@ -410,7 +410,7 @@ export class DatabaseStorage implements IStorage {
 
         case 'range':
           if (fieldValue) {
-            const [min, max] = rule.ruleValue.split(',').map(v => parseFloat(v.trim()));
+            const [min, max] = rule.ruleData.split(',').map(v => parseFloat(v.trim()));
             const numValue = parseFloat(String(fieldValue));
             isViolation = isNaN(numValue) || numValue < min || numValue > max;
             errorMessage = rule.errorMessage || `${rule.fieldName} must be between ${min} and ${max}`;
@@ -419,14 +419,14 @@ export class DatabaseStorage implements IStorage {
 
         case 'enum':
           if (fieldValue) {
-            const allowedValues = rule.ruleValue.split(',').map(v => v.trim());
+            const allowedValues = rule.ruleData.split(',').map(v => v.trim());
             isViolation = !allowedValues.includes(String(fieldValue));
-            errorMessage = rule.errorMessage || `${rule.fieldName} must be one of: ${rule.ruleValue}`;
+            errorMessage = rule.errorMessage || `${rule.fieldName} must be one of: ${rule.ruleData}`;
           }
           break;
 
         case 'format':
-          if (fieldValue && rule.ruleValue === 'email') {
+          if (fieldValue && rule.ruleData === 'email') {
             const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
             isViolation = !emailRegex.test(String(fieldValue));
             errorMessage = rule.errorMessage || `${rule.fieldName} must be a valid email address`;
@@ -437,8 +437,8 @@ export class DatabaseStorage implements IStorage {
           if (fieldValue) {
             const numValue = parseFloat(String(fieldValue));
             if (!isNaN(numValue)) {
-              // Parse comparison operator and value from rule.ruleValue
-              const comparisonMatch = rule.ruleValue.match(/^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
+              // Parse comparison operator and value from rule.ruleData
+              const comparisonMatch = rule.ruleData.match(/^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/);
               if (comparisonMatch) {
                 const [, operator, targetValue] = comparisonMatch;
                 const targetNum = parseFloat(targetValue);
@@ -860,7 +860,8 @@ export class DatabaseStorage implements IStorage {
     matchDetails: any;
   }[]> {
     // Get all open purchase orders
-    const openPOs = await db
+    const openPOs =```text
+await db
       .select()
       .from(purchaseOrders)
       .where(eq(purchaseOrders.status, 'open'));
@@ -1095,7 +1096,7 @@ export class DatabaseStorage implements IStorage {
       .set({ ...updates, updatedAt: new Date() })
       .where(eq(invoiceProjectMatches.id, id))
       .returning();
-    return updated;
+    return updatedMatch;
   }
 
   async getInvoiceProjectMatches(invoiceId: number): Promise<(InvoiceProjectMatch & { project: Project })[]> {
