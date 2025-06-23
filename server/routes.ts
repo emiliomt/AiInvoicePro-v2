@@ -1703,12 +1703,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/ai/learning-metrics', isAuthenticated, async (req, res) => {
     try {
       const { LearningTracker } = await import('./services/learningTracker');
-      
+
       const accuracy = await LearningTracker.calculateExtractionAccuracy();
       const improvementRate = await LearningTracker.calculateImprovementRate();
       const commonErrors = await LearningTracker.analyzeCommonErrors();
       const performanceHistory = await LearningTracker.getPerformanceHistory();
-      
+
       res.json({
         accuracy,
         improvementRate,
@@ -1870,3 +1870,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
   return httpServer;
 }
+// Update invoice status to 'approved' after successful project match
+      const updateResponse = await fetch(`/api/invoices/${invoiceId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: 'approved' }),
+      });

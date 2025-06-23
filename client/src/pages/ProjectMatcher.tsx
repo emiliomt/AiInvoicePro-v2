@@ -120,7 +120,7 @@ export default function ProjectMatcher() {
       const matched = invoices.filter(invoice => invoice.status === 'approved').length;
       const needsReview = invoices.filter(invoice => {
         const status = getMatchStatus(invoice, confidenceThreshold[0]);
-        return invoice.status !== 'matched' && status.status === "needs_review";
+        return invoice.status !== 'approved' && status.status === "needs_review";
       }).length;
       const unmatched = totalInvoices - matched - needsReview;
       const totalValue = invoices.reduce((sum, invoice) => 
@@ -200,7 +200,7 @@ export default function ProjectMatcher() {
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success",
-        description: "Project match approved and invoice status updated to matched",
+        description: "Project match approved and invoice status updated to approved",
       });
     },
   });
