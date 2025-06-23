@@ -261,6 +261,22 @@ export const approvedInvoiceProject = pgTable("approved_invoice_project", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Verified invoice-project assignments table (invoices that passed validation)
+export const verifiedInvoiceProject = pgTable("verified_invoice_project", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId).notNull(),
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(),
+  matchDetails: jsonb("match_details"),
+  approvedBy: varchar("approved_by").notNull(),
+  approvedAt: timestamp("approved_at").notNull(),
+  verifiedAt: timestamp("verified_at").defaultNow(),
+  originalMatchId: integer("original_match_id").references(() => invoiceProjectMatches.id),
+  originalApprovedId: integer("original_approved_id").references(() => approvedInvoiceProject.id),
+  validationResults: jsonb("validation_results"), // Store validation details
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Flag types and severity enums
 export const flagTypeEnum = pgEnum("flag_type", [
   "duplicate_invoice",
@@ -413,6 +429,25 @@ export const approvedInvoiceProjectRelations = relations(approvedInvoiceProject,
   }),
 }));
 
+export const verifiedInvoiceProjectRelations = relations(verifiedInvoiceProject, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [verifiedInvoiceProject.invoiceId],
+    references: [invoices.id],
+  }),
+  project: one(projects, {
+    fields: [verifiedInvoiceProject.projectId],
+    references: [projects.projectId],
+  }),
+  originalMatch: one(invoiceProjectMatches, {
+    fields: [verifiedInvoiceProject.originalMatchId],
+    references: [invoiceProjectMatches.id],
+  }),
+  originalApproved: one(approvedInvoiceProject, {
+    fields: [verifiedInvoiceProject.originalApprovedId],
+    references: [approvedInvoiceProject.id],
+  }),
+}));
+
 export const invoiceFlagsRelations = relations(invoiceFlags, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceFlags.invoiceId],
@@ -519,6 +554,9 @@ export type InvoiceProjectMatch = typeof invoiceProjectMatches.$inferSelect;
 
 export type InsertApprovedInvoiceProject = typeof approvedInvoiceProject.$inferInsert;
 export type ApprovedInvoiceProject = typeof approvedInvoiceProject.$inferSelect;
+
+export type InsertVerifiedInvoiceProject = typeof verifiedInvoiceProject.$inferInsert;
+export type VerifiedInvoiceProject = typeof verifiedInvoiceProject.$inferSelect;
 
 export type InsertInvoiceFlag = typeof invoiceFlags.$inferInsert;
 export type InvoiceFlag = typeof invoiceFlags.$inferSelect;

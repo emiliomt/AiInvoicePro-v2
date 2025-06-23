@@ -11,6 +11,7 @@ import {
   invoicePoMatches,
   invoiceProjectMatches,
   approvedInvoiceProject,
+  verifiedInvoiceProject,
   invoiceFlags,
   predictiveAlerts,
   feedbackLogs,
@@ -40,6 +41,8 @@ import {
   type InvoiceProjectMatch,
   type InsertApprovedInvoiceProject,
   type ApprovedInvoiceProject,
+  type InsertVerifiedInvoiceProject,
+  type VerifiedInvoiceProject,
   type InsertInvoiceFlag,
   type InvoiceFlag,
   type InsertPredictiveAlert,
@@ -532,11 +535,18 @@ export class DatabaseStorage implements IStorage {
       }>;
     }>;
   }> {
-    // Get all invoices with approved project assignments
+    // Get all invoices with approved project assignments that haven't been verified yet
     const approvedInvoices = await db
       .select({
+        approvedId: approvedInvoiceProject.id,
         invoiceId: approvedInvoiceProject.invoiceId,
         invoice: invoices,
+        approvedBy: approvedInvoiceProject.approvedBy,
+        approvedAt: approvedInvoiceProject.approvedAt,
+        matchScore: approvedInvoiceProject.matchScore,
+        matchDetails: approvedInvoiceProject.matchDetails,
+        originalMatchId: approvedInvoiceProject.originalMatchId,
+        projectId: approvedInvoiceProject.projectId,
       })
       .from(approvedInvoiceProject)
       .innerJoin(invoices, eq(approvedInvoiceProject.invoiceId, invoices.id));
@@ -1306,6 +1316,78 @@ export class DatabaseStorage implements IStorage {
       .values(data)
       .returning();
     return approvedMatch;
+  }
+
+  // Verified invoice project operations
+  async createVerifiedInvoiceProject(data: InsertVerifiedInvoiceProject): Promise<VerifiedInvoiceProject> {
+    const [verifiedMatch] = await db
+      .insert(verifiedInvoiceProject)
+      .values(data)
+      .returning();
+    return verifiedMatch;
+  }
+
+  async getVerifiedInvoiceProjects(): Promise<(VerifiedInvoiceProject & { invoice: Invoice; project: Project })[]> {
+    const verified = await db
+      .select({
+        id: verifiedInvoiceProject.id,
+        invoiceId: verifiedInvoiceProject.invoiceId,
+        projectId: verifiedInvoiceProject.projectId,
+        matchScore: verifiedInvoiceProject.matchScore,
+        matchDetails: verifiedInvoiceProject.matchDetails,
+        approvedBy: verifiedInvoiceProject.approvedBy,
+        approvedAt: verifiedInvoiceProject.approvedAt,
+        verifiedAt: verifiedInvoiceProject.verifiedAt,
+        originalMatchId: verifiedInvoiceProject.originalMatchId,
+        originalApprovedId: verifiedInvoiceProject.originalApprovedId,
+        validationResults: verifiedInvoiceProject.validationResults,
+        createdAt: verifiedInvoiceProject.createdAt,
+        invoice: invoices,
+        project: projects,
+      })
+      .from(verifiedInvoiceProject)
+      .innerJoin(invoices, eq(verifiedInvoiceProject.invoiceId, invoices.id))
+      .innerJoin(projects, eq(verifiedInvoiceProject.projectId, projects.projectId))
+      .orderBy(desc(verifiedInvoiceProject.verifiedAt));
+
+    return verified;
+  }
+
+  async moveApprovedToVerified(approvedId: number, validationResults: any): Promise<VerifiedInvoiceProject> {
+    return await db.transaction(async (tx) => {
+      // Get the approved invoice project
+      const [approved] = await tx
+        .select()
+        .from(approvedInvoiceProject)
+        .where(eq(approvedInvoiceProject.id, approvedId));
+
+      if (!approved) {
+        throw new Error('Approved invoice project not found');
+      }
+
+      // Create verified invoice project record
+      const [verified] = await tx
+        .insert(verifiedInvoiceProject)
+        .values({
+          invoiceId: approved.invoiceId,
+          projectId: approved.projectId,
+          matchScore: approved.matchScore,
+          matchDetails: approved.matchDetails,
+          approvedBy: approved.approvedBy,
+          approvedAt: approved.approvedAt || new Date(),
+          originalMatchId: approved.originalMatchId,
+          originalApprovedId: approved.id,
+          validationResults: validationResults,
+        })
+        .returning();
+
+      // Remove from approved table (invoice has been verified)
+      await tx
+        .delete(approvedInvoiceProject)
+        .where(eq(approvedInvoiceProject.id, approvedId));
+
+      return verified;
+    });
   }
 
   async getApprovedInvoiceProjects(): Promise<(ApprovedInvoiceProject & { invoice: Invoice; project: Project })[]> {
