@@ -278,9 +278,9 @@ export default function ProjectMatcher() {
             type: 'manual',
             reason: 'Manually assigned by user',
             timestamp: new Date().toISOString(),
-            addressSimilarity: bestMatch?.addressSimilarity || 0,
-            citySimilarity: bestMatch?.citySimilarity || 0,
-            projectNameSimilarity: bestMatch?.projectNameSimilarity || 0,
+            addressSimilarity: 0,
+            citySimilarity: 0,
+            projectNameSimilarity: 0,
             overallConfidence: matchScore,
             matchedFields: ['manual_assignment'],
             reasons: ['Manually approved by user']
@@ -344,13 +344,14 @@ export default function ProjectMatcher() {
 
   // Get extracted project based on address/city matching with validation records
   const getExtractedProject = (invoice: Invoice, projects: Project[]): string => {
-    const invoiceAddress = invoice.extractedData?.projectAddress || invoice.extractedData?.address;
-    let invoiceCity = invoice.extractedData?.projectCity || invoice.extractedData?.city;
+    const extractedData = invoice.extractedData as any;
+    const invoiceAddress = extractedData?.projectAddress || extractedData?.address;
+    let invoiceCity = extractedData?.projectCity || extractedData?.city;
 
     // If no explicit project city, try to extract from vendor address
-    if (!invoiceCity && invoice.extractedData?.vendorAddress) {
-      const vendorAddress = invoice.extractedData.vendorAddress;
-      const addressParts = vendorAddress.split(',').map(part => part.trim());
+    if (!invoiceCity && extractedData?.vendorAddress) {
+      const vendorAddress = extractedData.vendorAddress;
+      const addressParts = vendorAddress.split(',').map((part: string) => part.trim());
       if (addressParts.length >= 2) {
         invoiceCity = addressParts[1]; // Take the city part
       }

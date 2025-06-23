@@ -1899,6 +1899,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get approved invoice-project assignments
+  app.get('/api/approved-invoice-projects', isAuthenticated, async (req, res) => {
+    try {
+      const approvedAssignments = await storage.getApprovedInvoiceProjects();
+      res.json(approvedAssignments);
+    } catch (error) {
+      console.error("Error fetching approved invoice projects:", error);
+      res.status(500).json({ message: "Failed to fetch approved invoice projects" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
