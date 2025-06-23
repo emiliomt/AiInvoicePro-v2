@@ -861,8 +861,7 @@ export class DatabaseStorage implements IStorage {
     matchDetails: any;
   }[]> {
     // Get all open purchase orders
-    const openPOs =```text
-await db
+    const openPOs = await db
       .select()
       .from(purchaseOrders)
       .where(eq(purchaseOrders.status, 'open'));
