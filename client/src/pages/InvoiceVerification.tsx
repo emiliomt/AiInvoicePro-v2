@@ -265,6 +265,72 @@ export default function InvoiceVerification() {
           </CardContent>
         </Card>
 
+        {/* Validation Results Section */}
+        {validationResults && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle>Validation Results Summary</CardTitle>
+              <CardDescription>
+                Shows how invoices perform against configured validation rules
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{validationResults.verified}</div>
+                  <div className="text-sm text-gray-600">Passed All Rules</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{validationResults.flagged}</div>
+                  <div className="text-sm text-gray-600">Critical Violations</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-yellow-600">{validationResults.needsReview}</div>
+                  <div className="text-sm text-gray-600">Needs Review</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-gray-600">{validationResults.pending}</div>
+                  <div className="text-sm text-gray-600">Pending</div>
+                </div>
+              </div>
+
+              {validationResults.invoiceValidations && validationResults.invoiceValidations.length > 0 && (
+                <div className="mt-6">
+                  <h4 className="font-medium mb-3">Detailed Validation Results</h4>
+                  <div className="space-y-2 max-h-60 overflow-y-auto">
+                    {validationResults.invoiceValidations.map((validation) => (
+                      <div key={validation.invoiceId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                        <div className="flex-1">
+                          <div className="font-medium">{validation.fileName}</div>
+                          <div className="text-sm text-gray-600">{validation.vendorName}</div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {validation.isValid ? (
+                            <Badge variant="default" className="bg-green-100 text-green-800">
+                              <CheckCircle className="w-3 h-3 mr-1" />
+                              Valid
+                            </Badge>
+                          ) : (
+                            <Badge variant="destructive">
+                              <XCircle className="w-3 h-3 mr-1" />
+                              {validation.violations.length} Issue{validation.violations.length > 1 ? 's' : ''}
+                            </Badge>
+                          )}
+                          {validation.violations.length > 0 && (
+                            <div className="text-xs text-gray-500">
+                              {validation.violations.map(v => v.severity).join(', ')}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        )}
+
         {/* Approved Invoice-Project Assignments Table */}
         <Card>
           <CardHeader>
@@ -357,8 +423,17 @@ export default function InvoiceVerification() {
                               variant="outline"
                               size="sm"
                               onClick={() => window.open(`/invoices/${assignment.invoice.id}`, '_blank')}
+                              title="View Invoice"
                             >
                               <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => window.open(`/validation-rules`, '_blank')}
+                              title="View Validation Rules"
+                            >
+                              <AlertTriangle className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="outline"
@@ -367,6 +442,7 @@ export default function InvoiceVerification() {
                                 // Download or view more details
                                 console.log('View details for assignment:', assignment.id);
                               }}
+                              title="Download Details"
                             >
                               <Download className="w-4 h-4" />
                             </Button>
