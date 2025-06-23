@@ -5,7 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw } from "lucide-react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
+import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw, FileCheck } from "lucide-react";
 import Header from "@/components/Header";
 import { CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -62,6 +63,8 @@ export default function InvoiceVerification() {
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [verificationFilter, setVerificationFilter] = useState("all");
+  const [showValidationDialog, setShowValidationDialog] = useState(false);
+  const [selectedInvoiceForValidation, setSelectedInvoiceForValidation] = useState<any>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -138,6 +141,25 @@ export default function InvoiceVerification() {
       return <Badge variant="secondary" className="bg-yellow-100 text-yellow-800">Medium Confidence</Badge>;
     } else {
       return <Badge variant="outline" className="bg-orange-100 text-orange-800">Low Confidence</Badge>;
+    }
+  };
+
+  const handleValidationClick = async (invoice: any) => {
+    try {
+      const response = await fetch(`/api/validation-rules/validate/${invoice.id}`);
+      if (!response.ok) throw new Error("Failed to fetch validation results");
+      const validationData = await response.json();
+      setSelectedInvoiceForValidation({
+        ...invoice,
+        validationResults: validationData
+      });
+      setShowValidationDialog(true);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch validation results",
+        variant: "destructive",
+      });
     }
   };
 
@@ -430,10 +452,10 @@ export default function InvoiceVerification() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => window.open(`/validation-rules`, '_blank')}
-                              title="View Validation Rules"
+                              onClick={() => handleValidationClick(assignment.invoice)}
+                              title="View Validation Results"
                             >
-                              <AlertTriangle className="w-4 h-4" />
+                              <FileCheck className="w-4 h-4" />
                             </Button>
                             <Button
                               variant="outline"
@@ -456,6 +478,144 @@ export default function InvoiceVerification() {
             )}
           </CardContent>
         </Card>
+
+        {/* Validation Results Dialog */}
+        <Dialog open={showValidationDialog} onOpenChange={setShowValidationDialog}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Validation Results</DialogTitle>
+              <DialogDescription>
+                Detailed validation results for {selectedInvoiceForValidation?.fileName}
+              </DialogDescription>
+            </DialogHeader>
+            {selectedInvoiceForValidation && (
+              <div className="space-y-6">
+                {/* Invoice Summary */}
+                <div className="grid grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Invoice ID</label>
+                    <p className="text-sm text-gray-900 mt-1">{selectedInvoiceForValidation.id}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Vendor</label>
+                    <p className="text-sm text-gray-900 mt-1">{selectedInvoiceForValidation.vendorName || "Unknown"}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Amount</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {selectedInvoiceForValidation.currency || 'COP'} {selectedInvoiceForValidation.totalAmount ? parseFloat(selectedInvoiceForValidation.totalAmount).toLocaleString() : 'N/A'}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                    <div className="mt-1">
+                      {getStatusBadge(selectedInvoiceForValidation.status)}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Validation Results */}
+                {selectedInvoiceForValidation.validationResults ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-lg font-medium">Validation Status</h4>
+                      <div className="flex items-center space-x-2">
+                        {selectedInvoiceForValidation.validationResults.isValid ? (
+                          <Badge variant="default" className="bg-green-100 text-green-800">
+                            <CheckCircle className="w-4 h-4 mr-1" />
+                            All Rules Passed
+                          </Badge>
+                        ) : (
+                          <Badge variant="destructive">
+                            <XCircle className="w-4 h-4 mr-1" />
+                            {selectedInvoiceForValidation.validationResults.violations?.length || 0} Violation(s)
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Rule Violations */}
+                    {selectedInvoiceForValidation.validationResults.violations && selectedInvoiceForValidation.validationResults.violations.length > 0 && (
+                      <div className="space-y-3">
+                        <h5 className="font-medium text-red-600">Rule Violations</h5>
+                        {selectedInvoiceForValidation.validationResults.violations.map((violation: any, index: number) => (
+                          <div key={index} className="border-l-4 border-red-400 bg-red-50 p-4 rounded-r-lg">
+                            <div className="flex items-start justify-between">
+                              <div className="flex-1">
+                                <h6 className="font-medium text-red-800">{violation.field}</h6>
+                                <p className="text-sm text-red-700 mt-1">{violation.message}</p>
+                                <div className="flex items-center mt-2 space-x-2">
+                                  <Badge variant="outline" className="text-xs">
+                                    {violation.ruleType}
+                                  </Badge>
+                                  <Badge variant={violation.severity === 'critical' ? 'destructive' : violation.severity === 'warning' ? 'secondary' : 'outline'} className="text-xs">
+                                    {violation.severity}
+                                  </Badge>
+                                </div>
+                              </div>
+                              <XCircle className="w-5 h-5 text-red-500 mt-1" />
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Passed Rules */}
+                    {selectedInvoiceForValidation.validationResults.passedRules && selectedInvoiceForValidation.validationResults.passedRules.length > 0 && (
+                      <div className="space-y-3">
+                        <h5 className="font-medium text-green-600">Passed Rules</h5>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                          {selectedInvoiceForValidation.validationResults.passedRules.map((rule: any, index: number) => (
+                            <div key={index} className="border-l-4 border-green-400 bg-green-50 p-3 rounded-r-lg">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h6 className="font-medium text-green-800 text-sm">{rule.field}</h6>
+                                  <p className="text-xs text-green-700">{rule.ruleType}</p>
+                                </div>
+                                <CheckCircle className="w-4 h-4 text-green-500" />
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Additional Information */}
+                    {selectedInvoiceForValidation.validationResults.metadata && (
+                      <div className="bg-blue-50 p-4 rounded-lg">
+                        <h5 className="font-medium text-blue-800 mb-2">Validation Metadata</h5>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div>
+                            <span className="text-blue-700">Validation Date:</span>
+                            <p className="text-blue-900">{new Date(selectedInvoiceForValidation.validationResults.metadata.validatedAt || Date.now()).toLocaleString()}</p>
+                          </div>
+                          <div>
+                            <span className="text-blue-700">Rules Applied:</span>
+                            <p className="text-blue-900">{selectedInvoiceForValidation.validationResults.metadata.totalRules || 'N/A'}</p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <AlertTriangle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                    <p className="text-gray-600">No validation results available for this invoice.</p>
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-2 pt-4 border-t">
+                  <Button variant="outline" onClick={() => setShowValidationDialog(false)}>
+                    Close
+                  </Button>
+                  <Button variant="outline" onClick={() => window.open('/validation-rules', '_blank')}>
+                    View Rules Configuration
+                  </Button>
+                </div>
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
