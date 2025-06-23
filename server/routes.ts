@@ -1867,6 +1867,38 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/invoices/:id/approve-best-match', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const { projectId, matchScore, matchDetails } = req.body;
+
+      if (!projectId || !matchScore) {
+        return res.status(400).json({ message: "Project ID and match score are required" });
+      }
+
+      // Create the approved invoice-project assignment
+      const approvedMatch = await storage.createApprovedInvoiceProject({
+        invoiceId,
+        projectId,
+        matchScore: matchScore.toString(),
+        matchDetails,
+        approvedBy: userId,
+      });
+
+      // Update invoice status to approved
+      await storage.updateInvoice(invoiceId, { status: 'approved' });
+
+      res.json({ 
+        message: "Best match approved successfully",
+        approvedMatch 
+      });
+    } catch (error) {
+      console.error("Error approving best match:", error);
+      res.status(500).json({ message: "Failed to approve best match" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

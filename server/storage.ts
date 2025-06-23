@@ -10,6 +10,7 @@ import {
   purchaseOrders,
   invoicePoMatches,
   invoiceProjectMatches,
+  approvedInvoiceProject,
   invoiceFlags,
   predictiveAlerts,
   feedbackLogs,
@@ -17,19 +18,37 @@ import {
   lineItemClassifications,
   type UpsertUser,
   type InsertInvoice,
+  type Invoice,
   type InsertLineItem,
+  type LineItem,
   type InsertApproval,
+  type Approval,
   type InsertValidationRule,
+  type ValidationRule,
   type InsertSetting,
+  type Setting,
   type InsertPettyCashLog,
+  type PettyCashLog,
   type InsertProject,
+  type Project,
   type InsertPurchaseOrder,
+  type PurchaseOrder,
   type InsertInvoicePoMatch,
+  type InvoicePoMatch,
   type InsertInvoiceProjectMatch,
+  type InvoiceProjectMatch,
+  type InsertApprovedInvoiceProject,
+  type ApprovedInvoiceProject,
   type InsertInvoiceFlag,
+  type InvoiceFlag,
   type InsertPredictiveAlert,
+  type PredictiveAlert,
   type InsertFeedbackLog,
+  type FeedbackLog,
   type InsertClassificationKeyword,
+  type ClassificationKeyword,
+  type InsertLineItemClassification,
+  type LineItemClassification,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte, lte } from "drizzle-orm";
@@ -144,6 +163,11 @@ export interface IStorage {
     matchDetails: any;
   }[]>;
   setActiveProjectMatch(invoiceId: number, matchId: number): Promise<void>;
+
+  // Approved Invoice Project operations
+  createApprovedInvoiceProject(data: InsertApprovedInvoiceProject): Promise<ApprovedInvoiceProject>;
+  getApprovedInvoiceProjects(): Promise<(ApprovedInvoiceProject & { invoice: Invoice; project: Project })[]>;
+  getApprovedInvoiceProjectByInvoiceId(invoiceId: number): Promise<(ApprovedInvoiceProject & { project: Project }) | null>;
 
     // Feedback log methods
   createFeedbackLog(feedbackData: InsertFeedbackLog): Promise<any>;
@@ -841,7 +865,7 @@ export class DatabaseStorage implements IStorage {
       .from(purchaseOrders)
       .where(eq(purchaseOrders.status, 'open'));
 
-    const matches = [];
+    const matchesare [];
 
     for (const po of openPOs) {
       let matchScore = 0;
@@ -1140,17 +1164,72 @@ export class DatabaseStorage implements IStorage {
   }
 
   async setActiveProjectMatch(invoiceId: number, matchId: number): Promise<void> {
-    // Deactivate all matches for this invoice
-    await db
-      .update(invoiceProjectMatches)
-      .set({ isActive: false, updatedAt: new Date() })
-      .where(eq(invoiceProjectMatches.invoiceId, invoiceId));
+    await db.transaction(async (tx) => {
+      // Deactivate all matches for this invoice
+      await tx
+        .update(invoiceProjectMatches)
+        .set({ isActive: false, updatedAt: new Date() })
+        .where(eq(invoiceProjectMatches.invoiceId, invoiceId));
 
-    // Activate the selected match
-    await db
-      .update(invoiceProjectMatches)
-      .set({ isActive: true, status: 'manual', updatedAt: new Date() })
-      .where(eq(invoiceProjectMatches.id, matchId));
+      // Activate the selected match
+      await tx
+        .update(invoiceProjectMatches)
+        .set({ isActive: true, status: 'manual', updatedAt: new Date() })
+        .where(eq(invoiceProjectMatches.id, matchId));
+    });
+  }
+
+  async createApprovedInvoiceProject(data: InsertApprovedInvoiceProject): Promise<ApprovedInvoiceProject> {
+    const [approvedMatch] = await db
+      .insert(approvedInvoiceProject)
+      .values(data)
+      .returning();
+    return approvedMatch;
+  }
+
+  async getApprovedInvoiceProjects(): Promise<(ApprovedInvoiceProject & { invoice: Invoice; project: Project })[]> {
+    const approved = await db
+      .select({
+        id: approvedInvoiceProject.id,
+        invoiceId: approvedInvoiceProject.invoiceId,
+        projectId: approvedInvoiceProject.projectId,
+        matchScore: approvedInvoiceProject.matchScore,
+        matchDetails: approvedInvoiceProject.matchDetails,
+        approvedBy: approvedInvoiceProject.approvedBy,
+        approvedAt: approvedInvoiceProject.approvedAt,
+        originalMatchId: approvedInvoiceProject.originalMatchId,
+        createdAt: approvedInvoiceProject.createdAt,
+        invoice: invoices,
+        project: projects,
+      })
+      .from(approvedInvoiceProject)
+      .innerJoin(invoices, eq(approvedInvoiceProject.invoiceId, invoices.id))
+      .innerJoin(projects, eq(approvedInvoiceProject.projectId, projects.projectId))
+      .orderBy(desc(approvedInvoiceProject.approvedAt));
+
+    return approved;
+  }
+
+  async getApprovedInvoiceProjectByInvoiceId(invoiceId: number): Promise<(ApprovedInvoiceProject & { project: Project }) | null> {
+    const [approved] = await db
+      .select({
+        id: approvedInvoiceProject.id,
+        invoiceId: approvedInvoiceProject.invoiceId,
+        projectId: approvedInvoiceProject.projectId,
+        matchScore: approvedInvoiceProject.matchScore,
+        matchDetails: approvedInvoiceProject.matchDetails,
+        approvedBy: approvedInvoiceProject.approvedBy,
+        approvedAt: approvedInvoiceProject.approvedAt,
+        originalMatchId: approvedInvoiceProject.originalMatchId,
+        createdAt: approvedInvoiceProject.createdAt,
+        project: projects,
+      })
+      .from(approvedInvoiceProject)
+      .innerJoin(projects, eq(approvedInvoiceProject.projectId, projects.projectId))
+      .where(eq(approvedInvoiceProject.invoiceId, invoiceId))
+      .limit(1);
+
+    return approved || null;
   }
 
     // Feedback log methods

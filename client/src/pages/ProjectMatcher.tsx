@@ -434,7 +434,7 @@ export default function ProjectMatcher() {
 
   const filteredInvoices = invoices.filter(invoice => {
     let statusMatch = false;
-    
+
     if (activeTab === "all") {
       statusMatch = true;
     } else if (activeTab === "matched") {
@@ -458,6 +458,32 @@ export default function ProjectMatcher() {
       invoice.id.toString().includes(searchTerm);
 
     return statusMatch && searchMatch;
+  });
+
+  // Approve best match mutation
+  const approveBestMatchMutation = useMutation({
+    mutationFn: async ({ invoiceId, projectId, matchScore, matchDetails }: any) => {
+      const response = await fetch(`/api/invoices/${invoiceId}/approve-best-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId,
+          matchScore,
+          matchDetails
+        }),
+      });
+      if (!response.ok) throw new Error("Failed to approve best match");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/approved-invoice-projects"] });
+      toast({
+        title: "Success",
+        description: "Best match approved and saved to approved assignments",
+      });
+    },
   });
 
   return (

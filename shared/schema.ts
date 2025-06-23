@@ -246,6 +246,19 @@ export const invoiceProjectMatches = pgTable("invoice_project_matches", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Approved invoice-project assignments table
+export const approvedInvoiceProject = pgTable("approved_invoice_project", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId).notNull(),
+  matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(),
+  matchDetails: jsonb("match_details"),
+  approvedBy: varchar("approved_by").notNull(),
+  approvedAt: timestamp("approved_at").defaultNow(),
+  originalMatchId: integer("original_match_id").references(() => invoiceProjectMatches.id),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Flag types and severity enums
 export const flagTypeEnum = pgEnum("flag_type", [
   "duplicate_invoice",
@@ -383,6 +396,21 @@ export const invoiceProjectMatchesRelations = relations(invoiceProjectMatches, (
   }),
 }));
 
+export const approvedInvoiceProjectRelations = relations(approvedInvoiceProject, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [approvedInvoiceProject.invoiceId],
+    references: [invoices.id],
+  }),
+  project: one(projects, {
+    fields: [approvedInvoiceProject.projectId],
+    references: [projects.projectId],
+  }),
+  originalMatch: one(invoiceProjectMatches, {
+    fields: [approvedInvoiceProject.originalMatchId],
+    references: [invoiceProjectMatches.id],
+  }),
+}));
+
 export const invoiceFlagsRelations = relations(invoiceFlags, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceFlags.invoiceId],
@@ -487,6 +515,9 @@ export type InvoicePoMatch = typeof invoicePoMatches.$inferSelect;
 export type InsertInvoiceProjectMatch = typeof invoiceProjectMatches.$inferInsert;
 export type InvoiceProjectMatch = typeof invoiceProjectMatches.$inferSelect;
 
+export type InsertApprovedInvoiceProject = typeof approvedInvoiceProject.$inferInsert;
+export type ApprovedInvoiceProject = typeof approvedInvoiceProject.$inferSelect;
+
 export type InsertInvoiceFlag = typeof invoiceFlags.$inferInsert;
 export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
 
@@ -559,4 +590,9 @@ export const insertInvoiceProjectMatchSchema = createInsertSchema(invoiceProject
   id: true,
   createdAt: true,
   updatedAt: true,
+});
+
+export const insertApprovedInvoiceProjectSchema = createInsertSchema(approvedInvoiceProject).omit({
+  id: true,
+  createdAt: true,
 });
