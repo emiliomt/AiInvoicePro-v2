@@ -1617,10 +1617,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Remove ruleData field to avoid JSON parsing issues
-      const { ruleData: _, ...cleanRuleData } = ruleData;
+      // Set ruleData as valid JSON object containing the rule value
+      const ruleDataWithJson = {
+        ...ruleData,
+        ruleData: JSON.stringify({ value: ruleData.ruleValue })
+      };
 
-      const rule = await storage.createValidationRule(cleanRuleData);
+      const rule = await storage.createValidationRule(ruleDataWithJson);
       res.status(201).json(rule);
     } catch (error) {
       console.error("Error creating validation rule:", error);
