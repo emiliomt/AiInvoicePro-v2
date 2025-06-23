@@ -1,4 +1,4 @@
-import { Client } from 'pg';
+import { Pool } from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import * as schema from "@shared/schema";
 
@@ -8,12 +8,21 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-const client = new Client({
+const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false }
+  ssl: { rejectUnauthorized: false },
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 2000,
 });
 
-// Connect to the database
-client.connect().catch(console.error);
+// Handle pool errors
+pool.on('error', (err) => {
+  console.error('Database pool error:', err);
+});
 
-export const db = drizzle(client, { schema });
+pool.on('connect', () => {
+  console.log('Database connected successfully');
+});
+
+export const db = drizzle(pool, { schema });
