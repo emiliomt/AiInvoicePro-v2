@@ -263,16 +263,38 @@ export default function ProjectMatcher() {
 
   const handleManualMatch = async (invoice: Invoice, project: Project) => {
     try {
-      // Create the project match using the existing mutation
-      await createMatchMutation.mutateAsync({
-        invoiceId: invoice.id,
-        projectId: project.projectId,
-        matchScore: 100,
-        matchDetails: {
-          type: 'manual',
-          reason: 'Manually assigned by user',
-          timestamp: new Date().toISOString()
-        }
+      // Get the best match score from the existing data
+      const bestMatch = getBestProjectMatch(invoice, projects);
+      const matchScore = bestMatch?.confidence || 100;
+      
+      // Use the approve-best-match endpoint to properly create approved record
+      const response = await fetch(`/api/invoices/${invoice.id}/approve-best-match`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: project.projectId,
+          matchScore,
+          matchDetails: {
+            type: 'manual',
+            reason: 'Manually assigned by user',
+            timestamp: new Date().toISOString(),
+            addressSimilarity: bestMatch?.addressSimilarity || 0,
+            citySimilarity: bestMatch?.citySimilarity || 0,
+            projectNameSimilarity: bestMatch?.projectNameSimilarity || 0,
+            overallConfidence: matchScore,
+            matchedFields: ['manual_assignment'],
+            reasons: ['Manually approved by user']
+          }
+        }),
+      });
+      
+      if (!response.ok) throw new Error("Failed to approve project match");
+      
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      toast({
+        title: "Success",
+        description: "Project match approved and recorded",
       });
     } catch (error) {
       toast({
