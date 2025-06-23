@@ -1929,6 +1929,63 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get verified invoice-project assignments
+  app.get('/api/verified-invoice-projects', isAuthenticated, async (req, res) => {
+    try {
+      const verifiedAssignments = await storage.getVerifiedInvoiceProjects();
+      res.json(verifiedAssignments);
+    } catch (error) {
+      console.error("Error fetching verified invoice projects:", error);
+      res.status(500).json({ message: "Failed to fetch verified invoice projects" });
+    }
+  });
+
+  // Process approved invoices and automatically move validated ones to verified status
+  app.post('/api/process-approved-validations', isAuthenticated, async (req, res) => {
+    try {
+      // Get validation results for all approved invoices
+      const validationResults = await storage.validateAllApprovedInvoices();
+      
+      // Process each validated invoice and move to verified if they pass
+      let processedCount = 0;
+      for (const validation of validationResults.invoiceValidations) {
+        if (validation.isValid) {
+          // Find the approved invoice project for this invoice
+          const approvedProjects = await storage.getApprovedInvoiceProjects();
+          const approvedProject = approvedProjects.find(ap => ap.invoiceId === validation.invoiceId);
+          
+          if (approvedProject) {
+            try {
+              await storage.moveApprovedToVerified(approvedProject.id, {
+                isValid: true,
+                violations: validation.violations,
+                validatedAt: new Date(),
+              });
+              processedCount++;
+            } catch (error) {
+              console.error(`Error moving invoice ${validation.invoiceId} to verified:`, error);
+            }
+          }
+        }
+      }
+
+      res.json({
+        message: `Processed ${processedCount} validated invoices`,
+        totalProcessed: processedCount,
+        validationSummary: {
+          totalInvoices: validationResults.totalInvoices,
+          verified: validationResults.verified,
+          flagged: validationResults.flagged,
+          needsReview: validationResults.needsReview,
+          pending: validationResults.pending,
+        }
+      });
+    } catch (error) {
+      console.error("Error processing approved validations:", error);
+      res.status(500).json({ message: "Failed to process approved validations" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
