@@ -406,6 +406,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
+          // Convert date strings to Date objects
+          let issueDate = null;
+          let expectedDeliveryDate = null;
+
+          if (extractedData.issueDate) {
+            try {
+              issueDate = new Date(extractedData.issueDate);
+              // Check if date is valid
+              if (isNaN(issueDate.getTime())) {
+                issueDate = null;
+              }
+            } catch (error) {
+              console.log(`Invalid issue date format: ${extractedData.issueDate}`);
+              issueDate = null;
+            }
+          }
+
+          if (extractedData.expectedDeliveryDate) {
+            try {
+              expectedDeliveryDate = new Date(extractedData.expectedDeliveryDate);
+              // Check if date is valid
+              if (isNaN(expectedDeliveryDate.getTime())) {
+                expectedDeliveryDate = null;
+              }
+            } catch (error) {
+              console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
+              expectedDeliveryDate = null;
+            }
+          }
+
           // Create purchase order
           const newPurchaseOrder = await storage.createPurchaseOrder({
             poId: extractedData.poId || `PO-${Date.now()}`,
@@ -413,8 +443,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             amount: extractedData.totalAmount || "0",
             currency: extractedData.currency || "USD",
             status: "open",
-            issueDate: extractedData.issueDate || null,
-            expectedDeliveryDate: extractedData.expectedDeliveryDate || null,
+            issueDate: issueDate,
+            expectedDeliveryDate: expectedDeliveryDate,
             projectId: matchedProjectId,
             buyerName: extractedData.buyerName || null,
             buyerAddress: extractedData.buyerAddress || null,
