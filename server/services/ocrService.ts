@@ -42,19 +42,8 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
 
     if (fileType === 'PDF') {
       try {
-        // Try direct text extraction first
-        const pdfParse = require('pdf-parse');
-        const pdfData = await pdfParse(fileBuffer);
-        textContent = pdfData.text;
-        console.log(`Direct PDF text extraction for invoice ${invoiceId}, length: ${textContent.length}`);
-
-        if (textContent && textContent.trim().length > 50) {
-          return textContent;
-        }
-
-        console.log(`Text extraction failed for invoice ${invoiceId}, falling back to OCR`);
-
-        // Fallback to OCR if direct extraction fails
+        // Process PDF with OCR directly (convert to image first)
+        console.log(`Processing PDF with OCR for invoice ${invoiceId}`);
         textContent = await processImageOCR(fileBuffer, invoiceId);
       } catch (pdfError) {
         console.error(`PDF processing failed for invoice ${invoiceId}:`, pdfError);
