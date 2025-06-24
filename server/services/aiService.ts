@@ -158,62 +158,50 @@ interface ExtractedPurchaseOrderData {
 
 export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
   try {
-    const purchaseOrderPrompt = `
-Eres un modelo que extrae datos de órdenes de compra en español. A partir del texto OCR, debes identificar el nombre del proyecto y asociarlo con uno de los proyectos válidos listados a continuación. Si no puedes encontrar coincidencias claras, devuelve "Unassigned".
+    const purchaseOrderPrompt = `You will be given the raw OCR text of an inventory entry document in Spanish.
 
-Proyectos válidos:
-- Parque Heredia Calamari
+Please extract the following fields and return them in clean JSON format:
 
-Tu tarea es devolver un objeto JSON con los siguientes campos:
+- "entrada_almacen_no": (Entrada de Almacén No.)
+- "empresa": (Buyer Company Name)
+- "nit_empresa": (Buyer Tax ID)
+- "direccion_empresa": (Buyer Address)
+- "ciudad_empresa": (Buyer City)
+- "proveedor": (Vendor Name)
+- "direccion_proveedor": (Vendor Address)
+- "nit_proveedor": (Vendor Tax ID)
+- "proyecto": (Project Name)
+- "orden_compra_no": (Purchase Order Number - after "Orden de Compra No")
+- "fecha_factura": (Invoice Date - after "Fecha Factura")
+- "fecha_remision": (Remission Date - after "Fecha Remisión")
+- "sitio_entrega": (Site of delivery - after "Sitio de entrega")
+- "descripcion_oc": (Description OC - after "Descripción OC")
+- "observaciones_oc": (Observations OC - after "Observaciones OC")
 
-{
-  "po_number": "",                 // Después de "Orden de Compra No"
-  "vendor_name": "",              // Después de "Proveedor"
-  "vendor_tax_id": "",           // Después de "NIT/CC"
-  "vendor_address": "",          // Bajo 'Dirección' dentro del bloque de proveedor
-  "project_name": "",            // Después de 'Proyecto' - DEBE ser uno de los proyectos válidos o "Unassigned"
-  "description_oc": "",          // Después de 'Descripción OC'
-  "site_of_delivery": "",        // Después de 'Sitio de entrega'
-  "observations_oc": "",         // Texto completo debajo de 'Observaciones OC'
-  "invoice_number": "",          // Después de 'Factura No'
-  "invoice_date": "",            // Después de 'Fecha Factura'
-  "remission_number": "",        // Después de 'Remisión No'
-  "remission_date": "",          // Después de 'Fecha Remisión'
-  "items": [
-    {
-      "item_description": "",     // Campo 'Insumo'
-      "unit_of_measure": "",      // Campo 'UM'
-      "quantity": 0,              // Campo 'Cantidad'
-      "unit_price": 0,            // Campo 'Vr. Unitario'
-      "iva_amount": 0,            // Campo 'Vr. IVA'
-      "total_price": 0            // Campo 'Vr. Total'
-    }
-  ],
-  "subtotal": 0,                  // Campo 'SUBTOTAL'
-  "iva": 0,                       // Campo 'IVA'
-  "total_amount": 0              // Campo 'TOTAL'
-}
+Then extract the "detalle_entrada_almacen" table:
+Return it as a list of rows with this format:
+  - "concepto" (item name/description)
+  - "vr_iva" (VAT amount)
+  - "vr_total" (Total amount)
 
-Instrucciones:
-- Usa coincidencia semántica o por similitud de texto para el proyecto.
-- Si ves algo como "Parque Heredia Báltico" o similar, pero no está en la lista, no lo uses.
-- Devuelve en el campo "project_name" exactamente uno de los nombres válidos (copiado tal cual).
-- Si no hay coincidencia, usa: "Unassigned".
-- Si no encuentras un campo, déjalo como cadena vacía o cero, pero nunca como null.
-- Devuelve únicamente el JSON, sin texto adicional ni explicaciones.
-- Extrae los datos directamente del texto OCR, incluso si hay errores ortográficos menores.
-- El formato del JSON debe ser válido.
+Lastly, return the summary:
+- "subtotal"
+- "iva_total"
+- "total_general"
 
-Texto OCR:
-${ocrText}
-`;
+All numeric fields should be parsed cleanly without formatting characters (no $ or commas).
+If some fields are missing from OCR, return empty strings or 0, but never null.
+Return valid JSON only.
+
+Document:
+${ocrText}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         { 
           role: "system", 
-          content: "You are an expert document data extraction system. Extract structured data from OCR text and respond only with valid JSON." 
+          content: "You are a document parser that returns clean JSON." 
         },
         { 
           role: "user", 
@@ -221,49 +209,46 @@ ${ocrText}
         }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.1,
+      temperature: 0.0,
       max_tokens: 2000
     });
 
     const extractedData = JSON.parse(response.choices[0].message.content || '{}');
 
-    // Ensure items array is always present and properly formatted
-    let items = [];
-    if (Array.isArray(extractedData.items)) {
-      items = extractedData.items;
-    } else if (Array.isArray(extractedData.lineItems)) {
-      items = extractedData.lineItems;
+    // Create line items from detalle_entrada_almacen
+    let lineItems = [];
+    if (Array.isArray(extractedData.detalle_entrada_almacen)) {
+      lineItems = extractedData.detalle_entrada_almacen.map((item: any) => ({
+        description: item.concepto || "",
+        quantity: "1",
+        unitPrice: (item.vr_total || 0).toString(),
+        totalPrice: (item.vr_total || 0).toString()
+      }));
     } else {
       // Create a default item if none found
-      items = [{
-        description: "Item from purchase order",
+      lineItems = [{
+        description: "Purchase order item",
         quantity: "1",
-        unitPrice: extractedData.total_amount || extractedData.totalAmount || "0",
-        totalPrice: extractedData.total_amount || extractedData.totalAmount || "0"
+        unitPrice: (extractedData.total_general || 0).toString(),
+        totalPrice: (extractedData.total_general || 0).toString()
       }];
     }
 
-    // Map the extracted data to the expected format
-    // Handle project assignment - only use valid project names, otherwise set to null
-    let projectId = null;
-    if (extractedData.project_name && extractedData.project_name !== "Unassigned") {
-      projectId = extractedData.project_name;
-    }
-
+    // Map extracted data to expected format
     return {
-      poId: extractedData.po_number || extractedData.poId || null,
-      vendorName: extractedData.vendor_name || extractedData.vendor_company_name || extractedData.vendorName || null,
-      issueDate: extractedData.invoice_date || extractedData.issueDate || null,
-      expectedDeliveryDate: extractedData.remission_date || extractedData.expectedDeliveryDate || null,
-      totalAmount: extractedData.total_amount?.toString() || extractedData.totalAmount?.toString() || null,
-      currency: extractedData.currency || "COP",
-      projectId: projectId,
-      buyerName: extractedData.buyer_company_name || extractedData.buyerName || null,
-      buyerAddress: extractedData.buyer_address || extractedData.buyerAddress || null,
-      vendorAddress: extractedData.vendor_address || extractedData.vendorAddress || null,
-      terms: extractedData.observations_oc || extractedData.terms || null,
-      lineItems: items,
-      confidenceScore: extractedData.confidenceScore || "0.8",
+      poId: extractedData.orden_compra_no || extractedData.entrada_almacen_no || "",
+      vendorName: extractedData.proveedor || "",
+      issueDate: extractedData.fecha_factura || "",
+      expectedDeliveryDate: extractedData.fecha_remision || "",
+      totalAmount: (extractedData.total_general || 0).toString(),
+      currency: "COP",
+      projectId: extractedData.proyecto || "",
+      buyerName: extractedData.empresa || "",
+      buyerAddress: extractedData.direccion_empresa || "",
+      vendorAddress: extractedData.direccion_proveedor || "",
+      terms: extractedData.observaciones_oc || extractedData.descripcion_oc || "",
+      lineItems: lineItems,
+      confidenceScore: "0.85",
     };
   } catch (error: any) {
     console.error("AI PO extraction failed:", error);
