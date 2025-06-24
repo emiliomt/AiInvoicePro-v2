@@ -1,0 +1,48 @@
+const purchaseOrderPrompt = `
+Eres un modelo de lenguaje que extrae datos estructurados de órdenes de compra en español a partir de texto plano OCR. El texto proviene de un PDF con formato consistente.
+
+Tu tarea es devolver un objeto JSON con los siguientes campos:
+
+{
+  "po_number": "",                 // Después de "Orden de Compra No"
+  "vendor_name": "",              // Después de "Proveedor"
+  "vendor_tax_id": "",           // Después de "NIT/CC"
+  "vendor_address": "",          // Bajo 'Dirección' dentro del bloque de proveedor
+  "project_name": "",            // Después de 'Proyecto'
+  "description_oc": "",          // Después de 'Descripción OC'
+  "site_of_delivery": "",        // Después de 'Sitio de entrega'
+  "observations_oc": "",         // Texto completo debajo de 'Observaciones OC'
+  "invoice_number": "",          // Después de 'Factura No'
+  "invoice_date": "",            // Después de 'Fecha Factura'
+  "remission_number": "",        // Después de 'Remisión No'
+  "remission_date": "",          // Después de 'Fecha Remisión'
+  "items": [
+    {
+      "item_description": "",     // Campo 'Insumo'
+      "unit_of_measure": "",      // Campo 'UM'
+      "quantity": 0,              // Campo 'Cantidad'
+      "unit_price": 0,            // Campo 'Vr. Unitario'
+      "iva_amount": 0,            // Campo 'Vr. IVA'
+      "total_price": 0            // Campo 'Vr. Total'
+    }
+  ],
+  "subtotal": 0,                  // Campo 'SUBTOTAL'
+  "iva": 0,                       // Campo 'IVA'
+  "total_amount": 0              // Campo 'TOTAL'
+}
+
+Reglas:
+- Si no encuentras un campo, déjalo como cadena vacía o cero, pero nunca como null.
+- Devuelve únicamente el JSON, sin texto adicional ni explicaciones.
+- Extrae los datos directamente del texto OCR, incluso si hay errores ortográficos menores.
+- El formato del JSON debe ser válido.
+`;
+
+return openai.chat.completions.create({
+  model: "gpt-4o-mini",
+  messages: [
+    { role: "system", content: "Eres un extractor de datos de documentos OCR." },
+    { role: "user", content: `${purchaseOrderPrompt}\n\nTexto OCR:\n${ocrText}` }
+  ],
+  temperature: 0.2
+});
