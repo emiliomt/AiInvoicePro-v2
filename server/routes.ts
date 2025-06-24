@@ -951,7 +951,7 @@ settingsJson = JSON.stringify(value);
             }
 
             const projectData = {
-              projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || `PROJ-${Date.now()}-${i}`,
+              projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || 'PROJ-' + Date.now() + '-' + i,
               name: row['Project Name'] || row['name'] || row['Name'] || row['Project'] || row['project'] || 'Imported Project',
               description: row['Description'] || row['description'] || row['Desc'] || row['desc'] || row['Notes'] || row['notes'] || '',
               address: row['Invoice Address'] || row['Address'] || row['address'] || row['Location'] || row['location'] || '',
@@ -977,7 +977,7 @@ settingsJson = JSON.stringify(value);
         }
 
         res.json({
-          message: `Successfully imported ${importedProjects.length} projects`,
+          message: 'Successfully imported ' + importedProjects.length + ' projects',
           imported: importedProjects.length,
           errors: errors.length,
           errorDetails: errors
@@ -1072,7 +1072,7 @@ settingsJson = JSON.stringify(value);
           try {
             // Generate unique filename
             const fileExt = path.extname(file.originalname);
-            const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+            const uniqueFileName = Date.now() + '-' + Math.random().toString(36).substring(2) + fileExt;
             const filePath = path.join(uploadsDir, uniqueFileName);
 
             // Write file to disk
