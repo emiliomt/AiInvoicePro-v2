@@ -3,99 +3,57 @@ import Header from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Progress } from "@/components/ui/progress";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Target, AlertTriangle, CheckCircle, XCircle, TrendingUp, FileText } from "lucide-react";
+import { Target, AlertTriangle, CheckCircle, XCircle, TrendingUp, FileText, Eye, Download } from "lucide-react";
 
-interface UnresolvedMatch {
+interface VerifiedInvoiceProject {
   id: number;
   invoiceId: number;
-  poId: number;
+  projectId: string;
   matchScore: string;
-  status: "auto" | "manual" | "unresolved";
   matchDetails: any;
+  approvedBy: string;
+  approvedAt: string;
+  verifiedAt: string;
+  createdAt: string;
+  validationResults: any;
   invoice: {
     id: number;
-    vendorName: string | null;
-    invoiceNumber: string | null;
-    totalAmount: string | null;
     fileName: string;
-    createdAt: string;
-  };
-  purchaseOrder: {
-    id: number;
-    poId: string;
     vendorName: string;
-    projectId: string | null;
-    amount: string;
+    totalAmount: string;
     currency: string;
-    items: any[];
+    invoiceDate: string;
     status: string;
-  } | null;
+  };
+  project: {
+    projectId: string;
+    name: string;
+    address: string;
+    city: string;
+    supervisor: string;
+  };
 }
 
 export default function POMatching() {
   const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
 
-  // Fetch unresolved matches
-  const { data: unresolvedMatches = [], isLoading } = useQuery<UnresolvedMatch[]>({
-    queryKey: ["/api/matches/unresolved"],
+  // Fetch verified invoice-project matches
+  const { data: verifiedInvoices = [], isLoading } = useQuery<VerifiedInvoiceProject[]>({
+    queryKey: ["/api/verified-invoice-projects"],
   });
 
-  // Update match status mutation
-  const updateMatchMutation = useMutation({
-    mutationFn: async ({ matchId, status }: { matchId: number; status: string }) => {
-      const response = await fetch(`/api/invoice-matches/${matchId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ status }),
-      });
-      
-      if (!response.ok) {
-        throw new Error("Failed to update match");
-      }
-      
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/matches/unresolved"] });
-      toast({
-        title: "Success",
-        description: "Match status updated successfully",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Error",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleAcceptMatch = (matchId: number) => {
-    updateMatchMutation.mutate({ matchId, status: "manual" });
-  };
-
-  const handleRejectMatch = (matchId: number) => {
-    updateMatchMutation.mutate({ matchId, status: "unresolved" });
-  };
-
-  const getMatchConfidenceColor = (score: number) => {
-    if (score >= 80) return "text-green-600";
-    if (score >= 60) return "text-yellow-600";
-    return "text-red-600";
-  };
-
-  const getScoreVariant = (score: number) => {
-    if (score >= 80) return "bg-green-500";
-    if (score >= 60) return "bg-yellow-500";
-    return "bg-red-500";
+  const getMatchScoreBadge = (score: string) => {
+    const numericScore = parseFloat(score);
+    if (numericScore >= 90) {
+      return <Badge className="bg-green-100 text-green-800">High Confidence</Badge>;
+    } else if (numericScore >= 70) {
+      return <Badge className="bg-yellow-100 text-yellow-800">Medium Confidence</Badge>;
+    } else {
+      return <Badge className="bg-red-100 text-red-800">Low Confidence</Badge>;
+    }
   };
 
   if (isLoading) {
@@ -103,7 +61,7 @@ export default function POMatching() {
       <div className="min-h-screen bg-gray-50">
         <Header />
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-          <div>Loading PO matching issues...</div>
+          <div>Loading verified invoice-project matches...</div>
         </div>
       </div>
     );
@@ -112,12 +70,12 @@ export default function POMatching() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">PO Matching Issues</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Verified Invoice-Project Matches</h1>
           <p className="text-gray-600 mt-2">
-            Review and resolve invoice-purchase order matching conflicts
+            Review verified invoice-project assignments that have been validated
           </p>
         </div>
 
@@ -127,11 +85,11 @@ export default function POMatching() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Unresolved Matches</p>
-                  <p className="text-3xl font-bold text-yellow-600">{unresolvedMatches.length}</p>
+                  <p className="text-sm font-medium text-gray-600">Total Verified</p>
+                  <p className="text-3xl font-bold text-green-600">{verifiedInvoices.length}</p>
                 </div>
-                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
-                  <AlertTriangle className="text-yellow-600" size={24} />
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-green-600" size={24} />
                 </div>
               </div>
             </CardContent>
@@ -143,7 +101,7 @@ export default function POMatching() {
                 <div>
                   <p className="text-sm font-medium text-gray-600">High Confidence</p>
                   <p className="text-3xl font-bold text-green-600">
-                    {unresolvedMatches.filter(m => parseInt(m.matchScore) >= 80).length}
+                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 90).length}
                   </p>
                 </div>
                 <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
@@ -157,33 +115,33 @@ export default function POMatching() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Needs Review</p>
-                  <p className="text-3xl font-bold text-red-600">
-                    {unresolvedMatches.filter(m => parseInt(m.matchScore) < 60).length}
+                  <p className="text-sm font-medium text-gray-600">Medium Confidence</p>
+                  <p className="text-3xl font-bold text-yellow-600">
+                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length}
                   </p>
                 </div>
-                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
-                  <XCircle className="text-red-600" size={24} />
+                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="text-yellow-600" size={24} />
                 </div>
               </div>
             </CardContent>
           </Card>
         </div>
 
-        {/* Unresolved Matches */}
+        {/* Verified Invoice-Project Matches */}
         <Card>
           <CardHeader>
             <CardTitle className="flex items-center space-x-2">
               <Target className="text-purple-600" size={20} />
-              <span>Unresolved Invoice-PO Matches</span>
+              <span>Verified Invoice-Project Matches</span>
             </CardTitle>
           </CardHeader>
           <CardContent>
-            {unresolvedMatches.length > 0 ? (
+            {verifiedInvoices.length > 0 ? (
               <div className="space-y-6">
-                {unresolvedMatches.map((match) => (
+                {verifiedInvoices.map((match) => (
                   <div key={match.id} className="border rounded-lg p-6 space-y-4">
-                    {/* Invoice and PO Information */}
+                    {/* Invoice and Project Information */}
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                       {/* Invoice Details */}
                       <div className="space-y-2">
@@ -192,124 +150,104 @@ export default function POMatching() {
                           <h4 className="font-medium text-blue-900">Invoice</h4>
                         </div>
                         <div className="text-sm space-y-1">
-                          <p><span className="font-medium">Number:</span> {match.invoice.invoiceNumber || "N/A"}</p>
+                          <p><span className="font-medium">ID:</span> {match.invoice.id}</p>
                           <p><span className="font-medium">Vendor:</span> {match.invoice.vendorName || "Unknown"}</p>
-                          <p><span className="font-medium">Amount:</span> ${match.invoice.totalAmount || "0.00"}</p>
+                          <p><span className="font-medium">Amount:</span> {match.invoice.currency} {parseFloat(match.invoice.totalAmount || '0').toLocaleString()}</p>
                           <p><span className="font-medium">File:</span> {match.invoice.fileName}</p>
+                          <p><span className="font-medium">Date:</span> {new Date(match.invoice.invoiceDate).toLocaleDateString()}</p>
                         </div>
                       </div>
 
-                      {/* Purchase Order Details */}
+                      {/* Project Details */}
                       <div className="space-y-2">
                         <div className="flex items-center space-x-2">
                           <Target className="text-purple-600" size={16} />
-                          <h4 className="font-medium text-purple-900">Purchase Order</h4>
+                          <h4 className="font-medium text-purple-900">Project</h4>
                         </div>
-                        {match.purchaseOrder ? (
-                          <div className="text-sm space-y-1">
-                            <p><span className="font-medium">PO ID:</span> {match.purchaseOrder?.poId}</p>
-                            <p><span className="font-medium">Vendor:</span> {match.purchaseOrder?.vendorName}</p>
-                            <p><span className="font-medium">Amount:</span> {match.purchaseOrder?.currency} {match.purchaseOrder?.amount}</p>
-                            <p><span className="font-medium">Project:</span> {match.purchaseOrder?.projectId || "Unassigned"}</p>
-                            <Badge variant="outline" className="text-xs">
-                              {match.purchaseOrder?.status}
-                            </Badge>
-                          </div>
-                        ) : (
-                          <div className="text-sm text-gray-500">
-                            <p>Purchase order data not available</p>
-                          </div>
-                        )}
+                        <div className="text-sm space-y-1">
+                          <p><span className="font-medium">Project ID:</span> {match.project.projectId}</p>
+                          <p><span className="font-medium">Name:</span> {match.project.name}</p>
+                          <p><span className="font-medium">Address:</span> {match.project.address}</p>
+                          <p><span className="font-medium">City:</span> {match.project.city}</p>
+                          <p><span className="font-medium">Supervisor:</span> {match.project.supervisor}</p>
+                        </div>
                       </div>
-                    </div>
-
-                    {/* Match Confidence */}
-                    <div className="space-y-3">
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm font-medium">Match Confidence</span>
-                        <span className={`text-sm font-bold ${getMatchConfidenceColor(parseInt(match.matchScore))}`}>
-                          {match.matchScore}%
-                        </span>
-                      </div>
-                      <Progress 
-                        value={parseInt(match.matchScore)} 
-                        className="h-3"
-                      />
                     </div>
 
                     {/* Match Details */}
-                    {match.matchDetails && (
-                      <div className="bg-gray-50 rounded-lg p-4 space-y-2">
-                        <h5 className="text-sm font-medium text-gray-900">Match Analysis</h5>
+                    <div className="bg-gray-50 rounded-lg p-4 space-y-2">
+                      <div className="flex justify-between items-center">
+                        <h5 className="text-sm font-medium text-gray-900">Match Details</h5>
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium">Match Score:</span>
+                          <span className="text-sm font-bold text-green-600">{parseFloat(match.matchScore).toFixed(1)}%</span>
+                          {getMatchScoreBadge(match.matchScore)}
+                        </div>
+                      </div>
+
+                      {match.matchDetails && (
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
                           <div className="flex items-center space-x-2">
-                            {match.matchDetails.vendorMatch ? (
+                            {match.matchDetails.projectNameSimilarity > 70 ? (
                               <CheckCircle size={14} className="text-green-500" />
                             ) : (
                               <XCircle size={14} className="text-red-500" />
                             )}
-                            <span>Vendor Match</span>
+                            <span>Project Name Match ({match.matchDetails.projectNameSimilarity || 0}%)</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            {match.matchDetails.amountMatch ? (
+                            {match.matchDetails.addressSimilarity > 60 ? (
                               <CheckCircle size={14} className="text-green-500" />
                             ) : (
                               <XCircle size={14} className="text-red-500" />
                             )}
-                            <span>Amount Match</span>
+                            <span>Address Match ({match.matchDetails.addressSimilarity || 0}%)</span>
                           </div>
                           <div className="flex items-center space-x-2">
-                            {match.matchDetails.totalItemsMatched > 0 ? (
+                            {match.matchDetails.citySimilarity > 80 ? (
                               <CheckCircle size={14} className="text-green-500" />
                             ) : (
                               <XCircle size={14} className="text-red-500" />
                             )}
-                            <span>{match.matchDetails.totalItemsMatched || 0} Items Matched</span>
+                            <span>City Match ({match.matchDetails.citySimilarity || 0}%)</span>
                           </div>
                         </div>
-                        
-                        {match.matchDetails.itemMatches && match.matchDetails.itemMatches.length > 0 && (
-                          <div className="mt-3">
-                            <h6 className="text-xs font-medium text-gray-700 mb-2">Item Matches:</h6>
-                            <div className="space-y-1">
-                              {match.matchDetails.itemMatches.slice(0, 3).map((item: any, idx: number) => (
-                                <div key={idx} className="text-xs text-gray-600">
-                                  <span className="font-medium">Invoice:</span> {item.invoiceItem} →{" "}
-                                  <span className="font-medium">PO:</span> {item.poItem} ({Math.round(item.similarity * 100)}% similar)
-                                </div>
-                              ))}
-                              {match.matchDetails.itemMatches.length > 3 && (
-                                <div className="text-xs text-gray-500">
-                                  +{match.matchDetails.itemMatches.length - 3} more matches
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
+                      )}
+                    </div>
+
+                    {/* Verification Info */}
+                    <div className="bg-green-50 rounded-lg p-4">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="text-sm font-medium text-green-900">Verified by: {match.approvedBy}</p>
+                          <p className="text-sm text-green-700">
+                            Approved: {new Date(match.approvedAt).toLocaleDateString()} | 
+                            Verified: {new Date(match.verifiedAt).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <Badge variant="default" className="bg-green-100 text-green-800">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Verified
+                        </Badge>
                       </div>
-                    )}
+                    </div>
 
                     {/* Action Buttons */}
                     <div className="flex space-x-3 pt-2">
                       <Button 
-                        onClick={() => handleAcceptMatch(match.id)}
-                        disabled={updateMatchMutation.isPending}
-                        className="bg-green-600 hover:bg-green-700"
+                        variant="outline"
+                        onClick={() => window.open(`/invoices/${match.invoiceId}`, '_blank')}
+                        className="flex items-center gap-1"
                       >
-                        Accept Match
+                        <Eye className="w-3 h-3" />
+                        View Invoice
                       </Button>
                       <Button 
                         variant="outline"
-                        onClick={() => handleRejectMatch(match.id)}
-                        disabled={updateMatchMutation.isPending}
+                        className="flex items-center gap-1"
                       >
-                        Reject Match
-                      </Button>
-                      <Button 
-                        variant="ghost"
-                        onClick={() => window.open(`/invoices/${match.invoiceId}`, '_blank')}
-                      >
-                        View Invoice
+                        <Download className="w-3 h-3" />
+                        Download
                       </Button>
                     </div>
                   </div>
@@ -318,9 +256,9 @@ export default function POMatching() {
             ) : (
               <div className="text-center py-12">
                 <Target className="mx-auto h-12 w-12 text-gray-400" />
-                <h3 className="mt-2 text-sm font-medium text-gray-900">No Unresolved Matches</h3>
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No Verified Matches</h3>
                 <p className="mt-1 text-sm text-gray-500">
-                  All invoice-PO matches have been resolved or there are no pending matches.
+                  No verified invoice-project matches found.
                 </p>
               </div>
             )}
