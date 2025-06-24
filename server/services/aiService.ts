@@ -256,22 +256,59 @@ ${ocrText}`;
   }
 }
 
-// Helper function for fuzzy project matching
-export async function findBestProjectMatch(extractedProjectName: string, allProjects: any[]): Promise<string | null> {
-  if (!extractedProjectName || !allProjects.length) return null;
+// Helper function for fuzzy project matching with suggestions
+export async function findBestProjectMatch(extractedProjectName: string, allProjects: any[]): Promise<{
+  exactMatch: string | null;
+  suggestions: Array<{
+    projectId: string;
+    name: string;
+    similarity: number;
+    reason: string;
+  }>;
+}> {
+  if (!extractedProjectName || !allProjects.length) {
+    return { exactMatch: null, suggestions: [] };
+  }
 
-  let bestMatch = { project: null, score: 0 };
+  const matches = [];
 
   for (const project of allProjects) {
-    const similarity = calculateStringSimilarity(extractedProjectName.toLowerCase(), project.name.toLowerCase());
+    // Check project name similarity
+    const nameSimilarity = calculateStringSimilarity(extractedProjectName.toLowerCase(), project.name.toLowerCase());
     
-    // Use a lower threshold for fuzzy matching (60% instead of exact match)
-    if (similarity > bestMatch.score && similarity >= 60) {
-      bestMatch = { project, score: similarity };
+    // Check project ID similarity
+    const idSimilarity = calculateStringSimilarity(extractedProjectName.toLowerCase(), project.projectId.toLowerCase());
+    
+    // Use the higher similarity score
+    const bestSimilarity = Math.max(nameSimilarity, idSimilarity);
+    
+    if (bestSimilarity > 30) { // Lower threshold for suggestions
+      matches.push({
+        project,
+        similarity: bestSimilarity,
+        reason: nameSimilarity > idSimilarity ? 'Project name similarity' : 'Project ID similarity'
+      });
     }
   }
 
-  return bestMatch.project?.projectId || null;
+  // Sort by similarity score
+  matches.sort((a, b) => b.similarity - a.similarity);
+
+  // Find exact match (80%+ similarity)
+  const exactMatch = matches.find(m => m.similarity >= 80);
+
+  // Prepare suggestions (top 5 matches)
+  const suggestions = matches.slice(0, 5).map(m => ({
+    projectId: m.project.projectId,
+    name: m.project.name,
+    similarity: m.similarity,
+    reason: m.reason
+  }));
+
+  return {
+    exactMatch: exactMatch?.project?.projectId || null,
+    suggestions
+  };
 }
 
 // Simple string similarity function using Levenshtein distance

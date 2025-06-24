@@ -392,46 +392,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
             extractedProject: extractedData.projectId
           });
 
-          // Try to find a matching project using fuzzy matching
-          let matchedProjectId = extractedData.projectId;
+          // Try to find a matching project using fuzzy matching with suggestions
+          let matchedProjectId = null;
+          let projectSuggestions = [];
+          
           if (extractedData.projectId) {
             const allProjects = await storage.getProjects();
-            const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
-            if (fuzzyMatch) {
-              matchedProjectId = fuzzyMatch;
-              console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
+            const matchResult = await findBestProjectMatch(extractedData.projectId, allProjects);
+            
+            if (matchResult.exactMatch) {
+              matchedProjectId = matchResult.exactMatch;
+              console.log(`Exact match found for project "${extractedData.projectId}" to "${matchResult.exactMatch}"`);
+            } else if (matchResult.suggestions.length > 0) {
+              console.log(`No exact match found for project "${extractedData.projectId}", but found ${matchResult.suggestions.length} suggestions`);
+              projectSuggestions = matchResult.suggestions;
             } else {
-              console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
-              matchedProjectId = null;
+              console.log(`No matches or suggestions found for project "${extractedData.projectId}"`);
             }
           }
 
-          // Convert date strings to Date objects
+          // Convert date strings to Date objects - handle various formats safely
           let issueDate = null;
           let expectedDeliveryDate = null;
 
-          if (extractedData.issueDate) {
+          if (extractedData.issueDate && extractedData.issueDate.trim()) {
             try {
-              issueDate = new Date(extractedData.issueDate);
-              // Check if date is valid
-              if (isNaN(issueDate.getTime())) {
-                issueDate = null;
+              // Handle different date formats
+              const dateStr = extractedData.issueDate.trim();
+              if (dateStr && dateStr !== 'N/A' && dateStr !== '') {
+                issueDate = new Date(dateStr);
+                // Check if date is valid
+                if (isNaN(issueDate.getTime())) {
+                  issueDate = null;
+                  console.log(`Invalid issue date format: ${extractedData.issueDate}`);
+                }
               }
             } catch (error) {
-              console.log(`Invalid issue date format: ${extractedData.issueDate}`);
+              console.log(`Error parsing issue date: ${extractedData.issueDate}`, error);
               issueDate = null;
             }
           }
 
-          if (extractedData.expectedDeliveryDate) {
+          if (extractedData.expectedDeliveryDate && extractedData.expectedDeliveryDate.trim()) {
             try {
-              expectedDeliveryDate = new Date(extractedData.expectedDeliveryDate);
-              // Check if date is valid
-              if (isNaN(expectedDeliveryDate.getTime())) {
-                expectedDeliveryDate = null;
+              // Handle different date formats
+              const dateStr = extractedData.expectedDeliveryDate.trim();
+              if (dateStr && dateStr !== 'N/A' && dateStr !== '') {
+                expectedDeliveryDate = new Date(dateStr);
+                // Check if date is valid
+                if (isNaN(expectedDeliveryDate.getTime())) {
+                  expectedDeliveryDate = null;
+                  console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
+                }
               }
             } catch (error) {
-              console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
+              console.log(`Error parsing expected delivery date: ${extractedData.expectedDeliveryDate}`, error);
               expectedDeliveryDate = null;
             }
           }
@@ -461,7 +476,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(200).json({ 
             message: `Successfully processed and saved purchase order: ${fileName}`,
             purchaseOrder: newPurchaseOrder,
-            fileName: fileName
+            fileName: fileName,
+            projectSuggestions: projectSuggestions.length > 0 ? {
+              extractedProjectName: extractedData.projectId,
+              suggestions: projectSuggestions
+            } : null
           });
         } catch (processingError: any) {
           console.error(`Error processing PO ${fileName}:`, processingError);
@@ -511,6 +530,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating purchase order:", error);
       res.status(500).json({ message: "Failed to create purchase order" });
+    }
+  });
+
+  app.patch('/api/purchase-orders/:id', isAuthenticated, async (req, res) => {
+    try {
+      const poId = parseInt(req.params.id);
+      const updates = req.body;
+      const updatedPO = await storage.updatePurchaseOrder(poId, updates);
+      res.json(updatedPO);
+    } catch (error) {
+      console.error("Error updating purchase order:", error);
+      res.status(500).json({ message: "Failed to update purchase order" });
     }
   });
 
