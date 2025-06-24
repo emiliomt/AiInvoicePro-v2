@@ -27,6 +27,7 @@ interface PurchaseOrder {
   createdAt: string;
   updatedAt: string;
   fileName?: string;
+  originalOrderNumber?: string;
 }
 
 interface Project {
@@ -718,37 +719,27 @@ export default function PurchaseOrders() {
             <div className="grid gap-6">
               {purchaseOrders.map((po) => (
                 <Card key={po.id}>
-                  <CardHeader>
-                    <div className="flex justify-between items-start">
-                      <div>
-                        <CardTitle className="flex items-center space-x-2">
-                          <FileText className="text-blue-600" size={20} />
-                          <span>{po.poId}</span>
-                        </CardTitle>
-                        <p className="text-gray-600 mt-1">{po.vendorName}</p>
+                  
+                  <CardHeader className="pb-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <FileText className="h-5 w-5 text-blue-600" />
+                        <div>
+                          <CardTitle className="text-lg">{po.poId}</CardTitle>
+                          {po.originalOrderNumber && po.originalOrderNumber !== po.poId && (
+                            <p className="text-sm text-gray-500">Order: {po.originalOrderNumber}</p>
+                          )}
+                        </div>
                       </div>
-                      <div className="flex items-center space-x-2">
-                        <Badge className={getStatusColor(po.status)}>
-                          {po.status.toUpperCase()}
-                        </Badge>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleViewPODetails(po)}
-                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
-                        >
-                          <Eye size={16} />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleDeletePO(po.id, po.poId)}
-                          disabled={deletePOMutation.isPending}
-                          className="text-red-600 hover:text-red-700 hover:bg-red-50"
-                        >
-                          <Trash2 size={16} />
-                        </Button>
-                      </div>
+                      <Badge 
+                        variant={
+                          po.status === "open" ? "default" :
+                          po.status === "partial" ? "secondary" :
+                          po.status === "closed" ? "outline" : "destructive"
+                        }
+                      >
+                        {po.status.charAt(0).toUpperCase() + po.status.slice(1)}
+                      </Badge>
                     </div>
                   </CardHeader>
                   <CardContent>
@@ -855,8 +846,7 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Status</label>
-                    <p className="text-sm text-gray-900 mt-1">
-                      <Badge className={getStatusColor(selectedPOForDetails.status)}>
+                    <p className="text-sm text-gray-900 mt-1                      <Badge className={getStatusColor(selectedPOForDetails.status)}>
                         {selectedPOForDetails.status.toUpperCase()}
                       </Badge>
                     </p>

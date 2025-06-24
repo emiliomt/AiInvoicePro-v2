@@ -235,8 +235,11 @@ ${ocrText}`;
     }
 
     // Map extracted data to expected format
+    // Use entrada_almacen_no as the primary unique identifier, fallback to orden_compra_no
+    const uniquePoId = extractedData.entrada_almacen_no || extractedData.orden_compra_no || `PO-${Date.now()}`;
+    
     return {
-      poId: extractedData.orden_compra_no || extractedData.entrada_almacen_no || "",
+      poId: uniquePoId,
       vendorName: extractedData.proveedor || "",
       issueDate: extractedData.fecha_factura || "",
       expectedDeliveryDate: extractedData.fecha_remision || "",
@@ -249,6 +252,8 @@ ${ocrText}`;
       terms: extractedData.observaciones_oc || extractedData.descripcion_oc || "",
       lineItems: lineItems,
       confidenceScore: "0.85",
+      // Store the original orden_compra_no in the items for reference
+      originalOrderNumber: extractedData.orden_compra_no || "",
     };
   } catch (error: any) {
     console.error("AI PO extraction failed:", error);

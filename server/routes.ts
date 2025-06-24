@@ -464,6 +464,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             issueDate: issueDate,
             expectedDeliveryDate: expectedDeliveryDate,
             projectId: matchedProjectId,
+            originalOrderNumber: extractedData.originalOrderNumber || null,
             buyerName: extractedData.buyerName || null,
             buyerAddress: extractedData.buyerAddress || null,
             vendorAddress: extractedData.vendorAddress || null,

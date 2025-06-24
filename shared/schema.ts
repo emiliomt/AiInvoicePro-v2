@@ -219,6 +219,14 @@ export const purchaseOrders = pgTable("purchase_orders", {
   issueDate: timestamp("issue_date").notNull(),
   expectedDeliveryDate: timestamp("expected_delivery_date"),
   status: poStatusEnum("status").default("open"),
+  originalOrderNumber: varchar("original_order_number", { length: 100 }), // Store the original orden_compra_no
+  buyerName: varchar("buyer_name", { length: 255 }),
+  buyerAddress: text("buyer_address"),
+  vendorAddress: text("vendor_address"),
+  terms: text("terms"),
+  ocrText: text("ocr_text"),
+  fileName: varchar("file_name", { length: 255 }),
+  uploadedBy: varchar("uploaded_by", { length: 255 }),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
