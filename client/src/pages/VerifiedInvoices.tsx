@@ -1,7 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -195,25 +194,31 @@ export default function VerifiedInvoices() {
         </div>
 
         {/* Search */}
-        <div className="mb-6">
-          <div className="relative max-w-md">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Search verified invoices..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-        </div>
-
-        {/* Verified Invoices Table */}
         <Card>
-          <CardHeader>
-            <CardTitle>Verified Invoice-Project Assignments</CardTitle>
-            <p className="text-sm text-gray-600">Invoices that have been successfully matched and verified for specific projects</p>
+          <CardContent className="p-6">
+            <div className="relative max-w-md">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <Input
+                placeholder="Search verified invoices..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="pl-10"
+              />
+            </div>
+          </CardContent>
+        </Card>
+
+        {/* Verified Invoice-Project Matches */}
+        <Card>
+          <CardHeader className="border-b bg-purple-50">
+            <CardTitle className="flex items-center space-x-2">
+              <div className="w-6 h-6 bg-purple-600 rounded-full flex items-center justify-center">
+                <CheckCircle className="text-white" size={16} />
+              </div>
+              <span>Verified Invoice-Project Matches</span>
+            </CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-6">
             {filteredInvoices.length === 0 ? (
               <div className="text-center py-12">
                 <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
@@ -223,80 +228,138 @@ export default function VerifiedInvoices() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice ID</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Match Score</TableHead>
-                      <TableHead>Verified By</TableHead>
-                      <TableHead>Date Verified</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInvoices.map((verifiedInvoice) => (
-                      <TableRow key={verifiedInvoice.id}>
-                        <TableCell>
-                          <div className="font-medium">#{verifiedInvoice.invoice.id}</div>
-                          <div className="text-sm text-gray-500">
-                            {formatDate(verifiedInvoice.invoice.dateIssued)}
+              <div className="space-y-6">
+                {filteredInvoices.map((verifiedInvoice) => (
+                  <div key={verifiedInvoice.id} className="border rounded-lg p-6 space-y-4 bg-white shadow-sm">
+                    {/* Invoice and Project Information */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {/* Invoice Details */}
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <FileText className="text-blue-600" size={16} />
+                          <h4 className="font-medium text-blue-900">Invoice</h4>
+                        </div>
+                        <div className="text-sm space-y-2 bg-gray-50 p-4 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">ID:</span>
+                            <span className="text-gray-900">{verifiedInvoice.invoice.id}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">
-                            {verifiedInvoice.invoice.vendorName || 'Unknown Vendor'}
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Vendor:</span>
+                            <span className="text-gray-900">{verifiedInvoice.invoice.vendorName || "Unknown"}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">
-                            {formatAmount(verifiedInvoice.invoice.totalAmount, verifiedInvoice.invoice.currency)}
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Amount:</span>
+                            <span className="text-gray-900 font-medium">
+                              {formatAmount(verifiedInvoice.invoice.totalAmount, verifiedInvoice.invoice.currency)}
+                            </span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{verifiedInvoice.project.name}</div>
-                            <div className="text-sm text-gray-500">
-                              ID: {verifiedInvoice.project.projectId}
-                            </div>
-                            <div className="text-sm text-gray-500">
-                              {verifiedInvoice.project.supervisor}
-                            </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">File:</span>
+                            <span className="text-gray-900 text-xs break-all">
+                              {verifiedInvoice.invoice.fileName || "N/A"}
+                            </span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="space-y-1">
-                            <div className="font-medium">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</div>
-                            {getConfidenceBadge(verifiedInvoice.matchScore)}
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Date:</span>
+                            <span className="text-gray-900">{formatDate(verifiedInvoice.invoice.dateIssued)}</span>
                           </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{verifiedInvoice.verifiedBy || verifiedInvoice.approvedBy}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div>{formatDate(verifiedInvoice.verifiedAt)}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex gap-2">
-                            <Button 
-                              variant="ghost" 
-                              size="sm"
-                              onClick={() => window.open(`/invoices/${verifiedInvoice.invoiceId}`, '_blank')}
-                            >
-                              <Eye className="w-4 h-4" />
-                            </Button>
-                            <Button variant="ghost" size="sm">
-                              <Download className="w-4 h-4" />
-                            </Button>
+                        </div>
+                      </div>
+
+                      {/* Project Details */}
+                      <div className="space-y-3">
+                        <div className="flex items-center space-x-2">
+                          <div className="w-4 h-4 bg-purple-600 rounded-full flex items-center justify-center">
+                            <div className="w-2 h-2 bg-white rounded-full"></div>
                           </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
+                          <h4 className="font-medium text-purple-900">Project</h4>
+                        </div>
+                        <div className="text-sm space-y-2 bg-gray-50 p-4 rounded-lg">
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Project ID:</span>
+                            <span className="text-gray-900">{verifiedInvoice.project.projectId}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Name:</span>
+                            <span className="text-gray-900">{verifiedInvoice.project.name}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">Address:</span>
+                            <span className="text-gray-900 text-xs">{verifiedInvoice.project.address}</span>
+                          </div>
+                          <div className="flex justify-between">
+                            <span className="font-medium text-gray-700">City:</span>
+                            <span className="text-gray-900">Barranquilla</span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Match Details */}
+                    <div className="bg-gray-50 p-4 rounded-lg">
+                      <h5 className="font-medium mb-3">Match Details</h5>
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div className="flex items-center space-x-2">
+                          <XCircle className="text-red-500" size={16} />
+                          <span className="text-gray-600">Project Name Match (0%)</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <XCircle className="text-red-500" size={16} />
+                          <span className="text-gray-600">Address Match (0%)</span>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <XCircle className="text-red-500" size={16} />
+                          <span className="text-gray-600">City Match (0%)</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="flex items-center space-x-2">
+                          <span className="text-sm font-medium">Match Score:</span>
+                          <span className="text-lg font-bold">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</span>
+                          {getConfidenceBadge(verifiedInvoice.matchScore)}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Verification Details */}
+                    <div className="flex items-center justify-between pt-4 border-t">
+                      <div className="text-sm text-gray-600">
+                        <div className="flex items-center space-x-2">
+                          <span>Verified by: <span className="font-medium">{verifiedInvoice.verifiedBy}</span></span>
+                        </div>
+                        <div className="text-xs text-gray-500 mt-1">
+                          Approved: {formatDate(verifiedInvoice.verifiedAt)} | Verified: {formatDate(verifiedInvoice.verifiedAt)}
+                        </div>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Badge className="bg-green-100 text-green-800">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Verified
+                        </Badge>
+                      </div>
+                    </div>
+
+                    {/* Action Buttons */}
+                    <div className="flex space-x-3 pt-4 border-t">
+                      <Button 
+                        variant="outline"
+                        onClick={() => window.open(`/invoices/${verifiedInvoice.invoiceId}`, '_blank')}
+                        className="flex items-center gap-1"
+                      >
+                        <Eye className="w-4 h-4" />
+                        View Invoice
+                      </Button>
+                      <Button 
+                        variant="outline"
+                        className="flex items-center gap-1"
+                      >
+                        <Download className="w-4 h-4" />
+                        Download
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
           </CardContent>
