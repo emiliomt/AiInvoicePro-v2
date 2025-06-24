@@ -203,7 +203,7 @@ export default function VerifiedInvoices() {
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <CheckCircle className="w-5 h-5 text-purple-600" />
-              Verified Invoice-Project Matches
+              Verified Invoice-Project Matches (Table View)
             </CardTitle>
           </CardHeader>
           <CardContent>
@@ -223,58 +223,62 @@ export default function VerifiedInvoices() {
                 </p>
               </div>
             ) : (
-              <div className="overflow-x-auto">
-                <table className="w-full border-collapse">
+              <>
+                <div className="bg-blue-50 p-2 mb-4 rounded">
+                  <p className="text-sm text-blue-700">✓ Traditional Table Format Active - Updated View</p>
+                </div>
+                <div className="overflow-x-auto">
+                <table className="w-full border-collapse border border-gray-300">
                   <thead>
-                    <tr className="border-b bg-gray-50">
-                      <th className="text-left p-3 font-medium text-gray-700">Invoice Details</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Vendor</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Amount</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Project</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Match Score</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Approved By</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Status</th>
-                      <th className="text-left p-3 font-medium text-gray-700">Actions</th>
+                    <tr className="border-b bg-gray-100">
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Invoice Details</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Vendor</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Amount</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Project</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Match Score</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Approved By</th>
+                      <th className="text-left p-4 font-semibold text-gray-800 border-r">Status</th>
+                      <th className="text-left p-4 font-semibold text-gray-800">Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {filteredInvoices.map((verifiedInvoice) => (
                       <tr key={verifiedInvoice.id} className="border-b hover:bg-gray-50">
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <div className="font-medium">ID: {verifiedInvoice.invoice.id}</div>
                           <div className="text-sm text-gray-500">
                             {format(new Date(verifiedInvoice.verifiedAt), 'M/d/yyyy')}
                           </div>
                         </td>
-                        <td className="p-3 font-medium">
+                        <td className="p-4 font-medium border-r">
                           {verifiedInvoice.invoice.vendorName || 'Unknown'}
                         </td>
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <div className="font-medium">{verifiedInvoice.invoice.currency}</div>
                           <div className="text-sm">{parseFloat(verifiedInvoice.invoice.totalAmount || '0').toLocaleString()}</div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <div className="font-medium">{verifiedInvoice.project.name}</div>
                           <div className="text-sm text-gray-500">ID: {verifiedInvoice.project.projectId}</div>
                           <div className="text-xs text-gray-400">Supervisor: {verifiedInvoice.project.supervisor}</div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <div className="font-medium">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</div>
                           <div className="text-sm text-green-600">High Confidence</div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <div className="font-medium">{verifiedInvoice.approvedBy}</div>
                           <div className="text-sm text-gray-500">
                             {format(new Date(verifiedInvoice.approvedAt), 'M/d/yyyy')}
                           </div>
                         </td>
-                        <td className="p-3">
+                        <td className="p-4 border-r">
                           <Badge variant="secondary" className="bg-green-100 text-green-800">
                             <CheckCircle className="w-3 h-3 mr-1" />
                             Verified
                           </Badge>
                         </td>
-                        <td className="p-3">
+                        <td className="p-4">
                           <div className="flex gap-2">
                             <Button variant="ghost" size="sm">
                               <FileText className="w-4 h-4" />
@@ -291,7 +295,8 @@ export default function VerifiedInvoices() {
                     ))}
                   </tbody>
                 </table>
-              </div>
+                </div>
+              </>
             )}
           </CardContent>
         </Card>
