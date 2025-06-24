@@ -393,7 +393,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const newPO = await storage.createPurchaseOrder({
             poId: extractedData.poId || `PO-${Date.now()}`,
             vendorName: extractedData.vendorName || 'Unknown Vendor',
-            totalAmount: extractedData.totalAmount || '0',
+            amount: extractedData.totalAmount || '0',
             description: extractedData.description || '',
             projectId: extractedData.projectId || null,
             status: 'open',
