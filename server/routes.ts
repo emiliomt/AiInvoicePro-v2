@@ -57,24 +57,24 @@ const excelUpload = multer({
 // Async processing function for invoice handling
 async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   try {
-    console.log('Starting OCR processing for invoice ' + invoice.id + ' (' + invoice.fileName + ')');
+    console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
 
     // Update status to show processing in progress
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
     const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
-    console.log('OCR completed for invoice ' + invoice.id + ', text length: ' + ocrText.length);
+    console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
 
     if (!ocrText || ocrText.trim().length < 10) {
       throw new Error("OCR did not extract sufficient text from the document");
     }
 
     // Extract structured data using AI
-    console.log('Starting AI extraction for invoice ' + invoice.id);
+    console.log(`Starting AI extraction for invoice ${invoice.id}`);
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
     const extractedData = await extractInvoiceData(ocrText);
-    console.log('AI extraction completed for invoice ' + invoice.id + ':', {
+    console.log(`AI extraction completed for invoice ${invoice.id}:`, {
       vendor: extractedData.vendorName,
       amount: extractedData.totalAmount,
       invoiceNumber: extractedData.invoiceNumber
@@ -95,9 +95,9 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       currency: extractedData.currency || 'USD',
     });
 
-    console.log('Invoice ' + invoice.id + ' processing completed successfully');
+    console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
-    console.error('Error processing invoice ' + invoice.id + ':', error);
+    console.error(`Error processing invoice ${invoice.id}:`, error);
     await storage.updateInvoice(invoice.id, { 
       status: "rejected",
       extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -363,12 +363,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Extract OCR text
           const ocrText = await processInvoiceOCR(file.buffer, 0);
-          console.log('OCR completed for PO ' + fileName + ', text length: ' + ocrText.length);
+          console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
 
           // Check if OCR was successful (even with error messages, we can still proceed)
           if (!ocrText || ocrText.trim().length < 10) {
             return res.status(400).json({ 
-              message: 'OCR processing failed for ' + fileName + '. The file may be corrupted or in an unsupported format.',
+              message: `OCR processing failed for ${fileName}. The file may be corrupted or in an unsupported format.`,
               fileName: fileName,
               error: "Insufficient text extracted from document"
             });
@@ -377,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Check if the OCR text indicates an error
           if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
             return res.status(400).json({ 
-              message: 'Document processing failed for ' + fileName + '. ' + ocrText,
+              message: `Document processing failed for ${fileName}. ${ocrText}`,
               fileName: fileName,
               error: "OCR processing error"
             });
@@ -385,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Extract data using AI
           const extractedData = await extractPurchaseOrderData(ocrText);
-          console.log('AI extraction completed for PO ' + fileName + ':', {
+          console.log(`AI extraction completed for PO ${fileName}:`, {
             vendor: extractedData.vendorName,
             amount: extractedData.totalAmount,
             poId: extractedData.poId,
@@ -399,9 +399,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
             if (fuzzyMatch) {
               matchedProjectId = fuzzyMatch;
-              console.log('Fuzzy matched project "' + extractedData.projectId + '" to "' + fuzzyMatch + '"');
+              console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
             } else {
-              console.log('No fuzzy match found for project "' + extractedData.projectId + '", setting to null');
+              console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
               matchedProjectId = null;
             }
           }
@@ -418,7 +418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 issueDate = null;
               }
             } catch (error) {
-              console.log('Invalid issue date format: ' + extractedData.issueDate);
+              console.log(`Invalid issue date format: ${extractedData.issueDate}`);
               issueDate = null;
             }
           }
@@ -431,17 +431,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 expectedDeliveryDate = null;
               }
             } catch (error) {
-              console.log('Invalid expected delivery date format: ' + extractedData.expectedDeliveryDate);
+              console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
               expectedDeliveryDate = null;
             }
           }
 
           // Check if PO already exists
-          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || ('PO-' + Date.now()));
-
+          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
+          
           if (existingPO) {
             return res.status(400).json({ 
-              message: 'Purchase Order ' + extractedData.poId + ' already exists in the system. Please check the existing PO or use a different document.',
+              message: `Purchase Order ${extractedData.poId} already exists in the system. Please check the existing PO or use a different document.`,
               fileName: fileName,
               error: "Duplicate PO ID",
               existingPO: {
@@ -456,7 +456,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Create purchase order
           const newPurchaseOrder = await storage.createPurchaseOrder({
-            poId: extractedData.poId || ('PO-' + Date.now()),
+            poId: extractedData.poId || `PO-${Date.now()}`,
             vendorName: extractedData.vendorName || "Unknown Vendor",
             amount: extractedData.totalAmount || "0",
             currency: extractedData.currency || "USD",
@@ -475,17 +475,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
             uploadedBy: req.user?.id || "anonymous",
           });
 
-          console.log('Purchase order saved with ID: ' + newPurchaseOrder.id);
+          console.log(`Purchase order saved with ID: ${newPurchaseOrder.id}`);
 
           return res.status(200).json({ 
-            message: 'Successfully processed and saved purchase order: ' + fileName,
+            message: `Successfully processed and saved purchase order: ${fileName}`,
             purchaseOrder: newPurchaseOrder,
             fileName: fileName
           });
         } catch (processingError: any) {
-          console.error('Error processing PO ' + fileName + ':', processingError);
+          console.error(`Error processing PO ${fileName}:`, processingError);
           return res.status(500).json({ 
-            message: 'Failed to process purchase order: ' + (processingError.message || 'Unknown processing error'),
+            message: `Failed to process purchase order: ${processingError.message || 'Unknown processing error'}`,
             fileName: fileName,
             error: processingError.message || 'Unknown error',
             details: 'Please ensure the file is a valid PDF and try again. If the problem persists, try converting the file to a different format.'
@@ -824,8 +824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If value is an object, stringify it; if it's already a string, validate it
       let settingsJson: string;
       if (typeof value === 'object') {
-        ```text
-settingsJson = JSON.stringify(value);
+        settingsJson = JSON.stringify(value);
       } else if (typeof value === 'string') {
         settingsJson = value;
         // Only validate non-empty strings as JSON
@@ -951,7 +950,7 @@ settingsJson = JSON.stringify(value);
             }
 
             const projectData = {
-              projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || 'PROJ-' + Date.now() + '-' + i,
+              projectId: row['Project ID'] || row['projectId'] || row['ID'] || row['id'] || `PROJ-${Date.now()}-${i}`,
               name: row['Project Name'] || row['name'] || row['Name'] || row['Project'] || row['project'] || 'Imported Project',
               description: row['Description'] || row['description'] || row['Desc'] || row['desc'] || row['Notes'] || row['notes'] || '',
               address: row['Invoice Address'] || row['Address'] || row['address'] || row['Location'] || row['location'] || '',
@@ -977,7 +976,7 @@ settingsJson = JSON.stringify(value);
         }
 
         res.json({
-          message: 'Successfully imported ' + importedProjects.length + ' projects',
+          message: `Successfully imported ${importedProjects.length} projects`,
           imported: importedProjects.length,
           errors: errors.length,
           errorDetails: errors
@@ -1072,7 +1071,7 @@ settingsJson = JSON.stringify(value);
           try {
             // Generate unique filename
             const fileExt = path.extname(file.originalname);
-            const uniqueFileName = Date.now() + '-' + Math.random().toString(36).substring(2) + fileExt;
+            const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
             const filePath = path.join(uploadsDir, uniqueFileName);
 
             // Write file to disk
@@ -1091,7 +1090,7 @@ settingsJson = JSON.stringify(value);
 
             return invoice;
           } catch (fileError) {
-            console.error('Error processing file ' + file.originalname + ':', fileError);
+            console.error(`Error processing file ${file.originalname}:`, fileError);
             return null;
           }
         });
@@ -1106,24 +1105,24 @@ settingsJson = JSON.stringify(value);
         // Async processing function moved outside for better performance
         async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           try {
-            console.log('Starting OCR processing for invoice ' + invoice.id + ' (' + invoice.fileName + ')');
+            console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
 
             // Update status to show processing in progress
             await storage.updateInvoice(invoice.id, { status: "processing" });
 
             const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
-            console.log('OCR completed for invoice ' + invoice.id + ', text length: ' + ocrText.length);
+            console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
 
             if (!ocrText || ocrText.trim().length < 10) {
               throw new Error("OCR did not extract sufficient text from the document");
             }
 
             // Extract structured data using AI
-            console.log('Starting AI extraction for invoice ' + invoice.id);
+            console.log(`Starting AI extraction for invoice ${invoice.id}`);
             await storage.updateInvoice(invoice.id, { status: "processing" });
 
             const extractedData = await extractInvoiceData(ocrText);
-            console.log('AI extraction completed for invoice ' + invoice.id + ':', {
+            console.log(`AI extraction completed for invoice ${invoice.id}:`, {
               vendor: extractedData.vendorName,
               amount: extractedData.totalAmount,
               invoiceNumber: extractedData.invoiceNumber
@@ -1178,16 +1177,16 @@ settingsJson = JSON.stringify(value);
               try {
                 const { ClassificationService } = await import('./services/classificationService');
                 await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
-                console.log('Auto-classified line items for invoice ' + invoice.id);
+                console.log(`Auto-classified line items for invoice ${invoice.id}`);
               } catch (classificationError) {
-                console.error('Failed to auto-classify line items for invoice ' + invoice.id + ':', classificationError);
+                console.error(`Failed to auto-classify line items for invoice ${invoice.id}:`, classificationError);
                 // Continue processing even if classification fails
               }
             }
 
-            console.log('Invoice ' + invoice.id + ' processing completed successfully');
+            console.log(`Invoice ${invoice.id} processing completed successfully`);
           } catch (processingError: any) {
-            console.error('Error processing invoice ' + invoice.id + ':', processingError);
+            console.error(`Error processing invoice ${invoice.id}:`, processingError);
             await storage.updateInvoice(invoice.id, {
               status: "rejected",
               extractedData: { 
@@ -1200,7 +1199,7 @@ settingsJson = JSON.stringify(value);
         }
 
         res.json({ 
-          message: 'Successfully uploaded ' + uploadedInvoices.length + ' invoice(s). Processing started.',
+          message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
           invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
         });
       } catch (error) {
@@ -1235,14 +1234,14 @@ settingsJson = JSON.stringify(value);
           const fs = require('fs');
           const fileBuffer = fs.readFileSync(invoice.fileUrl);
 
-          console.log('Manual OCR processing started for invoice ' + invoiceId);
+          console.log(`Manual OCR processing started for invoice ${invoiceId}`);
           const ocrText = await processInvoiceOCR(fileBuffer, invoiceId);
 
           if (!ocrText || ocrText.trim().length < 10) {
             throw new Error("OCR did not extract sufficient text from the document");
           }
 
-          console.log('Manual AI extraction started for invoice ' + invoiceId);
+          console.log(`Manual AI extraction started for invoice ${invoiceId}`);
           const extractedData = await extractInvoiceData(ocrText);
 
           // Update invoice with extracted data
@@ -1262,9 +1261,9 @@ settingsJson = JSON.stringify(value);
             currency: extractedData.currency || "USD",
           });
 
-          console.log('Manual processing completed successfully for invoice ' + invoiceId);
+          console.log(`Manual processing completed successfully for invoice ${invoiceId}`);
         } catch (error: any) {
-          console.error('Manual processing failed for invoice ' + invoiceId + ':', error);
+          console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
           await storage.updateInvoice(invoiceId, {
             status: "rejected",
             extractedData: { 
@@ -1339,7 +1338,7 @@ settingsJson = JSON.stringify(value);
       res.status(200).json({ 
         message: "PDF preview endpoint ready", 
         fileName: invoice.fileName,
-        previewUrl: '/api/invoices/' + invoiceId + '/preview/file'
+        previewUrl: `/api/invoices/${invoiceId}/preview/file`
       });
     } catch (error) {
       console.error("Error serving invoice preview:", error);
@@ -1378,7 +1377,7 @@ settingsJson = JSON.stringify(value);
         const stat = fs.statSync(invoice.fileUrl);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', stat.size.toString());
-        res.setHeader('Content-Disposition', 'inline; filename="' + invoice.fileName + '"');
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
         res.setHeader('Accept-Ranges', 'bytes');
 
@@ -1398,7 +1397,7 @@ settingsJson = JSON.stringify(value);
 
         // Set headers before piping
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', 'inline; filename="' + invoice.fileName + '"');
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
 
         // Pipe the PDF to response
@@ -1406,11 +1405,11 @@ settingsJson = JSON.stringify(value);
 
         // Add content to the PDF
         doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
-        doc.fontSize(14).text('File: ' + invoice.fileName, 100, 140);
-        doc.text('Invoice ID: ' + invoice.id, 100, 160);
-        doc.text('Vendor: ' + (invoice.vendorName || 'N/A'), 100, 180);
-        doc.text('Amount: ' + (invoice.totalAmount || 'N/A') + ' ' + (invoice.currency || 'USD'), 100, 200);
-        doc.text('Date: ' + (invoice.invoiceDate || 'N/A'), 100, 220);
+        doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
+        doc.text(`Invoice ID: ${invoice.id}`, 100, 160);
+        doc.text(`Vendor: ${invoice.vendorName || 'N/A'}`, 100, 180);
+        doc.text(`Amount: ${invoice.totalAmount || 'N/A'} ${invoice.currency || 'USD'}`, 100, 200);
+        doc.text(`Date: ${invoice.invoiceDate || 'N/A'}`, 100, 220);
 
         doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
         doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
@@ -1649,7 +1648,7 @@ settingsJson = JSON.stringify(value);
       });
 
       // Log for potential model training
-      console.log('Extraction feedback received for invoice ' + invoiceId + ':', {
+      console.log(`Extraction feedback received for invoice ${invoiceId}:`, {
         fileName: invoice.fileName,
         reason,
         hasCorrections: !!correctedData,
@@ -1685,85 +1684,7 @@ settingsJson = JSON.stringify(value);
     }
   });
 
-  // Submit learning feedback for manual project assignments
-  app.post('/api/invoices/:id/learning-feedback', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
-      const { assignedProjectId, feedback } = req.body;
-
-      // Get the invoice to validate it exists
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      // Create feedback log with learning data
-      const feedbackLog = await storage.createFeedbackLog({
-        invoiceId,
-        userId,
-        originalText: invoice.ocrText || '',
-        extractedData: invoice.extractedData,
-        correctedData: feedback,
-        reason: 'MANUAL_PROJECT_ASSIGNMENT',
-        fileName: invoice.fileName,
-      });
-
-      // Log for learning system improvement
-      console.log('Learning feedback received for invoice ' + invoiceId + ':', {
-        fileName: invoice.fileName,
-        assignedProjectId,
-        extractedProjectData: {
-          projectName: feedback.projectName,
-          projectAddress: feedback.projectAddress,
-          projectCity: feedback.projectCity,
-          vendorAddress: feedback.vendorAddress
-        },
-        correctProject: feedback.correctProject,
-        userId,
-        timestamp: new Date().toISOString(),
-      });
-
-      // Write training data for future ML improvements
-      const fs = await import('fs');
-      const path = await import('path');
-      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
-
-      const trainingEntry = {
-        invoiceId,
-        fileName: invoice.fileName,
-        type: 'project_assignment_training',
-        originalText: invoice.ocrText,
-        extractedData: invoice.extractedData,
-        extractedProjectData: {
-          projectName: feedback.projectName,
-          projectAddress: feedback.projectAddress,
-          projectCity: feedback.projectCity,
-          vendorAddress: feedback.vendorAddress
-        },
-        correctAssignment: {
-          projectId: assignedProjectId,
-          projectName: feedback.correctProject.name,
-          projectAddress: feedback.correctProject.address,
-          projectCity: feedback.correctProject.city
-        },
-        feedbackType: 'manual_assignment',
-        timestamp: new Date().toISOString(),
-      };
-
-      fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
-
-      res.json({ 
-        message: "Learning feedback recorded successfully. This will help improve future project matching.",
-        feedbackId: feedbackLog.id 
-      });
-    } catch (error) {
-      console.error("Error recording learning feedback:", error);
-      res.status(500).json({ message: "Failed to record learning feedback" });
-    }
-  });
-
-  // Submit positive feedback for successful extractions
+  // Submit positive feedback for AI extraction
   app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
@@ -1794,10 +1715,9 @@ settingsJson = JSON.stringify(value);
       await LearningTracker.recordPositiveFeedback(invoiceId, userId);
 
       // Log successful extraction for model improvement
-      console.log('Positive feedback received for invoice ' + invoiceId + ':', {
+      console.log(`Positive feedback received for invoice ${invoiceId}:`, {
         fileName: invoice.fileName,
-        userId,
-        timestamp: new Date().toISOString(),
+        userId,        timestamp: new Date().toISOString(),
         confidenceScore: invoice.confidenceScore,
       });
 
@@ -2094,7 +2014,7 @@ settingsJson = JSON.stringify(value);
         }
       }
 
-      res.json({ message: 'Added ' + results.length + ' keywords', results });
+      res.json({ message: `Added ${results.length} keywords`, results });
     } catch (error) {
       console.error("Error bulk adding keywords:", error);
       res.status(500).json({ message: "Failed to bulk add keywords" });
@@ -2222,14 +2142,14 @@ settingsJson = JSON.stringify(value);
               });
               processedCount++;
             } catch (error) {
-              console.error('Error moving invoice ' + validation.invoiceId + ' to verified:', error);
+              console.error(`Error moving invoice ${validation.invoiceId} to verified:`, error);
             }
           }
         }
       }
 
       res.json({
-        message: 'Processed ' + processedCount + ' validated invoices',
+        message: `Processed ${processedCount} validated invoices`,
         totalProcessed: processedCount,
         validationSummary: {
           totalInvoices: validationResults.totalInvoices,

@@ -114,8 +114,6 @@ The system uses PostgreSQL with the following key entities:
 ## Changelog
 - June 13, 2025. Initial setup
 - June 23, 2025. Added verified invoices system: automatic validation processing moves approved invoices to verified status when they pass validation criteria, displayed in Unresolved Invoice-PO Matches section
-- June 24, 2025. Enhanced purchase order management with comprehensive data visualization and manual project assignment functionality
-- June 24, 2025. Fixed critical template literal syntax errors preventing application startup: replaced all template literals with string concatenation to resolve parsing issues, application now runs successfully on port 5000
 
 ## User Preferences
 
