@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2 } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2 } from "lucide-react";
 import { useState } from "react";
 
 interface PurchaseOrder {
@@ -148,14 +148,14 @@ export default function PurchaseOrders() {
       }
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-      setIsUploadDialogOpen(false);
-      setSelectedFiles([]);
-      setExtractedPOData(data); // Store the extracted data
       toast({
         title: "Success",
-        description: "Purchase orders uploaded successfully",
+        description: `${selectedFiles.length} purchase order(s) uploaded and processed successfully.`,
       });
+      setExtractedPOData(data.extractedData);
+      setSelectedFiles([]);
+      setIsUploadDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
     onError: (error: Error) => {
       toast({
@@ -354,7 +354,14 @@ export default function PurchaseOrders() {
                       Cancel
                     </Button>
                     <Button onClick={handleUploadPO} disabled={uploadPOMutation.isLoading}>
-                      {uploadPOMutation.isLoading ? "Uploading..." : "Upload"}
+                    {uploadPOMutation.isLoading ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          Uploading...
+                        </>
+                      ) : (
+                        "Upload"
+                      )}
                     </Button>
                   </div>
                   {extractedPOData && (
