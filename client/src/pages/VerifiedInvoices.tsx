@@ -128,23 +128,23 @@ export default function VerifiedInvoices() {
       <div className="container mx-auto px-4 py-8">
         <div className="mb-8">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Unresolved Invoice-PO Matches
+            Verified Invoice-Project Matches
           </h1>
           <p className="text-gray-600 dark:text-gray-400">
-            Review and resolve invoice-purchase order matching conflicts
+            Review verified invoice-project assignments that have been validated
           </p>
         </div>
 
-        {/* PO Matching Issues Summary */}
+        {/* Verified Invoices Summary */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
           <Card>
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Unresolved Matches</p>
-                  <p className="text-2xl font-bold text-orange-600">{verifiedInvoices.length}</p>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Verified</p>
+                  <p className="text-2xl font-bold text-green-600">{verifiedInvoices.length}</p>
                 </div>
-                <AlertTriangle className="w-8 h-8 text-orange-500" />
+                <CheckCircle className="w-8 h-8 text-green-500" />
               </div>
             </CardContent>
           </Card>
@@ -158,7 +158,7 @@ export default function VerifiedInvoices() {
                     {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 90).length}
                   </p>
                 </div>
-                <CheckCircle className="w-8 h-8 text-green-500" />
+                <TrendingUp className="w-8 h-8 text-green-500" />
               </div>
             </CardContent>
           </Card>
@@ -167,12 +167,12 @@ export default function VerifiedInvoices() {
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Needs Review</p>
-                  <p className="text-2xl font-bold text-red-600">
-                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) < 70).length}
+                  <p className="text-sm text-gray-600 dark:text-gray-400">Medium Confidence</p>
+                  <p className="text-2xl font-bold text-yellow-600">
+                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length}
                   </p>
                 </div>
-                <XCircle className="w-8 h-8 text-red-500" />
+                <AlertTriangle className="w-8 h-8 text-yellow-500" />
               </div>
             </CardContent>
           </Card>
@@ -263,9 +263,8 @@ export default function VerifiedInvoices() {
                         <TableCell>
                           <div>
                             <div className="font-medium">ID: {assignment.invoice.id}</div>
-                            <div className="text-sm text-gray-500">{assignment.invoice.fileName}</div>
                             <div className="text-sm text-gray-500">
-                              {new Date(assignment.invoice.invoiceDate).toLocaleDateString()}
+                              {format(new Date(assignment.verifiedAt), 'M/d/yyyy')}
                             </div>
                           </div>
                         </TableCell>
