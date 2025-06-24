@@ -349,7 +349,7 @@ export default function PurchaseOrders() {
     if (selectedPOForAssignment) {
       updatePOProjectMutation.mutate({
         poId: selectedPOForAssignment.id,
-        projectId: assignmentProjectId === "unassigned" ? null : assignmentProjectId || null,
+        projectId: assignmentProjectId === "unassigned" ? null : assignmentProjectId,
       });
     }
   };
@@ -1119,7 +1119,7 @@ export default function PurchaseOrders() {
               <div className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="project-select">Select Project</Label>
-                  <Select value={assignmentProjectId} onValueChange={setAssignmentProjectId}>
+                  <Select value={assignmentProjectId || "unassigned"} onValueChange={setAssignmentProjectId}>
                     <SelectTrigger>
                       <SelectValue placeholder="Choose a project or leave unassigned" />
                     </SelectTrigger>
