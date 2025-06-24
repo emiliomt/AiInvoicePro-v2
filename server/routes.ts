@@ -363,8 +363,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const ocrText = await processInvoiceOCR(file.buffer, 0);
           console.log(`OCR completed for PO ${file.originalname}, text length: ${ocrText.length}`);
 
+          // Check if OCR was successful (even with error messages, we can still proceed)
           if (!ocrText || ocrText.trim().length < 10) {
-            throw new Error("OCR did not extract sufficient text from the document");
+            return res.status(400).json({ 
+              message: `OCR processing failed for ${file.originalname}. The file may be corrupted or in an unsupported format.`,
+              fileName: file.originalname,
+              error: "Insufficient text extracted from document"
+            });
+          }
+
+          // Check if the OCR text indicates an error
+          if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
+            return res.status(400).json({ 
+              message: `Document processing failed for ${file.originalname}. ${ocrText}`,
+              fileName: file.originalname,
+              error: "OCR processing error"
+            });
           }
 
           // Extract structured data using AI
@@ -383,9 +397,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (processingError: any) {
           console.error(`Error processing PO ${file.originalname}:`, processingError);
           return res.status(500).json({ 
-            message: `Failed to process purchase order: ${processingError.message}`,
+            message: `Failed to process purchase order: ${processingError.message || 'Unknown processing error'}`,
             fileName: file.originalname,
-            error: processingError.message
+            error: processingError.message || 'Unknown error',
+            details: 'Please ensure the file is a valid PDF and try again. If the problem persists, try converting the file to a different format.'
           });
         }
       } catch (error) {
