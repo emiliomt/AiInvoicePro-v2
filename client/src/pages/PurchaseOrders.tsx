@@ -110,21 +110,42 @@ export default function PurchaseOrders() {
     },
   });
 
+  // Upload purchase order mutation
   const uploadPOMutation = useMutation({
     mutationFn: async (files: File[]) => {
       const formData = new FormData();
-      files.forEach(file => formData.append('files', file));
+      files.forEach((file) => {
+        formData.append('po', file);
+      });
 
-      const response = await fetch("/api/upload-po", {
+      const response = await fetch("/api/purchase-orders/upload", {
         method: "POST",
         body: formData,
       });
 
       if (!response.ok) {
-        throw new Error("Failed to upload purchase orders");
+        const errorText = await response.text();
+        let errorMessage = "Failed to upload purchase orders";
+
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || errorMessage;
+        } catch {
+          // If parsing fails, use the raw text or default message
+          errorMessage = errorText || errorMessage;
+        }
+
+        throw new Error(errorMessage);
       }
 
-      return response.json();
+      const responseText = await response.text();
+
+      try {
+        return JSON.parse(responseText);
+      } catch (parseError) {
+        console.error("Failed to parse response:", responseText);
+        throw new Error("Invalid response format from server");
+      }
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });

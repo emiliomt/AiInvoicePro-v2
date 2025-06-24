@@ -375,21 +375,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
             poId: extractedData.poId
           });
 
-          res.json({ 
+          return res.status(200).json({ 
             message: `Successfully processed purchase order: ${file.originalname}`,
             extractedData,
             fileName: file.originalname
           });
         } catch (processingError: any) {
           console.error(`Error processing PO ${file.originalname}:`, processingError);
-          res.status(500).json({ 
+          return res.status(500).json({ 
             message: `Failed to process purchase order: ${processingError.message}`,
-            fileName: file.originalname
+            fileName: file.originalname,
+            error: processingError.message
           });
         }
       } catch (error) {
         console.error("Error uploading purchase orders:", error);
-        res.status(500).json({ message: "Failed to upload purchase orders" });
+        return res.status(500).json({ 
+          message: "Failed to upload purchase orders",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
       }
     });
   });
