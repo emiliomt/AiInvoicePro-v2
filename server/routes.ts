@@ -1796,7 +1796,8 @@ settingsJson = JSON.stringify(value);
       // Log successful extraction for model improvement
       console.log('Positive feedback received for invoice ' + invoiceId + ':', {
         fileName: invoice.fileName,
-        userId,        timestamp: new Date().toISOString(),
+        userId,
+        timestamp: new Date().toISOString(),
         confidenceScore: invoice.confidenceScore,
       });
 
