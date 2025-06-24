@@ -405,7 +405,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         fieldValue = invoiceData[rule.fieldName];
       }
-
+      
       let isViolation = false;
       let errorMessage = rule.errorMessage || `Validation failed for ${rule.fieldName}`;
 
@@ -561,13 +561,13 @@ export class DatabaseStorage implements IStorage {
       const { invoice } = approvedData;
       // Create validation data object from invoice extracted data
       const validationData: any = {};
-
+      
       if (invoice.extractedData) {
         try {
           const extracted = typeof invoice.extractedData === 'string' 
             ? JSON.parse(invoice.extractedData) 
             : invoice.extractedData;
-
+          
           // Map extracted data fields to validation fields
           validationData.vendorName = extracted.vendorName || extracted.companyName;
           validationData.invoiceNumber = extracted.invoiceNumber;
@@ -584,7 +584,7 @@ export class DatabaseStorage implements IStorage {
 
       // Run validation
       const validationResult = await this.validateInvoiceData(validationData);
-
+      
       const invoiceValidation = {
         invoiceId: invoice.id,
         fileName: invoice.fileName || 'Unknown',
@@ -616,7 +616,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         const hasCriticalViolations = validationResult.violations.some(v => v.severity === 'critical');
         const hasHighViolations = validationResult.violations.some(v => v.severity === 'high');
-
+        
         if (hasCriticalViolations) {
           flagged++;
         } else if (hasHighViolations || validationResult.violations.length > 0) {
@@ -905,16 +905,6 @@ export class DatabaseStorage implements IStorage {
     }
   }
 
-  async updatePurchaseOrder(id: number, updates: Partial<typeof purchaseOrders.$inferInsert>): Promise<PurchaseOrder> {
-    const [updatedPO] = await db
-      .update(purchaseOrders)
-      .set(updates)
-      .where(eq(purchaseOrders.id, id))
-      .returning();
-
-    return updatedPO;
-  }
-
   // Purchase order operations
   async getPurchaseOrders(): Promise<PurchaseOrder[]> {
     return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
@@ -935,7 +925,14 @@ export class DatabaseStorage implements IStorage {
     return newPo;
   }
 
-  
+  async updatePurchaseOrder(id: number, updates: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder> {
+    const [updatedPo] = await db
+      .update(purchaseOrders)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(purchaseOrders.id, id))
+      .returning();
+    return updatedPo;
+  }
 
   async deletePurchaseOrder(id: number): Promise<void> {
     // Check if PO has associated invoice matches

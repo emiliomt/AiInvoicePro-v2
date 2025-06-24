@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogDescription, DialogFooter } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2, Eye } from "lucide-react";
@@ -56,17 +56,6 @@ export default function PurchaseOrders() {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [selectedPOForDetails, setSelectedPOForDetails] = useState<PurchaseOrder | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
-
-  const [projectSuggestions, setProjectSuggestions] = useState<{
-    extractedProjectName: string;
-    suggestions: Array<{
-      projectId: string;
-      name: string;
-      similarity: number;
-      reason: string;
-    }>;
-    purchaseOrderId?: number;
-  } | null>(null);
 
   // Fetch purchase orders
   const { data: purchaseOrders = [], isLoading } = useQuery<PurchaseOrder[]>({
@@ -161,16 +150,6 @@ export default function PurchaseOrders() {
       }
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
-
-      // Check if there are project suggestions
-      if (data.projectSuggestions) {
-        setProjectSuggestions({
-          ...data.projectSuggestions,
-          purchaseOrderId: data.purchaseOrder?.id
-        });
-      }
-
       toast({
         title: "Success",
         description: `${selectedFiles.length} purchase order(s) uploaded and processed successfully.`,
@@ -178,6 +157,7 @@ export default function PurchaseOrders() {
       setExtractedPOData(data.extractedData);
       setSelectedFiles([]);
       setIsUploadDialogOpen(false);
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
     onError: (error: Error) => {
       toast({
@@ -213,34 +193,6 @@ export default function PurchaseOrders() {
       toast({
         title: "Error",
         description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Assign project mutation
-  const assignProjectMutation = useMutation({
-    mutationFn: async ({ poId, projectId }: { poId: number; projectId: string }) => {
-      const response = await fetch(`/api/purchase-orders/${poId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ projectId }),
-      });
-      if (!response.ok) throw new Error('Failed to assign project');
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/purchase-orders'] });
-      setProjectSuggestions(null);
-      toast({
-        title: "Success",
-        description: "Project assigned successfully",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to assign project",
         variant: "destructive",
       });
     },
@@ -373,61 +325,6 @@ export default function PurchaseOrders() {
           </div>
 
           <div className="flex space-x-4">
-
-      {/* Project Suggestions Dialog */}
-      {projectSuggestions && (
-        <Dialog open={!!projectSuggestions} onOpenChange={() => setProjectSuggestions(null)}>
-          <DialogContent className="max-w-2xl">
-            <DialogHeader>
-              <DialogTitle>Project Matching Suggestions</DialogTitle>
-              <DialogDescription>
-                No exact match found for "{projectSuggestions.extractedProjectName}". 
-                Here are some similar projects you can choose from:
-              </DialogDescription>
-            </DialogHeader>
-
-            <div className="space-y-4 max-h-96 overflow-y-auto">
-              {projectSuggestions.suggestions.map((suggestion, index) => (
-                <Card key={index} className="border hover:border-blue-300 transition-colors cursor-pointer"
-                      onClick={() => {
-                        if (projectSuggestions.purchaseOrderId) {
-                          assignProjectMutation.mutate({
-                            poId: projectSuggestions.purchaseOrderId,
-                            projectId: suggestion.projectId
-                          });
-                        }
-                      }}>
-                  <CardContent className="p-4">
-                    <div className="flex items-center justify-between">
-                      <div className="flex-1">
-                        <h4 className="font-medium text-gray-900">{suggestion.name}</h4>
-                        <p className="text-sm text-gray-600">ID: {suggestion.projectId}</p>
-                        <p className="text-xs text-gray-500 mt-1">{suggestion.reason}</p>
-                      </div>
-                      <div className="text-right">
-                        <Badge variant={suggestion.similarity >= 70 ? "default" : suggestion.similarity >= 50 ? "secondary" : "outline"}
-                               className={suggestion.similarity >= 70 ? "bg-green-100 text-green-800" : suggestion.similarity >= 50 ? "bg-yellow-100 text-yellow-800" : ""}>
-                          {suggestion.similarity}% match
-                        </Badge>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            <DialogFooter className="flex justify-between">
-              <Button variant="outline" onClick={() => setProjectSuggestions(null)}>
-                Skip Assignment
-              </Button>
-              <Button variant="outline" onClick={() => setProjectSuggestions(null)}>
-                Assign Manually Later
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
-      )}
-
             <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
               <DialogTrigger asChild>
                 <Button className="bg-green-600 hover:bg-green-700">
@@ -482,7 +379,7 @@ export default function PurchaseOrders() {
                           Use This Data
                         </Button>
                       </div>
-
+                      
                       {/* Basic Information */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                         <div>
