@@ -135,6 +135,111 @@ ${ocrText}
   }
 }
 
+interface ExtractedPurchaseOrderData {
+  poId: string | null;
+  vendorName: string | null;
+  issueDate: string | null;
+  expectedDeliveryDate: string | null;
+  totalAmount: string | null;
+  currency: string;
+  projectId: string | null;
+  buyerName: string | null;
+  buyerAddress: string | null;
+  vendorAddress: string | null;
+  terms: string | null;
+  lineItems: Array<{
+    description: string;
+    quantity: string;
+    unitPrice: string;
+    totalPrice: string;
+  }>;
+  confidenceScore: string;
+}
+
+export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
+  try {
+    const prompt = `You are an intelligent document parser specialized in purchase order documents. Your task is to extract structured data from raw OCR text from purchase order PDFs.
+
+OCR Text:
+${ocrText}
+
+🔹 Core Fields to Extract - Return as JSON:
+{
+  "poId": "...",                            // Purchase Order ID / PO Number
+  "vendorName": "...",                      // Vendor / Supplier name
+  "vendorAddress": "...",                   // Full vendor address
+  "buyerName": "...",                       // Buyer / Company name
+  "buyerAddress": "...",                    // Buyer address
+  "issueDate": "YYYY-MM-DD",                // PO issue date
+  "expectedDeliveryDate": "YYYY-MM-DD",     // Expected delivery date
+  "totalAmount": "0.00",                    // Total amount
+  "currency": "USD",                        // Currency (USD, COP, MXN, etc.)
+  "projectId": "...",                       // Project reference if mentioned
+  "terms": "...",                           // Payment terms or conditions
+  "lineItems": [
+    {
+      "description": "...",                 // Item description
+      "quantity": "0",                      // Quantity
+      "unitPrice": "0.00",                  // Unit price
+      "totalPrice": "0.00"                  // Line total
+    }
+  ],
+  "confidenceScore": "0.00"                 // 0-1 confidence score
+}
+
+🧩 Extraction Logic:
+- Look for PO numbers (often labeled as "PO #", "Purchase Order", "Order Number")
+- Identify vendor information (supplier details, "Ship To", "Vendor")
+- Extract buyer information ("Bill To", "Buyer", company ordering)
+- Find all line items with descriptions, quantities, and prices
+- Extract dates (issue date, delivery date, due date)
+- Calculate or find total amount
+- Return null for any field that is not found in the document
+- Extract actual values from the text, don't invent data
+- Convert dates to YYYY-MM-DD format
+- Extract amounts as decimal strings without currency symbols`;
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages: [
+        {
+          role: "system",
+          content: "You are an expert purchase order data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate."
+        },
+        {
+          role: "user",
+          content: prompt
+        }
+      ],
+      response_format: { type: "json_object" },
+      temperature: 0.0,
+      max_tokens: 2000,
+    });
+
+    const extractedData = JSON.parse(response.choices[0].message.content || '{}');
+    
+    // Validate and clean the response
+    return {
+      poId: extractedData.poId || null,
+      vendorName: extractedData.vendorName || null,
+      issueDate: extractedData.issueDate || null,
+      expectedDeliveryDate: extractedData.expectedDeliveryDate || null,
+      totalAmount: extractedData.totalAmount || null,
+      currency: extractedData.currency || "USD",
+      projectId: extractedData.projectId || null,
+      buyerName: extractedData.buyerName || null,
+      buyerAddress: extractedData.buyerAddress || null,
+      vendorAddress: extractedData.vendorAddress || null,
+      terms: extractedData.terms || null,
+      lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
+      confidenceScore: extractedData.confidenceScore || "0.0",
+    };
+  } catch (error: any) {
+    console.error("AI PO extraction failed:", error);
+    throw new Error(`AI purchase order extraction failed: ${error?.message || 'Unknown error'}`);
+  }
+}
+
 export async function validateInvoiceData(invoiceData: any): Promise<{
   isValid: boolean;
   issues: string[];

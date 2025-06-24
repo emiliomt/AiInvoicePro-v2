@@ -4,7 +4,7 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
-import { extractInvoiceData } from "./services/aiService";
+import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
 import multer from "multer";
@@ -331,6 +331,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       res.status(500).json({ message: "Failed to delete all projects" });
     }
+  });
+
+  // Purchase order upload and processing
+  app.post('/api/purchase-orders/upload', isAuthenticated, (req: any, res) => {
+    upload.array('po', 10)(req, res, async (err) => {
+      if (err) {
+        console.error("Multer error:", err);
+        return res.status(400).json({ message: err.message });
+      }
+
+      try {
+        const userId = req.user.claims.sub;
+        const files = req.files as Express.Multer.File[];
+
+        console.log("PO Upload request received:", { 
+          hasFiles: !!files && files.length > 0, 
+          fileCount: files?.length || 0,
+          files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype }))
+        });
+
+        if (!files || files.length === 0) {
+          return res.status(400).json({ message: "No files uploaded" });
+        }
+
+        // For now, process the first file only
+        const file = files[0];
+        
+        try {
+          // Extract OCR text
+          const ocrText = await processInvoiceOCR(file.buffer, 0);
+          console.log(`OCR completed for PO ${file.originalname}, text length: ${ocrText.length}`);
+
+          if (!ocrText || ocrText.trim().length < 10) {
+            throw new Error("OCR did not extract sufficient text from the document");
+          }
+
+          // Extract structured data using AI
+          const extractedData = await extractPurchaseOrderData(ocrText);
+          console.log(`AI extraction completed for PO ${file.originalname}:`, {
+            vendor: extractedData.vendorName,
+            amount: extractedData.totalAmount,
+            poId: extractedData.poId
+          });
+
+          res.json({ 
+            message: `Successfully processed purchase order: ${file.originalname}`,
+            extractedData,
+            fileName: file.originalname
+          });
+        } catch (processingError: any) {
+          console.error(`Error processing PO ${file.originalname}:`, processingError);
+          res.status(500).json({ 
+            message: `Failed to process purchase order: ${processingError.message}`,
+            fileName: file.originalname
+          });
+        }
+      } catch (error) {
+        console.error("Error uploading purchase orders:", error);
+        res.status(500).json({ message: "Failed to upload purchase orders" });
+      }
+    });
   });
 
   // Purchase order routes

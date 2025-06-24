@@ -1,4 +1,3 @@
-
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -52,6 +51,9 @@ export default function PurchaseOrders() {
     expectedDeliveryDate: '',
     status: 'open' as const
   });
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [extractedPOData, setExtractedPOData] = useState<any>(null);
+  const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
 
   // Fetch purchase orders
   const { data: purchaseOrders = [], isLoading } = useQuery<PurchaseOrder[]>({
@@ -73,11 +75,11 @@ export default function PurchaseOrders() {
         },
         body: JSON.stringify(poData),
       });
-      
+
       if (!response.ok) {
         throw new Error("Failed to create purchase order");
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -108,18 +110,53 @@ export default function PurchaseOrders() {
     },
   });
 
+  const uploadPOMutation = useMutation({
+    mutationFn: async (files: File[]) => {
+      const formData = new FormData();
+      files.forEach(file => formData.append('files', file));
+
+      const response = await fetch("/api/upload-po", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error("Failed to upload purchase orders");
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsUploadDialogOpen(false);
+      setSelectedFiles([]);
+      setExtractedPOData(data); // Store the extracted data
+      toast({
+        title: "Success",
+        description: "Purchase orders uploaded successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   // Delete purchase order mutation
   const deletePOMutation = useMutation({
     mutationFn: async (poId: number) => {
       const response = await fetch(`/api/purchase-orders/${poId}`, {
         method: "DELETE",
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json();
         throw new Error(errorData.message || "Failed to delete purchase order");
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -168,8 +205,37 @@ export default function PurchaseOrders() {
   };
 
   const handleDeletePO = (poId: number, poNumber: string) => {
-    if (window.confirm(`Are you sure you want to delete purchase order ${poNumber}? This action cannot be undone.`)) {
+    if (confirm(`Are you sure you want to delete PO ${poNumber}?`)) {
       deletePOMutation.mutate(poId);
+    }
+  };
+
+  const handleFileSelect = (files: File[]) => {
+    setSelectedFiles(files);
+  };
+
+  const handleUploadPO = () => {
+    if (selectedFiles.length > 0) {
+      uploadPOMutation.mutate(selectedFiles);
+    }
+  };
+
+  const handleUseExtractedData = () => {
+    if (extractedPOData) {
+      setNewPO({
+        poId: extractedPOData.poId || '',
+        vendorName: extractedPOData.vendorName || '',
+        projectId: extractedPOData.projectId || '',
+        amount: extractedPOData.totalAmount || '',
+        currency: extractedPOData.currency || 'USD',
+        items: extractedPOData.lineItems || [{ description: '', quantity: '', unitPrice: '' }],
+        issueDate: extractedPOData.issueDate || new Date().toISOString().split('T')[0],
+        expectedDeliveryDate: extractedPOData.expectedDeliveryDate || '',
+        status: 'open' as const
+      });
+      setIsUploadDialogOpen(false);
+      setIsCreateDialogOpen(true);
+      setExtractedPOData(null);
     }
   };
 
@@ -220,7 +286,7 @@ export default function PurchaseOrders() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8 flex justify-between items-center">
           <div>
@@ -229,178 +295,232 @@ export default function PurchaseOrders() {
               Manage and track purchase orders
             </p>
           </div>
-          
-          <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
-            <DialogTrigger asChild>
-              <Button className="bg-blue-600 hover:bg-blue-700">
-                <Plus className="w-4 h-4 mr-2" />
-                Create PO
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Create New Purchase Order</DialogTitle>
-              </DialogHeader>
-              
-              <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="poId">PO ID *</Label>
-                    <Input
-                      id="poId"
-                      value={newPO.poId}
-                      onChange={(e) => setNewPO(prev => ({ ...prev, poId: e.target.value }))}
-                      placeholder="PO-2024-001"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="vendorName">Vendor Name *</Label>
-                    <Input
-                      id="vendorName"
-                      value={newPO.vendorName}
-                      onChange={(e) => setNewPO(prev => ({ ...prev, vendorName: e.target.value }))}
-                      placeholder="Vendor name"
-                    />
-                  </div>
-                  
-                  <div>
-                    <Label htmlFor="projectId">Project</Label>
-                    <Select 
-                      value={newPO.projectId} 
-                      onValueChange={(value) => setNewPO(prev => ({ ...prev, projectId: value }))}
-                    >
-                      <SelectTrigger>
-                        <SelectValue placeholder="Select project" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projects.map((project) => (
-                          <SelectItem key={project.projectId} value={project.projectId}>
-                            {project.name} ({project.projectId})
-                          </SelectItem>
+
+          <div className="flex space-x-4">
+            <Dialog open={isUploadDialogOpen} onOpenChange={setIsUploadDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-green-600 hover:bg-green-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Upload PO
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Upload Purchase Orders (PDF)</DialogTitle>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <Input
+                    type="file"
+                    multiple
+                    onChange={(e) => {
+                      if (e.target.files) {
+                        handleFileSelect(Array.from(e.target.files));
+                      }
+                    }}
+                  />
+                  {selectedFiles.length > 0 && (
+                    <div>
+                      <p>Selected Files:</p>
+                      <ul>
+                        {selectedFiles.map((file) => (
+                          <li key={file.name}>{file.name}</li>
                         ))}
-                      </SelectContent>
-                    </Select>
+                      </ul>
+                    </div>
+                  )}
+                  <div className="flex justify-end space-x-2">
+                    <Button variant="secondary" onClick={() => setIsUploadDialogOpen(false)}>
+                      Cancel
+                    </Button>
+                    <Button onClick={handleUploadPO} disabled={uploadPOMutation.isLoading}>
+                      {uploadPOMutation.isLoading ? "Uploading..." : "Upload"}
+                    </Button>
                   </div>
-                  
-                  <div>
-                    <Label htmlFor="amount">Total Amount *</Label>
-                    <div className="flex">
+                  {extractedPOData && (
+                    <div>
+                      <p>Extracted Data:</p>
+                      <pre>{JSON.stringify(extractedPOData, null, 2)}</pre>
+                      <Button onClick={handleUseExtractedData}>
+                        Use Extracted Data
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
+
+            <Dialog open={isCreateDialogOpen} onOpenChange={setIsCreateDialogOpen}>
+              <DialogTrigger asChild>
+                <Button className="bg-blue-600 hover:bg-blue-700">
+                  <Plus className="w-4 h-4 mr-2" />
+                  Create PO
+                </Button>
+              </DialogTrigger>
+              <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+                <DialogHeader>
+                  <DialogTitle>Create New Purchase Order</DialogTitle>
+                </DialogHeader>
+
+                <div className="space-y-6">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <Label htmlFor="poId">PO ID *</Label>
+                      <Input
+                        id="poId"
+                        value={newPO.poId}
+                        onChange={(e) => setNewPO(prev => ({ ...prev, poId: e.target.value }))}
+                        placeholder="PO-2024-001"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="vendorName">Vendor Name *</Label>
+                      <Input
+                        id="vendorName"
+                        value={newPO.vendorName}
+                        onChange={(e) => setNewPO(prev => ({ ...prev, vendorName: e.target.value }))}
+                        placeholder="Vendor name"
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="projectId">Project</Label>
                       <Select 
-                        value={newPO.currency} 
-                        onValueChange={(value) => setNewPO(prev => ({ ...prev, currency: value }))}
+                        value={newPO.projectId} 
+                        onValueChange={(value) => setNewPO(prev => ({ ...prev, projectId: value }))}
                       >
-                        <SelectTrigger className="w-20">
-                          <SelectValue />
+                        <SelectTrigger>
+                          <SelectValue placeholder="Select project" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="USD">USD</SelectItem>
-                          <SelectItem value="MXN">MXN</SelectItem>
-                          <SelectItem value="EUR">EUR</SelectItem>
+                          {projects.map((project) => (
+                            <SelectItem key={project.projectId} value={project.projectId}>
+                              {project.name} ({project.projectId})
+                            </SelectItem>
+                          ))}
                         </SelectContent>
                       </Select>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="amount">Total Amount *</Label>
+                      <div className="flex">
+                        <Select 
+                          value={newPO.currency} 
+                          onValueChange={(value) => setNewPO(prev => ({ ...prev, currency: value }))}
+                        >
+                          <SelectTrigger className="w-20">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="USD">USD</SelectItem>
+                            <SelectItem value="MXN">MXN</SelectItem>
+                            <SelectItem value="EUR">EUR</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <Input
+                          id="amount"
+                          type="number"
+                          step="0.01"
+                          value={newPO.amount}
+                          onChange={(e) => setNewPO(prev => ({ ...prev, amount: e.target.value }))}
+                          placeholder="0.00"
+                          className="ml-2"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <Label htmlFor="issueDate">Issue Date</Label>
                       <Input
-                        id="amount"
-                        type="number"
-                        step="0.01"
-                        value={newPO.amount}
-                        onChange={(e) => setNewPO(prev => ({ ...prev, amount: e.target.value }))}
-                        placeholder="0.00"
-                        className="ml-2"
+                        id="issueDate"
+                        type="date"
+                        value={newPO.issueDate}
+                        onChange={(e) => setNewPO(prev => ({ ...prev, issueDate: e.target.value }))}
+                      />
+                    </div>
+
+                    <div>
+                      <Label htmlFor="expectedDeliveryDate">Expected Delivery</Label>
+                      <Input
+                        id="expectedDeliveryDate"
+                        type="date"
+                        value={newPO.expectedDeliveryDate}
+                        onChange={(e) => setNewPO(prev => ({ ...prev, expectedDeliveryDate: e.target.value }))}
                       />
                     </div>
                   </div>
-                  
+
                   <div>
-                    <Label htmlFor="issueDate">Issue Date</Label>
-                    <Input
-                      id="issueDate"
-                      type="date"
-                      value={newPO.issueDate}
-                      onChange={(e) => setNewPO(prev => ({ ...prev, issueDate: e.target.value }))}
-                    />
+                    <div className="flex justify-between items-center mb-4">
+                      <Label>Line Items</Label>
+                      <Button type="button" variant="outline" size="sm" onClick={addItem}>
+                        <Plus className="w-4 h-4 mr-1" />
+                        Add Item
+                      </Button>
+                    </div>
+
+                    <div className="space-y-3">
+                      {newPO.items.map((item, index) => (
+                        <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 p-3 border rounded-lg">
+                          <div className="md:col-span-2">
+                            <Input
+                              placeholder="Item description"
+                              value={item.description}
+                              onChange={(e) => updateItem(index, 'description', e.target.value)}
+                            />
+                          </div>
+                          <div>
+                            <Input
+                              type="number"
+                              placeholder="Quantity"
+                              value={item.quantity}
+                              onChange={(e) => updateItem(index, 'quantity', e.target.value)}
+                            />
+                          </div>
+                          <div className="flex">
+                            <Input
+                              type="number"
+                              step="0.01"
+                              placeholder="Unit price"
+                              value={item.unitPrice}
+                              onChange={(e) => updateItem(index, 'unitPrice', e.target.value)}
+                            />
+                            {newPO.items.length > 1 && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => removeItem(index)}
+                                className="ml-2"
+                              >
+                                ×
+                              </Button>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  
-                  <div>
-                    <Label htmlFor="expectedDeliveryDate">Expected Delivery</Label>
-                    <Input
-                      id="expectedDeliveryDate"
-                      type="date"
-                      value={newPO.expectedDeliveryDate}
-                      onChange={(e) => setNewPO(prev => ({ ...prev, expectedDeliveryDate: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                
-                <div>
-                  <div className="flex justify-between items-center mb-4">
-                    <Label>Line Items</Label>
-                    <Button type="button" variant="outline" size="sm" onClick={addItem}>
-                      <Plus className="w-4 h-4 mr-1" />
-                      Add Item
+
+                  <div className="flex justify-end space-x-3">
+                    <Button
+                      variant="outline"
+                      onClick={() => setIsCreateDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button
+                      onClick={handleCreatePO}
+                      disabled={createPOMutation.isPending}
+                    >
+                      {createPOMutation.isPending ? 'Creating...' : 'Create PO'}
                     </Button>
                   </div>
-                  
-                  <div className="space-y-3">
-                    {newPO.items.map((item, index) => (
-                      <div key={index} className="grid grid-cols-1 md:grid-cols-4 gap-2 p-3 border rounded-lg">
-                        <div className="md:col-span-2">
-                          <Input
-                            placeholder="Item description"
-                            value={item.description}
-                            onChange={(e) => updateItem(index, 'description', e.target.value)}
-                          />
-                        </div>
-                        <div>
-                          <Input
-                            type="number"
-                            placeholder="Quantity"
-                            value={item.quantity}
-                            onChange={(e) => updateItem(index, 'quantity', e.target.value)}
-                          />
-                        </div>
-                        <div className="flex">
-                          <Input
-                            type="number"
-                            step="0.01"
-                            placeholder="Unit price"
-                            value={item.unitPrice}
-                            onChange={(e) => updateItem(index, 'unitPrice', e.target.value)}
-                          />
-                          {newPO.items.length > 1 && (
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => removeItem(index)}
-                              className="ml-2"
-                            >
-                              ×
-                            </Button>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
                 </div>
-                
-                <div className="flex justify-end space-x-3">
-                  <Button
-                    variant="outline"
-                    onClick={() => setIsCreateDialogOpen(false)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    onClick={handleCreatePO}
-                    disabled={createPOMutation.isPending}
-                  >
-                    {createPOMutation.isPending ? 'Creating...' : 'Create PO'}
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          </div>
         </div>
 
         {/* Purchase Orders List */}
@@ -443,7 +563,7 @@ export default function PurchaseOrders() {
                           <p className="font-medium">{po.currency} {po.amount}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Building className="text-purple-600" size={16} />
                         <div>
@@ -451,7 +571,7 @@ export default function PurchaseOrders() {
                           <p className="font-medium">{po.projectId || 'Unassigned'}</p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Calendar className="text-orange-600" size={16} />
                         <div>
@@ -461,7 +581,7 @@ export default function PurchaseOrders() {
                           </p>
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Package className="text-gray-600" size={16} />
                         <div>
@@ -470,7 +590,7 @@ export default function PurchaseOrders() {
                         </div>
                       </div>
                     </div>
-                    
+
                     {po.items.length > 0 && (
                       <div className="mt-4 pt-4 border-t">
                         <p className="text-sm font-medium text-gray-700 mb-2">Line Items:</p>
