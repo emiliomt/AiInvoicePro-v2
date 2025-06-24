@@ -1167,22 +1167,6 @@ export default function PurchaseOrders() {
             </DialogContent>
           </Dialog>
         )}
-                  <div className="p-4 bg-blue-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-3">Original Extracted Data</h4>
-                    <details>
-                      <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
-                        View Raw Extracted Data
-                      </summary>
-                      <pre className="mt-2 p-3 bg-gray-100 rounded text-xs overflow-auto max-h-40">
-                        {JSON.stringify((selectedPOForDetails as any).extractedData, null, 2)}
-                      </pre>
-                    </details>
-                  </div>
-                )}
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
       </div>
     </div>
   );
