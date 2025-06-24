@@ -887,8 +887,7 @@ export class DatabaseStorage implements IStorage {
 
       // Execute the delete operation
       console.log("Executing delete operation...");
-      const result = await```tool_code
- db.delete(projects).execute();
+      const result = await db.delete(projects).execute();
       console.log("Delete operation result:", result);
 
       // Verify deletion worked
