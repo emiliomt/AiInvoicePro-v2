@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2 } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2, Eye } from "lucide-react";
 import { useState } from "react";
 
 interface PurchaseOrder {
@@ -54,6 +54,8 @@ export default function PurchaseOrders() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [extractedPOData, setExtractedPOData] = useState<any>(null);
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
+  const [selectedPOForDetails, setSelectedPOForDetails] = useState<PurchaseOrder | null>(null);
+  const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
 
   // Fetch purchase orders
   const { data: purchaseOrders = [], isLoading } = useQuery<PurchaseOrder[]>({
@@ -260,6 +262,11 @@ export default function PurchaseOrders() {
     }
   };
 
+  const handleViewPODetails = (po: PurchaseOrder) => {
+    setSelectedPOForDetails(po);
+    setIsDetailsDialogOpen(true);
+  };
+
   const addItem = () => {
     setNewPO(prev => ({
       ...prev,
@@ -365,12 +372,141 @@ export default function PurchaseOrders() {
                     </Button>
                   </div>
                   {extractedPOData && (
-                    <div>
-                      <p>Extracted Data:</p>
-                      <pre>{JSON.stringify(extractedPOData, null, 2)}</pre>
-                      <Button onClick={handleUseExtractedData}>
-                        Use Extracted Data
-                      </Button>
+                    <div className="mt-4 space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="text-lg font-semibold text-gray-900">Extracted Purchase Order Data</h3>
+                        <Button onClick={handleUseExtractedData} size="sm">
+                          Use This Data
+                        </Button>
+                      </div>
+                      
+                      {/* Basic Information */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">PO Number</label>
+                          <p className="text-sm text-gray-900 mt-1">{extractedPOData.poId || "Not extracted"}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                          <p className="text-sm text-gray-900 mt-1">{extractedPOData.vendorName || "Not extracted"}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Total Amount</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            {extractedPOData.currency || "COP"} {extractedPOData.totalAmount || "0.00"}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Issue Date</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            {extractedPOData.issueDate ? new Date(extractedPOData.issueDate).toLocaleDateString() : "Not extracted"}
+                          </p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Project Name</label>
+                          <p className="text-sm text-gray-900 mt-1">{extractedPOData.projectId || "Not extracted"}</p>
+                        </div>
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Expected Delivery</label>
+                          <p className="text-sm text-gray-900 mt-1">
+                            {extractedPOData.expectedDeliveryDate ? new Date(extractedPOData.expectedDeliveryDate).toLocaleDateString() : "Not extracted"}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Additional Details */}
+                      {(extractedPOData.buyerName || extractedPOData.buyerAddress || extractedPOData.vendorAddress || extractedPOData.terms) && (
+                        <div className="p-4 bg-blue-50 rounded-lg">
+                          <h4 className="font-medium text-gray-900 mb-3">Additional Information</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            {extractedPOData.buyerName && (
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Buyer Name</label>
+                                <p className="text-sm text-gray-900 mt-1">{extractedPOData.buyerName}</p>
+                              </div>
+                            )}
+                            {extractedPOData.buyerAddress && (
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Buyer Address</label>
+                                <p className="text-sm text-gray-900 mt-1">{extractedPOData.buyerAddress}</p>
+                              </div>
+                            )}
+                            {extractedPOData.vendorAddress && (
+                              <div>
+                                <label className="text-sm font-medium text-gray-700">Vendor Address</label>
+                                <p className="text-sm text-gray-900 mt-1">{extractedPOData.vendorAddress}</p>
+                              </div>
+                            )}
+                            {extractedPOData.terms && (
+                              <div className="md:col-span-2">
+                                <label className="text-sm font-medium text-gray-700">Terms & Conditions</label>
+                                <p className="text-sm text-gray-900 mt-1">{extractedPOData.terms}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Line Items */}
+                      {extractedPOData.lineItems && extractedPOData.lineItems.length > 0 && (
+                        <div className="p-4 bg-green-50 rounded-lg">
+                          <h4 className="font-medium text-gray-900 mb-3">Line Items ({extractedPOData.lineItems.length})</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-sm">
+                              <thead className="bg-white">
+                                <tr>
+                                  <th className="px-3 py-2 text-left font-medium text-gray-700">Description</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Quantity</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Unit Price</th>
+                                  <th className="px-3 py-2 text-right font-medium text-gray-700">Total</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-gray-200">
+                                {extractedPOData.lineItems.map((item: any, index: number) => (
+                                  <tr key={index} className="bg-white">
+                                    <td className="px-3 py-2">{item.description || "—"}</td>
+                                    <td className="px-3 py-2 text-right">{item.quantity || "—"}</td>
+                                    <td className="px-3 py-2 text-right">
+                                      {item.unitPrice ? `${extractedPOData.currency || "COP"} ${item.unitPrice}` : "—"}
+                                    </td>
+                                    <td className="px-3 py-2 text-right font-medium">
+                                      {item.totalPrice ? `${extractedPOData.currency || "COP"} ${item.totalPrice}` : "—"}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Confidence Score */}
+                      {extractedPOData.confidenceScore && (
+                        <div className="p-4 bg-yellow-50 rounded-lg">
+                          <h4 className="font-medium text-gray-900 mb-2">AI Extraction Confidence</h4>
+                          <div className="flex items-center space-x-2">
+                            <div className="flex-1 bg-gray-200 rounded-full h-2">
+                              <div 
+                                className="bg-blue-600 h-2 rounded-full" 
+                                style={{ width: `${parseFloat(extractedPOData.confidenceScore) * 100}%` }}
+                              ></div>
+                            </div>
+                            <span className="text-sm font-medium">
+                              {(parseFloat(extractedPOData.confidenceScore) * 100).toFixed(1)}%
+                            </span>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Raw JSON for debugging */}
+                      <details className="mt-4">
+                        <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
+                          View Raw Extracted Data (for debugging)
+                        </summary>
+                        <pre className="mt-2 p-3 bg-gray-100 rounded text-xs overflow-auto max-h-40">
+                          {JSON.stringify(extractedPOData, null, 2)}
+                        </pre>
+                      </details>
                     </div>
                   )}
                 </div>
@@ -573,6 +709,14 @@ export default function PurchaseOrders() {
                         <Button
                           variant="ghost"
                           size="sm"
+                          onClick={() => handleViewPODetails(po)}
+                          className="text-blue-600 hover:text-blue-700 hover:bg-blue-50"
+                        >
+                          <Eye size={16} />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
                           onClick={() => handleDeletePO(po.id, po.poId)}
                           disabled={deletePOMutation.isPending}
                           className="text-red-600 hover:text-red-700 hover:bg-red-50"
@@ -658,6 +802,119 @@ export default function PurchaseOrders() {
             </Card>
           )}
         </div>
+
+        {/* Purchase Order Details Dialog */}
+        <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Purchase Order Details - {selectedPOForDetails?.poId}</DialogTitle>
+            </DialogHeader>
+
+            {selectedPOForDetails && (
+              <div className="space-y-6">
+                {/* Basic Information */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">PO Number</label>
+                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.poId}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.vendorName}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Total Amount</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {selectedPOForDetails.currency} {selectedPOForDetails.amount}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Status</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      <Badge className={getStatusColor(selectedPOForDetails.status)}>
+                        {selectedPOForDetails.status.toUpperCase()}
+                      </Badge>
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Project</label>
+                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.projectId || "Unassigned"}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Issue Date</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {new Date(selectedPOForDetails.issueDate).toLocaleDateString()}
+                    </p>
+                  </div>
+                  {selectedPOForDetails.expectedDeliveryDate && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Expected Delivery</label>
+                      <p className="text-sm text-gray-900 mt-1">
+                        {new Date(selectedPOForDetails.expectedDeliveryDate).toLocaleDateString()}
+                      </p>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Created</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {new Date(selectedPOForDetails.createdAt).toLocaleDateString()}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Line Items */}
+                {selectedPOForDetails.items && selectedPOForDetails.items.length > 0 && (
+                  <div className="p-4 bg-green-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-3">
+                      Line Items ({selectedPOForDetails.items.length})
+                    </h4>
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-sm">
+                        <thead className="bg-white">
+                          <tr>
+                            <th className="px-3 py-2 text-left font-medium text-gray-700">Description</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700">Quantity</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700">Unit Price</th>
+                            <th className="px-3 py-2 text-right font-medium text-gray-700">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {selectedPOForDetails.items.map((item: any, index: number) => (
+                            <tr key={index} className="bg-white">
+                              <td className="px-3 py-2">{item.description || "—"}</td>
+                              <td className="px-3 py-2 text-right">{item.quantity || "—"}</td>
+                              <td className="px-3 py-2 text-right">
+                                {item.unitPrice ? `${selectedPOForDetails.currency} ${item.unitPrice}` : "—"}
+                              </td>
+                              <td className="px-3 py-2 text-right font-medium">
+                                {item.totalPrice ? `${selectedPOForDetails.currency} ${item.totalPrice}` : "—"}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Additional metadata if available */}
+                {(selectedPOForDetails as any).extractedData && (
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <h4 className="font-medium text-gray-900 mb-3">Original Extracted Data</h4>
+                    <details>
+                      <summary className="cursor-pointer text-sm font-medium text-gray-700 hover:text-gray-900">
+                        View Raw Extracted Data
+                      </summary>
+                      <pre className="mt-2 p-3 bg-gray-100 rounded text-xs overflow-auto max-h-40">
+                        {JSON.stringify((selectedPOForDetails as any).extractedData, null, 2)}
+                      </pre>
+                    </details>
+                  </div>
+                )}
+              </div>
+            )}
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
