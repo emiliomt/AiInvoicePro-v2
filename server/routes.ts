@@ -394,14 +394,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             poId: extractedData.poId || `PO-${Date.now()}`,
             vendorName: extractedData.vendorName || 'Unknown Vendor',
             amount: extractedData.totalAmount || '0',
-            description: extractedData.description || '',
+            currency: extractedData.currency || 'COP',
+            items: extractedData.lineItems || [],
+            issueDate: extractedData.issueDate ? new Date(extractedData.issueDate) : new Date(),
+            expectedDeliveryDate: extractedData.expectedDeliveryDate ? new Date(extractedData.expectedDeliveryDate) : null,
             projectId: extractedData.projectId || null,
-            status: 'open',
-            orderDate: extractedData.orderDate || new Date().toISOString().split('T')[0],
-            deliveryDate: extractedData.deliveryDate || null,
-            userId: req.user?.id || '',
-            extractedData: extractedData,
-            ocrText: ocrText
+            status: 'open'
           });
 
           console.log(`Purchase order saved with ID: ${newPO.id}`);

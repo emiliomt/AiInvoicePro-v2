@@ -51,7 +51,7 @@ ${ocrText}
   "buyerAddress": "...",
   "invoiceNumber": "...",                   // Nro. Factura / Folio
   "invoiceDate": "YYYY-MM-DD",              // Fecha de emisión
-  "dueDate": "YYYY-MM-DD",                  // Fecha de vencimiento
+  "dueDate: "YYYY-MM-DD",                  // Fecha de vencimiento
   "subtotal": "0.00",
   "taxAmount": "0.00",
   "totalAmount": "0.00",
@@ -104,7 +104,7 @@ ${ocrText}
     });
 
     const extractedData = JSON.parse(response.choices[0].message.content || '{}');
-    
+
     // Validate and clean the response
     return {
       vendorName: extractedData.vendorName || null,
@@ -158,53 +158,72 @@ interface ExtractedPurchaseOrderData {
 
 export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
   try {
-    const prompt = `You are an intelligent document parser specialized in purchase order documents. Your task is to extract structured data from raw OCR text from purchase order PDFs.
+    const prompt = `You are an intelligent OCR and structured data extraction agent. Your job is to extract standardized fields from a consistent-format purchase order PDF in Spanish. Return data in JSON format.
+
+From this PDF document, extract the following fields and return them as a JSON object. Make sure to always include a non-empty 'items' array:
+
+🔹 **Buyer Info**
+- buyer_company_name (e.g. 'CONSTRUCCIONES OBYCON S.A.S')
+- buyer_tax_id (NIT)
+- buyer_address
+- buyer_city
+
+🔹 **Vendor Info**
+- vendor_company_name
+- vendor_tax_id (NIT/CC)
+- vendor_address
+
+🔹 **Purchase Order Metadata**
+- po_number
+- project_name
+- description_oc
+- site_of_delivery
+- observations_oc (full paragraph text)
+- invoice_number
+- invoice_date
+- remission_number
+- remission_date
+
+🔹 **Items** (⚠️ Must be a JSON array of objects):
+Each object should contain:
+- item_description (e.g. '3364 - CONCRETO PLASTICO 3000 PSI T.M. 3/4"')
+- unit_of_measure (e.g. 'M3')
+- quantity (as number)
+- unit_price (as number, no commas)
+- iva_amount (as number)
+- total_price (as number)
+
+If no items are found, return an empty array: "items": []. Never leave it null.
+
+🔹 **Summary**
+- subtotal (number)
+- iva (number)
+- total_amount (number)
+
+🔹 **Audit Log**
+- elaborated_by (name + timestamp)
+- programmed_by
+- approved_by
+
+🔹 **Cost Allocation Table**
+Return as:
+"cost_allocation": [
+  {"account": "143 PISCINAS", "value": 132744.15},
+  {"account": "170 COMUNAL", "value": 142860.45}
+]
+
+📌 Output format:
+Always return valid, parsable JSON. Avoid null fields unless specified. Never skip 'items'.
 
 OCR Text:
-${ocrText}
-
-🔹 Core Fields to Extract - Return as JSON:
-{
-  "poId": "...",                            // Purchase Order ID / PO Number
-  "vendorName": "...",                      // Vendor / Supplier name
-  "vendorAddress": "...",                   // Full vendor address
-  "buyerName": "...",                       // Buyer / Company name
-  "buyerAddress": "...",                    // Buyer address
-  "issueDate": "YYYY-MM-DD",                // PO issue date
-  "expectedDeliveryDate": "YYYY-MM-DD",     // Expected delivery date
-  "totalAmount": "0.00",                    // Total amount
-  "currency": "USD",                        // Currency (USD, COP, MXN, etc.)
-  "projectId": "...",                       // Project reference if mentioned
-  "terms": "...",                           // Payment terms or conditions
-  "lineItems": [
-    {
-      "description": "...",                 // Item description
-      "quantity": "0",                      // Quantity
-      "unitPrice": "0.00",                  // Unit price
-      "totalPrice": "0.00"                  // Line total
-    }
-  ],
-  "confidenceScore": "0.00"                 // 0-1 confidence score
-}
-
-🧩 Extraction Logic:
-- Look for PO numbers (often labeled as "PO #", "Purchase Order", "Order Number")
-- Identify vendor information (supplier details, "Ship To", "Vendor")
-- Extract buyer information ("Bill To", "Buyer", company ordering)
-- Find all line items with descriptions, quantities, and prices
-- Extract dates (issue date, delivery date, due date)
-- Calculate or find total amount
-- Return null for any field that is not found in the document
-- Extract actual values from the text, don't invent data
-- Convert dates to YYYY-MM-DD format
-- Extract amounts as decimal strings without currency symbols`;
+${ocrText}`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
         {
           role: "system",
-          content: "You are an expert purchase order data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate."
+          content: "You are an expert purchase order data extraction system. Extract structured data from OCR text and respond only with valid JSON. Always include an 'items' array, even if empty."
         },
         {
           role: "user",
@@ -213,26 +232,42 @@ ${ocrText}
       ],
       response_format: { type: "json_object" },
       temperature: 0.0,
-      max_tokens: 2000,
+      max_tokens: 2000
     });
 
     const extractedData = JSON.parse(response.choices[0].message.content || '{}');
-    
-    // Validate and clean the response
+
+    // Ensure items array is always present and properly formatted
+    let items = [];
+    if (Array.isArray(extractedData.items)) {
+      items = extractedData.items;
+    } else if (Array.isArray(extractedData.lineItems)) {
+      items = extractedData.lineItems;
+    } else {
+      // Create a default item if none found
+      items = [{
+        description: "Item from purchase order",
+        quantity: "1",
+        unitPrice: extractedData.total_amount || extractedData.totalAmount || "0",
+        totalPrice: extractedData.total_amount || extractedData.totalAmount || "0"
+      }];
+    }
+
+    // Map the extracted data to the expected format
     return {
-      poId: extractedData.poId || null,
-      vendorName: extractedData.vendorName || null,
-      issueDate: extractedData.issueDate || null,
-      expectedDeliveryDate: extractedData.expectedDeliveryDate || null,
-      totalAmount: extractedData.totalAmount || null,
-      currency: extractedData.currency || "USD",
-      projectId: extractedData.projectId || null,
-      buyerName: extractedData.buyerName || null,
-      buyerAddress: extractedData.buyerAddress || null,
-      vendorAddress: extractedData.vendorAddress || null,
-      terms: extractedData.terms || null,
-      lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
-      confidenceScore: extractedData.confidenceScore || "0.0",
+      poId: extractedData.po_number || extractedData.poId || null,
+      vendorName: extractedData.vendor_company_name || extractedData.vendorName || null,
+      issueDate: extractedData.invoice_date || extractedData.issueDate || null,
+      expectedDeliveryDate: extractedData.remission_date || extractedData.expectedDeliveryDate || null,
+      totalAmount: extractedData.total_amount || extractedData.totalAmount || null,
+      currency: extractedData.currency || "COP",
+      projectId: extractedData.project_name || extractedData.projectId || null,
+      buyerName: extractedData.buyer_company_name || extractedData.buyerName || null,
+      buyerAddress: extractedData.buyer_address || extractedData.buyerAddress || null,
+      vendorAddress: extractedData.vendor_address || extractedData.vendorAddress || null,
+      terms: extractedData.observations_oc || extractedData.terms || null,
+      lineItems: items,
+      confidenceScore: extractedData.confidenceScore || "0.8",
     };
   } catch (error: any) {
     console.error("AI PO extraction failed:", error);
