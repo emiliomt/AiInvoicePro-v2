@@ -386,8 +386,8 @@ export default function PurchaseOrders() {
                     <Button variant="secondary" onClick={() => setIsUploadDialogOpen(false)}>
                       Cancel
                     </Button>
-                    <Button onClick={handleUploadPO} disabled={uploadPOMutation.isLoading}>
-                    {uploadPOMutation.isLoading ? (
+                    <Button onClick={handleUploadPO} disabled={uploadPOMutation.isPending}>
+                    {uploadPOMutation.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                           Uploading...
@@ -846,7 +846,8 @@ export default function PurchaseOrders() {
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Status</label>
-                    <p className="text-sm text-gray-900 mt-1                      <Badge className={getStatusColor(selectedPOForDetails.status)}>
+                    <p className="text-sm text-gray-900 mt-1">
+                      <Badge className={getStatusColor(selectedPOForDetails.status)}>
                         {selectedPOForDetails.status.toUpperCase()}
                       </Badge>
                     </p>
