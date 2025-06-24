@@ -396,7 +396,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             totalAmount: extractedData.totalAmount || '0',
             description: extractedData.description || '',
             projectId: extractedData.projectId || null,
-            status: 'pending',
+            status: 'open',
             orderDate: extractedData.orderDate || new Date().toISOString().split('T')[0],
             deliveryDate: extractedData.deliveryDate || null,
             userId: req.user?.id || '',
