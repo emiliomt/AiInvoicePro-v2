@@ -341,7 +341,7 @@ export default function PurchaseOrders() {
 
   const handleAssignProject = (po: PurchaseOrder) => {
     setSelectedPOForAssignment(po);
-    setAssignmentProjectId(po.projectId || "");
+    setAssignmentProjectId(po.projectId || "unassigned");
     setIsAssignProjectDialogOpen(true);
   };
 
@@ -349,7 +349,7 @@ export default function PurchaseOrders() {
     if (selectedPOForAssignment) {
       updatePOProjectMutation.mutate({
         poId: selectedPOForAssignment.id,
-        projectId: assignmentProjectId || null,
+        projectId: assignmentProjectId === "unassigned" ? null : assignmentProjectId || null,
       });
     }
   };
@@ -1124,7 +1124,7 @@ export default function PurchaseOrders() {
                       <SelectValue placeholder="Choose a project or leave unassigned" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Unassigned</SelectItem>
+                      <SelectItem value="unassigned">Unassigned</SelectItem>
                       {projects.map((project) => (
                         <SelectItem key={project.id} value={project.projectId}>
                           {project.projectId} - {project.name}
