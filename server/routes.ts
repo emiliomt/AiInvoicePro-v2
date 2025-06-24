@@ -389,9 +389,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
             poId: extractedData.poId
           });
 
+          // Save the purchase order to database
+          const newPO = await storage.createPurchaseOrder({
+            poId: extractedData.poId || `PO-${Date.now()}`,
+            vendorName: extractedData.vendorName || 'Unknown Vendor',
+            totalAmount: extractedData.totalAmount || '0',
+            description: extractedData.description || '',
+            projectId: extractedData.projectId || null,
+            status: 'pending',
+            orderDate: extractedData.orderDate || new Date().toISOString().split('T')[0],
+            deliveryDate: extractedData.deliveryDate || null,
+            userId: req.user?.id || '',
+            extractedData: extractedData,
+            ocrText: ocrText
+          });
+
+          console.log(`Purchase order saved with ID: ${newPO.id}`);
+
           return res.status(200).json({ 
-            message: `Successfully processed purchase order: ${file.originalname}`,
-            extractedData,
+            message: `Successfully processed and saved purchase order: ${file.originalname}`,
+            purchaseOrder: newPO,
             fileName: file.originalname
           });
         } catch (processingError: any) {
