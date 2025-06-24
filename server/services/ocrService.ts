@@ -43,8 +43,8 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
     if (fileType === 'PDF') {
       try {
         // Try direct text extraction first
-        const pdfParse = await import('pdf-parse');
-        const pdfData = await pdfParse.default(fileBuffer);
+        const pdfParse = require('pdf-parse');
+        const pdfData = await pdfParse(fileBuffer);
         textContent = pdfData.text;
         console.log(`Direct PDF text extraction for invoice ${invoiceId}, length: ${textContent.length}`);
 
