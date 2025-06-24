@@ -159,7 +159,10 @@ interface ExtractedPurchaseOrderData {
 export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
   try {
     const purchaseOrderPrompt = `
-Eres un modelo de lenguaje que extrae datos estructurados de órdenes de compra en español a partir de texto plano OCR. El texto proviene de un PDF con formato consistente.
+Eres un modelo que extrae datos de órdenes de compra en español. A partir del texto OCR, debes identificar el nombre del proyecto y asociarlo con uno de los proyectos válidos listados a continuación. Si no puedes encontrar coincidencias claras, devuelve "Unassigned".
+
+Proyectos válidos:
+- Parque Heredia Calamari
 
 Tu tarea es devolver un objeto JSON con los siguientes campos:
 
@@ -168,7 +171,7 @@ Tu tarea es devolver un objeto JSON con los siguientes campos:
   "vendor_name": "",              // Después de "Proveedor"
   "vendor_tax_id": "",           // Después de "NIT/CC"
   "vendor_address": "",          // Bajo 'Dirección' dentro del bloque de proveedor
-  "project_name": "",            // Después de 'Proyecto'
+  "project_name": "",            // Después de 'Proyecto' - DEBE ser uno de los proyectos válidos o "Unassigned"
   "description_oc": "",          // Después de 'Descripción OC'
   "site_of_delivery": "",        // Después de 'Sitio de entrega'
   "observations_oc": "",         // Texto completo debajo de 'Observaciones OC'
@@ -191,11 +194,18 @@ Tu tarea es devolver un objeto JSON con los siguientes campos:
   "total_amount": 0              // Campo 'TOTAL'
 }
 
-Reglas:
+Instrucciones:
+- Usa coincidencia semántica o por similitud de texto para el proyecto.
+- Si ves algo como "Parque Heredia Báltico" o similar, pero no está en la lista, no lo uses.
+- Devuelve en el campo "project_name" exactamente uno de los nombres válidos (copiado tal cual).
+- Si no hay coincidencia, usa: "Unassigned".
 - Si no encuentras un campo, déjalo como cadena vacía o cero, pero nunca como null.
 - Devuelve únicamente el JSON, sin texto adicional ni explicaciones.
 - Extrae los datos directamente del texto OCR, incluso si hay errores ortográficos menores.
 - El formato del JSON debe ser válido.
+
+Texto OCR:
+${ocrText}
 `;
 
     const response = await openai.chat.completions.create({
@@ -234,14 +244,20 @@ Reglas:
     }
 
     // Map the extracted data to the expected format
+    // Handle project assignment - only use valid project names, otherwise set to null
+    let projectId = null;
+    if (extractedData.project_name && extractedData.project_name !== "Unassigned") {
+      projectId = extractedData.project_name;
+    }
+
     return {
       poId: extractedData.po_number || extractedData.poId || null,
-      vendorName: extractedData.vendor_company_name || extractedData.vendorName || null,
+      vendorName: extractedData.vendor_name || extractedData.vendor_company_name || extractedData.vendorName || null,
       issueDate: extractedData.invoice_date || extractedData.issueDate || null,
       expectedDeliveryDate: extractedData.remission_date || extractedData.expectedDeliveryDate || null,
-      totalAmount: extractedData.total_amount || extractedData.totalAmount || null,
+      totalAmount: extractedData.total_amount?.toString() || extractedData.totalAmount?.toString() || null,
       currency: extractedData.currency || "COP",
-      projectId: extractedData.project_name || extractedData.projectId || null,
+      projectId: projectId,
       buyerName: extractedData.buyer_company_name || extractedData.buyerName || null,
       buyerAddress: extractedData.buyer_address || extractedData.buyerAddress || null,
       vendorAddress: extractedData.vendor_address || extractedData.vendorAddress || null,
