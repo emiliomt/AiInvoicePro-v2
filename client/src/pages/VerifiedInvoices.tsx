@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
@@ -14,6 +15,7 @@ import {
   FileText,
   XCircle
 } from 'lucide-react';
+import Header from '@/components/Header';
 
 interface VerifiedInvoice {
   id: number;
@@ -71,9 +73,8 @@ export default function VerifiedInvoices() {
 
   const totalVerified = verifiedInvoices.length;
   const highConfidence = verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 90).length;
-  const flagged = 0; // You can implement flagged logic
-  const needsReview = verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length;
-  const pending = 0; // You can implement pending logic
+  const mediumConfidence = verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length;
+  const lowConfidence = verifiedInvoices.filter(v => parseFloat(v.matchScore) < 70).length;
 
   const getConfidenceBadge = (score: string) => {
     const numScore = parseFloat(score);
@@ -86,193 +87,221 @@ export default function VerifiedInvoices() {
     }
   };
 
+  const formatAmount = (amount: string | null, currency: string) => {
+    if (!amount) return "N/A";
+    const numericAmount = parseFloat(amount);
+    const formattedNumber = numericAmount.toLocaleString('en-US', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    });
+    return `${currency} ${formattedNumber}`;
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return "N/A";
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'short',
+        day: 'numeric'
+      });
+    } catch {
+      return "Invalid date";
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        <Header />
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+          <div className="animate-pulse space-y-4">
+            {[...Array(3)].map((_, i) => (
+              <div key={i} className="bg-white rounded-lg h-32"></div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice Verification Status</h1>
-        <p className="text-gray-600 dark:text-gray-400">Monitor and verify invoice authenticity and compliance across all submissions</p>
-      </div>
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-bold text-gray-900">Verified Invoice-Project Matches</h1>
+          <p className="text-gray-600 mt-2">Review verified invoice-project assignments that have been validated</p>
+        </div>
 
-      {/* Status Bar */}
-      <div className="flex flex-wrap gap-6">
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center">
-            <FileText className="w-4 h-4 text-blue-600" />
-          </div>
-          <div>
-            <span className="text-2xl font-bold text-gray-900">{totalVerified}</span>
-            <span className="text-sm text-gray-500 ml-2">Total Invoices</span>
+        {/* Summary Stats */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Total Verified</p>
+                  <p className="text-3xl font-bold text-green-600">{totalVerified}</p>
+                </div>
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-green-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">High Confidence</p>
+                  <p className="text-3xl font-bold text-green-600">{highConfidence}</p>
+                </div>
+                <div className="w-12 h-12 bg-green-100 rounded-lg flex items-center justify-center">
+                  <CheckCircle className="text-green-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Medium Confidence</p>
+                  <p className="text-3xl font-bold text-yellow-600">{mediumConfidence}</p>
+                </div>
+                <div className="w-12 h-12 bg-yellow-100 rounded-lg flex items-center justify-center">
+                  <AlertTriangle className="text-yellow-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-sm font-medium text-gray-600">Low Confidence</p>
+                  <p className="text-3xl font-bold text-red-600">{lowConfidence}</p>
+                </div>
+                <div className="w-12 h-12 bg-red-100 rounded-lg flex items-center justify-center">
+                  <XCircle className="text-red-600" size={24} />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Search */}
+        <div className="mb-6">
+          <div className="relative max-w-md">
+            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+            <Input
+              placeholder="Search verified invoices..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="pl-10"
+            />
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-green-100 rounded flex items-center justify-center">
-            <CheckCircle className="w-4 h-4 text-green-600" />
-          </div>
-          <div>
-            <span className="text-2xl font-bold text-green-600">{highConfidence}</span>
-            <span className="text-sm text-gray-500 ml-2">Verified</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-red-100 rounded flex items-center justify-center">
-            <XCircle className="w-4 h-4 text-red-600" />
-          </div>
-          <div>
-            <span className="text-2xl font-bold text-red-600">{flagged}</span>
-            <span className="text-sm text-gray-500 ml-2">Flagged</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-yellow-100 rounded flex items-center justify-center">
-            <AlertTriangle className="w-4 h-4 text-yellow-600" />
-          </div>
-          <div>
-            <span className="text-2xl font-bold text-yellow-600">{needsReview}</span>
-            <span className="text-sm text-gray-500 ml-2">Needs Review</span>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2">
-          <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center">
-            <Clock className="w-4 h-4 text-gray-600" />
-          </div>
-          <div>
-            <span className="text-2xl font-bold text-gray-600">{pending}</span>
-            <span className="text-sm text-gray-500 ml-2">Pending</span>
-          </div>
-        </div>
-      </div>
-
-      {/* Search and Filters */}
-      <div className="flex gap-4">
-        <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-          <Input
-            placeholder="Search invoices..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="pl-10"
-          />
-        </div>
-        <select className="px-3 py-2 border rounded-md">
-          <option>All</option>
-        </select>
-        <select className="px-3 py-2 border rounded-md">
-          <option>All</option>
-        </select>
-      </div>
-
-      {/* Verified Invoice-Project Assignments Table */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Verified Invoice-Project Assignments</CardTitle>
-          <p className="text-sm text-gray-600">Invoices that have been successfully matched and verified for specific projects</p>
-        </CardHeader>
-        <CardContent>
-          {isLoading ? (
-            <div className="flex items-center justify-center py-8">
-              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-              <span className="ml-2">Loading verified invoices...</span>
-            </div>
-          ) : filteredInvoices.length === 0 ? (
-            <div className="text-center py-8">
-              <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                No Verified Invoices
-              </h3>
-              <p className="text-gray-500 dark:text-gray-400">
-                No invoices have been verified yet.
-              </p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Invoice Details</TableHead>
-                    <TableHead>Vendor</TableHead>
-                    <TableHead>Amount</TableHead>
-                    <TableHead>Project</TableHead>
-                    <TableHead>Match Score</TableHead>
-                    <TableHead>Verified By</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead>Actions</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredInvoices.map((verifiedInvoice) => (
-                    <TableRow key={verifiedInvoice.id}>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">ID: {verifiedInvoice.invoice.id}</div>
-                          <div className="text-sm text-gray-500">{verifiedInvoice.invoice.dateIssued}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{verifiedInvoice.invoice.vendorName || 'Unknown'}</div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">
-                            {verifiedInvoice.invoice.currency} {parseFloat(verifiedInvoice.invoice.totalAmount || '0').toLocaleString()}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{verifiedInvoice.project.name}</div>
-                          <div className="text-sm text-gray-500">
-                            ID: {verifiedInvoice.project.projectId}
-                          </div>
-                          <div className="text-sm text-gray-500">
-                            Supervisor: {verifiedInvoice.project.supervisor}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</div>
-                          {getConfidenceBadge(verifiedInvoice.matchScore)}
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <div>
-                          <div className="font-medium">{verifiedInvoice.verifiedBy}</div>
-                          <div className="text-sm text-gray-500">
-                            {new Date(verifiedInvoice.verifiedAt).toLocaleDateString()}
-                          </div>
-                        </div>
-                      </TableCell>
-                      <TableCell>
-                        <Badge className="bg-green-100 text-green-800">
-                          <CheckCircle className="w-3 h-3 mr-1" />
-                          Verified
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-2">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
-                          </Button>
-                          <Button variant="ghost" size="sm">
-                            <Download className="w-4 h-4" />
-                          </Button>
-                        </div>
-                      </TableCell>
+        {/* Verified Invoices Table */}
+        <Card>
+          <CardHeader>
+            <CardTitle>Verified Invoice-Project Assignments</CardTitle>
+            <p className="text-sm text-gray-600">Invoices that have been successfully matched and verified for specific projects</p>
+          </CardHeader>
+          <CardContent>
+            {filteredInvoices.length === 0 ? (
+              <div className="text-center py-12">
+                <CheckCircle className="mx-auto h-12 w-12 text-gray-400" />
+                <h3 className="mt-2 text-sm font-medium text-gray-900">No Verified Invoices</h3>
+                <p className="mt-1 text-sm text-gray-500">
+                  {searchTerm ? 'No invoices match your search criteria.' : 'No invoices have been verified yet.'}
+                </p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Invoice ID</TableHead>
+                      <TableHead>Vendor</TableHead>
+                      <TableHead>Amount</TableHead>
+                      <TableHead>Project</TableHead>
+                      <TableHead>Match Score</TableHead>
+                      <TableHead>Verified By</TableHead>
+                      <TableHead>Date Verified</TableHead>
+                      <TableHead>Actions</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredInvoices.map((verifiedInvoice) => (
+                      <TableRow key={verifiedInvoice.id}>
+                        <TableCell>
+                          <div className="font-medium">#{verifiedInvoice.invoice.id}</div>
+                          <div className="text-sm text-gray-500">
+                            {formatDate(verifiedInvoice.invoice.dateIssued)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">
+                            {verifiedInvoice.invoice.vendorName || 'Unknown Vendor'}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">
+                            {formatAmount(verifiedInvoice.invoice.totalAmount, verifiedInvoice.invoice.currency)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div>
+                            <div className="font-medium">{verifiedInvoice.project.name}</div>
+                            <div className="text-sm text-gray-500">
+                              ID: {verifiedInvoice.project.projectId}
+                            </div>
+                            <div className="text-sm text-gray-500">
+                              {verifiedInvoice.project.supervisor}
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="space-y-1">
+                            <div className="font-medium">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</div>
+                            {getConfidenceBadge(verifiedInvoice.matchScore)}
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="font-medium">{verifiedInvoice.verifiedBy || verifiedInvoice.approvedBy}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div>{formatDate(verifiedInvoice.verifiedAt)}</div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex gap-2">
+                            <Button 
+                              variant="ghost" 
+                              size="sm"
+                              onClick={() => window.open(`/invoices/${verifiedInvoice.invoiceId}`, '_blank')}
+                            >
+                              <Eye className="w-4 h-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm">
+                              <Download className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
   );
 }
