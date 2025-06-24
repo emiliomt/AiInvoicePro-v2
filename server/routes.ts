@@ -57,24 +57,24 @@ const excelUpload = multer({
 // Async processing function for invoice handling
 async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   try {
-    console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
+    console.log('Starting OCR processing for invoice ' + invoice.id + ' (' + invoice.fileName + ')');
 
     // Update status to show processing in progress
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
     const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
-    console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
+    console.log('OCR completed for invoice ' + invoice.id + ', text length: ' + ocrText.length);
 
     if (!ocrText || ocrText.trim().length < 10) {
       throw new Error("OCR did not extract sufficient text from the document");
     }
 
     // Extract structured data using AI
-    console.log(`Starting AI extraction for invoice ${invoice.id}`);
+    console.log('Starting AI extraction for invoice ' + invoice.id);
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
     const extractedData = await extractInvoiceData(ocrText);
-    console.log(`AI extraction completed for invoice ${invoice.id}:`, {
+    console.log('AI extraction completed for invoice ' + invoice.id + ':', {
       vendor: extractedData.vendorName,
       amount: extractedData.totalAmount,
       invoiceNumber: extractedData.invoiceNumber
@@ -95,9 +95,9 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       currency: extractedData.currency || 'USD',
     });
 
-    console.log(`Invoice ${invoice.id} processing completed successfully`);
+    console.log('Invoice ' + invoice.id + ' processing completed successfully');
   } catch (error) {
-    console.error(`Error processing invoice ${invoice.id}:`, error);
+    console.error('Error processing invoice ' + invoice.id + ':', error);
     await storage.updateInvoice(invoice.id, { 
       status: "rejected",
       extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
@@ -363,12 +363,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         try {
           // Extract OCR text
           const ocrText = await processInvoiceOCR(file.buffer, 0);
-          console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
+          console.log('OCR completed for PO ' + fileName + ', text length: ' + ocrText.length);
 
           // Check if OCR was successful (even with error messages, we can still proceed)
           if (!ocrText || ocrText.trim().length < 10) {
             return res.status(400).json({ 
-              message: `OCR processing failed for ${fileName}. The file may be corrupted or in an unsupported format.`,
+              message: 'OCR processing failed for ' + fileName + '. The file may be corrupted or in an unsupported format.',
               fileName: fileName,
               error: "Insufficient text extracted from document"
             });
@@ -377,7 +377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Check if the OCR text indicates an error
           if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
             return res.status(400).json({ 
-              message: `Document processing failed for ${fileName}. ${ocrText}`,
+              message: 'Document processing failed for ' + fileName + '. ' + ocrText,
               fileName: fileName,
               error: "OCR processing error"
             });
@@ -385,7 +385,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Extract data using AI
           const extractedData = await extractPurchaseOrderData(ocrText);
-          console.log(`AI extraction completed for PO ${fileName}:`, {
+          console.log('AI extraction completed for PO ' + fileName + ':', {
             vendor: extractedData.vendorName,
             amount: extractedData.totalAmount,
             poId: extractedData.poId,
@@ -399,9 +399,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
             if (fuzzyMatch) {
               matchedProjectId = fuzzyMatch;
-              console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
+              console.log('Fuzzy matched project "' + extractedData.projectId + '" to "' + fuzzyMatch + '"');
             } else {
-              console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
+              console.log('No fuzzy match found for project "' + extractedData.projectId + '", setting to null');
               matchedProjectId = null;
             }
           }
@@ -418,7 +418,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 issueDate = null;
               }
             } catch (error) {
-              console.log(`Invalid issue date format: ${extractedData.issueDate}`);
+              console.log('Invalid issue date format: ' + extractedData.issueDate);
               issueDate = null;
             }
           }
@@ -431,13 +431,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 expectedDeliveryDate = null;
               }
             } catch (error) {
-              console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
+              console.log('Invalid expected delivery date format: ' + extractedData.expectedDeliveryDate);
               expectedDeliveryDate = null;
             }
           }
 
           // Check if PO already exists
-          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
+          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || ('PO-' + Date.now()));
 
           if (existingPO) {
             return res.status(400).json({ 
@@ -1091,7 +1091,7 @@ settingsJson = JSON.stringify(value);
 
             return invoice;
           } catch (fileError) {
-            console.error(`Error processing file ${file.originalname}:`, fileError);
+            console.error('Error processing file ' + file.originalname + ':', fileError);
             return null;
           }
         });
