@@ -436,6 +436,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
 
+          // Check if PO already exists
+          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
+          
+          if (existingPO) {
+            return res.status(400).json({ 
+              message: `Purchase Order ${extractedData.poId} already exists in the system. Please check the existing PO or use a different document.`,
+              fileName: fileName,
+              error: "Duplicate PO ID",
+              existingPO: {
+                id: existingPO.id,
+                poId: existingPO.poId,
+                vendorName: existingPO.vendorName,
+                amount: existingPO.amount,
+                status: existingPO.status
+              }
+            });
+          }
+
           // Create purchase order
           const newPurchaseOrder = await storage.createPurchaseOrder({
             poId: extractedData.poId || `PO-${Date.now()}`,

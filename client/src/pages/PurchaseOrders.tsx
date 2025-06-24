@@ -26,6 +26,7 @@ interface PurchaseOrder {
   status: "open" | "partial" | "closed" | "cancelled";
   createdAt: string;
   updatedAt: string;
+  fileName?: string;
 }
 
 interface Project {
@@ -160,9 +161,21 @@ export default function PurchaseOrders() {
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
     onError: (error: Error) => {
+      let errorMessage = error.message;
+      let errorTitle = "Error";
+
+      // Handle specific error cases
+      if (error.message.includes("already exists")) {
+        errorTitle = "Duplicate Purchase Order";
+        errorMessage = error.message;
+      } else if (error.message.includes("duplicate key")) {
+        errorTitle = "Duplicate Purchase Order";
+        errorMessage = "This Purchase Order ID already exists in the system. Please check existing POs or try a different document.";
+      }
+
       toast({
-        title: "Error",
-        description: error.message,
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -190,9 +203,21 @@ export default function PurchaseOrders() {
       });
     },
     onError: (error: Error) => {
+      let errorMessage = error.message;
+      let errorTitle = "Error";
+
+      // Handle specific error cases
+      if (error.message.includes("already exists")) {
+        errorTitle = "Duplicate Purchase Order";
+        errorMessage = error.message;
+      } else if (error.message.includes("duplicate key")) {
+        errorTitle = "Duplicate Purchase Order";
+        errorMessage = "This Purchase Order ID already exists in the system. Please check existing POs or try a different document.";
+      }
+
       toast({
-        title: "Error",
-        description: error.message,
+        title: errorTitle,
+        description: errorMessage,
         variant: "destructive",
       });
     },
@@ -379,7 +404,7 @@ export default function PurchaseOrders() {
                           Use This Data
                         </Button>
                       </div>
-                      
+
                       {/* Basic Information */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
                         <div>
