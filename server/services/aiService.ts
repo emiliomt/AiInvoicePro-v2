@@ -158,62 +158,63 @@ interface ExtractedPurchaseOrderData {
 
 export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
   try {
-    const prompt = `You are an intelligent OCR and structured data extraction agent. Your job is to extract standardized fields from a consistent-format purchase order PDF in Spanish. Return data in JSON format.
+    const prompt = `You are an expert document parser. Extract structured data from a scanned Spanish purchase order PDF. Output clean JSON, formatted for database ingestion. Do not return nulls; instead return empty strings or default values where applicable. All fields must be present.
 
-From this PDF document, extract the following fields and return them as a JSON object. Make sure to always include a non-empty 'items' array:
+Extract the following fields from the purchase order:
 
 🔹 **Buyer Info**
-- buyer_company_name (e.g. 'CONSTRUCCIONES OBYCON S.A.S')
-- buyer_tax_id (NIT)
+- buyer_company_name (default: "")
+- buyer_tax_id (default: "")
 - buyer_address
 - buyer_city
 
 🔹 **Vendor Info**
-- vendor_company_name
+- vendor_company_name (from field 'Proveedor')
 - vendor_tax_id (NIT/CC)
 - vendor_address
 
 🔹 **Purchase Order Metadata**
-- po_number
-- project_name
-- description_oc
-- site_of_delivery
-- observations_oc (full paragraph text)
-- invoice_number
+- po_number (from 'Orden de Compra')
+- project_name (from 'Proyecto')
+- description_oc (from 'Descripción OC')
+- site_of_delivery (from 'Sitio de entrega')
+- observations_oc (long paragraph below 'Observaciones OC')
+- invoice_number (from 'Factura No')
 - invoice_date
 - remission_number
 - remission_date
 
-🔹 **Items** (⚠️ Must be a JSON array of objects):
+🔹 **Items** (⚠️ Must be an array):
 Each object should contain:
-- item_description (e.g. '3364 - CONCRETO PLASTICO 3000 PSI T.M. 3/4"')
-- unit_of_measure (e.g. 'M3')
-- quantity (as number)
-- unit_price (as number, no commas)
-- iva_amount (as number)
-- total_price (as number)
+- item_description (required)
+- unit_of_measure (UM)
+- quantity (number)
+- unit_price (number)
+- iva_amount (number)
+- total_price (number)
 
-If no items are found, return an empty array: "items": []. Never leave it null.
+If unit price is not found, try to infer it using total_price ÷ quantity.
+If any of these values are missing, use 0 as fallback — but NEVER leave the item or field out.
 
 🔹 **Summary**
-- subtotal (number)
-- iva (number)
-- total_amount (number)
+- subtotal
+- iva
+- total_amount
 
-🔹 **Audit Log**
-- elaborated_by (name + timestamp)
+🔹 **Audit Trail**
+- elaborated_by (e.g. 'Pablo Emilio Ríos Machado (Jun 9 2025 3:41PM)')
 - programmed_by
 - approved_by
 
-🔹 **Cost Allocation Table**
-Return as:
+🔹 **Cost Allocation**
+Return as array of objects:
 "cost_allocation": [
   {"account": "143 PISCINAS", "value": 132744.15},
   {"account": "170 COMUNAL", "value": 142860.45}
 ]
 
-📌 Output format:
-Always return valid, parsable JSON. Avoid null fields unless specified. Never skip 'items'.
+📌 Format:
+Return a **single valid JSON** object with all fields. Don't include extra text or comments.
 
 OCR Text:
 ${ocrText}`;
@@ -223,7 +224,7 @@ ${ocrText}`;
       messages: [
         {
           role: "system",
-          content: "You are an expert purchase order data extraction system. Extract structured data from OCR text and respond only with valid JSON. Always include an 'items' array, even if empty."
+          content: "You are an expert document parser. Extract structured data from a scanned Spanish purchase order PDF. Output clean JSON, formatted for database ingestion. Do not return nulls; instead return empty strings or default values where applicable. All fields must be present."
         },
         {
           role: "user",
