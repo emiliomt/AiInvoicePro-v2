@@ -1,120 +1,85 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw } from "lucide-react";
-import Header from "@/components/Header";
-import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Input } from '@/components/ui/input';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { 
+  CheckCircle, 
+  AlertTriangle, 
+  Clock, 
+  Search, 
+  Eye, 
+  Download,
+  FileText,
+  XCircle
+} from 'lucide-react';
 
-interface VerifiedInvoiceProject {
+interface VerifiedInvoice {
   id: number;
   invoiceId: number;
-  projectId: string;
+  projectId: number;
   matchScore: string;
-  matchDetails: any;
-  approvedBy: string;
-  approvedAt: string;
+  status: string;
   verifiedAt: string;
-  createdAt: string;
-  validationResults: any;
+  verifiedBy: string;
   invoice: {
     id: number;
     fileName: string;
     vendorName: string;
     totalAmount: string;
     currency: string;
-    invoiceDate: string;
-    status: string;
+    dateIssued: string;
   };
   project: {
-    projectId: string;
+    id: number;
     name: string;
+    projectId: string;
     address: string;
-    city: string;
     supervisor: string;
   };
 }
 
 export default function VerifiedInvoices() {
-  const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [verifiedInvoices, setVerifiedInvoices] = useState<VerifiedInvoice[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [searchTerm, setSearchTerm] = useState('');
 
-  const { data: verifiedInvoices = [], isLoading } = useQuery<VerifiedInvoiceProject[]>({
-    queryKey: ["/api/verified-invoice-projects"],
-    queryFn: async () => {
-      const response = await fetch("/api/verified-invoice-projects");
-      if (!response.ok) throw new Error("Failed to fetch verified invoice projects");
-      return response.json();
-    },
-  });
+  useEffect(() => {
+    fetchVerifiedInvoices();
+  }, []);
 
-  const processValidationsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch("/api/process-approved-validations", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      if (!response.ok) throw new Error("Failed to process validations");
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Processing Complete",
-        description: `${data.totalProcessed} validated invoices moved to verified status`,
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/verified-invoice-projects"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/approved-invoice-projects"] });
-    },
-    onError: (error) => {
-      console.error("Processing error:", error);
-      toast({
-        title: "Processing Failed", 
-        description: "Failed to process validated invoices. Please try again.",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const filteredInvoices = verifiedInvoices.filter(assignment => {
-    const matchesSearch = !searchTerm || 
-      assignment.invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      assignment.invoice.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      assignment.project.name.toLowerCase().includes(searchTerm.toLowerCase());
-    
-    const matchesStatus = statusFilter === "all" || assignment.invoice.status === statusFilter;
-    
-    return matchesSearch && matchesStatus;
-  });
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case "verified":
-        return <Badge variant="default" className="bg-green-100 text-green-800"><CheckCircle className="w-3 h-3 mr-1" />Verified</Badge>;
-      case "approved":
-        return <Badge variant="default" className="bg-blue-100 text-blue-800"><CheckCircle className="w-3 h-3 mr-1" />Approved</Badge>;
-      case "flagged":
-        return <Badge variant="destructive"><XCircle className="w-3 h-3 mr-1" />Flagged</Badge>;
-      case "needs_review":
-        return <Badge variant="secondary"><AlertTriangle className="w-3 h-3 mr-1" />Needs Review</Badge>;
-      case "pending":
-        return <Badge variant="outline"><Clock className="w-3 h-3 mr-1" />Pending</Badge>;
-      default:
-        return <Badge variant="outline">{status}</Badge>;
+  const fetchVerifiedInvoices = async () => {
+    try {
+      const response = await fetch('/api/verified-invoice-projects');
+      if (response.ok) {
+        const data = await response.json();
+        setVerifiedInvoices(data);
+      }
+    } catch (error) {
+      console.error('Error fetching verified invoices:', error);
+    } finally {
+      setIsLoading(false);
     }
   };
 
-  const getMatchScoreBadge = (score: string) => {
-    const numericScore = parseFloat(score);
-    if (numericScore >= 90) {
+  const filteredInvoices = verifiedInvoices.filter(invoice =>
+    invoice.invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    invoice.invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const totalVerified = verifiedInvoices.length;
+  const highConfidence = verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 90).length;
+  const flagged = 0; // You can implement flagged logic
+  const needsReview = verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length;
+  const pending = 0; // You can implement pending logic
+
+  const getConfidenceBadge = (score: string) => {
+    const numScore = parseFloat(score);
+    if (numScore >= 90) {
       return <Badge className="bg-green-100 text-green-800">High Confidence</Badge>;
-    } else if (numericScore >= 70) {
+    } else if (numScore >= 70) {
       return <Badge className="bg-yellow-100 text-yellow-800">Medium Confidence</Badge>;
     } else {
       return <Badge className="bg-red-100 text-red-800">Low Confidence</Badge>;
@@ -122,215 +87,192 @@ export default function VerifiedInvoices() {
   };
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <Header />
-      
-      <div className="container mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-white mb-2">
-            Verified Invoice-Project Matches
-          </h1>
-          <p className="text-gray-600 dark:text-gray-400">
-            Review verified invoice-project assignments that have been validated
-          </p>
-        </div>
-
-        {/* Verified Invoices Summary */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Total Verified</p>
-                  <p className="text-2xl font-bold text-green-600">{verifiedInvoices.length}</p>
-                </div>
-                <CheckCircle className="w-8 h-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">High Confidence</p>
-                  <p className="text-2xl font-bold text-green-600">
-                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 90).length}
-                  </p>
-                </div>
-                <TrendingUp className="w-8 h-8 text-green-500" />
-              </div>
-            </CardContent>
-          </Card>
-          
-          <Card>
-            <CardContent className="p-4">
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">Medium Confidence</p>
-                  <p className="text-2xl font-bold text-yellow-600">
-                    {verifiedInvoices.filter(v => parseFloat(v.matchScore) >= 70 && parseFloat(v.matchScore) < 90).length}
-                  </p>
-                </div>
-                <AlertTriangle className="w-8 h-8 text-yellow-500" />
-              </div>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Controls */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <Input
-              placeholder="Search invoices..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="pl-10"
-            />
-          </div>
-          
-          <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-48">
-              <SelectValue placeholder="Filter by status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">All Statuses</SelectItem>
-              <SelectItem value="verified">Verified</SelectItem>
-              <SelectItem value="approved">Approved</SelectItem>
-              <SelectItem value="flagged">Flagged</SelectItem>
-              <SelectItem value="needs_review">Needs Review</SelectItem>
-              <SelectItem value="pending">Pending</SelectItem>
-            </SelectContent>
-          </Select>
-
-          <Button 
-            onClick={() => processValidationsMutation.mutate()}
-            disabled={processValidationsMutation.isPending}
-            className="flex items-center gap-2"
-          >
-            {processValidationsMutation.isPending ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <RefreshCw className="w-4 h-4" />
-            )}
-            Process New Validations
-          </Button>
-        </div>
-
-        {/* Verified Invoice-Project Assignments Table */}
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <CheckCircle className="w-5 h-5 text-purple-600" />
-              Unresolved Invoice-PO Matches
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {isLoading ? (
-              <div className="flex items-center justify-center py-8">
-                <RefreshCw className="w-6 h-6 animate-spin mr-2" />
-                Loading verified invoices...
-              </div>
-            ) : filteredInvoices.length === 0 ? (
-              <div className="text-center py-8">
-                <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-                  No Unresolved Matches
-                </h3>
-                <p className="text-gray-500 dark:text-gray-400">
-                  All invoice-PO matches have been resolved or there are no pending matches.
-                </p>
-              </div>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Invoice Details</TableHead>
-                      <TableHead>Vendor</TableHead>
-                      <TableHead>Amount</TableHead>
-                      <TableHead>Project</TableHead>
-                      <TableHead>Match Score</TableHead>
-                      <TableHead>Approved By</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Actions</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredInvoices.map((assignment) => (
-                      <TableRow key={assignment.id}>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">ID: {assignment.invoice.id}</div>
-                            <div className="text-sm text-gray-500">
-                              {format(new Date(assignment.verifiedAt), 'M/d/yyyy')}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">{assignment.invoice.vendorName || 'Unknown'}</div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="font-medium">
-                            {assignment.invoice.currency} {parseFloat(assignment.invoice.totalAmount || '0').toLocaleString()}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{assignment.project.name}</div>
-                            <div className="text-sm text-gray-500">{assignment.project.projectId}</div>
-                            <div className="text-sm text-gray-500">
-                              Supervisor: {assignment.project.supervisor}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex flex-col gap-1">
-                            <div className="font-medium">{parseFloat(assignment.matchScore).toFixed(1)}%</div>
-                            {getMatchScoreBadge(assignment.matchScore)}
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{assignment.approvedBy}</div>
-                            <div className="text-sm text-gray-500">
-                              {new Date(assignment.approvedAt).toLocaleDateString()}
-                            </div>
-                          </div>
-                        </TableCell>
-                        <TableCell>
-                          {getStatusBadge("verified")}
-                        </TableCell>
-                        <TableCell>
-                          <div className="flex items-center gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1"
-                            >
-                              <Eye className="w-3 h-3" />
-                              View
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              className="flex items-center gap-1"
-                            >
-                              <Download className="w-3 h-3" />
-                              Download
-                            </Button>
-                          </div>
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+    <div className="space-y-6">
+      {/* Header */}
+      <div>
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Invoice Verification Status</h1>
+        <p className="text-gray-600 dark:text-gray-400">Monitor and verify invoice authenticity and compliance across all submissions</p>
       </div>
+
+      {/* Status Bar */}
+      <div className="flex flex-wrap gap-6">
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-blue-100 rounded flex items-center justify-center">
+            <FileText className="w-4 h-4 text-blue-600" />
+          </div>
+          <div>
+            <span className="text-2xl font-bold text-gray-900">{totalVerified}</span>
+            <span className="text-sm text-gray-500 ml-2">Total Invoices</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-green-100 rounded flex items-center justify-center">
+            <CheckCircle className="w-4 h-4 text-green-600" />
+          </div>
+          <div>
+            <span className="text-2xl font-bold text-green-600">{highConfidence}</span>
+            <span className="text-sm text-gray-500 ml-2">Verified</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-red-100 rounded flex items-center justify-center">
+            <XCircle className="w-4 h-4 text-red-600" />
+          </div>
+          <div>
+            <span className="text-2xl font-bold text-red-600">{flagged}</span>
+            <span className="text-sm text-gray-500 ml-2">Flagged</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-yellow-100 rounded flex items-center justify-center">
+            <AlertTriangle className="w-4 h-4 text-yellow-600" />
+          </div>
+          <div>
+            <span className="text-2xl font-bold text-yellow-600">{needsReview}</span>
+            <span className="text-sm text-gray-500 ml-2">Needs Review</span>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 bg-gray-100 rounded flex items-center justify-center">
+            <Clock className="w-4 h-4 text-gray-600" />
+          </div>
+          <div>
+            <span className="text-2xl font-bold text-gray-600">{pending}</span>
+            <span className="text-sm text-gray-500 ml-2">Pending</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="flex gap-4">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+          <Input
+            placeholder="Search invoices..."
+            value={searchTerm}
+            onChange={(e) => setSearchTerm(e.target.value)}
+            className="pl-10"
+          />
+        </div>
+        <select className="px-3 py-2 border rounded-md">
+          <option>All</option>
+        </select>
+        <select className="px-3 py-2 border rounded-md">
+          <option>All</option>
+        </select>
+      </div>
+
+      {/* Verified Invoice-Project Assignments Table */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Verified Invoice-Project Assignments</CardTitle>
+          <p className="text-sm text-gray-600">Invoices that have been successfully matched and verified for specific projects</p>
+        </CardHeader>
+        <CardContent>
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+              <span className="ml-2">Loading verified invoices...</span>
+            </div>
+          ) : filteredInvoices.length === 0 ? (
+            <div className="text-center py-8">
+              <CheckCircle className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+              <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                No Verified Invoices
+              </h3>
+              <p className="text-gray-500 dark:text-gray-400">
+                No invoices have been verified yet.
+              </p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice Details</TableHead>
+                    <TableHead>Vendor</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Project</TableHead>
+                    <TableHead>Match Score</TableHead>
+                    <TableHead>Verified By</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredInvoices.map((verifiedInvoice) => (
+                    <TableRow key={verifiedInvoice.id}>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">ID: {verifiedInvoice.invoice.id}</div>
+                          <div className="text-sm text-gray-500">{verifiedInvoice.invoice.dateIssued}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{verifiedInvoice.invoice.vendorName || 'Unknown'}</div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">
+                            {verifiedInvoice.invoice.currency} {parseFloat(verifiedInvoice.invoice.totalAmount || '0').toLocaleString()}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{verifiedInvoice.project.name}</div>
+                          <div className="text-sm text-gray-500">
+                            ID: {verifiedInvoice.project.projectId}
+                          </div>
+                          <div className="text-sm text-gray-500">
+                            Supervisor: {verifiedInvoice.project.supervisor}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{parseFloat(verifiedInvoice.matchScore).toFixed(1)}%</div>
+                          {getConfidenceBadge(verifiedInvoice.matchScore)}
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <div>
+                          <div className="font-medium">{verifiedInvoice.verifiedBy}</div>
+                          <div className="text-sm text-gray-500">
+                            {new Date(verifiedInvoice.verifiedAt).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </TableCell>
+                      <TableCell>
+                        <Badge className="bg-green-100 text-green-800">
+                          <CheckCircle className="w-3 h-3 mr-1" />
+                          Verified
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-2">
+                          <Button variant="ghost" size="sm">
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                          <Button variant="ghost" size="sm">
+                            <Download className="w-4 h-4" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }
