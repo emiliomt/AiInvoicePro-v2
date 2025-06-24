@@ -158,81 +158,60 @@ interface ExtractedPurchaseOrderData {
 
 export async function extractPurchaseOrderData(ocrText: string): Promise<ExtractedPurchaseOrderData> {
   try {
-    const prompt = `You are an expert document parser. Extract structured data from a scanned Spanish purchase order PDF. Output clean JSON, formatted for database ingestion. Do not return nulls; instead return empty strings or default values where applicable. All fields must be present.
+    const purchaseOrderPrompt = `
+Eres un modelo de lenguaje que extrae datos estructurados de órdenes de compra en español a partir de texto plano OCR. El texto proviene de un PDF con formato consistente.
 
-Extract the following fields from the purchase order:
+Tu tarea es devolver un objeto JSON con los siguientes campos:
 
-🔹 **Buyer Info**
-- buyer_company_name (default: "")
-- buyer_tax_id (default: "")
-- buyer_address
-- buyer_city
+{
+  "po_number": "",                 // Después de "Orden de Compra No"
+  "vendor_name": "",              // Después de "Proveedor"
+  "vendor_tax_id": "",           // Después de "NIT/CC"
+  "vendor_address": "",          // Bajo 'Dirección' dentro del bloque de proveedor
+  "project_name": "",            // Después de 'Proyecto'
+  "description_oc": "",          // Después de 'Descripción OC'
+  "site_of_delivery": "",        // Después de 'Sitio de entrega'
+  "observations_oc": "",         // Texto completo debajo de 'Observaciones OC'
+  "invoice_number": "",          // Después de 'Factura No'
+  "invoice_date": "",            // Después de 'Fecha Factura'
+  "remission_number": "",        // Después de 'Remisión No'
+  "remission_date": "",          // Después de 'Fecha Remisión'
+  "items": [
+    {
+      "item_description": "",     // Campo 'Insumo'
+      "unit_of_measure": "",      // Campo 'UM'
+      "quantity": 0,              // Campo 'Cantidad'
+      "unit_price": 0,            // Campo 'Vr. Unitario'
+      "iva_amount": 0,            // Campo 'Vr. IVA'
+      "total_price": 0            // Campo 'Vr. Total'
+    }
+  ],
+  "subtotal": 0,                  // Campo 'SUBTOTAL'
+  "iva": 0,                       // Campo 'IVA'
+  "total_amount": 0              // Campo 'TOTAL'
+}
 
-🔹 **Vendor Info**
-- vendor_company_name (from field 'Proveedor')
-- vendor_tax_id (NIT/CC)
-- vendor_address
-
-🔹 **Purchase Order Metadata**
-- po_number (from 'Orden de Compra')
-- project_name (from 'Proyecto')
-- description_oc (from 'Descripción OC')
-- site_of_delivery (from 'Sitio de entrega')
-- observations_oc (long paragraph below 'Observaciones OC')
-- invoice_number (from 'Factura No')
-- invoice_date
-- remission_number
-- remission_date
-
-🔹 **Items** (⚠️ Must be an array):
-Each object should contain:
-- item_description (required)
-- unit_of_measure (UM)
-- quantity (number)
-- unit_price (number)
-- iva_amount (number)
-- total_price (number)
-
-If unit price is not found, try to infer it using total_price ÷ quantity.
-If any of these values are missing, use 0 as fallback — but NEVER leave the item or field out.
-
-🔹 **Summary**
-- subtotal
-- iva
-- total_amount
-
-🔹 **Audit Trail**
-- elaborated_by (e.g. 'Pablo Emilio Ríos Machado (Jun 9 2025 3:41PM)')
-- programmed_by
-- approved_by
-
-🔹 **Cost Allocation**
-Return as array of objects:
-"cost_allocation": [
-  {"account": "143 PISCINAS", "value": 132744.15},
-  {"account": "170 COMUNAL", "value": 142860.45}
-]
-
-📌 Format:
-Return a **single valid JSON** object with all fields. Don't include extra text or comments.
-
-OCR Text:
-${ocrText}`;
+Reglas:
+- Si no encuentras un campo, déjalo como cadena vacía o cero, pero nunca como null.
+- Devuelve únicamente el JSON, sin texto adicional ni explicaciones.
+- Extrae los datos directamente del texto OCR, incluso si hay errores ortográficos menores.
+- El formato del JSON debe ser válido.
+`;
 
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini",
       messages: [
-        {
-          role: "system",
-          content: "You are an expert document parser. Extract structured data from a scanned Spanish purchase order PDF. Output clean JSON, formatted for database ingestion. Do not return nulls; instead return empty strings or default values where applicable. All fields must be present."
+        { 
+          role: "system", 
+          content: "Eres un extractor de datos de documentos OCR." 
         },
-        {
-          role: "user",
-          content: prompt
+        { 
+          role: "user", 
+          content: `${purchaseOrderPrompt}\n\nTexto OCR:\n${ocrText}` 
         }
       ],
       response_format: { type: "json_object" },
-      temperature: 0.0,
+      temperature: 0.2,
       max_tokens: 2000
     });
 
