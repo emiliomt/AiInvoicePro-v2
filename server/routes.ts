@@ -1378,7 +1378,7 @@ settingsJson = JSON.stringify(value);
         const stat = fs.statSync(invoice.fileUrl);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', stat.size.toString());
-        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Content-Disposition', 'inline; filename="' + invoice.fileName + '"');
         res.setHeader('Cache-Control', 'private, no-cache');
         res.setHeader('Accept-Ranges', 'bytes');
 
@@ -1398,7 +1398,7 @@ settingsJson = JSON.stringify(value);
 
         // Set headers before piping
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Content-Disposition', 'inline; filename="' + invoice.fileName + '"');
         res.setHeader('Cache-Control', 'private, no-cache');
 
         // Pipe the PDF to response
@@ -1649,7 +1649,7 @@ settingsJson = JSON.stringify(value);
       });
 
       // Log for potential model training
-      console.log(`Extraction feedback received for invoice ${invoiceId}:`, {
+      console.log('Extraction feedback received for invoice ' + invoiceId + ':', {
         fileName: invoice.fileName,
         reason,
         hasCorrections: !!correctedData,
@@ -1710,7 +1710,7 @@ settingsJson = JSON.stringify(value);
       });
 
       // Log for learning system improvement
-      console.log(`Learning feedback received for invoice ${invoiceId}:`, {
+      console.log('Learning feedback received for invoice ' + invoiceId + ':', {
         fileName: invoice.fileName,
         assignedProjectId,
         extractedProjectData: {
@@ -1794,7 +1794,7 @@ settingsJson = JSON.stringify(value);
       await LearningTracker.recordPositiveFeedback(invoiceId, userId);
 
       // Log successful extraction for model improvement
-      console.log(`Positive feedback received for invoice ${invoiceId}:`, {
+      console.log('Positive feedback received for invoice ' + invoiceId + ':', {
         fileName: invoice.fileName,
         userId,        timestamp: new Date().toISOString(),
         confidenceScore: invoice.confidenceScore,
@@ -2093,7 +2093,7 @@ settingsJson = JSON.stringify(value);
         }
       }
 
-      res.json({ message: `Added ${results.length} keywords`, results });
+      res.json({ message: 'Added ' + results.length + ' keywords', results });
     } catch (error) {
       console.error("Error bulk adding keywords:", error);
       res.status(500).json({ message: "Failed to bulk add keywords" });
@@ -2221,14 +2221,14 @@ settingsJson = JSON.stringify(value);
               });
               processedCount++;
             } catch (error) {
-              console.error(`Error moving invoice ${validation.invoiceId} to verified:`, error);
+              console.error('Error moving invoice ' + validation.invoiceId + ' to verified:', error);
             }
           }
         }
       }
 
       res.json({
-        message: `Processed ${processedCount} validated invoices`,
+        message: 'Processed ' + processedCount + ' validated invoices',
         totalProcessed: processedCount,
         validationSummary: {
           totalInvoices: validationResults.totalInvoices,
