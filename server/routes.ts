@@ -533,6 +533,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.patch('/api/purchase-orders/:id', isAuthenticated, async (req, res) => {
+    try {
+      const poId = parseInt(req.params.id);
+      const updates = req.body;
+      const updatedPO = await storage.updatePurchaseOrder(poId, updates);
+      res.json(updatedPO);
+    } catch (error) {
+      console.error("Error updating purchase order:", error);
+      res.status(500).json({ message: "Failed to update purchase order" });
+    }
+  });
+
   app.delete('/api/purchase-orders/:id', isAuthenticated, async (req, res) => {
     try {
       const poId = parseInt(req.params.id);

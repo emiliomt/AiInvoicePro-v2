@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
-import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2, Eye } from "lucide-react";
+import { Plus, FileText, Calendar, DollarSign, Building, Package, Trash2, Loader2, Eye, Edit, Settings } from "lucide-react";
 import { useState } from "react";
 
 interface PurchaseOrder {
@@ -28,6 +28,12 @@ interface PurchaseOrder {
   updatedAt: string;
   fileName?: string;
   originalOrderNumber?: string;
+  buyerName?: string;
+  buyerAddress?: string;
+  vendorAddress?: string;
+  terms?: string;
+  ocrText?: string;
+  uploadedBy?: string;
 }
 
 interface Project {
@@ -58,6 +64,9 @@ export default function PurchaseOrders() {
   const [isUploadDialogOpen, setIsUploadDialogOpen] = useState(false);
   const [selectedPOForDetails, setSelectedPOForDetails] = useState<PurchaseOrder | null>(null);
   const [isDetailsDialogOpen, setIsDetailsDialogOpen] = useState(false);
+  const [isAssignProjectDialogOpen, setIsAssignProjectDialogOpen] = useState(false);
+  const [selectedPOForAssignment, setSelectedPOForAssignment] = useState<PurchaseOrder | null>(null);
+  const [assignmentProjectId, setAssignmentProjectId] = useState("");
 
   // Fetch purchase orders
   const { data: purchaseOrders = [], isLoading } = useQuery<PurchaseOrder[]>({
@@ -224,6 +233,43 @@ export default function PurchaseOrders() {
     },
   });
 
+  // Update purchase order project assignment mutation
+  const updatePOProjectMutation = useMutation({
+    mutationFn: async ({ poId, projectId }: { poId: number; projectId: string | null }) => {
+      const response = await fetch(`/api/purchase-orders/${poId}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ projectId }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || "Failed to update purchase order");
+      }
+
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
+      setIsAssignProjectDialogOpen(false);
+      setSelectedPOForAssignment(null);
+      setAssignmentProjectId("");
+      toast({
+        title: "Success",
+        description: "Project assignment updated successfully",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreatePO = () => {
     // Validate required fields
     if (!newPO.poId || !newPO.vendorName || !newPO.amount) {
@@ -291,6 +337,21 @@ export default function PurchaseOrders() {
   const handleViewPODetails = (po: PurchaseOrder) => {
     setSelectedPOForDetails(po);
     setIsDetailsDialogOpen(true);
+  };
+
+  const handleAssignProject = (po: PurchaseOrder) => {
+    setSelectedPOForAssignment(po);
+    setAssignmentProjectId(po.projectId || "");
+    setIsAssignProjectDialogOpen(true);
+  };
+
+  const handleUpdateProjectAssignment = () => {
+    if (selectedPOForAssignment) {
+      updatePOProjectMutation.mutate({
+        poId: selectedPOForAssignment.id,
+        projectId: assignmentProjectId || null,
+      });
+    }
   };
 
   const addItem = () => {
@@ -796,6 +857,34 @@ export default function PurchaseOrders() {
                         </div>
                       </div>
                     )}
+
+                    <div className="mt-4 pt-4 border-t flex justify-end space-x-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleViewPODetails(po)}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        View Details
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleAssignProject(po)}
+                      >
+                        <Settings className="w-4 h-4 mr-1" />
+                        Assign Project
+                      </Button>
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeletePO(po.id, po.poId)}
+                        disabled={deletePOMutation.isPending}
+                      >
+                        <Trash2 className="w-4 h-4 mr-1" />
+                        Delete
+                      </Button>
+                    </div>
                   </CardContent>
                 </Card>
               ))}
@@ -820,30 +909,26 @@ export default function PurchaseOrders() {
         </div>
 
         {/* Purchase Order Details Dialog */}
-        <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
-          <DialogContent className="max-w-4xl max-h-[80vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Purchase Order Details - {selectedPOForDetails?.poId}</DialogTitle>
-            </DialogHeader>
-
-            {selectedPOForDetails && (
+        {selectedPOForDetails && (
+          <Dialog open={isDetailsDialogOpen} onOpenChange={setIsDetailsDialogOpen}>
+            <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Purchase Order Details - {selectedPOForDetails.poId}</DialogTitle>
+              </DialogHeader>
+              
               <div className="space-y-6">
                 {/* Basic Information */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-50 rounded-lg">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-gray-50 rounded-lg">
                   <div>
                     <label className="text-sm font-medium text-gray-700">PO Number</label>
-                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.poId}</p>
+                    <p className="text-sm text-gray-900 mt-1 font-semibold">{selectedPOForDetails.poId}</p>
                   </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Vendor Name</label>
-                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.vendorName}</p>
-                  </div>
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Total Amount</label>
-                    <p className="text-sm text-gray-900 mt-1">
-                      {selectedPOForDetails.currency} {selectedPOForDetails.amount}
-                    </p>
-                  </div>
+                  {selectedPOForDetails.originalOrderNumber && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Original Order Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.originalOrderNumber}</p>
+                    </div>
+                  )}
                   <div>
                     <label className="text-sm font-medium text-gray-700">Status</label>
                     <p className="text-sm text-gray-900 mt-1">
@@ -853,8 +938,24 @@ export default function PurchaseOrders() {
                     </p>
                   </div>
                   <div>
-                    <label className="text-sm font-medium text-gray-700">Project</label>
-                    <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.projectId || "Unassigned"}</p>
+                    <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                    <p className="text-sm text-gray-900 mt-1 font-semibold">{selectedPOForDetails.vendorName}</p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Total Amount</label>
+                    <p className="text-sm text-gray-900 mt-1 font-semibold text-green-600">
+                      {selectedPOForDetails.currency} {parseFloat(selectedPOForDetails.amount).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Project Assignment</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {selectedPOForDetails.projectId ? (
+                        <Badge variant="secondary">{selectedPOForDetails.projectId}</Badge>
+                      ) : (
+                        <Badge variant="outline" className="text-orange-600">Unassigned</Badge>
+                      )}
+                    </p>
                   </div>
                   <div>
                     <label className="text-sm font-medium text-gray-700">Issue Date</label>
@@ -870,51 +971,202 @@ export default function PurchaseOrders() {
                       </p>
                     </div>
                   )}
-                  <div>
-                    <label className="text-sm font-medium text-gray-700">Created</label>
-                    <p className="text-sm text-gray-900 mt-1">
-                      {new Date(selectedPOForDetails.createdAt).toLocaleDateString()}
-                    </p>
-                  </div>
+                  {selectedPOForDetails.fileName && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Source File</label>
+                      <p className="text-sm text-gray-900 mt-1 truncate" title={selectedPOForDetails.fileName}>
+                        {selectedPOForDetails.fileName}
+                      </p>
+                    </div>
+                  )}
                 </div>
+
+                {/* Additional Extracted Information */}
+                {(selectedPOForDetails.buyerName || selectedPOForDetails.buyerAddress || selectedPOForDetails.vendorAddress || selectedPOForDetails.terms) && (
+                  <div className="p-4 bg-blue-50 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Additional Information</h3>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {selectedPOForDetails.buyerName && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Buyer Name</label>
+                          <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.buyerName}</p>
+                        </div>
+                      )}
+                      {selectedPOForDetails.buyerAddress && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Buyer Address</label>
+                          <p className="text-sm text-gray-900 mt-1 whitespace-pre-line">{selectedPOForDetails.buyerAddress}</p>
+                        </div>
+                      )}
+                      {selectedPOForDetails.vendorAddress && (
+                        <div>
+                          <label className="text-sm font-medium text-gray-700">Vendor Address</label>
+                          <p className="text-sm text-gray-900 mt-1 whitespace-pre-line">{selectedPOForDetails.vendorAddress}</p>
+                        </div>
+                      )}
+                      {selectedPOForDetails.terms && (
+                        <div className="md:col-span-2">
+                          <label className="text-sm font-medium text-gray-700">Terms & Conditions</label>
+                          <p className="text-sm text-gray-900 mt-1 whitespace-pre-line">{selectedPOForDetails.terms}</p>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
 
                 {/* Line Items */}
                 {selectedPOForDetails.items && selectedPOForDetails.items.length > 0 && (
-                  <div className="p-4 bg-green-50 rounded-lg">
-                    <h4 className="font-medium text-gray-900 mb-3">
-                      Line Items ({selectedPOForDetails.items.length})
-                    </h4>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Line Items ({selectedPOForDetails.items.length})</h3>
                     <div className="overflow-x-auto">
-                      <table className="w-full text-sm">
-                        <thead className="bg-white">
-                          <tr>
-                            <th className="px-3 py-2 text-left font-medium text-gray-700">Description</th>
-                            <th className="px-3 py-2 text-right font-medium text-gray-700">Quantity</th>
-                            <th className="px-3 py-2 text-right font-medium text-gray-700">Unit Price</th>
-                            <th className="px-3 py-2 text-right font-medium text-gray-700">Total</th>
+                      <table className="w-full border-collapse border border-gray-300">
+                        <thead>
+                          <tr className="bg-gray-50">
+                            <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-900">
+                              #
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-900">
+                              Description
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-900">
+                              Quantity
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-900">
+                              Unit Price
+                            </th>
+                            <th className="border border-gray-300 px-4 py-2 text-left text-sm font-medium text-gray-900">
+                              Total
+                            </th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {selectedPOForDetails.items.map((item: any, index: number) => (
-                            <tr key={index} className="bg-white">
-                              <td className="px-3 py-2">{item.description || "—"}</td>
-                              <td className="px-3 py-2 text-right">{item.quantity || "—"}</td>
-                              <td className="px-3 py-2 text-right">
-                                {item.unitPrice ? `${selectedPOForDetails.currency} ${item.unitPrice}` : "—"}
-                              </td>
-                              <td className="px-3 py-2 text-right font-medium">
-                                {item.totalPrice ? `${selectedPOForDetails.currency} ${item.totalPrice}` : "—"}
-                              </td>
-                            </tr>
-                          ))}
+                        <tbody>
+                          {selectedPOForDetails.items.map((item: any, index: number) => {
+                            const quantity = parseFloat(item.quantity || '0');
+                            const unitPrice = parseFloat(item.unitPrice || '0');
+                            const total = quantity * unitPrice;
+                            
+                            return (
+                              <tr key={index} className={index % 2 === 0 ? 'bg-white' : 'bg-gray-50'}>
+                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900 font-medium">
+                                  {index + 1}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900">
+                                  {item.description || 'N/A'}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900 text-center">
+                                  {item.quantity || 'N/A'}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900 text-right">
+                                  {selectedPOForDetails.currency} {unitPrice > 0 ? unitPrice.toLocaleString() : 'N/A'}
+                                </td>
+                                <td className="border border-gray-300 px-4 py-2 text-sm text-gray-900 text-right font-medium">
+                                  {total > 0 ? `${selectedPOForDetails.currency} ${total.toLocaleString()}` : 'N/A'}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>
                   </div>
                 )}
 
-                {/* Additional metadata if available */}
-                {(selectedPOForDetails as any).extractedData && (
+                {/* OCR Text Preview */}
+                {selectedPOForDetails.ocrText && (
+                  <div className="p-4 bg-gray-50 rounded-lg">
+                    <h3 className="text-lg font-semibold text-gray-900 mb-3">Extracted Text (OCR)</h3>
+                    <div className="max-h-40 overflow-y-auto text-sm text-gray-700 whitespace-pre-line font-mono bg-white p-3 rounded border">
+                      {selectedPOForDetails.ocrText.substring(0, 1000)}
+                      {selectedPOForDetails.ocrText.length > 1000 && '...'}
+                    </div>
+                  </div>
+                )}
+
+                {/* Metadata */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 p-4 bg-gray-100 rounded-lg">
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Created</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {new Date(selectedPOForDetails.createdAt).toLocaleString()}
+                    </p>
+                  </div>
+                  <div>
+                    <label className="text-sm font-medium text-gray-700">Last Updated</label>
+                    <p className="text-sm text-gray-900 mt-1">
+                      {new Date(selectedPOForDetails.updatedAt).toLocaleString()}
+                    </p>
+                  </div>
+                  {selectedPOForDetails.uploadedBy && (
+                    <div>
+                      <label className="text-sm font-medium text-gray-700">Uploaded By</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedPOForDetails.uploadedBy}</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
+
+        {/* Project Assignment Dialog */}
+        {selectedPOForAssignment && (
+          <Dialog open={isAssignProjectDialogOpen} onOpenChange={setIsAssignProjectDialogOpen}>
+            <DialogContent className="max-w-md">
+              <DialogHeader>
+                <DialogTitle>Assign Project - {selectedPOForAssignment.poId}</DialogTitle>
+              </DialogHeader>
+              
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="project-select">Select Project</Label>
+                  <Select value={assignmentProjectId} onValueChange={setAssignmentProjectId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Choose a project or leave unassigned" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="">Unassigned</SelectItem>
+                      {projects.map((project) => (
+                        <SelectItem key={project.id} value={project.projectId}>
+                          {project.projectId} - {project.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="bg-gray-50 p-3 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-700 mb-2">Current Assignment</h4>
+                  <p className="text-sm text-gray-900">
+                    {selectedPOForAssignment.projectId ? (
+                      <Badge variant="secondary">{selectedPOForAssignment.projectId}</Badge>
+                    ) : (
+                      <Badge variant="outline" className="text-orange-600">Unassigned</Badge>
+                    )}
+                  </p>
+                </div>
+
+                <div className="flex justify-end space-x-2">
+                  <Button variant="secondary" onClick={() => setIsAssignProjectDialogOpen(false)}>
+                    Cancel
+                  </Button>
+                  <Button 
+                    onClick={handleUpdateProjectAssignment}
+                    disabled={updatePOProjectMutation.isPending}
+                  >
+                    {updatePOProjectMutation.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Updating...
+                      </>
+                    ) : (
+                      'Update Assignment'
+                    )}
+                  </Button>
+                </div>
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
                   <div className="p-4 bg-blue-50 rounded-lg">
                     <h4 className="font-medium text-gray-900 mb-3">Original Extracted Data</h4>
                     <details>
