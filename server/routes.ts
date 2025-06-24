@@ -11,6 +11,7 @@ import multer from "multer";
 import path from "path";
 import { z } from "zod";
 import { RequestHandler } from "express";
+import { findBestProjectMatch } from "./services/aiService.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -357,17 +358,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // For now, process the first file only
         const file = files[0];
-        
+        const fileName = file.originalname;
+
         try {
           // Extract OCR text
           const ocrText = await processInvoiceOCR(file.buffer, 0);
-          console.log(`OCR completed for PO ${file.originalname}, text length: ${ocrText.length}`);
+          console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
 
           // Check if OCR was successful (even with error messages, we can still proceed)
           if (!ocrText || ocrText.trim().length < 10) {
             return res.status(400).json({ 
-              message: `OCR processing failed for ${file.originalname}. The file may be corrupted or in an unsupported format.`,
-              fileName: file.originalname,
+              message: `OCR processing failed for ${fileName}. The file may be corrupted or in an unsupported format.`,
+              fileName: fileName,
               error: "Insufficient text extracted from document"
             });
           }
@@ -375,45 +377,67 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Check if the OCR text indicates an error
           if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
             return res.status(400).json({ 
-              message: `Document processing failed for ${file.originalname}. ${ocrText}`,
-              fileName: file.originalname,
+              message: `Document processing failed for ${fileName}. ${ocrText}`,
+              fileName: fileName,
               error: "OCR processing error"
             });
           }
 
-          // Extract structured data using AI
+          // Extract data using AI
           const extractedData = await extractPurchaseOrderData(ocrText);
-          console.log(`AI extraction completed for PO ${file.originalname}:`, {
+          console.log(`AI extraction completed for PO ${fileName}:`, {
             vendor: extractedData.vendorName,
             amount: extractedData.totalAmount,
-            poId: extractedData.poId
+            poId: extractedData.poId,
+            extractedProject: extractedData.projectId
           });
 
-          // Save the purchase order to database
-          const newPO = await storage.createPurchaseOrder({
+          // Try to find a matching project using fuzzy matching
+          let matchedProjectId = extractedData.projectId;
+          if (extractedData.projectId) {
+            const allProjects = await storage.getProjects();
+            const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
+            if (fuzzyMatch) {
+              matchedProjectId = fuzzyMatch;
+              console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
+            } else {
+              console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
+              matchedProjectId = null;
+            }
+          }
+
+          // Create purchase order
+          const newPurchaseOrder = await storage.createPurchaseOrder({
             poId: extractedData.poId || `PO-${Date.now()}`,
-            vendorName: extractedData.vendorName || 'Unknown Vendor',
-            amount: extractedData.totalAmount || '0',
-            currency: extractedData.currency || 'COP',
+            vendorName: extractedData.vendorName || "Unknown Vendor",
+            amount: extractedData.totalAmount || "0",
+            currency: extractedData.currency || "USD",
+            status: "open",
+            issueDate: extractedData.issueDate || null,
+            expectedDeliveryDate: extractedData.expectedDeliveryDate || null,
+            projectId: matchedProjectId,
+            buyerName: extractedData.buyerName || null,
+            buyerAddress: extractedData.buyerAddress || null,
+            vendorAddress: extractedData.vendorAddress || null,
+            terms: extractedData.terms || null,
             items: extractedData.lineItems || [],
-            issueDate: extractedData.issueDate ? new Date(extractedData.issueDate) : new Date(),
-            expectedDeliveryDate: extractedData.expectedDeliveryDate ? new Date(extractedData.expectedDeliveryDate) : null,
-            projectId: extractedData.projectId || null,
-            status: 'open'
+            ocrText: ocrText,
+            fileName: fileName,
+            uploadedBy: req.user?.id || "anonymous",
           });
 
-          console.log(`Purchase order saved with ID: ${newPO.id}`);
+          console.log(`Purchase order saved with ID: ${newPurchaseOrder.id}`);
 
           return res.status(200).json({ 
-            message: `Successfully processed and saved purchase order: ${file.originalname}`,
-            purchaseOrder: newPO,
-            fileName: file.originalname
+            message: `Successfully processed and saved purchase order: ${fileName}`,
+            purchaseOrder: newPurchaseOrder,
+            fileName: fileName
           });
         } catch (processingError: any) {
-          console.error(`Error processing PO ${file.originalname}:`, processingError);
+          console.error(`Error processing PO ${fileName}:`, processingError);
           return res.status(500).json({ 
             message: `Failed to process purchase order: ${processingError.message || 'Unknown processing error'}`,
-            fileName: file.originalname,
+            fileName: fileName,
             error: processingError.message || 'Unknown error',
             details: 'Please ensure the file is a valid PDF and try again. If the problem persists, try converting the file to a different format.'
           });
@@ -1632,8 +1656,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Log successful extraction for model improvement
       console.log(`Positive feedback received for invoice ${invoiceId}:`, {
         fileName: invoice.fileName,
-        userId,
-        timestamp: new Date().toISOString(),
+        userId,        timestamp: new Date().toISOString(),
         confidenceScore: invoice.confidenceScore,
       });
 
@@ -2040,7 +2063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       // Get validation results for all approved invoices
       const validationResults = await storage.validateAllApprovedInvoices();
-      
+
       // Process each validated invoice and move to verified if they pass
       let processedCount = 0;
       for (const validation of validationResults.invoiceValidations) {
@@ -2048,7 +2071,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Find the approved invoice project for this invoice
           const approvedProjects = await storage.getApprovedInvoiceProjects();
           const approvedProject = approvedProjects.find(ap => ap.invoiceId === validation.invoiceId);
-          
+
           if (approvedProject) {
             try {
               await storage.moveApprovedToVerified(approvedProject.id, {
