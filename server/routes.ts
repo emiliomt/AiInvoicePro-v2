@@ -1180,14 +1180,14 @@ settingsJson = JSON.stringify(value);
                 await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
                 console.log('Auto-classified line items for invoice ' + invoice.id);
               } catch (classificationError) {
-                console.error(`Failed to auto-classify line items for invoice ${invoice.id}:`, classificationError);
+                console.error('Failed to auto-classify line items for invoice ' + invoice.id + ':', classificationError);
                 // Continue processing even if classification fails
               }
             }
 
-            console.log(`Invoice ${invoice.id} processing completed successfully`);
+            console.log('Invoice ' + invoice.id + ' processing completed successfully');
           } catch (processingError: any) {
-            console.error(`Error processing invoice ${invoice.id}:`, processingError);
+            console.error('Error processing invoice ' + invoice.id + ':', processingError);
             await storage.updateInvoice(invoice.id, {
               status: "rejected",
               extractedData: { 
@@ -1200,7 +1200,7 @@ settingsJson = JSON.stringify(value);
         }
 
         res.json({ 
-          message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
+          message: 'Successfully uploaded ' + uploadedInvoices.length + ' invoice(s). Processing started.',
           invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
         });
       } catch (error) {
@@ -1235,14 +1235,14 @@ settingsJson = JSON.stringify(value);
           const fs = require('fs');
           const fileBuffer = fs.readFileSync(invoice.fileUrl);
 
-          console.log(`Manual OCR processing started for invoice ${invoiceId}`);
+          console.log('Manual OCR processing started for invoice ' + invoiceId);
           const ocrText = await processInvoiceOCR(fileBuffer, invoiceId);
 
           if (!ocrText || ocrText.trim().length < 10) {
             throw new Error("OCR did not extract sufficient text from the document");
           }
 
-          console.log(`Manual AI extraction started for invoice ${invoiceId}`);
+          console.log('Manual AI extraction started for invoice ' + invoiceId);
           const extractedData = await extractInvoiceData(ocrText);
 
           // Update invoice with extracted data
@@ -1262,9 +1262,9 @@ settingsJson = JSON.stringify(value);
             currency: extractedData.currency || "USD",
           });
 
-          console.log(`Manual processing completed successfully for invoice ${invoiceId}`);
+          console.log('Manual processing completed successfully for invoice ' + invoiceId);
         } catch (error: any) {
-          console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
+          console.error('Manual processing failed for invoice ' + invoiceId + ':', error);
           await storage.updateInvoice(invoiceId, {
             status: "rejected",
             extractedData: { 
@@ -1339,7 +1339,7 @@ settingsJson = JSON.stringify(value);
       res.status(200).json({ 
         message: "PDF preview endpoint ready", 
         fileName: invoice.fileName,
-        previewUrl: `/api/invoices/${invoiceId}/preview/file`
+        previewUrl: '/api/invoices/' + invoiceId + '/preview/file'
       });
     } catch (error) {
       console.error("Error serving invoice preview:", error);
@@ -1406,11 +1406,11 @@ settingsJson = JSON.stringify(value);
 
         // Add content to the PDF
         doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
-        doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
-        doc.text(`Invoice ID: ${invoice.id}`, 100, 160);
-        doc.text(`Vendor: ${invoice.vendorName || 'N/A'}`, 100, 180);
-        doc.text(`Amount: ${invoice.totalAmount || 'N/A'} ${invoice.currency || 'USD'}`, 100, 200);
-        doc.text(`Date: ${invoice.invoiceDate || 'N/A'}`, 100, 220);
+        doc.fontSize(14).text('File: ' + invoice.fileName, 100, 140);
+        doc.text('Invoice ID: ' + invoice.id, 100, 160);
+        doc.text('Vendor: ' + (invoice.vendorName || 'N/A'), 100, 180);
+        doc.text('Amount: ' + (invoice.totalAmount || 'N/A') + ' ' + (invoice.currency || 'USD'), 100, 200);
+        doc.text('Date: ' + (invoice.invoiceDate || 'N/A'), 100, 220);
 
         doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
         doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
