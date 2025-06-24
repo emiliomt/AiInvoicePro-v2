@@ -12,6 +12,9 @@ import path from "path";
 import { z } from "zod";
 import { RequestHandler } from "express";
 import { findBestProjectMatch } from "./services/aiService.js";
+import { projectMatcher } from "./projectMatcher.js";
+import { discrepancyDetector } from "./services/discrepancyService.js";
+import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -438,7 +441,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Check if PO already exists
           const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
-          
+
           if (existingPO) {
             return res.status(400).json({ 
               message: `Purchase Order ${extractedData.poId} already exists in the system. Please check the existing PO or use a different document.`,
@@ -821,7 +824,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Settings value is required" });
       }
 
-      // If value is an object, stringify it; if it's already a string, validate it
+            // If value is an object, stringify it; if it's already a string, validate it
       let settingsJson: string;
       if (typeof value === 'object') {
         settingsJson = JSON.stringify(value);
@@ -1648,7 +1651,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
 
       // Log for potential model training
-      console.log(`Extraction feedback received for invoice ${invoiceId}:`, {
+      console.log(`Extraction feedback received for invoice ${invoiceId}:`,{
         fileName: invoice.fileName,
         reason,
         hasCorrections: !!correctedData,
@@ -2116,6 +2119,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching verified invoice projects:", error);
       res.status(500).json({ message: "Failed to fetch verified invoice projects" });
+    }
+  });
+
+  // Match verified invoices with purchase orders using AI
+  app.post("/api/match-invoices-to-pos", async (req, res) => {
+    try {
+      const verifiedInvoices = await storage.getVerifiedInvoiceProjects();
+      const purchaseOrders = await storage.getAllPurchaseOrders();
+
+      const allMatches = [];
+
+      for (const verifiedInvoice of verifiedInvoices) {
+        try {
+          const matches = await invoicePOMatcher.matchInvoiceWithPurchaseOrders(
+            verifiedInvoice.invoice,
+            purchaseOrders
+          );
+
+          // Store the best match if it meets threshold
+          if (matches.length > 0 && matches[0].matchScore >= 60) {
+            const matchRecord = await invoicePOMatcher.createInvoicePOMatch(
+              verifiedInvoice.invoice.id,
+              matches[0],
+              'auto'
+            );
+
+            const savedMatch = await storage.createInvoicePoMatch(matchRecord);
+            allMatches.push({
+              invoiceId: verifiedInvoice.invoice.id,
+              matches: matches,
+              savedMatch: savedMatch
+            });
+          } else {
+            allMatches.push({
+              invoiceId: verifiedInvoice.invoice.id,
+              matches: matches,
+              savedMatch: null
+            });
+          }
+        } catch (error) {
+          console.error(`Error matching invoice ${verifiedInvoice.invoice.id}:`, error);
+        }
+      }
+
+      res.json({
+        totalProcessed: verifiedInvoices.length,
+        totalMatched: allMatches.filter(m => m.savedMatch).length,
+        matches: allMatches
+      });
+    } catch (error) {
+      console.error("Error in invoice-PO matching:", error);
+      res.status(500).json({ message: "Failed to match invoices with purchase orders" });
+    }
+  });
+
+  // Get invoice-PO matches
+  app.get("/api/invoice-po-matches", async (req, res) => {
+    try {
+      const matches = await storage.getInvoicePoMatchesWithDetails();
+      res.json(matches);
+    } catch (error) {
+      console.error("Error fetching invoice-PO matches:", error);
+      res.status(500).json({ message: "Failed to fetch invoice-PO matches" });
+    }
+  });
+
+  // Approve invoice-PO match
+  app.post("/api/invoice-po-matches/:matchId/approve", async (req, res) => {
+    try {
+      const matchId = parseInt(req.params.matchId);
+      await storage.updateInvoicePoMatch(matchId, { status: 'manual' });
+      res.json({ message: "Match approved successfully" });
+    } catch (error) {
+      console.error("Error approving invoice-PO match:", error);
+      res.status(500).json({ message: "Failed to approve match" });
+    }
+  });
+
+  // Reject invoice-PO match
+  app.post("/api/invoice-po-matches/:matchId/reject", async (req, res) => {
+    try {
+      const matchId = parseInt(req.params.matchId);
+      await storage.updateInvoicePoMatch(matchId, { status: 'unresolved' });
+      res.json({ message: "Match rejected successfully" });
+    } catch (error) {
+      console.error("Error rejecting invoice-PO match:", error);
+      res.status(500).json({ message: "Failed to reject match" });
     }
   });
 

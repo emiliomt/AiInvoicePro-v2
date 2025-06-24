@@ -405,7 +405,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         fieldValue = invoiceData[rule.fieldName];
       }
-      
+
       let isViolation = false;
       let errorMessage = rule.errorMessage || `Validation failed for ${rule.fieldName}`;
 
@@ -561,13 +561,13 @@ export class DatabaseStorage implements IStorage {
       const { invoice } = approvedData;
       // Create validation data object from invoice extracted data
       const validationData: any = {};
-      
+
       if (invoice.extractedData) {
         try {
           const extracted = typeof invoice.extractedData === 'string' 
             ? JSON.parse(invoice.extractedData) 
             : invoice.extractedData;
-          
+
           // Map extracted data fields to validation fields
           validationData.vendorName = extracted.vendorName || extracted.companyName;
           validationData.invoiceNumber = extracted.invoiceNumber;
@@ -584,7 +584,7 @@ export class DatabaseStorage implements IStorage {
 
       // Run validation
       const validationResult = await this.validateInvoiceData(validationData);
-      
+
       const invoiceValidation = {
         invoiceId: invoice.id,
         fileName: invoice.fileName || 'Unknown',
@@ -616,7 +616,7 @@ export class DatabaseStorage implements IStorage {
       } else {
         const hasCriticalViolations = validationResult.violations.some(v => v.severity === 'critical');
         const hasHighViolations = validationResult.violations.some(v => v.severity === 'high');
-        
+
         if (hasCriticalViolations) {
           flagged++;
         } else if (hasHighViolations || validationResult.violations.length > 0) {
@@ -887,7 +887,8 @@ export class DatabaseStorage implements IStorage {
 
       // Execute the delete operation
       console.log("Executing delete operation...");
-      const result = await db.delete(projects).execute();
+      const result = await```tool_code
+ db.delete(projects).execute();
       console.log("Delete operation result:", result);
 
       // Verify deletion worked
@@ -948,11 +949,35 @@ export class DatabaseStorage implements IStorage {
     await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
   }
 
-  // Invoice-PO matching operations
-  async createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch> {
-    const [newMatch] = await db.insert(invoicePoMatches).values(match).returning();
-    return newMatch;
+  async getAllPurchaseOrders(): Promise<PurchaseOrder[]> {
+    return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
   }
+
+  async createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch> {
+    const result = await db.insert(invoicePoMatches).values(match).returning();
+    return result[0];
+  }
+
+  async updateInvoicePoMatch(matchId: number, updates: Partial<InsertInvoicePoMatch>): Promise<void> {
+    await db.update(invoicePoMatches).set(updates).where(eq(invoicePoMatches.id, matchId));
+  }
+
+  async getInvoicePoMatchesWithDetails(): Promise<any[]> {
+    const results = await db
+      .select()
+      .from(invoicePoMatches)
+      .leftJoin(invoices, eq(invoicePoMatches.invoiceId, invoices.id))
+      .leftJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
+      .orderBy(desc(invoicePoMatches.createdAt));
+
+    return results.map(result => ({
+      ...result.invoice_po_matches,
+      invoice: result.invoices,
+      purchaseOrder: result.purchase_orders,
+    }));
+  }
+  // Invoice-PO matching operations
+  
 
   async updateInvoicePoMatch(id: number, updates: Partial<InsertInvoicePoMatch>): Promise<InvoicePoMatch> {
     const [updatedMatch] = await db
