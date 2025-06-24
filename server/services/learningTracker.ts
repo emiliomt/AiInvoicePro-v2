@@ -202,6 +202,30 @@ export class LearningTracker {
     }
   }
 
+  // Record project assignment feedback for learning
+  static async recordProjectAssignmentFeedback(
+    invoiceId: number, 
+    assignedProjectId: string, 
+    extractedData: any, 
+    correctProject: any, 
+    userId: string
+  ): Promise<void> {
+    try {
+      console.log(`Recording project assignment feedback for invoice ${invoiceId}:`, {
+        assignedProjectId,
+        extractedProjectName: extractedData?.projectName,
+        correctProjectName: correctProject?.name,
+        userId,
+        timestamp: new Date().toISOString(),
+      });
+
+      // This data can be used to improve the project matching algorithm
+      // by learning from user corrections and manual assignments
+    } catch (error) {
+      console.error('Error recording project assignment feedback:', error);
+    }
+  }
+
   private static categorizeError(reason: string): string {
     const lowerReason = reason.toLowerCase();
     
@@ -215,6 +239,8 @@ export class LearningTracker {
       return 'taxId::extraction_error';
     } else if (lowerReason.includes('number') || lowerReason.includes('invoice')) {
       return 'invoiceNumber::extraction_error';
+    } else if (lowerReason.includes('project') || lowerReason.includes('manual_project_assignment')) {
+      return 'projectAssignment::learning_feedback';
     } else {
       return 'general::extraction_error';
     }

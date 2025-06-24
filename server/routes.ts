@@ -438,7 +438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Check if PO already exists
           const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
-          
+
           if (existingPO) {
             return res.status(400).json({ 
               message: `Purchase Order ${extractedData.poId} already exists in the system. Please check the existing PO or use a different document.`,
@@ -824,7 +824,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // If value is an object, stringify it; if it's already a string, validate it
       let settingsJson: string;
       if (typeof value === 'object') {
-        settingsJson = JSON.stringify(value);
+        ```text
+settingsJson = JSON.stringify(value);
       } else if (typeof value === 'string') {
         settingsJson = value;
         // Only validate non-empty strings as JSON
@@ -1684,7 +1685,85 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Submit positive feedback for AI extraction
+  // Submit learning feedback for manual project assignments
+  app.post('/api/invoices/:id/learning-feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      const { assignedProjectId, feedback } = req.body;
+
+      // Get the invoice to validate it exists
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Create feedback log with learning data
+      const feedbackLog = await storage.createFeedbackLog({
+        invoiceId,
+        userId,
+        originalText: invoice.ocrText || '',
+        extractedData: invoice.extractedData,
+        correctedData: feedback,
+        reason: 'MANUAL_PROJECT_ASSIGNMENT',
+        fileName: invoice.fileName,
+      });
+
+      // Log for learning system improvement
+      console.log(`Learning feedback received for invoice ${invoiceId}:`, {
+        fileName: invoice.fileName,
+        assignedProjectId,
+        extractedProjectData: {
+          projectName: feedback.projectName,
+          projectAddress: feedback.projectAddress,
+          projectCity: feedback.projectCity,
+          vendorAddress: feedback.vendorAddress
+        },
+        correctProject: feedback.correctProject,
+        userId,
+        timestamp: new Date().toISOString(),
+      });
+
+      // Write training data for future ML improvements
+      const fs = await import('fs');
+      const path = await import('path');
+      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
+
+      const trainingEntry = {
+        invoiceId,
+        fileName: invoice.fileName,
+        type: 'project_assignment_training',
+        originalText: invoice.ocrText,
+        extractedData: invoice.extractedData,
+        extractedProjectData: {
+          projectName: feedback.projectName,
+          projectAddress: feedback.projectAddress,
+          projectCity: feedback.projectCity,
+          vendorAddress: feedback.vendorAddress
+        },
+        correctAssignment: {
+          projectId: assignedProjectId,
+          projectName: feedback.correctProject.name,
+          projectAddress: feedback.correctProject.address,
+          projectCity: feedback.correctProject.city
+        },
+        feedbackType: 'manual_assignment',
+        timestamp: new Date().toISOString(),
+      };
+
+      fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
+
+      res.json({ 
+        message: "Learning feedback recorded successfully. This will help improve future project matching.",
+        feedbackId: feedbackLog.id 
+      });
+    } catch (error) {
+      console.error("Error recording learning feedback:", error);
+      res.status(500).json({ message: "Failed to record learning feedback" });
+    }
+  });
+
+  // Submit positive feedback for successful extractions
   app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);

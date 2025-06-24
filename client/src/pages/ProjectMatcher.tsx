@@ -289,12 +289,40 @@ export default function ProjectMatcher() {
       });
       
       if (!response.ok) throw new Error("Failed to approve project match");
+
+      // Send learning feedback to improve AI project matching
+      try {
+        await fetch(`/api/invoices/${invoice.id}/learning-feedback`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            assignedProjectId: project.projectId,
+            feedback: {
+              type: 'manual_assignment',
+              projectName: invoice.extractedData?.projectName || invoice.projectName,
+              projectAddress: invoice.extractedData?.projectAddress,
+              projectCity: invoice.extractedData?.projectCity,
+              vendorAddress: invoice.extractedData?.vendorAddress,
+              correctProject: {
+                projectId: project.projectId,
+                name: project.name,
+                address: project.address,
+                city: project.city
+              },
+              reason: 'User manually assigned project - use for training data'
+            }
+          }),
+        });
+      } catch (learningError) {
+        console.warn("Failed to send learning feedback:", learningError);
+        // Don't fail the main operation if learning feedback fails
+      }
       
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
       toast({
         title: "Success",
-        description: "Project match approved and recorded",
+        description: "Project match approved and recorded. AI will learn from this assignment.",
       });
     } catch (error) {
       toast({
