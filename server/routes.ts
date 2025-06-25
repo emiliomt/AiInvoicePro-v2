@@ -2333,6 +2333,375 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // RPA (Robotic Process Automation) Routes
+
+  // ERP Connections Management
+  app.get('/api/rpa/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const connections = await storage.getErpConnections(userId);
+      res.json(connections);
+    } catch (error) {
+      console.error("Error fetching ERP connections:", error);
+      res.status(500).json({ message: "Failed to fetch ERP connections" });
+    }
+  });
+
+  app.post('/api/rpa/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const connectionData = { ...req.body, userId };
+      
+      const connection = await storage.createErpConnection(connectionData);
+      res.status(201).json(connection);
+    } catch (error) {
+      console.error("Error creating ERP connection:", error);
+      res.status(500).json({ message: "Failed to create ERP connection" });
+    }
+  });
+
+  app.put('/api/rpa/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const connection = await storage.getErpConnectionById(connectionId);
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({ message: "ERP connection not found" });
+      }
+      
+      const updatedConnection = await storage.updateErpConnection(connectionId, req.body);
+      res.json(updatedConnection);
+    } catch (error) {
+      console.error("Error updating ERP connection:", error);
+      res.status(500).json({ message: "Failed to update ERP connection" });
+    }
+  });
+
+  app.delete('/api/rpa/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const connection = await storage.getErpConnectionById(connectionId);
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({ message: "ERP connection not found" });
+      }
+      
+      await storage.deleteErpConnection(connectionId);
+      res.json({ message: "ERP connection deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting ERP connection:", error);
+      res.status(500).json({ message: "Failed to delete ERP connection" });
+    }
+  });
+
+  // Test ERP connection
+  app.post('/api/rpa/connections/:id/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const connection = await storage.getErpConnectionById(connectionId);
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({ message: "ERP connection not found" });
+      }
+      
+      const { rpaService } = await import('./services/rpaService.js');
+      const testResult = await rpaService.testERPConnection(connection);
+      
+      // Update connection status based on test result
+      await storage.updateErpConnection(connectionId, {
+        status: testResult.success ? 'active' : 'error',
+        lastConnected: testResult.success ? new Date() : null,
+        lastError: testResult.error || null
+      });
+      
+      res.json(testResult);
+    } catch (error) {
+      console.error("Error testing ERP connection:", error);
+      res.status(500).json({ message: "Failed to test ERP connection" });
+    }
+  });
+
+  // RPA Extraction Jobs Management
+  app.get('/api/rpa/jobs', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const jobs = await storage.getRpaExtractionJobs(userId);
+      
+      // Add execution stats for each job
+      const jobsWithStats = await Promise.all(jobs.map(async (job) => {
+        const stats = await storage.getJobExecutionStats(job.id);
+        return { ...job, stats };
+      }));
+      
+      res.json(jobsWithStats);
+    } catch (error) {
+      console.error("Error fetching RPA jobs:", error);
+      res.status(500).json({ message: "Failed to fetch RPA jobs" });
+    }
+  });
+
+  app.post('/api/rpa/jobs', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const jobData = { ...req.body, userId };
+      
+      const job = await storage.createRpaExtractionJob(jobData);
+      res.status(201).json(job);
+    } catch (error) {
+      console.error("Error creating RPA job:", error);
+      res.status(500).json({ message: "Failed to create RPA job" });
+    }
+  });
+
+  app.put('/api/rpa/jobs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const job = await storage.getRpaExtractionJobById(jobId);
+      if (!job || job.userId !== userId) {
+        return res.status(404).json({ message: "RPA job not found" });
+      }
+      
+      const updatedJob = await storage.updateRpaExtractionJob(jobId, req.body);
+      res.json(updatedJob);
+    } catch (error) {
+      console.error("Error updating RPA job:", error);
+      res.status(500).json({ message: "Failed to update RPA job" });
+    }
+  });
+
+  app.delete('/api/rpa/jobs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const job = await storage.getRpaExtractionJobById(jobId);
+      if (!job || job.userId !== userId) {
+        return res.status(404).json({ message: "RPA job not found" });
+      }
+      
+      await storage.deleteRpaExtractionJob(jobId);
+      res.json({ message: "RPA job deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting RPA job:", error);
+      res.status(500).json({ message: "Failed to delete RPA job" });
+    }
+  });
+
+  // Execute RPA job manually
+  app.post('/api/rpa/jobs/:id/execute', isAuthenticated, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const job = await storage.getRpaExtractionJobById(jobId);
+      if (!job || job.userId !== userId) {
+        return res.status(404).json({ message: "RPA job not found" });
+      }
+      
+      const connection = await storage.getErpConnectionById(job.erpConnectionId);
+      if (!connection) {
+        return res.status(400).json({ message: "ERP connection not found" });
+      }
+      
+      // Create job execution record
+      const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+      const execution = await storage.createRpaJobExecution({
+        jobId,
+        executionId,
+        status: 'running'
+      });
+      
+      // Execute the job asynchronously
+      const { rpaService } = await import('./services/rpaService.js');
+      
+      // Run extraction in background
+      rpaService.executeExtractionJob(job, connection)
+        .then(async (result) => {
+          // Update execution with results
+          await storage.updateRpaJobExecution(execution.id, {
+            status: 'completed',
+            completedAt: new Date(),
+            documentsFound: result.documentsFound,
+            documentsProcessed: result.documentsProcessed,
+            documentsSkipped: result.documentsSkipped,
+            errorCount: result.errorCount,
+            extractedDocuments: result.extractedDocuments
+          });
+          
+          // Process extracted documents
+          await rpaService.processExtractedDocuments(
+            result.extractedDocuments,
+            execution.id,
+            userId
+          );
+          
+          // Update job last run time
+          await storage.updateRpaExtractionJob(jobId, {
+            lastRunAt: new Date(),
+            documentsExtracted: (job.documentsExtracted || 0) + result.documentsProcessed
+          });
+        })
+        .catch(async (error) => {
+          console.error(`RPA job execution failed:`, error);
+          await storage.updateRpaJobExecution(execution.id, {
+            status: 'failed',
+            completedAt: new Date(),
+            errorCount: 1,
+            executionLog: error.message
+          });
+        });
+      
+      res.json({ 
+        message: "RPA job execution started", 
+        executionId: execution.executionId,
+        executionRecordId: execution.id
+      });
+    } catch (error) {
+      console.error("Error executing RPA job:", error);
+      res.status(500).json({ message: "Failed to execute RPA job" });
+    }
+  });
+
+  // Get job executions
+  app.get('/api/rpa/jobs/:id/executions', isAuthenticated, async (req: any, res) => {
+    try {
+      const jobId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const job = await storage.getRpaExtractionJobById(jobId);
+      if (!job || job.userId !== userId) {
+        return res.status(404).json({ message: "RPA job not found" });
+      }
+      
+      const executions = await storage.getRpaJobExecutions(jobId);
+      res.json(executions);
+    } catch (error) {
+      console.error("Error fetching job executions:", error);
+      res.status(500).json({ message: "Failed to fetch job executions" });
+    }
+  });
+
+  // Get document queue for execution
+  app.get('/api/rpa/executions/:id/documents', isAuthenticated, async (req: any, res) => {
+    try {
+      const executionId = parseInt(req.params.id);
+      const documents = await storage.getRpaDocumentQueue(executionId);
+      res.json(documents);
+    } catch (error) {
+      console.error("Error fetching document queue:", error);
+      res.status(500).json({ message: "Failed to fetch document queue" });
+    }
+  });
+
+  // RPA Automation Rules Management
+  app.get('/api/rpa/automation-rules', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const rules = await storage.getRpaAutomationRules(userId);
+      res.json(rules);
+    } catch (error) {
+      console.error("Error fetching automation rules:", error);
+      res.status(500).json({ message: "Failed to fetch automation rules" });
+    }
+  });
+
+  app.post('/api/rpa/automation-rules', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      const ruleData = { ...req.body, userId };
+      
+      const rule = await storage.createRpaAutomationRule(ruleData);
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("Error creating automation rule:", error);
+      res.status(500).json({ message: "Failed to create automation rule" });
+    }
+  });
+
+  app.put('/api/rpa/automation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const rule = await storage.getRpaAutomationRules(userId);
+      const existingRule = rule.find(r => r.id === ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Automation rule not found" });
+      }
+      
+      const updatedRule = await storage.updateRpaAutomationRule(ruleId, req.body);
+      res.json(updatedRule);
+    } catch (error) {
+      console.error("Error updating automation rule:", error);
+      res.status(500).json({ message: "Failed to update automation rule" });
+    }
+  });
+
+  app.delete('/api/rpa/automation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const rules = await storage.getRpaAutomationRules(userId);
+      const existingRule = rules.find(r => r.id === ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Automation rule not found" });
+      }
+      
+      await storage.deleteRpaAutomationRule(ruleId);
+      res.json({ message: "Automation rule deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting automation rule:", error);
+      res.status(500).json({ message: "Failed to delete automation rule" });
+    }
+  });
+
+  // RPA Dashboard Stats
+  app.get('/api/rpa/dashboard/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+      
+      const connections = await storage.getErpConnections(userId);
+      const jobs = await storage.getRpaExtractionJobs(userId);
+      const activeJobs = jobs.filter(job => job.isActive);
+      const totalDocumentsExtracted = jobs.reduce((sum, job) => sum + (job.documentsExtracted || 0), 0);
+      
+      // Get recent execution stats
+      const recentExecutions = await Promise.all(
+        jobs.slice(0, 5).map(async (job) => {
+          const executions = await storage.getRpaJobExecutions(job.id);
+          return executions.slice(0, 1); // Latest execution
+        })
+      );
+      
+      const flatExecutions = recentExecutions.flat();
+      const successfulExecutions = flatExecutions.filter(e => e.status === 'completed').length;
+      const failedExecutions = flatExecutions.filter(e => e.status === 'failed').length;
+      
+      res.json({
+        totalConnections: connections.length,
+        activeConnections: connections.filter(c => c.status === 'active').length,
+        totalJobs: jobs.length,
+        activeJobs: activeJobs.length,
+        totalDocumentsExtracted,
+        recentExecutions: {
+          total: flatExecutions.length,
+          successful: successfulExecutions,
+          failed: failedExecutions,
+          successRate: flatExecutions.length > 0 ? (successfulExecutions / flatExecutions.length) * 100 : 0
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching RPA dashboard stats:", error);
+      res.status(500).json({ message: "Failed to fetch RPA dashboard stats" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }

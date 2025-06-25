@@ -1805,6 +1805,210 @@ export class DatabaseStorage implements IStorage {
       });
     }
   }
+
+  // RPA (Robotic Process Automation) Methods
+
+  async createErpConnection(erpConnection: InsertErpConnection): Promise<ErpConnection> {
+    const [connection] = await db
+      .insert(erpConnections)
+      .values(erpConnection)
+      .returning();
+    return connection;
+  }
+
+  async getErpConnections(userId: string): Promise<ErpConnection[]> {
+    return await db
+      .select()
+      .from(erpConnections)
+      .where(eq(erpConnections.userId, userId))
+      .orderBy(desc(erpConnections.createdAt));
+  }
+
+  async getErpConnectionById(id: number): Promise<ErpConnection | null> {
+    const [connection] = await db
+      .select()
+      .from(erpConnections)
+      .where(eq(erpConnections.id, id))
+      .limit(1);
+    return connection || null;
+  }
+
+  async updateErpConnection(id: number, updates: Partial<ErpConnection>): Promise<ErpConnection> {
+    const [connection] = await db
+      .update(erpConnections)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(erpConnections.id, id))
+      .returning();
+    return connection;
+  }
+
+  async deleteErpConnection(id: number): Promise<void> {
+    await db
+      .delete(erpConnections)
+      .where(eq(erpConnections.id, id));
+  }
+
+  async createRpaExtractionJob(job: InsertRpaExtractionJob): Promise<RpaExtractionJob> {
+    const [newJob] = await db
+      .insert(rpaExtractionJobs)
+      .values(job)
+      .returning();
+    return newJob;
+  }
+
+  async getRpaExtractionJobs(userId: string): Promise<RpaExtractionJob[]> {
+    return await db
+      .select()
+      .from(rpaExtractionJobs)
+      .where(eq(rpaExtractionJobs.userId, userId))
+      .orderBy(desc(rpaExtractionJobs.createdAt));
+  }
+
+  async getRpaExtractionJobById(id: number): Promise<RpaExtractionJob | null> {
+    const [job] = await db
+      .select()
+      .from(rpaExtractionJobs)
+      .where(eq(rpaExtractionJobs.id, id))
+      .limit(1);
+    return job || null;
+  }
+
+  async updateRpaExtractionJob(id: number, updates: Partial<RpaExtractionJob>): Promise<RpaExtractionJob> {
+    const [job] = await db
+      .update(rpaExtractionJobs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(rpaExtractionJobs.id, id))
+      .returning();
+    return job;
+  }
+
+  async deleteRpaExtractionJob(id: number): Promise<void> {
+    await db
+      .delete(rpaExtractionJobs)
+      .where(eq(rpaExtractionJobs.id, id));
+  }
+
+  async createRpaJobExecution(execution: InsertRpaJobExecution): Promise<RpaJobExecution> {
+    const [newExecution] = await db
+      .insert(rpaJobExecutions)
+      .values(execution)
+      .returning();
+    return newExecution;
+  }
+
+  async getRpaJobExecutions(jobId: number): Promise<RpaJobExecution[]> {
+    return await db
+      .select()
+      .from(rpaJobExecutions)
+      .where(eq(rpaJobExecutions.jobId, jobId))
+      .orderBy(desc(rpaJobExecutions.startedAt));
+  }
+
+  async updateRpaJobExecution(id: number, updates: Partial<RpaJobExecution>): Promise<RpaJobExecution> {
+    const [execution] = await db
+      .update(rpaJobExecutions)
+      .set(updates)
+      .where(eq(rpaJobExecutions.id, id))
+      .returning();
+    return execution;
+  }
+
+  async addToRpaDocumentQueue(document: InsertRpaDocumentQueue): Promise<RpaDocumentQueue> {
+    const [queueItem] = await db
+      .insert(rpaDocumentQueue)
+      .values(document)
+      .returning();
+    return queueItem;
+  }
+
+  async getRpaDocumentQueue(jobExecutionId: number): Promise<RpaDocumentQueue[]> {
+    return await db
+      .select()
+      .from(rpaDocumentQueue)
+      .where(eq(rpaDocumentQueue.jobExecutionId, jobExecutionId))
+      .orderBy(rpaDocumentQueue.createdAt);
+  }
+
+  async updateRpaDocumentQueue(id: number, updates: Partial<RpaDocumentQueue>): Promise<RpaDocumentQueue> {
+    const [queueItem] = await db
+      .update(rpaDocumentQueue)
+      .set(updates)
+      .where(eq(rpaDocumentQueue.id, id))
+      .returning();
+    return queueItem;
+  }
+
+  async createRpaAutomationRule(rule: InsertRpaAutomationRule): Promise<RpaAutomationRule> {
+    const [newRule] = await db
+      .insert(rpaAutomationRules)
+      .values(rule)
+      .returning();
+    return newRule;
+  }
+
+  async getRpaAutomationRules(userId: string): Promise<RpaAutomationRule[]> {
+    return await db
+      .select()
+      .from(rpaAutomationRules)
+      .where(eq(rpaAutomationRules.userId, userId))
+      .orderBy(rpaAutomationRules.priority, desc(rpaAutomationRules.createdAt));
+  }
+
+  async updateRpaAutomationRule(id: number, updates: Partial<RpaAutomationRule>): Promise<RpaAutomationRule> {
+    const [rule] = await db
+      .update(rpaAutomationRules)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(rpaAutomationRules.id, id))
+      .returning();
+    return rule;
+  }
+
+  async deleteRpaAutomationRule(id: number): Promise<void> {
+    await db
+      .delete(rpaAutomationRules)
+      .where(eq(rpaAutomationRules.id, id));
+  }
+
+  async getActiveRpaJobs(): Promise<RpaExtractionJob[]> {
+    return await db
+      .select()
+      .from(rpaExtractionJobs)
+      .where(
+        and(
+          eq(rpaExtractionJobs.isActive, true),
+          eq(rpaExtractionJobs.status, "pending")
+        )
+      );
+  }
+
+  async getJobExecutionStats(jobId: number): Promise<{
+    totalExecutions: number;
+    successfulExecutions: number;
+    failedExecutions: number;
+    totalDocumentsProcessed: number;
+    lastExecution?: RpaJobExecution;
+  }> {
+    const executions = await db
+      .select()
+      .from(rpaJobExecutions)
+      .where(eq(rpaJobExecutions.jobId, jobId));
+
+    const totalExecutions = executions.length;
+    const successfulExecutions = executions.filter(e => e.status === 'completed').length;
+    const failedExecutions = executions.filter(e => e.status === 'failed').length;
+    const totalDocumentsProcessed = executions.reduce((sum, e) => sum + (e.documentsProcessed || 0), 0);
+    const lastExecution = executions.sort((a, b) => 
+      new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime()
+    )[0];
+
+    return {
+      totalExecutions,
+      successfulExecutions,
+      failedExecutions,
+      totalDocumentsProcessed,
+      lastExecution
+    };
+  }
 }
 
 export const storage = new DatabaseStorage();
