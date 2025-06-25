@@ -1040,7 +1040,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
-    upload.array('invoice', 10)(req, res, async (err) => {
+    upload.any()(req, res, async (err) => {
       if (err) {
         console.error("Multer error:", err);
         return res.status(400).json({ message: err.message });
@@ -1053,11 +1053,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log("Upload request received:", { 
           hasFiles: !!files && files.length > 0, 
           fileCount: files?.length || 0,
-          files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype }))
+          files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
+          body: req.body
         });
 
         if (!files || files.length === 0) {
           return res.status(400).json({ message: "No files uploaded" });
+        }
+
+        // Filter only invoice files
+        const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
+        if (invoiceFiles.length === 0) {
+          return res.status(400).json({ message: "No invoice files found" });
         }
 
         const fs = await import('fs');
@@ -1071,8 +1078,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadedInvoices = [];
 
-        // Process files in parallel for better performance
-        const processPromises = files.map(async (file) => {
+        // Process invoice files in parallel for better performance
+        const processPromises = invoiceFiles.map(async (file) => {
           try {
             // Generate unique filename
             const fileExt = path.extname(file.originalname);
