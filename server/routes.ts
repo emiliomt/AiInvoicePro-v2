@@ -366,142 +366,172 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (poFiles.length === 0) {
           return res.status(400).json({ message: "No purchase order files found" });
         }
-        
-        // For now, process the first file only
-        const file = poFiles[0];
-        const fileName = file.originalname;
 
-        try {
-          // Extract OCR text
-          const ocrText = await processInvoiceOCR(file.buffer, 0);
-          console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
+        const processedPOs = [];
+        const errors = [];
+        const skippedPOs = [];
 
-          // Check if OCR was successful (even with error messages, we can still proceed)
-          if (!ocrText || ocrText.trim().length < 10) {
-            return res.status(400).json({ 
-              message: `OCR processing failed for ${fileName}. The file may be corrupted or in an unsupported format.`,
-              fileName: fileName,
-              error: "Insufficient text extracted from document"
-            });
-          }
+        // Process all files
+        for (let i = 0; i < poFiles.length; i++) {
+          const file = poFiles[i];
+          const fileName = file.originalname;
 
-          // Check if the OCR text indicates an error
-          if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
-            return res.status(400).json({ 
-              message: `Document processing failed for ${fileName}. ${ocrText}`,
-              fileName: fileName,
-              error: "OCR processing error"
-            });
-          }
+          try {
+            console.log(`Processing file ${i + 1}/${poFiles.length}: ${fileName}`);
+            
+            // Extract OCR text
+            const ocrText = await processInvoiceOCR(file.buffer, i);
+            console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
 
-          // Extract data using AI
-          const extractedData = await extractPurchaseOrderData(ocrText);
-          console.log(`AI extraction completed for PO ${fileName}:`, {
-            vendor: extractedData.vendorName,
-            amount: extractedData.totalAmount,
-            poId: extractedData.poId,
-            extractedProject: extractedData.projectId
-          });
-
-          // Try to find a matching project using fuzzy matching
-          let matchedProjectId = extractedData.projectId;
-          if (extractedData.projectId) {
-            const allProjects = await storage.getProjects();
-            const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
-            if (fuzzyMatch) {
-              matchedProjectId = fuzzyMatch;
-              console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
-            } else {
-              console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
-              matchedProjectId = null;
+            // Check if OCR was successful (even with error messages, we can still proceed)
+            if (!ocrText || ocrText.trim().length < 10) {
+              errors.push({
+                fileName,
+                error: "Insufficient text extracted from document",
+                message: `OCR processing failed for ${fileName}. The file may be corrupted or in an unsupported format.`
+              });
+              continue;
             }
-          }
 
-          // Convert date strings to Date objects
-          let issueDate = null;
-          let expectedDeliveryDate = null;
+            // Check if the OCR text indicates an error
+            if (ocrText.includes('processing failed') || ocrText.includes('Please try re-uploading')) {
+              errors.push({
+                fileName,
+                error: "OCR processing error",
+                message: `Document processing failed for ${fileName}. ${ocrText}`
+              });
+              continue;
+            }
 
-          if (extractedData.issueDate) {
-            try {
-              issueDate = new Date(extractedData.issueDate);
-              // Check if date is valid
-              if (isNaN(issueDate.getTime())) {
+            // Extract data using AI
+            const extractedData = await extractPurchaseOrderData(ocrText);
+            console.log(`AI extraction completed for PO ${fileName}:`, {
+              vendor: extractedData.vendorName,
+              amount: extractedData.totalAmount,
+              poId: extractedData.poId,
+              extractedProject: extractedData.projectId
+            });
+
+            // Try to find a matching project using fuzzy matching
+            let matchedProjectId = extractedData.projectId;
+            if (extractedData.projectId) {
+              const allProjects = await storage.getProjects();
+              const fuzzyMatch = await findBestProjectMatch(extractedData.projectId, allProjects);
+              if (fuzzyMatch) {
+                matchedProjectId = fuzzyMatch;
+                console.log(`Fuzzy matched project "${extractedData.projectId}" to "${fuzzyMatch}"`);
+              } else {
+                console.log(`No fuzzy match found for project "${extractedData.projectId}", setting to null`);
+                matchedProjectId = null;
+              }
+            }
+
+            // Convert date strings to Date objects
+            let issueDate = null;
+            let expectedDeliveryDate = null;
+
+            if (extractedData.issueDate) {
+              try {
+                issueDate = new Date(extractedData.issueDate);
+                // Check if date is valid
+                if (isNaN(issueDate.getTime())) {
+                  issueDate = null;
+                }
+              } catch (error) {
+                console.log(`Invalid issue date format: ${extractedData.issueDate}`);
                 issueDate = null;
               }
-            } catch (error) {
-              console.log(`Invalid issue date format: ${extractedData.issueDate}`);
-              issueDate = null;
             }
-          }
 
-          if (extractedData.expectedDeliveryDate) {
-            try {
-              expectedDeliveryDate = new Date(extractedData.expectedDeliveryDate);
-              // Check if date is valid
-              if (isNaN(expectedDeliveryDate.getTime())) {
+            if (extractedData.expectedDeliveryDate) {
+              try {
+                expectedDeliveryDate = new Date(extractedData.expectedDeliveryDate);
+                // Check if date is valid
+                if (isNaN(expectedDeliveryDate.getTime())) {
+                  expectedDeliveryDate = null;
+                }
+              } catch (error) {
+                console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
                 expectedDeliveryDate = null;
               }
-            } catch (error) {
-              console.log(`Invalid expected delivery date format: ${extractedData.expectedDeliveryDate}`);
-              expectedDeliveryDate = null;
             }
-          }
 
-          // Check if PO already exists
-          const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}`);
+            // Check if PO already exists
+            const existingPO = await storage.getPurchaseOrderByPoId(extractedData.poId || `PO-${Date.now()}-${i}`);
 
-          if (existingPO) {
-            return res.status(400).json({ 
-              message: `Purchase Order ${extractedData.poId} already exists in the system. Please check the existing PO or use a different document.`,
+            if (existingPO) {
+              skippedPOs.push({
+                fileName,
+                poId: extractedData.poId,
+                reason: "Duplicate PO ID",
+                existingPO: {
+                  id: existingPO.id,
+                  poId: existingPO.poId,
+                  vendorName: existingPO.vendorName,
+                  amount: existingPO.amount,
+                  status: existingPO.status
+                }
+              });
+              continue;
+            }
+
+            // Create purchase order
+            const newPurchaseOrder = await storage.createPurchaseOrder({
+              poId: extractedData.poId || `PO-${Date.now()}-${i}`,
+              vendorName: extractedData.vendorName || "Unknown Vendor",
+              amount: extractedData.totalAmount || "0",
+              currency: extractedData.currency || "USD",
+              status: "open",
+              issueDate: issueDate,
+              expectedDeliveryDate: expectedDeliveryDate,
+              projectId: matchedProjectId,
+              originalOrderNumber: extractedData.originalOrderNumber || null,
+              buyerName: extractedData.buyerName || null,
+              buyerAddress: extractedData.buyerAddress || null,
+              vendorAddress: extractedData.vendorAddress || null,
+              terms: extractedData.terms || null,
+              items: extractedData.lineItems || [],
+              ocrText: ocrText,
               fileName: fileName,
-              error: "Duplicate PO ID",
-              existingPO: {
-                id: existingPO.id,
-                poId: existingPO.poId,
-                vendorName: existingPO.vendorName,
-                amount: existingPO.amount,
-                status: existingPO.status
-              }
+              uploadedBy: req.user?.id || "anonymous",
+            });
+
+            processedPOs.push(newPurchaseOrder);
+            console.log(`Purchase order saved with ID: ${newPurchaseOrder.id} for file: ${fileName}`);
+
+          } catch (processingError: any) {
+            console.error(`Error processing PO ${fileName}:`, processingError);
+            errors.push({
+              fileName,
+              error: processingError.message || 'Unknown error',
+              message: `Failed to process purchase order: ${processingError.message || 'Unknown processing error'}`,
+              details: 'Please ensure the file is a valid PDF and try again. If the problem persists, try converting the file to a different format.'
             });
           }
-
-          // Create purchase order
-          const newPurchaseOrder = await storage.createPurchaseOrder({
-            poId: extractedData.poId || `PO-${Date.now()}`,
-            vendorName: extractedData.vendorName || "Unknown Vendor",
-            amount: extractedData.totalAmount || "0",
-            currency: extractedData.currency || "USD",
-            status: "open",
-            issueDate: issueDate,
-            expectedDeliveryDate: expectedDeliveryDate,
-            projectId: matchedProjectId,
-            originalOrderNumber: extractedData.originalOrderNumber || null,
-            buyerName: extractedData.buyerName || null,
-            buyerAddress: extractedData.buyerAddress || null,
-            vendorAddress: extractedData.vendorAddress || null,
-            terms: extractedData.terms || null,
-            items: extractedData.lineItems || [],
-            ocrText: ocrText,
-            fileName: fileName,
-            uploadedBy: req.user?.id || "anonymous",
-          });
-
-          console.log(`Purchase order saved with ID: ${newPurchaseOrder.id}`);
-
-          return res.status(200).json({ 
-            message: `Successfully processed and saved purchase order: ${fileName}`,
-            purchaseOrder: newPurchaseOrder,
-            fileName: fileName
-          });
-        } catch (processingError: any) {
-          console.error(`Error processing PO ${fileName}:`, processingError);
-          return res.status(500).json({ 
-            message: `Failed to process purchase order: ${processingError.message || 'Unknown processing error'}`,
-            fileName: fileName,
-            error: processingError.message || 'Unknown error',
-            details: 'Please ensure the file is a valid PDF and try again. If the problem persists, try converting the file to a different format.'
-          });
         }
+
+        // Return comprehensive results
+        const totalFiles = poFiles.length;
+        const successCount = processedPOs.length;
+        const errorCount = errors.length;
+        const skippedCount = skippedPOs.length;
+
+        let message = `Processed ${totalFiles} files: ${successCount} successful`;
+        if (errorCount > 0) message += `, ${errorCount} failed`;
+        if (skippedCount > 0) message += `, ${skippedCount} skipped (duplicates)`;
+
+        return res.status(200).json({ 
+          message,
+          summary: {
+            totalFiles,
+            successful: successCount,
+            failed: errorCount,
+            skipped: skippedCount
+          },
+          processedPOs,
+          errors,
+          skippedPOs
+        });
       } catch (error) {
         console.error("Error uploading purchase orders:", error);
         return res.status(500).json({ 
