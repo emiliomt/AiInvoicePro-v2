@@ -306,6 +306,19 @@ export class DatabaseStorage implements IStorage {
     const invoiceIds = userInvoices.map(inv => inv.id);
 
     // Delete related records first to maintain referential integrity
+    // First, get line item IDs before deleting anything
+    const lineItemIds = await db
+      .select({ id: lineItems.id })
+      .from(lineItems)
+      .where(inArray(lineItems.invoiceId, invoiceIds));
+
+    // Delete line item classifications first (depends on line items)
+    if (lineItemIds.length > 0) {
+      await db.delete(lineItemClassifications)
+        .where(inArray(lineItemClassifications.lineItemId, lineItemIds.map(li => li.id)));
+    }
+
+    // Delete all other related records in parallel
     await Promise.all([
       // Delete line items
       db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds)),
@@ -321,19 +334,6 @@ export class DatabaseStorage implements IStorage {
       db.delete(predictiveAlerts).where(inArray(predictiveAlerts.invoiceId, invoiceIds)),
       // Delete petty cash logs
       db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds)),
-      // Delete line item classifications - get line item IDs first
-      (async () => {
-        const lineItemIds = await db
-          .select({ id: lineItems.id })
-          .from(lineItems)
-          .where(inArray(lineItems.invoiceId, invoiceIds));
-        
-        if (lineItemIds.length > 0) {
-          return db.delete(lineItemClassifications)
-            .where(inArray(lineItemClassifications.lineItemId, lineItemIds.map(li => li.id)));
-        }
-        return Promise.resolve();
-      })(),
       // Delete approved invoice projects
       db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds)),
       // Delete verified invoice projects

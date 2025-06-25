@@ -1583,6 +1583,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
 
+      if (isNaN(invoiceId) || invoiceId <= 0) {
+        return res.status(400).json({ message: "Invalid invoice ID" });
+      }
+
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
