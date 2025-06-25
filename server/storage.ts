@@ -279,7 +279,14 @@ export class DatabaseStorage implements IStorage {
         .where(inArray(lineItemClassifications.lineItemId, invoiceLineItems.map(li => li.id)));
     }
 
-    // Delete all other related records
+    // Delete in proper order to respect foreign key constraints
+    // First delete verified invoice projects (references approved projects)
+    await db.delete(verifiedInvoiceProject).where(eq(verifiedInvoiceProject.invoiceId, id));
+    
+    // Then delete approved invoice projects (references project matches)
+    await db.delete(approvedInvoiceProject).where(eq(approvedInvoiceProject.invoiceId, id));
+
+    // Delete all other related records in parallel
     await Promise.all([
       // Delete line items
       db.delete(lineItems).where(eq(lineItems.invoiceId, id)),
@@ -295,10 +302,6 @@ export class DatabaseStorage implements IStorage {
       db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id)),
       // Delete petty cash logs
       db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id)),
-      // Delete approved invoice projects
-      db.delete(approvedInvoiceProject).where(eq(approvedInvoiceProject.invoiceId, id)),
-      // Delete verified invoice projects
-      db.delete(verifiedInvoiceProject).where(eq(verifiedInvoiceProject.invoiceId, id)),
       // Delete feedback logs
       db.delete(feedbackLogs).where(eq(feedbackLogs.invoiceId, id))
     ]);
@@ -333,7 +336,14 @@ export class DatabaseStorage implements IStorage {
         .where(inArray(lineItemClassifications.lineItemId, lineItemIds.map(li => li.id)));
     }
 
-    // Delete all other related records in parallel
+    // Delete in proper order to respect foreign key constraints
+    // First delete verified invoice projects (references approved projects)
+    await db.delete(verifiedInvoiceProject).where(inArray(verifiedInvoiceProject.invoiceId, invoiceIds));
+    
+    // Then delete approved invoice projects (references project matches)
+    await db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds));
+
+    // Now delete all other related records in parallel
     await Promise.all([
       // Delete line items
       db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds)),
@@ -349,10 +359,6 @@ export class DatabaseStorage implements IStorage {
       db.delete(predictiveAlerts).where(inArray(predictiveAlerts.invoiceId, invoiceIds)),
       // Delete petty cash logs
       db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds)),
-      // Delete approved invoice projects
-      db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds)),
-      // Delete verified invoice projects
-      db.delete(verifiedInvoiceProject).where(inArray(verifiedInvoiceProject.invoiceId, invoiceIds)),
       // Delete feedback logs
       db.delete(feedbackLogs).where(inArray(feedbackLogs.invoiceId, invoiceIds))
     ]);
