@@ -266,27 +266,42 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInvoice(id: number): Promise<void> {
     // Delete related records first to maintain referential integrity
+    
+    // First, get line item IDs for this invoice
+    const invoiceLineItems = await db
+      .select({ id: lineItems.id })
+      .from(lineItems)
+      .where(eq(lineItems.invoiceId, id));
 
-    // Delete line items
-    await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
+    // Delete line item classifications first (depends on line items)
+    if (invoiceLineItems.length > 0) {
+      await db.delete(lineItemClassifications)
+        .where(inArray(lineItemClassifications.lineItemId, invoiceLineItems.map(li => li.id)));
+    }
 
-    // Delete approvals
-    await db.delete(approvals).where(eq(approvals.invoiceId, id));
-
-    // Delete invoice-PO matches
-    await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
-
-    // Delete invoice-project matches
-    await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
-
-    // Delete invoice flags
-    await db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id));
-
-    // Delete predictive alerts
-    await db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id));
-
-    // Delete petty cash logs
-    await db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id));
+    // Delete all other related records
+    await Promise.all([
+      // Delete line items
+      db.delete(lineItems).where(eq(lineItems.invoiceId, id)),
+      // Delete approvals
+      db.delete(approvals).where(eq(approvals.invoiceId, id)),
+      // Delete invoice-PO matches
+      db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id)),
+      // Delete invoice-project matches
+      db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id)),
+      // Delete invoice flags
+      db.delete(invoiceFlags).where(eq(invoiceFlags.invoiceId, id)),
+      // Delete predictive alerts
+      db.delete(predictiveAlerts).where(eq(predictiveAlerts.invoiceId, id)),
+      // Delete petty cash logs
+      db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id)),
+      // Delete approved invoice projects
+      db.delete(approvedInvoiceProject).where(eq(approvedInvoiceProject.invoiceId, id)),
+      // Delete verified invoice projects
+      db.delete(verifiedInvoiceProject).where(eq(verifiedInvoiceProject.invoiceId, id)),
+      // Delete feedback logs
+      db.delete(feedbackLogs).where(eq(feedbackLogs.invoiceId, id))
+    ]);
 
     // Finally delete the invoice
     await db.delete(invoices).where(eq(invoices.id, id));

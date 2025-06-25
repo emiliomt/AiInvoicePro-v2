@@ -1577,34 +1577,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete invoice
-  app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
-
-      if (isNaN(invoiceId) || invoiceId <= 0) {
-        return res.status(400).json({ message: "Invalid invoice ID" });
-      }
-
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-
-      if (invoice.userId !== userId) {
-        return res.status(403).json({ message: "Access denied" });
-      }
-
-      await storage.deleteInvoice(invoiceId);
-      res.json({ message: "Invoice deleted successfully" });
-    } catch (error) {
-      console.error("Error deleting invoice:", error);
-      res.status(500).json({ message: "Failed to delete invoice" });
-    }
-  });
-
-  // Delete all invoices for a user
+  // Delete all invoices for a user (must come before parameterized route)
   app.delete('/api/invoices/delete-all', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user.claims.sub;
@@ -1630,6 +1603,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: "Failed to delete all invoices",
         error: error instanceof Error ? error.message : "Unknown error"
       });
+    }
+  });
+
+  // Delete invoice
+  app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+
+      if (isNaN(invoiceId) || invoiceId <= 0) {
+        return res.status(400).json({ message: "Invalid invoice ID" });
+      }
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteInvoice(invoiceId);
+      res.json({ message: "Invoice deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ message: "Failed to delete invoice" });
     }
   });
 
