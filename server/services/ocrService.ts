@@ -219,3 +219,13 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
   }
 }
 
+// Export a service object for consistent usage
+export const ocrService = {
+  extractText: async (buffer: Buffer, mimeType: string): Promise<string> => {
+    return await processInvoiceOCR(buffer, Date.now());
+  },
+  extractTextWithConfidence: async (buffer: Buffer): Promise<{ text: string; confidence: number }> => {
+    return await processInvoiceOCRWithConfidence(buffer);
+  }
+};
+
