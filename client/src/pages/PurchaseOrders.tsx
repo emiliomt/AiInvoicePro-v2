@@ -151,28 +151,57 @@ export default function PurchaseOrders() {
         throw new Error(errorMessage);
       }
 
-      const responseText = await response.text();
-
-      try {
-        return JSON.parse(responseText);
-      } catch (parseError) {
-        console.error("Failed to parse response:", responseText);
-        throw new Error("Invalid response format from server");
-      }
+      return response.json();
     },
     onSuccess: (data) => {
+      console.log("Upload response:", data);
+      
+      const successCount = data.summary?.successful || data.processedPOs?.length || 0;
+      const errorCount = data.summary?.failed || data.errors?.length || 0;
+      const skippedCount = data.summary?.skipped || data.skippedPOs?.length || 0;
+      
+      let message = `Upload completed: ${successCount} successful`;
+      if (errorCount > 0) message += `, ${errorCount} failed`;
+      if (skippedCount > 0) message += `, ${skippedCount} skipped`;
+
       toast({
-        title: "Success",
-        description: `${selectedFiles.length} purchase order(s) uploaded and processed successfully.`,
+        title: "Upload Complete",
+        description: message,
       });
-      setExtractedPOData(data.extractedData);
+
+      // Show errors if any
+      if (data.errors && data.errors.length > 0) {
+        console.warn("Upload errors:", data.errors);
+        data.errors.slice(0, 3).forEach((error: any) => {
+          toast({
+            title: `Error: ${error.fileName}`,
+            description: error.message || error.error,
+            variant: "destructive",
+          });
+        });
+      }
+
+      // Show skipped files if any
+      if (data.skippedPOs && data.skippedPOs.length > 0) {
+        console.warn("Skipped POs:", data.skippedPOs);
+        data.skippedPOs.slice(0, 3).forEach((skipped: any) => {
+          toast({
+            title: `Skipped: ${skipped.fileName}`,
+            description: skipped.reason || "Duplicate PO ID",
+            variant: "default",
+          });
+        });
+      }
+
       setSelectedFiles([]);
       setIsUploadDialogOpen(false);
       queryClient.invalidateQueries({ queryKey: ["/api/purchase-orders"] });
     },
     onError: (error: Error) => {
+      console.error("Upload error:", error);
+      
       let errorMessage = error.message;
-      let errorTitle = "Error";
+      let errorTitle = "Upload Failed";
 
       // Handle specific error cases
       if (error.message.includes("already exists")) {
@@ -180,7 +209,7 @@ export default function PurchaseOrders() {
         errorMessage = error.message;
       } else if (error.message.includes("duplicate key")) {
         errorTitle = "Duplicate Purchase Order";
-        errorMessage = "This Purchase Order ID already exists in the system. Please check existing POs or try a different document.";
+        errorMessage = "Some Purchase Orders already exist in the system.";
       }
 
       toast({
@@ -188,6 +217,8 @@ export default function PurchaseOrders() {
         description: errorMessage,
         variant: "destructive",
       });
+      
+      // Don't close dialog on error so user can retry
     },
   });
 
@@ -434,27 +465,36 @@ export default function PurchaseOrders() {
                     }}
                   />
                   {selectedFiles.length > 0 && (
-                    <div>
-                      <p>Selected Files:</p>
-                      <ul>
+                    <div className="max-h-40 overflow-y-auto">
+                      <p className="font-medium mb-2">Selected Files ({selectedFiles.length}):</p>
+                      <ul className="space-y-1">
                         {selectedFiles.map((file) => (
-                          <li key={file.name}>{file.name}</li>
+                          <li key={file.name} className="text-sm text-gray-600 truncate">
+                            {file.name}
+                          </li>
                         ))}
                       </ul>
                     </div>
                   )}
                   <div className="flex justify-end space-x-2">
-                    <Button variant="secondary" onClick={() => setIsUploadDialogOpen(false)}>
+                    <Button 
+                      variant="secondary" 
+                      onClick={() => setIsUploadDialogOpen(false)}
+                      disabled={uploadPOMutation.isPending}
+                    >
                       Cancel
                     </Button>
-                    <Button onClick={handleUploadPO} disabled={uploadPOMutation.isPending}>
-                    {uploadPOMutation.isPending ? (
+                    <Button 
+                      onClick={handleUploadPO} 
+                      disabled={uploadPOMutation.isPending || selectedFiles.length === 0}
+                    >
+                      {uploadPOMutation.isPending ? (
                         <>
                           <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Uploading...
+                          Uploading {selectedFiles.length} files...
                         </>
                       ) : (
-                        "Upload"
+                        `Upload ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`
                       )}
                     </Button>
                   </div>
