@@ -64,8 +64,35 @@ The system uses PostgreSQL with the following key entities:
 - **Approval Workflow**: Multi-stage approval process
 - **PO Matching**: Automated and manual purchase order matching
 - **Project Validation**: Project assignment and validation
+- **RPA Agent Dashboard**: ERP connection management and automated extraction jobs
 - **Reporting**: Analytics and trend analysis
 - **Configuration**: Validation rules and system settings
+
+### RPA Agent System
+The RPA (Robotic Process Automation) Agent system provides comprehensive automated document extraction from ERP systems:
+
+#### ERP System Support
+- **SAP**: Enterprise resource planning integration
+- **Oracle**: Database and ERP system connectivity
+- **Custom APIs**: RESTful API integrations with authentication
+- **SFTP**: Secure file transfer protocol for document retrieval
+- **Database**: Direct database connections for data extraction
+- **SharePoint**: Microsoft SharePoint document libraries
+
+#### RPA Components
+- **ERP Connections**: Secure credential management and connection testing
+- **Extraction Jobs**: Configurable automated document extraction with scheduling
+- **Job Executions**: Real-time execution tracking with detailed logging
+- **Document Queue**: Processing pipeline for extracted documents
+- **Automation Rules**: Business logic for document processing workflows
+
+#### RPA Workflow
+1. **Connection Setup**: Configure secure connections to ERP systems
+2. **Job Creation**: Define extraction criteria and document types
+3. **Automated Execution**: Scheduled or manual extraction runs
+4. **Document Processing**: OCR and AI-powered data extraction
+5. **Invoice/PO Creation**: Automatic creation of invoice and PO records
+6. **Integration**: Seamless integration with existing approval workflows
 
 ## Data Flow
 
@@ -114,6 +141,7 @@ The system uses PostgreSQL with the following key entities:
 ## Changelog
 - June 13, 2025. Initial setup
 - June 23, 2025. Added verified invoices system: automatic validation processing moves approved invoices to verified status when they pass validation criteria, displayed in Unresolved Invoice-PO Matches section
+- June 25, 2025. Implemented comprehensive RPA Agent system: automated document extraction from ERP systems including SAP, Oracle, custom APIs, SFTP, databases, and SharePoint with intelligent job scheduling, execution tracking, and automated invoice/PO processing pipeline
 
 ## User Preferences
 

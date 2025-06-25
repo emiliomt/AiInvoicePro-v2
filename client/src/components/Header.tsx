@@ -161,6 +161,10 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
 
+            <Link href="/rpa" className={getLinkClassName("/rpa")}>
+              RPA Agent
+            </Link>
+
             <Link href="/reports" className={getLinkClassName("/reports")}>
               Reports
             </Link>
