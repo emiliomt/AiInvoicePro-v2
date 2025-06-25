@@ -321,10 +321,19 @@ export class DatabaseStorage implements IStorage {
       db.delete(predictiveAlerts).where(inArray(predictiveAlerts.invoiceId, invoiceIds)),
       // Delete petty cash logs
       db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds)),
-      // Delete line item classifications
-      db.delete(lineItemClassifications).where(inArray(lineItemClassifications.lineItemId, 
-        db.select({ id: lineItems.id }).from(lineItems).where(inArray(lineItems.invoiceId, invoiceIds))
-      )),
+      // Delete line item classifications - get line item IDs first
+      (async () => {
+        const lineItemIds = await db
+          .select({ id: lineItems.id })
+          .from(lineItems)
+          .where(inArray(lineItems.invoiceId, invoiceIds));
+        
+        if (lineItemIds.length > 0) {
+          return db.delete(lineItemClassifications)
+            .where(inArray(lineItemClassifications.lineItemId, lineItemIds.map(li => li.id)));
+        }
+        return Promise.resolve();
+      })(),
       // Delete approved invoice projects
       db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds)),
       // Delete verified invoice projects
@@ -464,9 +473,12 @@ export class DatabaseStorage implements IStorage {
 
         case 'regex':
           if (fieldValue) {
-            const regex = new RegExp(rule.ruleValue || rule.ruleData);
-            isViolation = !regex.test(String(fieldValue));
-            errorMessage = rule.errorMessage || `${rule.fieldName} format is invalid`;
+            const rulePattern = rule.ruleValue || rule.ruleData;
+            if (rulePattern) {
+              const regex = new RegExp(rulePattern);
+              isViolation = !regex.test(String(fieldValue));
+              errorMessage = rule.errorMessage || `${rule.fieldName} format is invalid`;
+            }
           }
           break;
 
@@ -1004,9 +1016,7 @@ export class DatabaseStorage implements IStorage {
     return result[0];
   }
 
-  async updateInvoicePoMatch(matchId: number, updates: Partial<InsertInvoicePoMatch>): Promise<void> {
-    await db.update(invoicePoMatches).set(updates).where(eq(invoicePoMatches.id, matchId));
-  }
+
 
   async getInvoicePoMatchesWithDetails(): Promise<any[]> {
     const results = await db
@@ -1023,8 +1033,6 @@ export class DatabaseStorage implements IStorage {
     }));
   }
   // Invoice-PO matching operations
-
-
   async updateInvoicePoMatch(id: number, updates: Partial<InsertInvoicePoMatch>): Promise<InvoicePoMatch> {
     const [updatedMatch] = await db
       .update(invoicePoMatches)
@@ -1612,7 +1620,7 @@ export class DatabaseStorage implements IStorage {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    return await db
+    const result = await db
       .select({ count: count() })
       .from(invoices)
       .where(
