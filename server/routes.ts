@@ -1611,16 +1611,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       console.log(`Starting delete all invoices for user: ${userId}`);
 
-      // Get all user's invoices first
-      const userInvoices = await storage.getInvoicesByUserId(userId);
-      
-      if (userInvoices.length === 0) {
-        return res.json({ message: "No invoices to delete", deletedCount: 0 });
-      }
-
-      console.log(`Found ${userInvoices.length} invoices to delete for user ${userId}`);
-
-      // Delete all invoices for this user
+      // Delete all invoices for this user directly
       const deletedCount = await storage.deleteAllUserInvoices(userId);
       
       console.log(`Successfully deleted ${deletedCount} invoices for user ${userId}`);
