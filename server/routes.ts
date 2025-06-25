@@ -341,7 +341,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Purchase order upload and processing
   app.post('/api/purchase-orders/upload', isAuthenticated, (req: any, res) => {
-    upload.array('po', 10)(req, res, async (err) => {
+    upload.any()(req, res, async (err) => {
       if (err) {
         console.error("Multer error:", err);
         return res.status(400).json({ message: err.message });
@@ -361,8 +361,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           return res.status(400).json({ message: "No files uploaded" });
         }
 
+        // Filter for purchase order files (any field name accepted)
+        const poFiles = files.filter(f => f.fieldname.includes('po') || f.fieldname === 'file' || f.fieldname === 'files');
+        if (poFiles.length === 0) {
+          return res.status(400).json({ message: "No purchase order files found" });
+        }
+        
         // For now, process the first file only
-        const file = files[0];
+        const file = poFiles[0];
         const fileName = file.originalname;
 
         try {
