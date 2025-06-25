@@ -293,6 +293,47 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteAllUserInvoices(userId: string): Promise<number> {
+    // Get all user invoices first to get the count and IDs for cleanup
+    const userInvoices = await db
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(eq(invoices.userId, userId));
+
+    if (userInvoices.length === 0) {
+      return 0;
+    }
+
+    const invoiceIds = userInvoices.map(inv => inv.id);
+
+    // Delete related records first to maintain referential integrity
+    await Promise.all([
+      // Delete line items
+      db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds)),
+      // Delete approvals
+      db.delete(approvals).where(inArray(approvals.invoiceId, invoiceIds)),
+      // Delete invoice-PO matches
+      db.delete(invoicePoMatches).where(inArray(invoicePoMatches.invoiceId, invoiceIds)),
+      // Delete invoice-project matches
+      db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds)),
+      // Delete invoice flags
+      db.delete(invoiceFlags).where(inArray(invoiceFlags.invoiceId, invoiceIds)),
+      // Delete predictive alerts
+      db.delete(predictiveAlerts).where(inArray(predictiveAlerts.invoiceId, invoiceIds)),
+      // Delete petty cash logs
+      db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds)),
+      // Delete line item classifications
+      db.delete(lineItemClassifications).where(inArray(lineItemClassifications.lineItemId, 
+        db.select({ id: lineItems.id }).from(lineItems).where(inArray(lineItems.invoiceId, invoiceIds))
+      )),
+      // Delete approved invoice projects
+      db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds)),
+      // Delete verified invoice projects
+      db.delete(verifiedInvoiceProject).where(inArray(verifiedInvoiceProject.invoiceId, invoiceIds)),
+      // Delete feedback logs
+      db.delete(feedbackLogs).where(inArray(feedbackLogs.invoiceId, invoiceIds))
+    ]);
+
+    // Finally delete all the invoices
     const result = await db.delete(invoices).where(eq(invoices.userId, userId));
     return result.rowCount || 0;
   }

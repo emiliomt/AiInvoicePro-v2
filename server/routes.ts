@@ -1605,6 +1605,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = req.user.claims.sub;
 
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+
+      console.log(`Starting delete all invoices for user: ${userId}`);
+
       // Get all user's invoices first
       const userInvoices = await storage.getInvoicesByUserId(userId);
       
@@ -1612,8 +1618,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json({ message: "No invoices to delete", deletedCount: 0 });
       }
 
+      console.log(`Found ${userInvoices.length} invoices to delete for user ${userId}`);
+
       // Delete all invoices for this user
       const deletedCount = await storage.deleteAllUserInvoices(userId);
+      
+      console.log(`Successfully deleted ${deletedCount} invoices for user ${userId}`);
       
       res.json({ 
         message: `Successfully deleted ${deletedCount} invoice${deletedCount === 1 ? '' : 's'}`,
@@ -1621,7 +1631,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error deleting all invoices:", error);
-      res.status(500).json({ message: "Failed to delete all invoices" });
+      res.status(500).json({ 
+        message: "Failed to delete all invoices",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
