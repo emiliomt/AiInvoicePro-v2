@@ -17,6 +17,12 @@ function detectFileType(buffer: Buffer): string {
     return 'PDF';
   }
   
+  // Check for XML files
+  const textContent = buffer.toString('utf8', 0, Math.min(buffer.length, 1000));
+  if (textContent.trim().startsWith('<?xml') || textContent.includes('<Invoice') || textContent.includes('<Factura')) {
+    return 'XML';
+  }
+  
   const magicBytes = buffer.slice(0, 8);
   const isPNG = magicBytes.slice(0, 4).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47]));
   const isJPEG = magicBytes.slice(0, 3).equals(Buffer.from([0xFF, 0xD8, 0xFF]));
@@ -49,6 +55,10 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
         console.error(`PDF processing failed for invoice ${invoiceId}:`, pdfError);
         throw new Error(`PDF processing failed: ${pdfError instanceof Error ? pdfError.message : 'Unknown error'}`);
       }
+    } else if (fileType === 'XML') {
+      // Process XML directly - extract text content
+      console.log(`Processing XML file for invoice ${invoiceId}`);
+      textContent = await processXMLContent(fileBuffer, invoiceId);
     } else {
       // For images, use OCR directly
       textContent = await processImageOCR(fileBuffer, invoiceId);
@@ -123,15 +133,40 @@ async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<s
   }
 }
 
+// Helper function to process XML content
+async function processXMLContent(fileBuffer: Buffer, invoiceId: number): Promise<string> {
+  try {
+    const xmlContent = fileBuffer.toString('utf8');
+    console.log(`XML content extracted for invoice ${invoiceId}, length: ${xmlContent.length} characters`);
+    
+    // For XML files, we can directly use the content as structured text
+    // This is much more reliable than OCR since XML is already structured data
+    if (!xmlContent || xmlContent.trim().length < 10) {
+      throw new Error('XML file appears to be empty or corrupted');
+    }
+    
+    return xmlContent;
+  } catch (error) {
+    console.error(`XML processing failed for invoice ${invoiceId}:`, error);
+    throw new Error(`XML processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promise<{
   text: string;
   confidence: number;
 }> {
   try {
-    // Check if the file is a PDF
-    const isPdf = fileBuffer.slice(0, 4).toString() === '%PDF';
+    const fileType = detectFileType(fileBuffer);
 
-    if (isPdf) {
+    if (fileType === 'XML') {
+      // XML files have 100% confidence since they're structured data
+      const xmlContent = fileBuffer.toString('utf8');
+      return {
+        text: xmlContent,
+        confidence: 1.0, // 100% confidence for XML files
+      };
+    } else if (fileType === 'PDF') {
       // Convert PDF to images and process with OCR
       const convert = fromBuffer(fileBuffer, {
         density: 300,

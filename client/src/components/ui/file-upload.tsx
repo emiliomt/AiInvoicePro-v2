@@ -18,7 +18,9 @@ export function FileUpload({
   accept = {
     'application/pdf': ['.pdf'],
     'image/jpeg': ['.jpg', '.jpeg'],
-    'image/png': ['.png']
+    'image/png': ['.png'],
+    'application/xml': ['.xml'],
+    'text/xml': ['.xml']
   },
   maxSize = 10 * 1024 * 1024, // 10MB
   className,
