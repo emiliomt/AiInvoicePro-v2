@@ -79,6 +79,28 @@ export default function Invoices() {
     },
   });
 
+  const deleteAllMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('DELETE', '/api/invoices/delete-all');
+      return response.json();
+    },
+    onSuccess: () => {
+      toast({
+        title: "Success",
+        description: "All invoices have been deleted successfully",
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case "processed": return "bg-green-100 text-green-800";
@@ -171,8 +193,41 @@ export default function Invoices() {
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
-          <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-          <p className="text-gray-600 mt-2">Manage and view all your processed invoices</p>
+          <div className="flex justify-between items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
+              <p className="text-gray-600 mt-2">Manage and view all your processed invoices</p>
+            </div>
+            {invoices.length > 0 && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 size={16} className="mr-2" />
+                    Delete All Invoices
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete All Invoices</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Are you sure you want to delete ALL invoices? This action cannot be undone.
+                      This will permanently delete all {invoices.length} invoice{invoices.length === 1 ? '' : 's'} and their associated data.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => deleteAllMutation.mutate()}
+                      className="bg-red-600 hover:bg-red-700"
+                      disabled={deleteAllMutation.isPending}
+                    >
+                      {deleteAllMutation.isPending ? "Deleting..." : "Delete All"}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </div>
 
         <div className="space-y-6">

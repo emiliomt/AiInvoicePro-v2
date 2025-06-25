@@ -70,6 +70,7 @@ export interface IStorage {
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
   updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<Invoice>;
   deleteInvoice(id: number): Promise<void>;
+  deleteAllUserInvoices(userId: string): Promise<number>;
 
   // Line item operations
   createLineItems(items: InsertLineItem[]): Promise<LineItem[]>;
@@ -289,6 +290,11 @@ export class DatabaseStorage implements IStorage {
 
     // Finally delete the invoice
     await db.delete(invoices).where(eq(invoices.id, id));
+  }
+
+  async deleteAllUserInvoices(userId: string): Promise<number> {
+    const result = await db.delete(invoices).where(eq(invoices.userId, userId));
+    return result.rowCount || 0;
   }
 
   // Line item operations
@@ -976,7 +982,7 @@ export class DatabaseStorage implements IStorage {
     }));
   }
   // Invoice-PO matching operations
-  
+
 
   async updateInvoicePoMatch(id: number, updates: Partial<InsertInvoicePoMatch>): Promise<InvoicePoMatch> {
     const [updatedMatch] = await db
@@ -1565,7 +1571,7 @@ export class DatabaseStorage implements IStorage {
     const endOfDay = new Date(date);
     endOfDay.setHours(23, 59, 59, 999);
 
-    const result = await db
+    return await db
       .select({ count: count() })
       .from(invoices)
       .where(

@@ -1600,6 +1600,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete all invoices for a user
+  app.delete('/api/invoices/delete-all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user.claims.sub;
+
+      // Get all user's invoices first
+      const userInvoices = await storage.getInvoicesByUserId(userId);
+      
+      if (userInvoices.length === 0) {
+        return res.json({ message: "No invoices to delete", deletedCount: 0 });
+      }
+
+      // Delete all invoices for this user
+      const deletedCount = await storage.deleteAllUserInvoices(userId);
+      
+      res.json({ 
+        message: `Successfully deleted ${deletedCount} invoice${deletedCount === 1 ? '' : 's'}`,
+        deletedCount 
+      });
+    } catch (error) {
+      console.error("Error deleting all invoices:", error);
+      res.status(500).json({ message: "Failed to delete all invoices" });
+    }
+  });
+
   // Get AI suggestions for extraction errors
   app.get('/api/invoices/:id/ai-suggestions', isAuthenticated, async (req: any, res) => {
     try {
