@@ -1295,10 +1295,13 @@ export class DatabaseStorage implements IStorage {
         ORDER BY COUNT(*) DESC
       `);
 
-      return result.map((row: any) => ({
-        issueType: row.flag_type.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
-        count: parseInt(row.count),
-        severity: row.severity,
+      // Handle different result formats from different database drivers
+      const rows = Array.isArray(result) ? result : (result as any).rows || [];
+      
+      return rows.map((row: any) => ({
+        issueType: row.flag_type?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown',
+        count: parseInt(row.count) || 0,
+        severity: row.severity || 'medium',
         trend: "0%" // Would need historical data for actual trends
       }));
     } catch (error) {
