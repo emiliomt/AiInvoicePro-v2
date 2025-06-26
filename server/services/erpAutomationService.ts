@@ -253,28 +253,97 @@ class ERPAutomationService {
     }
   }
 
-  async testConnection(connection: ERPConnection): Promise<boolean> {
+  async testConnection(connection: ERPConnection): Promise<{ success: boolean; message?: string; details?: any }> {
     try {
-      this.browser = await chromium.launch({ headless: true });
-      const context = await this.browser.newContext();
+      this.browser = await chromium.launch({ 
+        headless: true,
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+      });
+      
+      const context = await this.browser.newContext({
+        viewport: { width: 1920, height: 1080 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+      });
+      
       const page = await context.newPage();
       
-      await page.goto(connection.baseUrl, { 
-        waitUntil: 'networkidle',
-        timeout: 15000 
+      // Test basic URL accessibility
+      console.log(`Testing connection to: ${connection.baseUrl}`);
+      const response = await page.goto(connection.baseUrl, { 
+        waitUntil: 'domcontentloaded',
+        timeout: 30000 
       });
+      
+      if (!response) {
+        throw new Error('No response received from server');
+      }
+      
+      const status = response.status();
+      console.log(`Response status: ${status}`);
+      
+      if (status >= 400) {
+        throw new Error(`Server returned error status: ${status}`);
+      }
+      
+      // Wait for page to stabilize
+      await page.waitForTimeout(2000);
+      
+      // Try to find common login elements to verify it's an ERP system
+      const pageTitle = await page.title();
+      const pageContent = await page.content();
+      
+      // Look for common ERP/login indicators
+      const hasLoginForm = await page.locator('input[type="password"]').count() > 0;
+      const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"]').count() > 0;
       
       await this.browser.close();
       this.browser = null;
       
-      return true;
+      const details = {
+        status,
+        title: pageTitle,
+        hasLoginForm,
+        hasUsernameField,
+        url: connection.baseUrl
+      };
+      
+      if (hasLoginForm && hasUsernameField) {
+        return {
+          success: true,
+          message: 'Successfully connected to ERP system. Login form detected.',
+          details
+        };
+      } else if (status < 400) {
+        return {
+          success: true,
+          message: 'Successfully connected to URL, but login form not detected. Please verify this is the correct ERP login page.',
+          details
+        };
+      } else {
+        return {
+          success: false,
+          message: `Connection failed with status ${status}`,
+          details
+        };
+      }
+      
     } catch (error) {
       if (this.browser) {
         await this.browser.close();
         this.browser = null;
       }
       
-      return false;
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error('ERP connection test failed:', errorMessage);
+      
+      return {
+        success: false,
+        message: `Connection test failed: ${errorMessage}`,
+        details: {
+          error: errorMessage,
+          url: connection.baseUrl
+        }
+      };
     }
   }
 }

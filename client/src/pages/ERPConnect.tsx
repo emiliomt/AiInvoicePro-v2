@@ -146,13 +146,22 @@ export default function ERPConnect() {
     onSuccess: (data, id) => {
       setTestingConnection(null);
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
+      
+      const title = data.success ? 'Connection Test Successful' : 'Connection Test Failed';
+      const description = data.message || (data.success 
+        ? 'Successfully connected to the ERP system' 
+        : 'Unable to connect to the ERP system');
+      
       toast({
-        title: data.success ? 'Connection Successful' : 'Connection Failed',
-        description: data.success 
-          ? 'Successfully connected to the ERP system' 
-          : 'Unable to connect to the ERP system',
+        title,
+        description,
         variant: data.success ? 'default' : 'destructive',
       });
+      
+      // Log additional details for debugging
+      if (data.details) {
+        console.log('Connection test details:', data.details);
+      }
     },
     onError: (error: any) => {
       setTestingConnection(null);

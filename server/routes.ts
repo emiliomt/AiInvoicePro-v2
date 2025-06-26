@@ -2452,14 +2452,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         password: decryptedPassword,
       });
 
-      if (testResult) {
+      if (testResult.success) {
         await storage.updateErpConnection(connectionId, { lastUsed: new Date() });
       }
 
-      res.json({ success: testResult });
+      res.json(testResult);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ error: errorMessage });
+      res.status(500).json({ 
+        success: false,
+        error: errorMessage,
+        message: `Connection test failed: ${errorMessage}`
+      });
     }
   });
 
