@@ -66,14 +66,16 @@ class ERPAutomationService {
       ERP System URL: ${connection.baseUrl}
 
       IMPORTANT: This is a Spanish ERP system (SINCO). The login page uses Spanish labels:
-      - Username field: Look for "Usuario" label or input names like "usuario", "user", or similar
-      - Password field: Look for "Contraseña" label or input names like "password", "clave", "contrasena"
-      - Login button: Look for "Iniciar sesión" text or similar Spanish login terms
+      - Username field: Look for "Usuario" label or the first visible text input field
+      - Password field: Look for "Contraseña" label or input[type="password"]
+      - Login button: Look for "Iniciar sesión" button or form submit button
       
-      Use multiple selector strategies for robustness:
-      - Try input[name*="user"], input[placeholder*="usuario"], input[id*="user"]
-      - Try input[type="password"], input[name*="pass"], input[name*="clave"]
-      - Try button containing "Iniciar", "Login", or input[type="submit"]
+      Use these robust selector strategies (the system will automatically try fallbacks):
+      - For username: Use 'input[name*="user"]' (fallbacks will handle Spanish variants)
+      - For password: Use 'input[type="password"]' 
+      - For login button: Use 'button[type="submit"]' or 'input[type="submit"]'
+      
+      CRITICAL: Add wait steps after each action (minimum 3000ms) as SINCO pages load slowly.
 
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
       - Login process (with Spanish interface)
@@ -104,12 +106,13 @@ class ERPAutomationService {
       Important guidelines:
       1. Always start with navigation to the base URL
       2. Include login steps using the provided credentials with Spanish field detection
-      3. Add generous wait steps after clicks and navigation (minimum 3000ms)
+      3. Add generous wait steps after clicks and navigation (minimum 5000ms for SINCO)
       4. Take screenshots at key points for debugging
       5. Handle common errors and timeouts with retries
       6. Extract relevant data when needed
-      7. Use multiple selector strategies: try name attributes, then IDs, then classes, then text content
-      8. For Spanish systems, also try selectors with Spanish terms
+      7. Use longer timeouts (minimum 30000ms) for element detection
+      8. For SINCO specifically: wait after page load, then find first text input for username
+      9. Always add a wait step before attempting login after filling credentials
     `;
 
     try {
@@ -223,8 +226,8 @@ class ERPAutomationService {
 
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
-        await this.waitForSelectorWithFallback(page, step.selector, timeout);
-        await page.click(step.selector);
+        const clickSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
+        await page.click(clickSelector);
         break;
 
       case 'type':
@@ -238,8 +241,10 @@ class ERPAutomationService {
           valueToType = connection.password;
         }
 
-        await this.waitForSelectorWithFallback(page, step.selector, timeout);
-        await page.fill(step.selector, valueToType);
+        const typeSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
+        // Clear field first, then type
+        await page.fill(typeSelector, '');
+        await page.type(typeSelector, valueToType, { delay: 100 });
         break;
 
       case 'wait':
@@ -259,8 +264,8 @@ class ERPAutomationService {
         if (!step.selector) throw new Error('Selector required for extract action');
 
         try {
-          await page.waitForSelector(step.selector, { timeout });
-          const element = await page.locator(step.selector);
+          const extractSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
+          const element = await page.locator(extractSelector);
           const text = await element.textContent();
 
           // Store extracted data with step description as key
@@ -373,55 +378,76 @@ class ERPAutomationService {
     }
   }
 
-  private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<void> {
+  private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<string> {
     // Try original selector first
     try {
-      await page.waitForSelector(originalSelector, { timeout: timeout / 3 });
-      return;
+      await page.waitForSelector(originalSelector, { timeout: timeout / 4 });
+      return originalSelector;
     } catch (error) {
       console.warn(`Original selector failed: ${originalSelector}`);
     }
 
-    // Generate fallback selectors for Spanish ERP systems
+    // Generate comprehensive fallback selectors for Spanish ERP systems
     const fallbackSelectors: string[] = [];
     
     if (originalSelector.includes('username') || originalSelector.includes('user')) {
       fallbackSelectors.push(
-        'input[name*="usuario"]',
-        'input[placeholder*="usuario"]',
-        'input[id*="usuario"]',
-        'input[name*="user"]',
+        // Spanish specific selectors
+        'input[name*="usuario" i]',
+        'input[placeholder*="usuario" i]',
+        'input[id*="usuario" i]',
+        'input[name*="user" i]',
+        'input[placeholder*="user" i]',
+        'input[id*="user" i]',
+        // Generic text inputs (try visible ones first)
+        'input[type="text"]:visible',
+        'input[type="email"]:visible',
         'input[type="text"]',
-        'input[type="email"]'
+        'input[type="email"]',
+        // Broader search
+        'input:not([type="password"]):not([type="hidden"]):not([type="submit"]):not([type="button"])',
+        // Look for first input in forms
+        'form input:first-of-type',
+        'form input[type="text"]:first-of-type'
       );
     }
     
     if (originalSelector.includes('password') || originalSelector.includes('pass')) {
       fallbackSelectors.push(
         'input[type="password"]',
-        'input[name*="clave"]',
-        'input[name*="contrasena"]',
-        'input[name*="password"]',
-        'input[placeholder*="contraseña"]'
+        'input[name*="clave" i]',
+        'input[name*="contrasena" i]',
+        'input[name*="contraseña" i]',
+        'input[name*="password" i]',
+        'input[placeholder*="contraseña" i]',
+        'input[placeholder*="password" i]',
+        'input[id*="password" i]',
+        'input[id*="clave" i]'
       );
     }
 
     if (originalSelector.includes('button') || originalSelector.includes('submit')) {
       fallbackSelectors.push(
+        'button:has-text("Iniciar sesión")',
         'button:has-text("Iniciar")',
         'button:has-text("Login")',
+        'button:has-text("Entrar")',
+        'button:has-text("Acceder")',
         'input[type="submit"]',
         'button[type="submit"]',
-        'button'
+        'button:visible',
+        'input[value*="Iniciar" i]',
+        'input[value*="Login" i]',
+        'form button:last-of-type'
       );
     }
 
-    // Try fallback selectors
+    // Try fallback selectors with individual timeouts
     for (const selector of fallbackSelectors) {
       try {
-        await page.waitForSelector(selector, { timeout: timeout / 3 });
+        await page.waitForSelector(selector, { timeout: Math.max(2000, timeout / 8) });
         console.log(`Fallback selector worked: ${selector}`);
-        return;
+        return selector;
       } catch (error) {
         console.warn(`Fallback selector failed: ${selector}`);
       }
