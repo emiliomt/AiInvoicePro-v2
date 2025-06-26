@@ -124,6 +124,35 @@ export default function RPADashboard() {
     }
   });
 
+  // SSO authentication mutation
+  const ssoAuthMutation = useMutation({
+    mutationFn: async (connectionId: number) => {
+      const response = await fetch(`/api/rpa/connections/${connectionId}/oauth/authorize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      return response.json();
+    },
+    onSuccess: (data) => {
+      if (data.authUrl) {
+        window.open(data.authUrl, '_blank', 'width=600,height=700');
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "SSO Authentication Failed",
+        description: error.message || "Failed to initiate SSO login",
+        variant: "destructive"
+      });
+    }
+  });
+
+  const initiateSSO = (connectionId: number) => {
+    ssoAuthMutation.mutate(connectionId);
+  };
+
   // Execute job mutation
   const executeJobMutation = useMutation({
     mutationFn: (jobId: number) => 
@@ -326,6 +355,17 @@ export default function RPADashboard() {
                           <TestTube className="h-4 w-4 mr-1" />
                           Test
                         </Button>
+                        {(connection.authType === 'oauth2' || connection.authType === 'sso') && (
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => initiateSSO(connection.id)}
+                            disabled={ssoAuthMutation.isPending}
+                          >
+                            <Server className="h-4 w-4 mr-1" />
+                            SSO Login
+                          </Button>
+                        )}
                         <Button variant="outline" size="sm">
                           <Edit className="h-4 w-4" />
                         </Button>
