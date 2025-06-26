@@ -20,7 +20,7 @@ import { apiRequest } from '@/lib/queryClient';
 
 // Form schema for ERP task
 const erpTaskSchema = z.object({
-  connectionId: z.number().min(1, 'Please select an ERP connection'),
+  connectionId: z.coerce.number().min(1, 'Please select an ERP connection'),
   taskDescription: z.string().min(10, 'Task description must be at least 10 characters'),
 });
 
@@ -202,7 +202,7 @@ export default function AIWorkflow() {
                       <FormItem>
                         <FormLabel>ERP Connection</FormLabel>
                         <Select
-                          onValueChange={(value) => field.onChange(parseInt(value))}
+                          onValueChange={(value) => field.onChange(Number(value))}
                           value={field.value?.toString() || ''}
                         >
                           <FormControl>
