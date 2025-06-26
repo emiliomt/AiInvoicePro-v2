@@ -18,10 +18,7 @@ import {
   classificationKeywords,
   lineItemClassifications,
   erpConnections,
-  rpaExtractionJobs,
-  rpaJobExecutions,
-  rpaDocumentQueue,
-  rpaAutomationRules,
+  erpTasks,
   type User,
   type UpsertUser,
   type InsertInvoice,
@@ -55,14 +52,8 @@ import {
   type InsertFeedbackLog,
   type ErpConnection,
   type InsertErpConnection,
-  type RpaExtractionJob,
-  type InsertRpaExtractionJob,
-  type RpaJobExecution,
-  type InsertRpaJobExecution,
-  type RpaDocumentQueue,
-  type InsertRpaDocumentQueue,
-  type RpaAutomationRule,
-  type InsertRpaAutomationRule,
+  type ErpTask,
+  type InsertErpTask,
   type FeedbackLog,
   type InsertClassificationKeyword,
   type ClassificationKeyword,
@@ -209,6 +200,17 @@ export interface IStorage {
   getExtractionsForDate(date: Date): Promise<number>;
   getFeedbackLogsForDate(date: Date): Promise<any>;
   getTotalFeedbackCount(): Promise<number>;
+
+  // ERP Automation methods
+  createErpConnection(connection: InsertErpConnection): Promise<ErpConnection>;
+  getErpConnections(userId: string): Promise<ErpConnection[]>;
+  getErpConnection(id: number): Promise<ErpConnection | undefined>;
+  updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<ErpConnection>;
+  deleteErpConnection(id: number): Promise<void>;
+  createErpTask(task: InsertErpTask): Promise<ErpTask>;
+  getErpTasks(userId: string): Promise<ErpTask[]>;
+  getErpTask(id: number): Promise<ErpTask | undefined>;
+  updateErpTask(id: number, updates: Partial<InsertErpTask>): Promise<ErpTask>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1804,6 +1806,71 @@ export class DatabaseStorage implements IStorage {
         classifiedBy: userId
       });
     }
+  }
+
+  // ERP Automation methods
+  async createErpConnection(connection: InsertErpConnection): Promise<ErpConnection> {
+    const [created] = await db.insert(erpConnections).values(connection).returning();
+    return created;
+  }
+
+  async getErpConnections(userId: string): Promise<ErpConnection[]> {
+    return await db
+      .select()
+      .from(erpConnections)
+      .where(eq(erpConnections.userId, userId))
+      .orderBy(desc(erpConnections.createdAt));
+  }
+
+  async getErpConnection(id: number): Promise<ErpConnection | undefined> {
+    const [connection] = await db
+      .select()
+      .from(erpConnections)
+      .where(eq(erpConnections.id, id));
+    return connection;
+  }
+
+  async updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<ErpConnection> {
+    const [updated] = await db
+      .update(erpConnections)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(erpConnections.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteErpConnection(id: number): Promise<void> {
+    await db.delete(erpConnections).where(eq(erpConnections.id, id));
+  }
+
+  async createErpTask(task: InsertErpTask): Promise<ErpTask> {
+    const [created] = await db.insert(erpTasks).values(task).returning();
+    return created;
+  }
+
+  async getErpTasks(userId: string): Promise<ErpTask[]> {
+    return await db
+      .select()
+      .from(erpTasks)
+      .where(eq(erpTasks.userId, userId))
+      .orderBy(desc(erpTasks.createdAt));
+  }
+
+  async getErpTask(id: number): Promise<ErpTask | undefined> {
+    const [task] = await db
+      .select()
+      .from(erpTasks)
+      .where(eq(erpTasks.id, id));
+    return task;
+  }
+
+  async updateErpTask(id: number, updates: Partial<InsertErpTask>): Promise<ErpTask> {
+    const [updated] = await db
+      .update(erpTasks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(erpTasks.id, id))
+      .returning();
+    return updated;
   }
 }
 
