@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { 
   Dialog, 
   DialogContent, 
+  DialogDescription,
   DialogHeader, 
   DialogTitle, 
   DialogTrigger,
@@ -28,9 +29,14 @@ import {
   Activity,
   FileText,
   Users,
-  TrendingUp
+  TrendingUp,
+  Server,
+  TestTube,
+  Edit,
+  Eye,
+  ShoppingCart
 } from 'lucide-react';
-import { toast } from '@/hooks/use-toast';
+import { useToast } from '@/hooks/use-toast';
 import Header from '@/components/Header';
 
 interface ErpConnection {
@@ -75,6 +81,24 @@ interface RpaStats {
     failed: number;
     successRate: number;
   };
+}
+
+// Simple API request helper
+async function apiRequest(url: string, options: RequestInit = {}) {
+  const response = await fetch(url, {
+    headers: {
+      'Content-Type': 'application/json',
+      ...options.headers,
+    },
+    ...options,
+  });
+  
+  if (!response.ok) {
+    const error = await response.text();
+    throw new Error(error || `HTTP ${response.status}`);
+  }
+  
+  return response.json();
 }
 
 export default function RPADashboard() {
