@@ -22,6 +22,8 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
 import Settings from "./pages/Settings";
+import ERPConnect from "./pages/ERPConnect";
+import AIWorkflow from "./pages/AIWorkflow";
 import React from "react";
 
 const Profile = () => (
@@ -76,6 +78,8 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/ai-learning" component={AILearningDashboard} />
+          <Route path="/erp-connect" component={ERPConnect} />
+          <Route path="/ai-workflow" component={AIWorkflow} />
         </>
       )}
       <Route component={NotFound} />

@@ -7,7 +7,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { FileText, Bell, ChevronDown, LogOut, User, Settings, Brain } from "lucide-react";
+import { FileText, Bell, ChevronDown, LogOut, User, Settings, Brain, Bot, Zap } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 export default function Header() {
@@ -135,6 +135,31 @@ export default function Header() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => window.location.href = '/classification'}>
                   Line Item Classification
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* ERP Automation Dropdown Menu */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/erp-connect") || isActiveRoute("/ai-workflow")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <Bot size={16} className="text-blue-600" />
+                  <span>ERP Automation</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/erp-connect'}>
+                  <Zap size={16} className="mr-2" />
+                  ERP Connections
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/ai-workflow'}>
+                  <Bot size={16} className="mr-2" />
+                  AI Workflows
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
