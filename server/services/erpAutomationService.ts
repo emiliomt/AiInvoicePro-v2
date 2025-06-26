@@ -64,7 +64,7 @@ class ERPAutomationService {
 
       Task: ${taskDescription}
       ERP System URL: ${connection.baseUrl}
-      
+
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
       - Login process
       - Navigation to specific modules
@@ -136,12 +136,12 @@ class ERPAutomationService {
         executablePath: getChromiumPath(),
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
-      
+
       const context = await this.browser.newContext({
         viewport: { width: 1920, height: 1080 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       });
-      
+
       const page = await context.newPage();
       logs.push('Browser launched successfully');
 
@@ -177,7 +177,7 @@ class ERPAutomationService {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       logs.push(`Execution failed: ${errorMessage}`);
-      
+
       if (this.browser) {
         await this.browser.close();
         this.browser = null;
@@ -216,7 +216,7 @@ class ERPAutomationService {
 
       case 'type':
         if (!step.selector || !step.value) throw new Error('Selector and value required for type action');
-        
+
         // Handle special credential replacements
         let valueToType = step.value;
         if (step.value === '{{username}}') {
@@ -224,7 +224,7 @@ class ERPAutomationService {
         } else if (step.value === '{{password}}') {
           valueToType = connection.password;
         }
-        
+
         await page.waitForSelector(step.selector, { timeout });
         await page.fill(step.selector, valueToType);
         break;
@@ -244,12 +244,12 @@ class ERPAutomationService {
 
       case 'extract':
         if (!step.selector) throw new Error('Selector required for extract action');
-        
+
         try {
           await page.waitForSelector(step.selector, { timeout });
           const element = await page.locator(step.selector);
           const text = await element.textContent();
-          
+
           // Store extracted data with step description as key
           const dataKey = step.description.toLowerCase().replace(/\s+/g, '_');
           extractedData[dataKey] = text?.trim();
@@ -272,46 +272,46 @@ class ERPAutomationService {
         executablePath: getChromiumPath(),
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
-      
+
       const context = await this.browser.newContext({
         viewport: { width: 1920, height: 1080 },
         userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       });
-      
+
       const page = await context.newPage();
-      
+
       // Test basic URL accessibility
       console.log(`Testing connection to: ${connection.baseUrl}`);
       const response = await page.goto(connection.baseUrl, { 
         waitUntil: 'domcontentloaded',
         timeout: 30000 
       });
-      
+
       if (!response) {
         throw new Error('No response received from server');
       }
-      
+
       const status = response.status();
       console.log(`Response status: ${status}`);
-      
+
       if (status >= 400) {
         throw new Error(`Server returned error status: ${status}`);
       }
-      
+
       // Wait for page to stabilize
       await page.waitForTimeout(2000);
-      
+
       // Try to find common login elements to verify it's an ERP system
       const pageTitle = await page.title();
       const pageContent = await page.content();
-      
+
       // Look for common ERP/login indicators
       const hasLoginForm = await page.locator('input[type="password"]').count() > 0;
       const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"]').count() > 0;
-      
+
       await this.browser.close();
       this.browser = null;
-      
+
       const details = {
         status,
         title: pageTitle,
@@ -319,7 +319,7 @@ class ERPAutomationService {
         hasUsernameField,
         url: connection.baseUrl
       };
-      
+
       if (hasLoginForm && hasUsernameField) {
         return {
           success: true,
@@ -339,16 +339,16 @@ class ERPAutomationService {
           details
         };
       }
-      
+
     } catch (error) {
       if (this.browser) {
         await this.browser.close();
         this.browser = null;
       }
-      
+
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       console.error('ERP connection test failed:', errorMessage);
-      
+
       return {
         success: false,
         message: `Connection test failed: ${errorMessage}`,
@@ -356,6 +356,68 @@ class ERPAutomationService {
           error: errorMessage,
           url: connection.baseUrl
         }
+      };
+    }
+  }
+
+  static async createAutomationTask(data: {
+    connectionId: number;
+    taskDescription: string;
+    userId: string;
+  }) {
+    try {
+      // Validate input data
+      if (!data.connectionId || !data.taskDescription || !data.userId) {
+        throw new Error('Missing required fields: connectionId, taskDescription, and userId are required');
+      }
+
+      // Validate the connection exists and is active
+      const connection = await db
+        .select()
+        .from(erpConnections)
+        .where(
+          and(
+            eq(erpConnections.id, data.connectionId),
+            eq(erpConnections.userId, data.userId),
+            eq(erpConnections.isActive, true)
+          )
+        )
+        .limit(1);
+
+      if (connection.length === 0) {
+        throw new Error('ERP connection not found or inactive');
+      }
+
+      // Generate automation steps using AI
+      const automationSteps = await this.generateAutomationSteps(
+        data.taskDescription,
+        connection[0]
+      );
+
+      // Create the automation task
+      const task = await db
+        .insert(automationTasks)
+        .values({
+          connectionId: data.connectionId,
+          userId: data.userId,
+          taskDescription: data.taskDescription,
+          steps: JSON.stringify(automationSteps),
+          status: 'pending',
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        })
+        .returning();
+
+      return {
+        success: true,
+        task: task[0],
+        steps: automationSteps,
+      };
+    } catch (error) {
+      console.error('Error creating automation task:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error occurred'
       };
     }
   }

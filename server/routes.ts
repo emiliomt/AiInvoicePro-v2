@@ -379,7 +379,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           try {
             console.log(`Processing file ${i + 1}/${poFiles.length}: ${fileName}`);
-            
+
             // Extract OCR text
             const ocrText = await processInvoiceOCR(file.buffer, i);
             console.log(`OCR completed for PO ${fileName}, text length: ${ocrText.length}`);
@@ -1634,9 +1634,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Delete all invoices for this user directly
       const deletedCount = await storage.deleteAllUserInvoices(userId);
-      
+
       console.log(`Successfully deleted ${deletedCount} invoices for user ${userId}`);
-      
+
       res.json({ 
         message: `Successfully deleted ${deletedCount} invoice${deletedCount === 1 ? '' : 's'}`,
         deletedCount 
@@ -2344,10 +2344,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const data = insertErpConnectionSchema.parse(req.body);
-      
+
       // Simple password encryption (in production, use proper encryption)
       const encryptedPassword = Buffer.from(data.password).toString('base64');
-      
+
       const connection = await storage.createErpConnection({
         ...data,
         userId: user.claims.sub,
@@ -2374,7 +2374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const connections = await storage.getErpConnections(user.claims.sub);
-      
+
       // Remove passwords from response
       const safeConnections = connections.map(({ password, ...conn }) => conn);
       res.json(safeConnections);
@@ -2394,7 +2394,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const connectionId = parseInt(req.params.id);
       const data = insertErpConnectionSchema.partial().parse(req.body);
-      
+
       // Encrypt password if provided
       if (data.password) {
         data.password = Buffer.from(data.password).toString('base64');
@@ -2436,14 +2436,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const connectionId = parseInt(req.params.id);
       const connection = await storage.getErpConnection(connectionId);
-      
+
       if (!connection || connection.userId !== user.claims.sub) {
         return res.status(404).json({ error: 'Connection not found' });
       }
 
       // Decrypt password
       const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
-      
+
       const testResult = await erpAutomationService.testConnection({
         id: connection.id,
         name: connection.name,
@@ -2476,7 +2476,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const data = insertErpTaskSchema.parse(req.body);
-      
+
       // Create task record
       const task = await storage.createErpTask({
         ...data,
@@ -2530,7 +2530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const taskId = parseInt(req.params.id);
       const task = await storage.getErpTask(taskId);
-      
+
       if (!task || task.userId !== user.claims.sub) {
         return res.status(404).json({ error: 'Task not found' });
       }
@@ -2544,10 +2544,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Async function to execute ERP tasks
   async function executeTaskAsync(taskId: number, connection: any, taskDescription: string) {
-    try {
+        try {
       // Decrypt password
       const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
-      
+
       const connectionData = {
         id: connection.id,
         name: connection.name,
@@ -2558,7 +2558,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Generate RPA script using AI
       const script = await erpAutomationService.generateRPAScript(taskDescription, connectionData);
-      
+
       await storage.updateErpTask(taskId, { 
         generatedScript: JSON.stringify(script),
       });
@@ -2587,6 +2587,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     }
   }
+
+// Create automation task
+app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const data = insertErpTaskSchema.parse(req.body);
+
+    // Create task record
+    const task = await storage.createErpTask({
+      ...data,
+      userId: user.claims.sub,
+      status: 'processing',
+    });
+
+    // Get connection details
+    const connection = await storage.getErpConnection(data.connectionId);
+    if (!connection || connection.userId !== user.claims.sub) {
+      await storage.updateErpTask(task.id, { 
+        status: 'failed', 
+        errorMessage: 'Connection not found' 
+      });
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    // Start task execution asynchronously
+    executeTaskAsync(task.id, connection, data.taskDescription);
+
+    res.json(task);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({ error: errorMessage });
+  }
+});
 
   const httpServer = createServer(app);
   return httpServer;
