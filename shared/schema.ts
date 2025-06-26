@@ -307,7 +307,7 @@ export const invoiceFlags = pgTable("invoice_flags", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
   flagType: flagTypeEnum("flag_type").notNull(),
-  severity: flagSeverityEnum("severity").notNull(),
+  severity: flagSeverityEnum("flag_severity").notNull(),
   message: text("message").notNull(),
   details: jsonb("details"), // Additional details about the discrepancy
   isResolved: boolean("is_resolved").default(false),
@@ -716,9 +716,11 @@ export type ErpTask = typeof erpTasks.$inferSelect;
 // ERP Automation Zod schemas
 export const insertErpConnectionSchema = createInsertSchema(erpConnections).omit({
   id: true,
+  userId: true,
   createdAt: true,
   updatedAt: true,
   lastUsed: true,
+  isActive: true,
 });
 
 export const insertErpTaskSchema = createInsertSchema(erpTasks).omit({

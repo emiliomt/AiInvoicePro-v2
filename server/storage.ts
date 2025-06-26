@@ -283,7 +283,7 @@ export class DatabaseStorage implements IStorage {
 
   async deleteInvoice(id: number): Promise<void> {
     // Delete related records first to maintain referential integrity
-    
+
     // First, get line item IDs for this invoice
     const invoiceLineItems = await db
       .select({ id: lineItems.id })
@@ -299,7 +299,7 @@ export class DatabaseStorage implements IStorage {
     // Delete in proper order to respect foreign key constraints
     // First delete verified invoice projects (references approved projects)
     await db.delete(verifiedInvoiceProject).where(eq(verifiedInvoiceProject.invoiceId, id));
-    
+
     // Then delete approved invoice projects (references project matches)
     await db.delete(approvedInvoiceProject).where(eq(approvedInvoiceProject.invoiceId, id));
 
@@ -356,7 +356,7 @@ export class DatabaseStorage implements IStorage {
     // Delete in proper order to respect foreign key constraints
     // First delete verified invoice projects (references approved projects)
     await db.delete(verifiedInvoiceProject).where(inArray(verifiedInvoiceProject.invoiceId, invoiceIds));
-    
+
     // Then delete approved invoice projects (references project matches)
     await db.delete(approvedInvoiceProject).where(inArray(approvedInvoiceProject.invoiceId, invoiceIds));
 
@@ -865,7 +865,8 @@ export class DatabaseStorage implements IStorage {
         invoice: invoices,
       })
       .from(pettyCashLog)
-      .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id));
+      .innerJoin(invoices, eq(```python
+pettyCashLog.invoiceId, invoices.id));
 
     if (status) {
       query.where(eq(pettyCashLog.status, status as any));
@@ -1810,7 +1811,13 @@ export class DatabaseStorage implements IStorage {
 
   // ERP Automation methods
   async createErpConnection(connection: InsertErpConnection): Promise<ErpConnection> {
-    const [created] = await db.insert(erpConnections).values(connection).returning();
+    const connectionData = {
+      ...connection,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      isActive: connection.isActive ?? true,
+    };
+    const [created] = await db.insert(erpConnections).values(connectionData).returning();
     return created;
   }
 

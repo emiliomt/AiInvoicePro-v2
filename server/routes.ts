@@ -2352,12 +2352,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         ...data,
         userId: user.claims.sub,
         password: encryptedPassword,
+        isActive: true,
       });
 
       // Don't return the password in the response
       const { password, ...safeConnection } = connection;
       res.json(safeConnection);
     } catch (error) {
+      console.error('ERP connection creation error:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ error: errorMessage });
     }
