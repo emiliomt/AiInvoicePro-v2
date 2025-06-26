@@ -1279,27 +1279,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getTopIssuesThisMonth(): Promise<any[]> {
-    const currentMonth = new Date();
-    currentMonth.setDate(1);
+    try {
+      const currentMonth = new Date();
+      currentMonth.setDate(1);
 
-    // Get actual flag data for this month
-    const flagStats = await db
-      .select({
-        flagType: invoiceFlags.flagType,
-        severity: invoiceFlags.severity,
-        count: count()
-      })
-      .from(invoiceFlags)
-      .where(gte(invoiceFlags.createdAt, currentMonth))
-      .groupBy(invoiceFlags.flagType, invoiceFlags.severity)
-      .orderBy(desc(count()));
+      // Get actual flag data for this month using SQL to avoid ORM issues
+      const result = await db.execute(sql`
+        SELECT 
+          flag_type,
+          severity,
+          COUNT(*) as count
+        FROM invoice_flags 
+        WHERE created_at >= ${currentMonth}
+        GROUP BY flag_type, severity
+        ORDER BY COUNT(*) DESC
+      `);
 
-    return flagStats.map(stat => ({
-      issueType: stat.flagType.replace('_', ' ').replace(/\b\w/g, l => l.toUpperCase()),
-      count: stat.count,
-      severity: stat.severity,
-      trend: "0%" // Would need historical data for actual trends
-    }));
+      return result.map((row: any) => ({
+        issueType: row.flag_type.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()),
+        count: parseInt(row.count),
+        severity: row.severity,
+        trend: "0%" // Would need historical data for actual trends
+      }));
+    } catch (error) {
+      console.error("Error in getTopIssuesThisMonth:", error);
+      return [];
+    }
   }
 
   private calculateStringSimilarity(str1: string, str2: string): number {
