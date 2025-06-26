@@ -74,8 +74,15 @@ class ERPAutomationService {
       - For username: Use 'input[name*="user"]' (fallbacks will handle Spanish variants)
       - For password: Use 'input[type="password"]' 
       - For login button: Use 'button[type="submit"]' or 'input[type="submit"]'
+      - For navigation/modules: Use text-based selectors like '*:has-text("FE")' instead of href selectors
       
-      CRITICAL: Add wait steps after each action (minimum 3000ms) as SINCO pages load slowly.
+      CRITICAL NAVIGATION NOTES:
+      - SINCO uses JavaScript-rendered sidebar navigation (NOT standard <a> tags)
+      - Module links are typically span, div, or button elements with text content
+      - Use text-based selectors like '*:has-text("FE")' for module navigation
+      - Avoid href-based selectors for navigation elements
+      
+      CRITICAL: Add wait steps after each action (minimum 5000ms) as SINCO pages load slowly.
 
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
       - Login process (with Spanish interface)
@@ -439,6 +446,48 @@ class ERPAutomationService {
         'input[value*="Iniciar" i]',
         'input[value*="Login" i]',
         'form button:last-of-type'
+      );
+    }
+
+    // Handle navigation elements and modules (like FE module)
+    if (originalSelector.includes('href*=') || originalSelector.includes('FE') || originalSelector.includes('module')) {
+      const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE';
+      fallbackSelectors.push(
+        // JavaScript-based navigation - look for text content
+        `*:has-text("${moduleText}")`,
+        `span:has-text("${moduleText}")`,
+        `div:has-text("${moduleText}")`,
+        `button:has-text("${moduleText}")`,
+        `li:has-text("${moduleText}")`,
+        // Case variations
+        `*:has-text("${moduleText.toUpperCase()}")`,
+        `*:has-text("${moduleText.toLowerCase()}")`,
+        // Look for clickable elements containing the text
+        `[onclick*="${moduleText}" i]`,
+        `[data-module*="${moduleText}" i]`,
+        `[data-target*="${moduleText}" i]`,
+        `[id*="${moduleText}" i]`,
+        `[class*="${moduleText}" i]`,
+        // Navigation specific selectors
+        'nav *:visible',
+        'aside *:visible',
+        '.sidebar *:visible',
+        '.menu *:visible',
+        '.nav *:visible',
+        // Look for elements with role attributes
+        '[role="menuitem"]:visible',
+        '[role="button"]:visible',
+        '[role="link"]:visible',
+        // Broader search for any clickable sidebar elements
+        'aside button:visible',
+        'aside span:visible',
+        'aside div[onclick]:visible',
+        'nav button:visible',
+        'nav span:visible',
+        'nav div[onclick]:visible',
+        // Look for first clickable element in sidebar/nav
+        'aside *:visible:first',
+        'nav *:visible:first'
       );
     }
 
