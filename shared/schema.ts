@@ -680,16 +680,6 @@ export const extractionStatusEnum = pgEnum("extraction_status", [
   "cancelled"
 ]);
 
-// Authentication Types
-export const authTypeEnum = pgEnum("auth_type", [
-  "basic",
-  "oauth2",
-  "saml",
-  "api_key",
-  "certificate",
-  "sso"
-]);
-
 // ERP Connections table - stores connection details for different ERP systems
 export const erpConnections = pgTable("erp_connections", {
   id: serial("id").primaryKey(),
@@ -697,12 +687,6 @@ export const erpConnections = pgTable("erp_connections", {
   connectionName: varchar("connection_name").notNull(),
   erpSystemType: erpSystemEnum("erp_system_type").notNull(),
   connectionConfig: jsonb("connection_config").notNull(), // Contains credentials, endpoints, etc.
-  authType: authTypeEnum("auth_type").default("basic"),
-  oauthConfig: jsonb("oauth_config"), // OAuth2/SSO configuration
-  accessToken: text("access_token"), // Encrypted access token
-  refreshToken: text("refresh_token"), // Encrypted refresh token
-  tokenExpiresAt: timestamp("token_expires_at"),
-  ssoUrl: varchar("sso_url"), // SSO login URL
   status: rpaStatusEnum("status").default("inactive"),
   lastConnected: timestamp("last_connected"),
   lastError: text("last_error"),

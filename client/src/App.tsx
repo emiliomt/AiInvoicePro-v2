@@ -22,7 +22,6 @@ import PurchaseOrders from "./pages/PurchaseOrders";
 import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
 import Settings from "./pages/Settings";
-import RPADashboard from "./pages/RPADashboard";
 import React from "react";
 
 const Profile = () => (
@@ -77,7 +76,6 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/ai-learning" component={AILearningDashboard} />
-          <Route path="/rpa" component={RPADashboard} />
         </>
       )}
       <Route component={NotFound} />
