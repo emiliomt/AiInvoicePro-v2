@@ -81,8 +81,12 @@ class ERPAutomationService {
       - Module links are typically span, div, or button elements with text content
       - Use text-based selectors like '*:has-text("FE")' for module navigation
       - Avoid href-based selectors for navigation elements
+      - After clicking FE module, wait for page to fully load before looking for sub-menu items
+      - Sub-menu items like "Documentos recibidos" may appear in main content area, not sidebar
+      - Use longer waits (10-15 seconds) after module navigation clicks
       
       CRITICAL: Add wait steps after each action (minimum 5000ms) as SINCO pages load slowly.
+      EXTRA CRITICAL: After clicking any module (like FE), add 10+ second wait before next action.
 
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
       - Login process (with Spanish interface)
@@ -234,7 +238,20 @@ class ERPAutomationService {
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
         const clickSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
-        await page.click(clickSelector);
+        
+        // For SINCO navigation clicks, add extra wait and handling
+        if (step.description.toLowerCase().includes('module') || step.description.toLowerCase().includes('fe')) {
+          // Click and wait for navigation to complete
+          await page.click(clickSelector);
+          // Wait for any navigation or dynamic content loading
+          await page.waitForTimeout(5000);
+          // Wait for network to be idle after navigation
+          await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
+            console.warn('Network idle timeout - continuing anyway');
+          });
+        } else {
+          await page.click(clickSelector);
+        }
         break;
 
       case 'type':
@@ -488,6 +505,53 @@ class ERPAutomationService {
         // Look for first clickable element in sidebar/nav
         'aside *:visible:first',
         'nav *:visible:first'
+      );
+    }
+
+    // Handle Spanish document-related text selectors
+    if (originalSelector.includes('Documentos') || originalSelector.includes('recibidos')) {
+      const documentText = originalSelector.match(/has-text\(['"]([^'"]*)['"]\)/)?.[1] || 'Documentos recibidos';
+      fallbackSelectors.push(
+        // Try exact text variations
+        `*:has-text("${documentText}")`,
+        `*:has-text("Documentos recibidos")`,
+        `*:has-text("Documentos Recibidos")`,
+        `*:has-text("DOCUMENTOS RECIBIDOS")`,
+        `*:has-text("documentos recibidos")`,
+        // Partial text matches
+        `*:has-text("Documentos")`,
+        `*:has-text("DOCUMENTOS")`,
+        `*:has-text("documentos")`,
+        `*:has-text("Recibidos")`,
+        `*:has-text("RECIBIDOS")`,
+        `*:has-text("recibidos")`,
+        // Look for menu items or links containing these words
+        'a:has-text("Documentos")',
+        'a:has-text("Recibidos")',
+        'li:has-text("Documentos")',
+        'li:has-text("Recibidos")',
+        'button:has-text("Documentos")',
+        'button:has-text("Recibidos")',
+        'span:has-text("Documentos")',
+        'span:has-text("Recibidos")',
+        'div:has-text("Documentos")',
+        'div:has-text("Recibidos")',
+        // Look for any clickable elements after FE navigation
+        'main *:visible',
+        '.content *:visible',
+        '.main *:visible',
+        '#content *:visible',
+        // Look for menu items or navigation after clicking FE
+        'ul li:visible',
+        'nav li:visible',
+        'aside li:visible',
+        '.menu li:visible',
+        '.sidebar li:visible',
+        // Look for any text containing document-related Spanish words
+        '*[onclick]:has-text("Doc")',
+        '*[onclick]:has-text("Rec")',
+        '*:has-text("Doc"):visible',
+        '*:has-text("Rec"):visible'
       );
     }
 
