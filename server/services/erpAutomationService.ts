@@ -1,7 +1,18 @@
 import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
+import { execSync } from 'child_process';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+// Get system Chromium path dynamically
+function getChromiumPath(): string {
+  try {
+    return execSync('which chromium', { encoding: 'utf8' }).trim();
+  } catch {
+    // Fallback paths
+    return '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium';
+  }
+}
 
 export interface ERPConnection {
   id: number;
@@ -122,7 +133,8 @@ class ERPAutomationService {
       // Launch browser
       this.browser = await chromium.launch({ 
         headless: true,
-        args: ['--no-sandbox', '--disable-setuid-sandbox']
+        executablePath: getChromiumPath(),
+        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
       
       const context = await this.browser.newContext({
@@ -257,7 +269,7 @@ class ERPAutomationService {
     try {
       this.browser = await chromium.launch({ 
         headless: true,
-        executablePath: '/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium',
+        executablePath: getChromiumPath(),
         args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
       });
       
