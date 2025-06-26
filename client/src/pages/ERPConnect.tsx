@@ -365,7 +365,9 @@ export default function ERPConnect() {
                     {connection.isActive ? 'Active' : 'Inactive'}
                   </Badge>
                 </div>
-                <CardDescription>{connection.baseUrl}</CardDescription>
+                <CardDescription className="truncate max-w-[250px]" title={connection.baseUrl}>
+                  {connection.baseUrl}
+                </CardDescription>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="text-sm text-gray-600">
