@@ -865,8 +865,7 @@ export class DatabaseStorage implements IStorage {
         invoice: invoices,
       })
       .from(pettyCashLog)
-      .innerJoin(invoices, eq(```python
-pettyCashLog.invoiceId, invoices.id));
+      .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id));
 
     if (status) {
       query.where(eq(pettyCashLog.status, status as any));
@@ -923,7 +922,7 @@ pettyCashLog.invoiceId, invoices.id));
       .where(eq(purchaseOrders.projectId, projectId));
 
     if (associatedPOs.count > 0) {
-      throw new Error(`Cannot delete project ${projectId} because it has ${associatedPOs.count} associated purchase order(s). Please remove or reassign the purchase orders first.`);
+      throw new Error("Cannot delete project " + projectId + " because it has " + associatedPOs.count + " associated purchase order(s). Please remove or reassign the purchase orders first.");
     }
 
     // Check if project has associated invoice matches through purchase orders
@@ -934,7 +933,7 @@ pettyCashLog.invoiceId, invoices.id));
       .where(eq(purchaseOrders.projectId, projectId));
 
     if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
-      throw new Error(`Cannot delete project ${projectId} because it has associated invoice-PO matches. Please resolve these matches first.`);
+      throw new Error("Cannot delete project " + projectId + " because it has associated invoice-PO matches. Please resolve these matches first.");
     }
 
     await db.delete(projects).where(eq(projects.projectId, projectId));
@@ -946,7 +945,7 @@ pettyCashLog.invoiceId, invoices.id));
 
       // First get count of existing projects
       const [existingCount] = await db.select({ count: count() }).from(projects);
-      console.log(`Found ${existingCount.count} projects to delete`);
+      console.log("Found " + existingCount.count + " projects to delete");
 
       if (existingCount.count === 0) {
         console.log("No projects to delete");
