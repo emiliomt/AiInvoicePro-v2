@@ -725,6 +725,9 @@ export const insertErpConnectionSchema = createInsertSchema(erpConnections).omit
 
 export const insertErpTaskSchema = createInsertSchema(erpTasks).omit({
   id: true,
+  userId: true,
+  status: true,
+  generatedScript: true,
   createdAt: true,
   updatedAt: true,
   result: true,

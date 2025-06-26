@@ -359,68 +359,6 @@ class ERPAutomationService {
       };
     }
   }
-
-  static async createAutomationTask(data: {
-    connectionId: number;
-    taskDescription: string;
-    userId: string;
-  }) {
-    try {
-      // Validate input data
-      if (!data.connectionId || !data.taskDescription || !data.userId) {
-        throw new Error('Missing required fields: connectionId, taskDescription, and userId are required');
-      }
-
-      // Validate the connection exists and is active
-      const connection = await db
-        .select()
-        .from(erpConnections)
-        .where(
-          and(
-            eq(erpConnections.id, data.connectionId),
-            eq(erpConnections.userId, data.userId),
-            eq(erpConnections.isActive, true)
-          )
-        )
-        .limit(1);
-
-      if (connection.length === 0) {
-        throw new Error('ERP connection not found or inactive');
-      }
-
-      // Generate automation steps using AI
-      const automationSteps = await this.generateAutomationSteps(
-        data.taskDescription,
-        connection[0]
-      );
-
-      // Create the automation task
-      const task = await db
-        .insert(automationTasks)
-        .values({
-          connectionId: data.connectionId,
-          userId: data.userId,
-          taskDescription: data.taskDescription,
-          steps: JSON.stringify(automationSteps),
-          status: 'pending',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        })
-        .returning();
-
-      return {
-        success: true,
-        task: task[0],
-        steps: automationSteps,
-      };
-    } catch (error) {
-      console.error('Error creating automation task:', error);
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Unknown error occurred'
-      };
-    }
-  }
 }
 
 export const erpAutomationService = new ERPAutomationService();
