@@ -31,8 +31,27 @@ interface ERPConnection {
   name: string;
   baseUrl: string;
   username: string;
+  description?: string;
   isActive: boolean;
   lastUsed?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+interface ERPTask {
+  id: number;
+  userId: string;
+  connectionId: number;
+  taskDescription: string;
+  generatedScript?: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled';
+  result?: any;
+  logs?: string;
+  screenshots?: string[];
+  executionTime?: number;
+  errorMessage?: string;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ERPTask {
@@ -78,7 +97,7 @@ export default function AIWorkflow() {
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: (data: ERPTaskForm) => 
-      apiRequest('/api/erp/tasks', { method: 'POST', body: data }),
+      apiRequest('POST', '/api/erp/tasks', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/tasks'] });
       form.reset();

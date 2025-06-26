@@ -35,6 +35,18 @@ interface ERPConnection {
   isActive: boolean;
   lastUsed?: string;
   createdAt: string;
+  updatedAt: string;
+}
+
+interface ERPConnection {
+  id: number;
+  name: string;
+  baseUrl: string;
+  username: string;
+  description?: string;
+  isActive: boolean;
+  lastUsed?: string;
+  createdAt: string;
 }
 
 export default function ERPConnect() {
@@ -56,7 +68,7 @@ export default function ERPConnect() {
   });
 
   // Fetch ERP connections
-  const { data: connections = [], isLoading } = useQuery({
+  const { data: connections = [], isLoading } = useQuery<ERPConnection[]>({
     queryKey: ['/api/erp/connections'],
   });
 
@@ -127,8 +139,10 @@ export default function ERPConnect() {
 
   // Test connection mutation
   const testConnectionMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiRequest(`/api/erp/connections/${id}/test`, { method: 'POST' }),
+    mutationFn: async (id: number) => {
+      const response = await apiRequest('POST', `/api/erp/connections/${id}/test`);
+      return await response.json();
+    },
     onSuccess: (data, id) => {
       setTestingConnection(null);
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
