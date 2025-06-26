@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema } from "@shared/schema";
+import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
@@ -15,6 +15,7 @@ import { findBestProjectMatch } from "./services/aiService.js";
 import { projectMatcher } from "./projectMatcher.js";
 import { discrepancyDetector } from "./services/discrepancyService.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
+import { erpAutomationService } from "./services/erpAutomationService.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -2332,6 +2333,254 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to process approved validations" });
     }
   });
+
+  // ERP Automation Routes
+  // Create ERP connection
+  app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertErpConnectionSchema.parse(req.body);
+      
+      // Simple password encryption (in production, use proper encryption)
+      const encryptedPassword = Buffer.from(data.password).toString('base64');
+      
+      const connection = await storage.createErpConnection({
+        ...data,
+        userId: user.claims.sub,
+        password: encryptedPassword,
+      });
+
+      // Don't return the password in the response
+      const { password, ...safeConnection } = connection;
+      res.json(safeConnection);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Get user's ERP connections
+  app.get('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connections = await storage.getErpConnections(user.claims.sub);
+      
+      // Remove passwords from response
+      const safeConnections = connections.map(({ password, ...conn }) => conn);
+      res.json(safeConnections);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Update ERP connection
+  app.put('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      const data = insertErpConnectionSchema.partial().parse(req.body);
+      
+      // Encrypt password if provided
+      if (data.password) {
+        data.password = Buffer.from(data.password).toString('base64');
+      }
+
+      const connection = await storage.updateErpConnection(connectionId, data);
+      const { password, ...safeConnection } = connection;
+      res.json(safeConnection);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Delete ERP connection
+  app.delete('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      await storage.deleteErpConnection(connectionId);
+      res.json({ success: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Test ERP connection
+  app.post('/api/erp/connections/:id/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      const connection = await storage.getErpConnection(connectionId);
+      
+      if (!connection || connection.userId !== user.claims.sub) {
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Decrypt password
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+      
+      const testResult = await erpAutomationService.testConnection({
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      });
+
+      if (testResult) {
+        await storage.updateErpConnection(connectionId, { lastUsed: new Date() });
+      }
+
+      res.json({ success: testResult });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Create and execute ERP task
+  app.post('/api/erp/tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertErpTaskSchema.parse(req.body);
+      
+      // Create task record
+      const task = await storage.createErpTask({
+        ...data,
+        userId: user.claims.sub,
+        status: 'processing',
+      });
+
+      // Get connection details
+      const connection = await storage.getErpConnection(data.connectionId);
+      if (!connection || connection.userId !== user.claims.sub) {
+        await storage.updateErpTask(task.id, { 
+          status: 'failed', 
+          errorMessage: 'Connection not found' 
+        });
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Start task execution asynchronously
+      executeTaskAsync(task.id, connection, data.taskDescription);
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Get user's ERP tasks
+  app.get('/api/erp/tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const tasks = await storage.getErpTasks(user.claims.sub);
+      res.json(tasks);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Get specific ERP task
+  app.get('/api/erp/tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getErpTask(taskId);
+      
+      if (!task || task.userId !== user.claims.sub) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Async function to execute ERP tasks
+  async function executeTaskAsync(taskId: number, connection: any, taskDescription: string) {
+    try {
+      // Decrypt password
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+      
+      const connectionData = {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      };
+
+      // Generate RPA script using AI
+      const script = await erpAutomationService.generateRPAScript(taskDescription, connectionData);
+      
+      await storage.updateErpTask(taskId, { 
+        generatedScript: JSON.stringify(script),
+      });
+
+      // Execute the RPA script
+      const result = await erpAutomationService.executeRPAScript(script, connectionData);
+
+      // Update task with results
+      await storage.updateErpTask(taskId, {
+        status: result.success ? 'completed' : 'failed',
+        result: result.extractedData || {},
+        logs: result.logs.join('\n'),
+        screenshots: result.screenshots,
+        executionTime: result.executionTime,
+        errorMessage: result.errorMessage,
+      });
+
+      // Update connection last used time
+      await storage.updateErpConnection(connection.id, { lastUsed: new Date() });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      await storage.updateErpTask(taskId, {
+        status: 'failed',
+        errorMessage: `Task execution failed: ${errorMessage}`,
+      });
+    }
+  }
 
   const httpServer = createServer(app);
   return httpServer;
