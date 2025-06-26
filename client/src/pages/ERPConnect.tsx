@@ -63,7 +63,7 @@ export default function ERPConnect() {
   // Create connection mutation
   const createConnectionMutation = useMutation({
     mutationFn: (data: ERPConnectionForm) => 
-      apiRequest('/api/erp/connections', { method: 'POST', body: data }),
+      apiRequest('POST', '/api/erp/connections', data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
       setIsDialogOpen(false);
@@ -85,7 +85,7 @@ export default function ERPConnect() {
   // Update connection mutation
   const updateConnectionMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Partial<ERPConnectionForm> }) =>
-      apiRequest(`/api/erp/connections/${id}`, { method: 'PUT', body: data }),
+      apiRequest('PUT', `/api/erp/connections/${id}`, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
       setIsDialogOpen(false);
@@ -108,7 +108,7 @@ export default function ERPConnect() {
   // Delete connection mutation
   const deleteConnectionMutation = useMutation({
     mutationFn: (id: number) =>
-      apiRequest(`/api/erp/connections/${id}`, { method: 'DELETE' }),
+      apiRequest('DELETE', `/api/erp/connections/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
       toast({
