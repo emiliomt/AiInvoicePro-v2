@@ -84,12 +84,12 @@ export default function AIWorkflow() {
   });
 
   // Fetch ERP connections
-  const { data: connections = [] } = useQuery({
+  const { data: connections = [] } = useQuery<ERPConnection[]>({
     queryKey: ['/api/erp/connections'],
   });
 
   // Fetch ERP tasks
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+  const { data: tasks = [], isLoading: tasksLoading } = useQuery<ERPTask[]>({
     queryKey: ['/api/erp/tasks'],
     refetchInterval: 5000, // Refresh every 5 seconds to show real-time progress
   });
