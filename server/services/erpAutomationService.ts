@@ -65,8 +65,18 @@ class ERPAutomationService {
       Task: ${taskDescription}
       ERP System URL: ${connection.baseUrl}
 
+      IMPORTANT: This is a Spanish ERP system (SINCO). The login page uses Spanish labels:
+      - Username field: Look for "Usuario" label or input names like "usuario", "user", or similar
+      - Password field: Look for "Contraseña" label or input names like "password", "clave", "contrasena"
+      - Login button: Look for "Iniciar sesión" text or similar Spanish login terms
+      
+      Use multiple selector strategies for robustness:
+      - Try input[name*="user"], input[placeholder*="usuario"], input[id*="user"]
+      - Try input[type="password"], input[name*="pass"], input[name*="clave"]
+      - Try button containing "Iniciar", "Login", or input[type="submit"]
+
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
-      - Login process
+      - Login process (with Spanish interface)
       - Navigation to specific modules
       - Form filling
       - File uploads
@@ -80,25 +90,26 @@ class ERPAutomationService {
             "action": "navigate|click|type|wait|screenshot|extract",
             "selector": "CSS selector or XPath (when applicable)",
             "value": "text to type or data to extract (when applicable)",
-            "timeout": 5000,
+            "timeout": 15000,
             "description": "Human readable description of this step"
           }
         ],
         "metadata": {
           "taskDescription": "${taskDescription}",
-          "estimatedDuration": 30000,
+          "estimatedDuration": 45000,
           "complexity": "low|medium|high"
         }
       }
 
       Important guidelines:
       1. Always start with navigation to the base URL
-      2. Include login steps using the provided credentials
-      3. Add wait steps after clicks and navigation
-      4. Take screenshots at key points
-      5. Handle common errors and timeouts
+      2. Include login steps using the provided credentials with Spanish field detection
+      3. Add generous wait steps after clicks and navigation (minimum 3000ms)
+      4. Take screenshots at key points for debugging
+      5. Handle common errors and timeouts with retries
       6. Extract relevant data when needed
-      7. Use robust selectors (prefer data attributes, then IDs, then classes)
+      7. Use multiple selector strategies: try name attributes, then IDs, then classes, then text content
+      8. For Spanish systems, also try selectors with Spanish terms
     `;
 
     try {
@@ -200,17 +211,19 @@ class ERPAutomationService {
     screenshots: string[], 
     extractedData: any
   ): Promise<void> {
-    const timeout = step.timeout || 10000;
+    const timeout = step.timeout || 15000;
 
     switch (step.action) {
       case 'navigate':
         const url = step.value || connection.baseUrl;
-        await page.goto(url, { waitUntil: 'networkidle', timeout });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        // Wait for page to stabilize
+        await page.waitForTimeout(3000);
         break;
 
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
-        await page.waitForSelector(step.selector, { timeout });
+        await this.waitForSelectorWithFallback(page, step.selector, timeout);
         await page.click(step.selector);
         break;
 
@@ -225,7 +238,7 @@ class ERPAutomationService {
           valueToType = connection.password;
         }
 
-        await page.waitForSelector(step.selector, { timeout });
+        await this.waitForSelectorWithFallback(page, step.selector, timeout);
         await page.fill(step.selector, valueToType);
         break;
 
@@ -358,6 +371,64 @@ class ERPAutomationService {
         }
       };
     }
+  }
+
+  private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<void> {
+    // Try original selector first
+    try {
+      await page.waitForSelector(originalSelector, { timeout: timeout / 3 });
+      return;
+    } catch (error) {
+      console.warn(`Original selector failed: ${originalSelector}`);
+    }
+
+    // Generate fallback selectors for Spanish ERP systems
+    const fallbackSelectors: string[] = [];
+    
+    if (originalSelector.includes('username') || originalSelector.includes('user')) {
+      fallbackSelectors.push(
+        'input[name*="usuario"]',
+        'input[placeholder*="usuario"]',
+        'input[id*="usuario"]',
+        'input[name*="user"]',
+        'input[type="text"]',
+        'input[type="email"]'
+      );
+    }
+    
+    if (originalSelector.includes('password') || originalSelector.includes('pass')) {
+      fallbackSelectors.push(
+        'input[type="password"]',
+        'input[name*="clave"]',
+        'input[name*="contrasena"]',
+        'input[name*="password"]',
+        'input[placeholder*="contraseña"]'
+      );
+    }
+
+    if (originalSelector.includes('button') || originalSelector.includes('submit')) {
+      fallbackSelectors.push(
+        'button:has-text("Iniciar")',
+        'button:has-text("Login")',
+        'input[type="submit"]',
+        'button[type="submit"]',
+        'button'
+      );
+    }
+
+    // Try fallback selectors
+    for (const selector of fallbackSelectors) {
+      try {
+        await page.waitForSelector(selector, { timeout: timeout / 3 });
+        console.log(`Fallback selector worked: ${selector}`);
+        return;
+      } catch (error) {
+        console.warn(`Fallback selector failed: ${selector}`);
+      }
+    }
+
+    // If all selectors fail, throw the original error
+    throw new Error(`Could not find element with selector: ${originalSelector} or any fallbacks`);
   }
 }
 
