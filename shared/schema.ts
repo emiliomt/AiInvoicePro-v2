@@ -329,6 +329,47 @@ export const predictiveAlerts = pgTable("predictive_alerts", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// ERP task status enum
+export const erpTaskStatusEnum = pgEnum("erp_task_status", [
+  "pending",
+  "processing",
+  "completed",
+  "failed",
+  "cancelled"
+]);
+
+// ERP connections table
+export const erpConnections = pgTable("erp_connections", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  baseUrl: varchar("base_url", { length: 500 }).notNull(),
+  username: varchar("username", { length: 255 }).notNull(),
+  password: text("password").notNull(), // Encrypted
+  description: text("description"),
+  isActive: boolean("is_active").default(true),
+  lastUsed: timestamp("last_used"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// ERP tasks table
+export const erpTasks = pgTable("erp_tasks", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  connectionId: integer("connection_id").references(() => erpConnections.id).notNull(),
+  taskDescription: text("task_description").notNull(),
+  generatedScript: text("generated_script"),
+  status: erpTaskStatusEnum("status").default("pending"),
+  result: jsonb("result"),
+  logs: text("logs"),
+  screenshots: text("screenshots").array(),
+  executionTime: integer("execution_time"), // in milliseconds
+  errorMessage: text("error_message"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Feedback logs table for extraction error reporting
 export const feedbackLogs = pgTable("feedback_logs", {
   id: serial("id").primaryKey(),
@@ -467,6 +508,25 @@ export const predictiveAlertsRelations = relations(predictiveAlerts, ({ one }) =
   invoice: one(invoices, {
     fields: [predictiveAlerts.invoiceId],
     references: [invoices.id],
+  }),
+}));
+
+export const erpConnectionsRelations = relations(erpConnections, ({ one, many }) => ({
+  user: one(users, {
+    fields: [erpConnections.userId],
+    references: [users.id],
+  }),
+  tasks: many(erpTasks),
+}));
+
+export const erpTasksRelations = relations(erpTasks, ({ one }) => ({
+  user: one(users, {
+    fields: [erpTasks.userId],
+    references: [users.id],
+  }),
+  connection: one(erpConnections, {
+    fields: [erpTasks.connectionId],
+    references: [erpConnections.id],
   }),
 }));
 
@@ -645,216 +705,30 @@ export const insertApprovedInvoiceProjectSchema = createInsertSchema(approvedInv
   createdAt: true,
 });
 
-// RPA (Robotic Process Automation) Integration Schema
 
-// ERP System Types
-export const erpSystemEnum = pgEnum("erp_system_type", [
-  "sap",
-  "oracle",
-  "dynamics",
-  "quickbooks",
-  "netsuite",
-  "custom_api",
-  "sftp",
-  "database",
-  "sharepoint",
-  "other"
-]);
-
-// RPA Connection Status
-export const rpaStatusEnum = pgEnum("rpa_status", [
-  "active",
-  "inactive",
-  "error",
-  "testing",
-  "maintenance"
-]);
-
-// RPA Extraction Status
-export const extractionStatusEnum = pgEnum("extraction_status", [
-  "pending",
-  "running",
-  "completed",
-  "failed",
-  "retry",
-  "cancelled"
-]);
-
-// ERP Connections table - stores connection details for different ERP systems
-export const erpConnections = pgTable("erp_connections", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull(),
-  connectionName: varchar("connection_name").notNull(),
-  erpSystemType: erpSystemEnum("erp_system_type").notNull(),
-  connectionConfig: jsonb("connection_config").notNull(), // Contains credentials, endpoints, etc.
-  status: rpaStatusEnum("status").default("inactive"),
-  lastConnected: timestamp("last_connected"),
-  lastError: text("last_error"),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// RPA Extraction Jobs - tracks automated extraction jobs
-export const rpaExtractionJobs = pgTable("rpa_extraction_jobs", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull(),
-  erpConnectionId: integer("erp_connection_id").references(() => erpConnections.id).notNull(),
-  jobName: varchar("job_name").notNull(),
-  documentType: varchar("document_type").notNull(), // "invoice" or "purchase_order"
-  extractionCriteria: jsonb("extraction_criteria").notNull(), // Date ranges, filters, etc.
-  scheduleConfig: jsonb("schedule_config"), // Cron-like scheduling
-  status: extractionStatusEnum("status").default("pending"),
-  lastRunAt: timestamp("last_run_at"),
-  nextRunAt: timestamp("next_run_at"),
-  documentsExtracted: integer("documents_extracted").default(0),
-  errorCount: integer("error_count").default(0),
-  lastError: text("last_error"),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// RPA Job Executions - detailed logs of each job run
-export const rpaJobExecutions = pgTable("rpa_job_executions", {
-  id: serial("id").primaryKey(),
-  jobId: integer("job_id").references(() => rpaExtractionJobs.id).notNull(),
-  executionId: varchar("execution_id").notNull(), // Unique ID for this execution
-  status: extractionStatusEnum("status").notNull(),
-  startedAt: timestamp("started_at").defaultNow(),
-  completedAt: timestamp("completed_at"),
-  documentsFound: integer("documents_found").default(0),
-  documentsProcessed: integer("documents_processed").default(0),
-  documentsSkipped: integer("documents_skipped").default(0),
-  errorCount: integer("error_count").default(0),
-  executionLog: text("execution_log"),
-  errorDetails: jsonb("error_details"),
-  extractedDocuments: jsonb("extracted_documents"), // List of extracted document IDs
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-// RPA Document Queue - temporary storage for documents being processed
-export const rpaDocumentQueue = pgTable("rpa_document_queue", {
-  id: serial("id").primaryKey(),
-  jobExecutionId: integer("job_execution_id").references(() => rpaJobExecutions.id).notNull(),
-  documentType: varchar("document_type").notNull(),
-  sourceReference: varchar("source_reference").notNull(), // ERP document ID/reference
-  documentData: jsonb("document_data").notNull(), // Raw document data from ERP
-  processingStatus: varchar("processing_status").default("queued"), // queued, processing, completed, failed
-  invoiceId: integer("invoice_id").references(() => invoices.id), // Linked after processing
-  purchaseOrderId: integer("purchase_order_id").references(() => purchaseOrders.id), // Linked after processing
-  errorMessage: text("error_message"),
-  retryCount: integer("retry_count").default(0),
-  createdAt: timestamp("created_at").defaultNow(),
-  processedAt: timestamp("processed_at"),
-});
-
-// RPA Automation Rules - business rules for document processing
-export const rpaAutomationRules = pgTable("rpa_automation_rules", {
-  id: serial("id").primaryKey(),
-  userId: varchar("user_id").notNull(),
-  ruleName: varchar("rule_name").notNull(),
-  documentType: varchar("document_type").notNull(),
-  ruleConditions: jsonb("rule_conditions").notNull(), // Conditions to trigger the rule
-  ruleActions: jsonb("rule_actions").notNull(), // Actions to perform
-  priority: integer("priority").default(0),
-  isActive: boolean("is_active").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
-
-// RPA Relations
-export const erpConnectionsRelations = relations(erpConnections, ({ one, many }) => ({
-  user: one(users, {
-    fields: [erpConnections.userId],
-    references: [users.id],
-  }),
-  extractionJobs: many(rpaExtractionJobs),
-}));
-
-export const rpaExtractionJobsRelations = relations(rpaExtractionJobs, ({ one, many }) => ({
-  user: one(users, {
-    fields: [rpaExtractionJobs.userId],
-    references: [users.id],
-  }),
-  erpConnection: one(erpConnections, {
-    fields: [rpaExtractionJobs.erpConnectionId],
-    references: [erpConnections.id],
-  }),
-  executions: many(rpaJobExecutions),
-}));
-
-export const rpaJobExecutionsRelations = relations(rpaJobExecutions, ({ one, many }) => ({
-  job: one(rpaExtractionJobs, {
-    fields: [rpaJobExecutions.jobId],
-    references: [rpaExtractionJobs.id],
-  }),
-  queuedDocuments: many(rpaDocumentQueue),
-}));
-
-export const rpaDocumentQueueRelations = relations(rpaDocumentQueue, ({ one }) => ({
-  jobExecution: one(rpaJobExecutions, {
-    fields: [rpaDocumentQueue.jobExecutionId],
-    references: [rpaJobExecutions.id],
-  }),
-  invoice: one(invoices, {
-    fields: [rpaDocumentQueue.invoiceId],
-    references: [invoices.id],
-  }),
-  purchaseOrder: one(purchaseOrders, {
-    fields: [rpaDocumentQueue.purchaseOrderId],
-    references: [purchaseOrders.id],
-  }),
-}));
-
-export const rpaAutomationRulesRelations = relations(rpaAutomationRules, ({ one }) => ({
-  user: one(users, {
-    fields: [rpaAutomationRules.userId],
-    references: [users.id],
-  }),
-}));
-
-// RPA Types
+// ERP Automation Types
 export type InsertErpConnection = typeof erpConnections.$inferInsert;
 export type ErpConnection = typeof erpConnections.$inferSelect;
 
-export type InsertRpaExtractionJob = typeof rpaExtractionJobs.$inferInsert;
-export type RpaExtractionJob = typeof rpaExtractionJobs.$inferSelect;
+export type InsertErpTask = typeof erpTasks.$inferInsert;
+export type ErpTask = typeof erpTasks.$inferSelect;
 
-export type InsertRpaJobExecution = typeof rpaJobExecutions.$inferInsert;
-export type RpaJobExecution = typeof rpaJobExecutions.$inferSelect;
-
-export type InsertRpaDocumentQueue = typeof rpaDocumentQueue.$inferInsert;
-export type RpaDocumentQueue = typeof rpaDocumentQueue.$inferSelect;
-
-export type InsertRpaAutomationRule = typeof rpaAutomationRules.$inferInsert;
-export type RpaAutomationRule = typeof rpaAutomationRules.$inferSelect;
-
-// RPA Zod schemas
+// ERP Automation Zod schemas
 export const insertErpConnectionSchema = createInsertSchema(erpConnections).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  lastUsed: true,
 });
 
-export const insertRpaExtractionJobSchema = createInsertSchema(rpaExtractionJobs).omit({
+export const insertErpTaskSchema = createInsertSchema(erpTasks).omit({
   id: true,
   createdAt: true,
   updatedAt: true,
+  result: true,
+  logs: true,
+  screenshots: true,
+  executionTime: true,
+  errorMessage: true,
 });
 
-export const insertRpaJobExecutionSchema = createInsertSchema(rpaJobExecutions).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertRpaDocumentQueueSchema = createInsertSchema(rpaDocumentQueue).omit({
-  id: true,
-  createdAt: true,
-});
-
-export const insertRpaAutomationRuleSchema = createInsertSchema(rpaAutomationRules).omit({
-  id: true,
-  createdAt: true,
-  updatedAt: true,
-});
