@@ -963,10 +963,10 @@ export class DatabaseStorage implements IStorage {
         .from(purchaseOrders)
         .where(inArray(purchaseOrders.projectId, projectIds));
 
-      console.log(`Found ${associatedPOs.count} associated purchase orders`);
+      console.log("Found " + associatedPOs.count + " associated purchase orders");
 
       if (associatedPOs.count > 0) {
-        throw new Error(`Cannot delete projects because ${associatedPOs.count} project(s) have associated purchase orders. Please remove or reassign the purchase orders first.`);
+        throw new Error("Cannot delete projects because " + associatedPOs.count + " project(s) have associated purchase orders. Please remove or reassign the purchase orders first.");
       }
 
       // Check if any projects have associated invoice matches through purchase orders
@@ -976,10 +976,10 @@ export class DatabaseStorage implements IStorage {
         .innerJoin(purchaseOrders, eq(invoicePoMatches.poId, purchaseOrders.id))
         .where(inArray(purchaseOrders.projectId, projectIds));
 
-      console.log(`Found ${associatedInvoiceMatches.length > 0 ? associatedInvoiceMatches[0].count : 0} associated invoice matches`);
+      console.log("Found " + (associatedInvoiceMatches.length > 0 ? associatedInvoiceMatches[0].count : 0) + " associated invoice matches");
 
       if (associatedInvoiceMatches.length > 0 && associatedInvoiceMatches[0].count > 0) {
-        throw new Error(`Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.`);
+        throw new Error("Cannot delete projects because some have associated invoice-PO matches. Please resolve these matches first.");
       }
 
       // Execute the delete operation
@@ -989,10 +989,10 @@ export class DatabaseStorage implements IStorage {
 
       // Verify deletion worked
       const [remainingCount] = await db.select({ count: count() }).from(projects);
-      console.log(`Projects remaining after delete: ${remainingCount.count}`);
+      console.log("Projects remaining after delete: " + remainingCount.count);
 
       if (remainingCount.count > 0) {
-        throw new Error(`Delete operation failed. ${remainingCount.count} projects still remain.`);
+        throw new Error("Delete operation failed. " + remainingCount.count + " projects still remain.");
       }
 
       console.log("All projects deleted successfully");
@@ -1039,7 +1039,7 @@ export class DatabaseStorage implements IStorage {
       .where(eq(invoicePoMatches.poId, id));
 
     if (associatedMatches.count > 0) {
-      throw new Error(`Cannot delete purchase order because it has ${associatedMatches.count} associated invoice match(es). Please resolve these matches first.`);
+      throw new Error("Cannot delete purchase order because it has " + associatedMatches.count + " associated invoice match(es). Please resolve these matches first.");
     }
 
     await db.delete(purchaseOrders).where(eq(purchaseOrders.id, id));
