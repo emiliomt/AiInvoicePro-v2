@@ -506,10 +506,139 @@ function ERPConnectionForm({ onSuccess }: { onSuccess: () => void }) {
         </Select>
       </div>
 
+      <div>
+        <Label htmlFor="authType">Authentication Type</Label>
+        <Select
+          value={formData.authType}
+          onValueChange={(value) => setFormData(prev => ({ ...prev, authType: value }))}
+        >
+          <SelectTrigger>
+            <SelectValue placeholder="Select authentication type" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="basic">Basic Authentication</SelectItem>
+            <SelectItem value="api_key">API Key</SelectItem>
+            <SelectItem value="oauth2">OAuth 2.0</SelectItem>
+            <SelectItem value="saml">SAML</SelectItem>
+            <SelectItem value="sso">Single Sign-On (SSO)</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+
+      {formData.authType === 'sso' && (
+        <div className="space-y-4 p-4 border rounded-lg bg-blue-50 dark:bg-blue-950">
+          <div className="flex items-center gap-2">
+            <Server className="h-4 w-4 text-blue-600" />
+            <Label className="text-blue-800 dark:text-blue-200 font-medium">SSO Configuration</Label>
+          </div>
+          <div>
+            <Label htmlFor="ssoUrl">SSO Login URL</Label>
+            <Input
+              id="ssoUrl"
+              value={formData.ssoUrl}
+              onChange={(e) => setFormData(prev => ({ ...prev, ssoUrl: e.target.value }))}
+              placeholder="https://your-erp.com/oauth/authorize"
+              required={formData.authType === 'sso'}
+            />
+          </div>
+          <div className="text-sm text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900 p-3 rounded">
+            <p className="font-medium mb-1">SSO Authentication Flow:</p>
+            <p>After creating this connection, you'll be redirected to your ERP system's login page to complete the authentication process.</p>
+          </div>
+        </div>
+      )}
+
+      {formData.authType === 'oauth2' && (
+        <div className="space-y-4 p-4 border rounded-lg">
+          <Label className="font-medium">OAuth 2.0 Configuration</Label>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="clientId">Client ID</Label>
+              <Input
+                id="clientId"
+                value={formData.oauthConfig.clientId || ''}
+                onChange={(e) => setFormData(prev => ({ 
+                  ...prev, 
+                  oauthConfig: { ...prev.oauthConfig, clientId: e.target.value }
+                }))}
+                placeholder="your-client-id"
+                required={formData.authType === 'oauth2'}
+              />
+            </div>
+            <div>
+              <Label htmlFor="clientSecret">Client Secret</Label>
+              <Input
+                id="clientSecret"
+                type="password"
+                value={formData.oauthConfig.clientSecret || ''}
+                onChange={(e) => setFormData(prev => ({ 
+                  ...prev, 
+                  oauthConfig: { ...prev.oauthConfig, clientSecret: e.target.value }
+                }))}
+                placeholder="your-client-secret"
+                required={formData.authType === 'oauth2'}
+              />
+            </div>
+          </div>
+          <div>
+            <Label htmlFor="authUrl">Authorization URL</Label>
+            <Input
+              id="authUrl"
+              value={formData.oauthConfig.authUrl || ''}
+              onChange={(e) => setFormData(prev => ({ 
+                ...prev, 
+                oauthConfig: { ...prev.oauthConfig, authUrl: e.target.value }
+              }))}
+              placeholder="https://your-erp.com/oauth/authorize"
+              required={formData.authType === 'oauth2'}
+            />
+          </div>
+          <div>
+            <Label htmlFor="tokenUrl">Token URL</Label>
+            <Input
+              id="tokenUrl"
+              value={formData.oauthConfig.tokenUrl || ''}
+              onChange={(e) => setFormData(prev => ({ 
+                ...prev, 
+                oauthConfig: { ...prev.oauthConfig, tokenUrl: e.target.value }
+              }))}
+              placeholder="https://your-erp.com/oauth/token"
+              required={formData.authType === 'oauth2'}
+            />
+          </div>
+          <div>
+            <Label htmlFor="scope">Scope</Label>
+            <Input
+              id="scope"
+              value={formData.oauthConfig.scope || ''}
+              onChange={(e) => setFormData(prev => ({ 
+                ...prev, 
+                oauthConfig: { ...prev.oauthConfig, scope: e.target.value }
+              }))}
+              placeholder="read write"
+            />
+          </div>
+        </div>
+      )}
+
       <div className="pt-4 flex justify-end space-x-2">
         <Button type="button" variant="outline" onClick={onSuccess}>
           Cancel
         </Button>
+        {formData.authType === 'sso' && (
+          <Button 
+            type="button" 
+            variant="outline"
+            onClick={() => {
+              if (formData.ssoUrl) {
+                window.open(formData.ssoUrl, '_blank', 'width=600,height=700');
+              }
+            }}
+            disabled={!formData.ssoUrl}
+          >
+            Test SSO Login
+          </Button>
+        )}
         <Button type="submit" disabled={createConnectionMutation.isPending}>
           Create Connection
         </Button>

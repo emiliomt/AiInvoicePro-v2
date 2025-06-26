@@ -1824,13 +1824,17 @@ export class DatabaseStorage implements IStorage {
       .orderBy(desc(erpConnections.createdAt));
   }
 
-  async getErpConnectionById(id: number): Promise<ErpConnection | null> {
+  async getErpConnection(id: number): Promise<ErpConnection | null> {
     const [connection] = await db
       .select()
       .from(erpConnections)
       .where(eq(erpConnections.id, id))
       .limit(1);
     return connection || null;
+  }
+
+  async getErpConnectionById(id: number): Promise<ErpConnection | null> {
+    return this.getErpConnection(id);
   }
 
   async updateErpConnection(id: number, updates: Partial<ErpConnection>): Promise<ErpConnection> {
@@ -2008,6 +2012,88 @@ export class DatabaseStorage implements IStorage {
       totalDocumentsProcessed,
       lastExecution
     };
+  }
+
+  // SSO Authentication Methods
+  
+  async updateErpConnectionTokens(connectionId: number, tokens: {
+    accessToken: string;
+    refreshToken?: string | null;
+    tokenExpiresAt?: Date | null;
+  }): Promise<void> {
+    await db
+      .update(erpConnections)
+      .set({
+        accessToken: tokens.accessToken,
+        refreshToken: tokens.refreshToken,
+        tokenExpiresAt: tokens.tokenExpiresAt,
+        updatedAt: new Date()
+      })
+      .where(eq(erpConnections.id, connectionId));
+  }
+
+  async updateErpConnectionStatus(connectionId: number, status: string, error?: string | null): Promise<void> {
+    await db
+      .update(erpConnections)
+      .set({
+        status: status as any,
+        lastError: error,
+        lastConnected: status === 'active' ? new Date() : undefined,
+        updatedAt: new Date()
+      })
+      .where(eq(erpConnections.id, connectionId));
+  }
+
+  async storeOAuthState(state: string, connectionId: number, expiration: Date): Promise<void> {
+    // Store OAuth state temporarily - using settings table for simplicity
+    await db
+      .insert(settings)
+      .values({
+        key: `oauth_state_${state}`,
+        value: JSON.stringify({ connectionId, expiration: expiration.toISOString() }),
+        userId: 'system'
+      })
+      .onConflictDoUpdate({
+        target: [settings.key, settings.userId],
+        set: {
+          value: JSON.stringify({ connectionId, expiration: expiration.toISOString() }),
+          updatedAt: new Date()
+        }
+      });
+  }
+
+  async validateOAuthState(state: string): Promise<number | null> {
+    const [setting] = await db
+      .select()
+      .from(settings)
+      .where(eq(settings.key, `oauth_state_${state}`))
+      .limit(1);
+
+    if (!setting) {
+      return null;
+    }
+
+    try {
+      const data = JSON.parse(setting.value);
+      const expiration = new Date(data.expiration);
+      
+      if (new Date() > expiration) {
+        // Clean up expired state
+        await db
+          .delete(settings)
+          .where(eq(settings.key, `oauth_state_${state}`));
+        return null;
+      }
+
+      // Clean up used state
+      await db
+        .delete(settings)
+        .where(eq(settings.key, `oauth_state_${state}`));
+
+      return data.connectionId;
+    } catch (error) {
+      return null;
+    }
   }
 }
 

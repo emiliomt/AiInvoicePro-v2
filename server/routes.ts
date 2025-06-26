@@ -2702,6 +2702,105 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // OAuth2/SSO Authentication Routes
+  app.post("/api/rpa/connections/:id/oauth/authorize", isAuthenticated, async (req: any, res) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const connection = await storage.getErpConnection(connectionId);
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({ message: "Connection not found" });
+      }
+
+      if (connection.authType !== 'oauth2' && connection.authType !== 'sso') {
+        return res.status(400).json({ message: "Connection does not support OAuth2/SSO authentication" });
+      }
+
+      const { ssoService } = await import('./services/ssoService');
+      const authUrl = await ssoService.initializeOAuth(connectionId, connection.oauthConfig as any);
+      
+      res.json({ authUrl });
+    } catch (error) {
+      console.error("OAuth authorization error:", error);
+      res.status(500).json({ message: "Failed to initialize OAuth flow" });
+    }
+  });
+
+  app.get("/api/rpa/oauth/callback", async (req, res) => {
+    try {
+      const { code, state, error } = req.query;
+
+      if (error) {
+        return res.status(400).send(`OAuth error: ${error}`);
+      }
+
+      if (!code || !state) {
+        return res.status(400).send("Missing authorization code or state");
+      }
+
+      const { ssoService } = await import('./services/ssoService');
+      const result = await ssoService.handleOAuthCallback(code as string, state as string);
+
+      if (result.success) {
+        res.send(`
+          <html>
+            <head><title>Authentication Success</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h2 style="color: green;">✓ Authentication Successful</h2>
+              <p>Your ERP connection has been authenticated successfully.</p>
+              <p>You can close this window and return to the application.</p>
+              <script>
+                setTimeout(() => {
+                  window.close();
+                }, 3000);
+              </script>
+            </body>
+          </html>
+        `);
+      } else {
+        res.status(400).send(`
+          <html>
+            <head><title>Authentication Failed</title></head>
+            <body style="font-family: Arial, sans-serif; text-align: center; padding: 50px;">
+              <h2 style="color: red;">✗ Authentication Failed</h2>
+              <p>${result.error || 'Unknown error occurred'}</p>
+              <p>Please try again or contact support.</p>
+              <script>
+                setTimeout(() => {
+                  window.close();
+                }, 5000);
+              </script>
+            </body>
+          </html>
+        `);
+      }
+    } catch (error) {
+      console.error("OAuth callback error:", error);
+      res.status(500).send("Internal server error during OAuth callback");
+    }
+  });
+
+  app.post("/api/rpa/connections/:id/test-sso", isAuthenticated, async (req: any, res) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+      const userId = req.user.claims.sub;
+      
+      const connection = await storage.getErpConnection(connectionId);
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({ message: "Connection not found" });
+      }
+
+      const { ssoService } = await import('./services/ssoService');
+      const result = await ssoService.testSSOConnection(connectionId);
+      
+      res.json(result);
+    } catch (error) {
+      console.error("SSO test error:", error);
+      res.status(500).json({ message: "Failed to test SSO connection" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
