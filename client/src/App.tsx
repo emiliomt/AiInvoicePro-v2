@@ -25,6 +25,7 @@ import Settings from "./pages/Settings";
 import ERPConnect from "./pages/ERPConnect";
 import AIWorkflow from "./pages/AIWorkflow";
 import React from "react";
+import Header from "@/components/Header";
 
 const Profile = () => (
   <div>
@@ -78,7 +79,10 @@ function Router() {
           <Route path="/profile" component={Profile} />
           <Route path="/settings" component={Settings} />
           <Route path="/ai-learning" component={AILearningDashboard} />
-          <Route path="/erp-connect" component={ERPConnect} />
+          <Route path="/erp-connect">
+            <Header />
+            <ERPConnect />
+          </Route>
           <Route path="/ai-workflow" component={AIWorkflow} />
         </>
       )}
