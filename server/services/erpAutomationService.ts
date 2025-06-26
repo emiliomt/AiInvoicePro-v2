@@ -288,6 +288,26 @@ class ERPAutomationService {
         if (!step.selector) throw new Error('Selector required for extract action');
 
         try {
+          // For table extractions, wait longer and add debugging
+          if (step.selector.includes('table') || step.selector.includes('tr') || step.selector.includes('td')) {
+            // Wait for tables to fully load
+            await page.waitForTimeout(5000);
+            
+            // Debug: Check if any tables exist
+            const tableCount = await page.locator('table').count();
+            console.log(`Found ${tableCount} tables on page`);
+            
+            if (tableCount > 0) {
+              // Debug: Get table content
+              const tableContent = await page.locator('table').first().textContent();
+              console.log(`First table content preview: ${tableContent?.substring(0, 200)}...`);
+            }
+            
+            // Check for data grids or other table-like structures
+            const gridCount = await page.locator('.grid, .datagrid, .datatable, [role="table"]').count();
+            console.log(`Found ${gridCount} grid/datatable elements`);
+          }
+          
           const extractSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
           const element = await page.locator(extractSelector);
           const text = await element.textContent();
@@ -295,10 +315,22 @@ class ERPAutomationService {
           // Store extracted data with step description as key
           const dataKey = step.description.toLowerCase().replace(/\s+/g, '_');
           extractedData[dataKey] = text?.trim();
+          
+          console.log(`Successfully extracted data for ${dataKey}: ${text?.trim()?.substring(0, 100)}...`);
         } catch (extractError) {
-          // Non-critical error - continue execution
+          // Enhanced error logging for extract failures
           const errorMessage = extractError instanceof Error ? extractError.message : 'Unknown error';
           console.warn(`Extract failed for ${step.selector}: ${errorMessage}`);
+          
+          // Try to provide more context about what's available on the page
+          try {
+            const pageTitle = await page.title();
+            const visibleText = await page.locator('body').textContent();
+            console.log(`Page title: ${pageTitle}`);
+            console.log(`Page contains text: ${visibleText?.substring(0, 300)}...`);
+          } catch (debugError) {
+            console.warn('Could not get page debug info');
+          }
         }
         break;
 
@@ -505,6 +537,93 @@ class ERPAutomationService {
         // Look for first clickable element in sidebar/nav
         'aside *:visible:first',
         'nav *:visible:first'
+      );
+    }
+
+    // Handle table selectors
+    if (originalSelector.includes('table') || originalSelector.includes('tr') || originalSelector.includes('td')) {
+      fallbackSelectors.push(
+        // Basic table selectors
+        'table:visible',
+        'table',
+        '.table:visible',
+        '.table',
+        '[role="table"]:visible',
+        '[role="table"]',
+        // Table rows
+        'table tr:visible',
+        'table tr',
+        '.table tr:visible',
+        '.table tr',
+        'tbody tr:visible',
+        'tbody tr',
+        // Table cells
+        'table td:visible',
+        'table td',
+        'table th:visible',
+        'table th',
+        '.table td:visible',
+        '.table td',
+        // Data tables (common in ERP systems)
+        '.datatable:visible',
+        '.data-table:visible',
+        '.grid:visible',
+        '.datagrid:visible',
+        // Dynamic tables
+        '[class*="table"]:visible',
+        '[class*="grid"]:visible',
+        '[id*="table"]:visible',
+        '[id*="grid"]:visible'
+      );
+    }
+
+    // Handle Spanish document column headers and links
+    if (originalSelector.includes('N° Documento') || originalSelector.includes('Documento')) {
+      fallbackSelectors.push(
+        // Spanish document number variations
+        'td:has-text("N° Documento") a',
+        'td:has-text("N° Doc") a',
+        'td:has-text("Nº Documento") a',
+        'td:has-text("Nº Doc") a',
+        'td:has-text("No. Documento") a',
+        'td:has-text("No Documento") a',
+        'td:has-text("Num Documento") a',
+        'td:has-text("DOCUMENTO") a',
+        'td:has-text("documento") a',
+        'td:has-text("DOC") a',
+        'td:has-text("doc") a',
+        // Look for any links in table cells that might be documents
+        'table td a:visible',
+        'table td a',
+        'tbody td a:visible',
+        'tbody td a',
+        'tr td a:visible',
+        'tr td a',
+        // Look for clickable document numbers/IDs
+        'td a[href*="doc" i]:visible',
+        'td a[href*="documento" i]:visible',
+        'td a[onclick*="doc" i]:visible',
+        'td a[onclick*="documento" i]:visible',
+        // Look for any numeric links in tables (likely document IDs)
+        'table a:visible',
+        'table a',
+        '.table a:visible',
+        '.table a',
+        // Broader search for any table content with links
+        'table [role="link"]:visible',
+        'table [role="button"]:visible',
+        'table button:visible',
+        'table span[onclick]:visible',
+        'table div[onclick]:visible',
+        // Column header search - find any table header then look for links in that column
+        'th:has-text("Documento") ~ td a',
+        'th:has-text("DOC") ~ td a',
+        'th:has-text("N°") ~ td a',
+        // Generic table cell with any clickable content
+        'td:first-child a:visible',
+        'td:nth-child(1) a:visible',
+        'td:nth-child(2) a:visible',
+        'td:nth-child(3) a:visible'
       );
     }
 
