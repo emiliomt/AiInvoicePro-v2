@@ -440,7 +440,10 @@ function ERPConnectionForm({ onSuccess }: { onSuccess: () => void }) {
   const [formData, setFormData] = useState({
     connectionName: '',
     erpSystemType: '',
-    connectionConfig: {}
+    authType: 'basic',
+    ssoUrl: '',
+    connectionConfig: {},
+    oauthConfig: {}
   });
 
   const createConnectionMutation = useMutation({
