@@ -2573,8 +2573,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         generatedScript: JSON.stringify(script),
       });
 
-      // Execute the RPA script
-      const result = await erpAutomationService.executeRPAScript(script, connectionData);
+      // Execute the RPA script with progress tracking
+      const result = await erpAutomationService.executeRPAScript(script, connectionData, connection.userId, taskId);
 
       // Clear the timeout since task completed
       clearTimeout(taskTimeout);

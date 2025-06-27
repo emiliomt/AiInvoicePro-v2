@@ -155,7 +155,9 @@ class ERPAutomationService {
 
   async executeRPAScript(
     script: RPAScript, 
-    connection: ERPConnection
+    connection: ERPConnection,
+    userId?: string,
+    taskId?: number
   ): Promise<TaskResult> {
     const startTime = Date.now();
     const screenshots: string[] = [];
@@ -233,7 +235,7 @@ class ERPAutomationService {
         }, 5 * 60 * 1000);
 
         try {
-          await this.executeStep(page, step, connection, screenshots, extractedData);
+          await this.executeStep(page, step, connection, screenshots, extractedData, logs);
           logs.push(`Step ${i + 1} completed successfully`);
           clearTimeout(stepTimeout);
 
@@ -326,7 +328,8 @@ class ERPAutomationService {
     step: RPAStep, 
     connection: ERPConnection, 
     screenshots: string[], 
-    extractedData: any
+    extractedData: any,
+    logs: string[]
   ): Promise<void> {
     const timeout = step.timeout || 15000;
 
