@@ -95,6 +95,13 @@ class ERPAutomationService {
       - File uploads
       - Data extraction
       - Report generation
+      
+      IMPORTANT: Include screenshot steps at key points for debugging:
+      - After successful login
+      - After navigating to each module
+      - Before and after clicking important elements
+      - After completing data extraction
+      - When errors occur
 
       Respond in JSON format with this structure:
       {
@@ -169,6 +176,18 @@ class ERPAutomationService {
 
       const page = await context.newPage();
       logs.push('Browser launched successfully');
+      
+      // Take initial screenshot
+      try {
+        const initialScreenshot = await page.screenshot({ 
+          fullPage: true,
+          type: 'png'
+        });
+        screenshots.push(initialScreenshot.toString('base64'));
+        logs.push('Initial screenshot captured');
+      } catch (screenshotError) {
+        console.warn('Initial screenshot failed:', screenshotError);
+      }
 
       // Execute each step
       for (let i = 0; i < script.steps.length; i++) {
@@ -178,7 +197,36 @@ class ERPAutomationService {
         try {
           await this.executeStep(page, step, connection, screenshots, extractedData);
           logs.push(`Step ${i + 1} completed successfully`);
+          
+          // Take automatic screenshot after important steps
+          if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
+            try {
+              await page.waitForTimeout(2000); // Wait for UI to stabilize
+              const screenshot = await page.screenshot({ 
+                fullPage: true,
+                type: 'png'
+              });
+              const base64Screenshot = screenshot.toString('base64');
+              screenshots.push(base64Screenshot);
+              logs.push(`Auto-screenshot captured after step ${i + 1}`);
+            } catch (screenshotError) {
+              console.warn('Auto-screenshot failed:', screenshotError);
+            }
+          }
         } catch (stepError) {
+          // Take screenshot on error for debugging
+          try {
+            const errorScreenshot = await page.screenshot({ 
+              fullPage: true,
+              type: 'png'
+            });
+            const base64Screenshot = errorScreenshot.toString('base64');
+            screenshots.push(base64Screenshot);
+            logs.push(`Error screenshot captured for step ${i + 1}`);
+          } catch (screenshotError) {
+            console.warn('Error screenshot failed:', screenshotError);
+          }
+          
           const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown error';
           logs.push(`Step ${i + 1} failed: ${errorMessage}`);
           throw stepError;
@@ -277,11 +325,19 @@ class ERPAutomationService {
         break;
 
       case 'screenshot':
-        const screenshot = await page.screenshot({ 
-          fullPage: true,
-          type: 'png'
-        });
-        screenshots.push(screenshot.toString('base64'));
+        try {
+          console.log('Taking screenshot...');
+          const screenshot = await page.screenshot({ 
+            fullPage: true,
+            type: 'png'
+          });
+          const base64Screenshot = screenshot.toString('base64');
+          screenshots.push(base64Screenshot);
+          console.log(`Screenshot captured (${base64Screenshot.length} bytes)`);
+        } catch (screenshotError) {
+          console.error('Screenshot failed:', screenshotError);
+          logs.push(`Screenshot failed: ${screenshotError instanceof Error ? screenshotError.message : 'Unknown error'}`);
+        }
         break;
 
       case 'extract':
