@@ -1,6 +1,7 @@
 import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
 import { execSync } from 'child_process';
+import { progressTracker } from './progressTracker';
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
@@ -210,10 +211,21 @@ class ERPAutomationService {
         console.warn('Initial screenshot failed:', screenshotError);
       }
 
+      // Send task start notification
+      if (userId && taskId) {
+        progressTracker.sendTaskStart(userId, taskId, script.steps.length, `Starting ERP automation: ${script.metadata.taskDescription}`);
+      }
+
       // Execute each step with timeout protection
       for (let i = 0; i < script.steps.length; i++) {
         const step = script.steps[i];
-        logs.push(`Executing step ${i + 1}: ${step.description}`);
+        const stepMessage = `Step ${i + 1}/${script.steps.length}: ${step.description}`;
+        logs.push(`Executing ${stepMessage}`);
+        
+        // Send progress update for each step
+        if (userId && taskId) {
+          progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
+        }
 
         // Step-level timeout (5 minutes per step maximum)
         const stepTimeout = setTimeout(() => {
