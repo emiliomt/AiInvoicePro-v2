@@ -826,8 +826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const setting = await storage.getSetting('user_preferences');
       if (!setting) {
-        // Return default settings
-        const defaultSettings = {
+        // Return default settings        const defaultSettings = {
           key: 'user_preferences',
           value: JSON.stringify({
             fullName: '',
@@ -2542,9 +2541,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Async function to execute ERP tasks
+  // Async function to execute ERP tasks with timeout protection
   async function executeTaskAsync(taskId: number, connection: any, taskDescription: string) {
-        try {
+    // Set a maximum execution time of 20 minutes for the entire task
+    const taskTimeout = setTimeout(async () => {
+      console.log(`Task ${taskId} timed out after 20 minutes, marking as failed`);
+      await storage.updateErpTask(taskId, {
+        status: 'failed',
+        errorMessage: 'Task timed out after 20 minutes. Please try a simpler task or check the ERP system accessibility.',
+      });
+    }, 20 * 60 * 1000);
+
+    try {
       // Decrypt password
       const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
 
@@ -2566,6 +2574,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Execute the RPA script
       const result = await erpAutomationService.executeRPAScript(script, connectionData);
 
+      // Clear the timeout since task completed
+      clearTimeout(taskTimeout);
+
       // Update task with results
       await storage.updateErpTask(taskId, {
         status: result.success ? 'completed' : 'failed',
@@ -2580,7 +2591,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await storage.updateErpConnection(connection.id, { lastUsed: new Date() });
 
     } catch (error) {
+      clearTimeout(taskTimeout);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Task ${taskId} failed:`, errorMessage);
+
       await storage.updateErpTask(taskId, {
         status: 'failed',
         errorMessage: `Task execution failed: ${errorMessage}`,

@@ -69,13 +69,13 @@ class ERPAutomationService {
       - Username field: Look for "Usuario" label or the first visible text input field
       - Password field: Look for "Contraseña" label or input[type="password"]
       - Login button: Look for "Iniciar sesión" button or form submit button
-      
+
       Use these robust selector strategies (the system will automatically try fallbacks):
       - For username: Use 'input[name*="user"]' (fallbacks will handle Spanish variants)
       - For password: Use 'input[type="password"]' 
       - For login button: Use 'button[type="submit"]' or 'input[type="submit"]'
       - For navigation/modules: Use text-based selectors like '*:has-text("FE")' instead of href selectors
-      
+
       CRITICAL NAVIGATION NOTES:
       - SINCO uses JavaScript-rendered sidebar navigation (NOT standard <a> tags)
       - Module links are typically span, div, or button elements with text content
@@ -84,7 +84,7 @@ class ERPAutomationService {
       - After clicking FE module, wait for page to fully load before looking for sub-menu items
       - Sub-menu items like "Documentos recibidos" may appear in main content area, not sidebar
       - Use longer waits (10-15 seconds) after module navigation clicks
-      
+
       CRITICAL: Add wait steps after each action (minimum 5000ms) as SINCO pages load slowly.
       EXTRA CRITICAL: After clicking any module (like FE), add 10+ second wait before next action.
 
@@ -95,7 +95,7 @@ class ERPAutomationService {
       - File uploads
       - Data extraction
       - Report generation
-      
+
       IMPORTANT: Include screenshot steps at key points for debugging:
       - After successful login
       - After navigating to each module
@@ -161,6 +161,27 @@ class ERPAutomationService {
     const logs: string[] = [];
     let extractedData: any = {};
 
+    // Global timeout (1 hour)
+    const globalTimeout = setTimeout(() => {
+      const timeoutMessage = 'RPA script execution timed out after 1 hour';
+      logs.push(timeoutMessage);
+
+      if (this.browser) {
+        this.browser.close().catch(closeError => {
+          console.warn('Failed to close browser after timeout:', closeError);
+        });
+        this.browser = null;
+      }
+
+      return {
+        success: false,
+        screenshots,
+        logs,
+        errorMessage: timeoutMessage,
+        executionTime: Date.now() - startTime
+      };
+    }, 60 * 60 * 1000);
+
     try {
       // Launch browser
       this.browser = await chromium.launch({ 
@@ -176,7 +197,7 @@ class ERPAutomationService {
 
       const page = await context.newPage();
       logs.push('Browser launched successfully');
-      
+
       // Take initial screenshot
       try {
         const initialScreenshot = await page.screenshot({ 
@@ -189,15 +210,21 @@ class ERPAutomationService {
         console.warn('Initial screenshot failed:', screenshotError);
       }
 
-      // Execute each step
+      // Execute each step with timeout protection
       for (let i = 0; i < script.steps.length; i++) {
         const step = script.steps[i];
         logs.push(`Executing step ${i + 1}: ${step.description}`);
 
+        // Step-level timeout (5 minutes per step maximum)
+        const stepTimeout = setTimeout(() => {
+          throw new Error(`Step ${i + 1} timed out after 5 minutes`);
+        }, 5 * 60 * 1000);
+
         try {
           await this.executeStep(page, step, connection, screenshots, extractedData);
           logs.push(`Step ${i + 1} completed successfully`);
-          
+          clearTimeout(stepTimeout);
+
           // Take automatic screenshot after important steps
           if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
             try {
@@ -214,6 +241,8 @@ class ERPAutomationService {
             }
           }
         } catch (stepError) {
+          clearTimeout(stepTimeout);
+
           // Take screenshot on error for debugging
           try {
             const errorScreenshot = await page.screenshot({ 
@@ -226,9 +255,16 @@ class ERPAutomationService {
           } catch (screenshotError) {
             console.warn('Error screenshot failed:', screenshotError);
           }
-          
+
           const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown error';
           logs.push(`Step ${i + 1} failed: ${errorMessage}`);
+
+          // For extraction failures, continue with other steps instead of failing completely
+          if (step.action === 'extract') {
+            logs.push(`Continuing with remaining steps despite extraction failure`);
+            continue;
+          }
+
           throw stepError;
         }
 
@@ -238,6 +274,7 @@ class ERPAutomationService {
 
       await this.browser.close();
       this.browser = null;
+      clearTimeout(globalTimeout);
 
       return {
         success: true,
@@ -252,9 +289,15 @@ class ERPAutomationService {
       logs.push(`Execution failed: ${errorMessage}`);
 
       if (this.browser) {
-        await this.browser.close();
+        try {
+          await this.browser.close();
+        } catch (closeError) {
+          console.warn('Failed to close browser:', closeError);
+        }
         this.browser = null;
       }
+
+      clearTimeout(globalTimeout);
 
       return {
         success: false,
@@ -286,7 +329,7 @@ class ERPAutomationService {
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
         const clickSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
-        
+
         // For SINCO navigation clicks, add extra wait and handling
         if (step.description.toLowerCase().includes('module') || step.description.toLowerCase().includes('fe')) {
           // Click and wait for navigation to complete
@@ -348,22 +391,22 @@ class ERPAutomationService {
           if (step.selector.includes('table') || step.selector.includes('tr') || step.selector.includes('td')) {
             // Wait for tables to fully load
             await page.waitForTimeout(5000);
-            
+
             // Debug: Check if any tables exist
             const tableCount = await page.locator('table').count();
             console.log(`Found ${tableCount} tables on page`);
-            
+
             if (tableCount > 0) {
               // Debug: Get table content
               const tableContent = await page.locator('table').first().textContent();
               console.log(`First table content preview: ${tableContent?.substring(0, 200)}...`);
             }
-            
+
             // Check for data grids or other table-like structures
             const gridCount = await page.locator('.grid, .datagrid, .datatable, [role="table"]').count();
             console.log(`Found ${gridCount} grid/datatable elements`);
           }
-          
+
           const extractSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
           const element = await page.locator(extractSelector);
           const text = await element.textContent();
@@ -371,13 +414,13 @@ class ERPAutomationService {
           // Store extracted data with step description as key
           const dataKey = step.description.toLowerCase().replace(/\s+/g, '_');
           extractedData[dataKey] = text?.trim();
-          
+
           console.log(`Successfully extracted data for ${dataKey}: ${text?.trim()?.substring(0, 100)}...`);
         } catch (extractError) {
           // Enhanced error logging for extract failures
           const errorMessage = extractError instanceof Error ? extractError.message : 'Unknown error';
           console.warn(`Extract failed for ${step.selector}: ${errorMessage}`);
-          
+
           // Try to provide more context about what's available on the page
           try {
             const pageTitle = await page.title();
@@ -387,6 +430,9 @@ class ERPAutomationService {
           } catch (debugError) {
             console.warn('Could not get page debug info');
           }
+
+          // Re-throw the error so it can be handled at the step level
+          throw extractError;
         }
         break;
 
@@ -501,7 +547,7 @@ class ERPAutomationService {
 
     // Generate comprehensive fallback selectors for Spanish ERP systems
     const fallbackSelectors: string[] = [];
-    
+
     if (originalSelector.includes('username') || originalSelector.includes('user')) {
       fallbackSelectors.push(
         // Spanish specific selectors
@@ -523,7 +569,7 @@ class ERPAutomationService {
         'form input[type="text"]:first-of-type'
       );
     }
-    
+
     if (originalSelector.includes('password') || originalSelector.includes('pass')) {
       fallbackSelectors.push(
         'input[type="password"]',
