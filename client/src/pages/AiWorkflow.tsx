@@ -62,10 +62,13 @@ export default function AiWorkflow() {
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: { connectionId: number; taskDescription: string }) => {
-      return await apiRequest('/api/erp/tasks', {
+      const response = await fetch('/api/erp/tasks', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!response.ok) throw new Error('Failed to create task');
+      return await response.json();
     },
     onSuccess: (task) => {
       setActiveTaskId(task.id);
@@ -89,9 +92,11 @@ export default function AiWorkflow() {
   // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: number) => {
-      return await apiRequest(`/api/erp/tasks/${taskId}`, {
+      const response = await fetch(`/api/erp/tasks/${taskId}`, {
         method: 'DELETE',
       });
+      if (!response.ok) throw new Error('Failed to delete task');
+      return await response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/tasks'] });
@@ -247,7 +252,7 @@ export default function AiWorkflow() {
             </CardHeader>
             <CardContent>
               <ProgressTracker
-                userId={user.id}
+                userId={(user as any).id}
                 taskId={activeTaskId}
                 onComplete={handleProgressComplete}
                 onError={handleProgressError}

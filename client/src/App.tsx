@@ -23,7 +23,7 @@ import PettyCash from "./pages/PettyCash";
 import ProjectValidation from "./pages/ProjectValidation";
 import Settings from "./pages/Settings";
 import ERPConnect from "./pages/ERPConnect";
-import AIWorkflow from "./pages/AIWorkflow";
+import AiWorkflow from "./pages/AiWorkflow";
 import React from "react";
 import Header from "@/components/Header";
 
@@ -83,7 +83,10 @@ function Router() {
             <Header />
             <ERPConnect />
           </Route>
-          <Route path="/ai-workflow" component={AIWorkflow} />
+          <Route path="/ai-workflow">
+            <Header />
+            <AiWorkflow />
+          </Route>
         </>
       )}
       <Route component={NotFound} />

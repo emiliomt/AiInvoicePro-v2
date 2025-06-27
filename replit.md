@@ -115,6 +115,7 @@ The system uses PostgreSQL with the following key entities:
 - June 13, 2025. Initial setup
 - June 23, 2025. Added verified invoices system: automatic validation processing moves approved invoices to verified status when they pass validation criteria, displayed in Unresolved Invoice-PO Matches section
 - June 26, 2025. Added modular ERP automation platform: AI-powered RPA system with natural language task input, ChatGPT script generation, Playwright browser automation, secure credential management, and real-time task monitoring
+- June 27, 2025. Implemented real-time progress tracking system: WebSocket-based live updates during ERP automation tasks, step-by-step progress display with screenshots, enhanced user feedback with comprehensive progress monitoring UI component
 
 ## User Preferences
 
