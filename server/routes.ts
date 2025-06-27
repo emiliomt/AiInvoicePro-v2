@@ -13,7 +13,7 @@ import { z } from "zod";
 import { RequestHandler } from "express";
 import { findBestProjectMatch } from "./services/aiService.js";
 import { projectMatcher } from "./projectMatcher.js";
-import { discrepancyDetector } from "./services/discrepancyService.js";
+import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
 
@@ -483,10 +483,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               amount: extractedData.totalAmount || "0",
               currency: extractedData.currency || "USD",
               status: "open",
-              issueDate: issueDate,
-              expectedDeliveryDate: expectedDeliveryDate,
+              issueDate: issueDate || new Date(),
+              expectedDeliveryDate: expectedDeliveryDate || new Date(),
               projectId: matchedProjectId,
-              originalOrderNumber: extractedData.originalOrderNumber || null,
+              orderNumber: extractedData.orderNumber || null,
               buyerName: extractedData.buyerName || null,
               buyerAddress: extractedData.buyerAddress || null,
               vendorAddress: extractedData.vendorAddress || null,
@@ -826,7 +826,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const setting = await storage.getSetting('user_preferences');
       if (!setting) {
-        // Return default settings        const defaultSettings = {
+        // Return default settings
+        const defaultSettings = {
           key: 'user_preferences',
           value: JSON.stringify({
             fullName: '',
@@ -964,7 +965,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Debug: Log the first row to see available column names
         if (data.length > 0) {
-          console.log('Excel columns available:', Object.keys(data[0]));
+          console.log('Excel columns available:', Object.keys(data[0] as object));
         }
 
         const importedProjects = [];
@@ -1112,7 +1113,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           fs.mkdirSync(uploadsDir, { recursive: true });
         }
 
-        const uploadedInvoices = [];
+        const uploadedInvoices: any[] = [];
 
         // Process invoice files in parallel for better performance
         const processPromises = invoiceFiles.map(async (file) => {
@@ -1150,8 +1151,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        // Async processing function moved outside for better performance
-        async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
+        // Process invoices after upload completion
+        const processInvoiceAsync = async (invoice: any, fileBuffer: Buffer) => {
           try {
             console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
 
@@ -1557,7 +1558,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const userId = req.user.claims.sub;
 
-      const invoice = await storage.getInvoice(invoiceId);      if (!invoice) {
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
