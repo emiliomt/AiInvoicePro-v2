@@ -13,7 +13,6 @@ import { z } from "zod";
 import { RequestHandler } from "express";
 import { findBestProjectMatch } from "./services/aiService.js";
 import { projectMatcher } from "./projectMatcher.js";
-import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
 
@@ -122,7 +121,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
       res.json(user);
     } catch (error) {
@@ -134,7 +133,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User endpoint for authentication check
   app.get('/api/user', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
       res.json({
         id: userId,
@@ -152,7 +151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const stats = await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
@@ -349,7 +348,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        const userId = req.user.claims.sub;
+        const userId = (req.user as any).claims.sub;
         const files = req.files as Express.Multer.File[];
 
         console.log("PO Upload request received:", { 
@@ -486,7 +485,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               issueDate: issueDate || new Date(),
               expectedDeliveryDate: expectedDeliveryDate || new Date(),
               projectId: matchedProjectId,
-              orderNumber: extractedData.orderNumber || null,
+              // orderNumber: extractedData.orderNumber || null, // Field not in schema
               buyerName: extractedData.buyerName || null,
               buyerAddress: extractedData.buyerAddress || null,
               vendorAddress: extractedData.vendorAddress || null,
@@ -1084,7 +1083,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       try {
-        const userId = req.user.claims.sub;
+        const userId = (req.user as any).claims.sub;
         const files = req.files as Express.Multer.File[];
 
         console.log("Upload request received:", { 
@@ -1264,7 +1263,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
@@ -1334,7 +1333,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
@@ -1350,7 +1349,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
-      if (!invoice || invoice.userId !== req.user.claims.sub) {
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
@@ -1374,7 +1373,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -1406,7 +1405,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       if (invoice.userId !== userId) {
         return res.status(403).send('Access denied');
       }
@@ -1493,7 +1492,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Check if user owns the invoice
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
@@ -1511,7 +1510,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user's invoices
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const includeMatches = req.query.includeMatches === 'true';
 
       if (includeMatches) {
@@ -1531,7 +1530,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.patch('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -1556,7 +1555,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/approve', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       
@@ -1591,7 +1590,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/reject', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const { comments } = req.body;
 
       const invoice = await storage.getInvoice(invoiceId);
@@ -1626,7 +1625,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Delete all invoices for a user (must come before parameterized route)
   app.delete('/api/invoices/delete-all', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       if (!userId) {
         return res.status(400).json({ message: "User ID is required" });
@@ -1656,7 +1655,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       if (isNaN(invoiceId) || invoiceId <= 0) {
         return res.status(400).json({ message: "Invalid invoice ID" });
@@ -1683,7 +1682,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices/:id/ai-suggestions', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -1708,7 +1707,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const { originalText, extractedData, correctedData, reason } = req.body;
 
       const invoice = await storage.getInvoice(invoiceId);
@@ -1772,7 +1771,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -2029,7 +2028,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Classification routes
   app.get('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const keywords = await storage.getClassificationKeywords(userId);
       res.json(keywords);
     } catch (error) {
@@ -2040,7 +2039,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const { category, keyword } = req.body;
 
       if (!category || !keyword) {
@@ -2064,7 +2063,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.delete('/api/classification/keywords/:id', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const keywordId = parseInt(req.params.id);
 
       await storage.removeClassificationKeyword(keywordId, userId);
@@ -2077,7 +2076,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/classification/keywords/bulk', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const { category, keywords } = req.body;
 
       if (!category || !Array.isArray(keywords)) {
@@ -2118,7 +2117,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/invoices/:invoiceId/line-items/:lineItemId/classify', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const lineItemId = parseInt(req.params.lineItemId);
       const { category } = req.body;
 
@@ -2136,7 +2135,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/invoices/:id/auto-classify', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const invoiceId = parseInt(req.params.id);
 
       const { ClassificationService } = await import('./services/classificationService');
@@ -2152,7 +2151,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/invoices/:id/approve-best-match', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const userId = req.user.claims.sub;
+      const userId = (req.user as any).claims.sub;
       const { projectId, matchScore, matchDetails } = req.body;
 
       if (!projectId || !matchScore) {
@@ -2352,7 +2351,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       const connection = await storage.createErpConnection({
         ...data,
-        userId: user.claims.sub,
+        userId: (user as any).claims.sub,
         password: encryptedPassword,
         isActive: true,
       });
@@ -2375,7 +2374,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const connections = await storage.getErpConnections(user.claims.sub);
+      const connections = await storage.getErpConnections((user as any).claims.sub);
 
       // Remove passwords from response
       const safeConnections = connections.map(({ password, ...conn }) => conn);
@@ -2439,7 +2438,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const connectionId = parseInt(req.params.id);
       const connection = await storage.getErpConnection(connectionId);
 
-      if (!connection || connection.userId !== user.claims.sub) {
+      if (!connection || connection.userId !== (user as any).claims.sub) {
         return res.status(404).json({ error: 'Connection not found' });
       }
 
@@ -2482,13 +2481,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Create task record
       const task = await storage.createErpTask({
         ...data,
-        userId: user.claims.sub,
+        userId: (user as any).claims.sub,
         status: 'processing',
       });
 
       // Get connection details
       const connection = await storage.getErpConnection(data.connectionId);
-      if (!connection || connection.userId !== user.claims.sub) {
+      if (!connection || connection.userId !== (user as any).claims.sub) {
         await storage.updateErpTask(task.id, { 
           status: 'failed', 
           errorMessage: 'Connection not found' 
@@ -2514,7 +2513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const tasks = await storage.getErpTasks(user.claims.sub);
+      const tasks = await storage.getErpTasks((user as any).claims.sub);
       res.json(tasks);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -2533,7 +2532,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const taskId = parseInt(req.params.id);
       const task = await storage.getErpTask(taskId);
 
-      if (!task || task.userId !== user.claims.sub) {
+      if (!task || task.userId !== (user as any).claims.sub) {
         return res.status(404).json({ error: 'Task not found' });
       }
 
@@ -2618,13 +2617,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     // Create task record
     const task = await storage.createErpTask({
       ...data,
-      userId: user.claims.sub,
+      userId: (user as any).claims.sub,
       status: 'processing',
     });
 
     // Get connection details
     const connection = await storage.getErpConnection(data.connectionId);
-    if (!connection || connection.userId !== user.claims.sub) {
+    if (!connection || connection.userId !== (user as any).claims.sub) {
       await storage.updateErpTask(task.id, { 
         status: 'failed', 
         errorMessage: 'Connection not found' 
