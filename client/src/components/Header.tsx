@@ -23,8 +23,8 @@ export default function Header() {
 
   const getLinkClassName = (path: string) => {
     return isActiveRoute(path) 
-      ? "text-primary-600 font-semibold text-sm border-b-2 border-primary-600 pb-4 -mb-[1px] whitespace-nowrap"
-      : "text-gray-600 hover:text-gray-900 pb-4 transition-colors text-sm font-medium whitespace-nowrap";
+      ? "text-primary-600 font-semibold text-sm border-b-2 border-primary-600 h-16 flex items-center whitespace-nowrap"
+      : "text-gray-600 hover:text-gray-900 h-16 flex items-center transition-colors text-sm font-medium whitespace-nowrap";
   };
 
   const getInitials = (firstName?: string, lastName?: string) => {
@@ -50,7 +50,7 @@ export default function Header() {
   return (
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex justify-between items-center h-18">
+        <div className="flex justify-between items-center h-16">
           {/* Logo and Brand */}
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
@@ -66,9 +66,9 @@ export default function Header() {
             {/* Dashboard Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
                   isActiveRoute("/") || isActiveRoute("/ai-learning")
-                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
                   <span>Dashboard</span>
@@ -92,9 +92,9 @@ export default function Header() {
             {/* Information Validation Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
                   isActiveRoute("/validation-rules")
-                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
                   <span>Information Validation</span>
@@ -114,9 +114,9 @@ export default function Header() {
             {/* Project Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
                   isActiveRoute("/project-validation") || isActiveRoute("/project-matcher") || isActiveRoute("/petty-cash") || isActiveRoute("/classification")
-                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
                   <span>Project</span>
@@ -142,9 +142,9 @@ export default function Header() {
             {/* ERP Automation Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
                   isActiveRoute("/erp-connect") || isActiveRoute("/ai-workflow")
-                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
                   <Bot size={16} className="text-blue-600" />
@@ -167,9 +167,9 @@ export default function Header() {
             {/* Purchases Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <button className={`flex items-center space-x-1 pb-4 transition-colors text-sm font-medium whitespace-nowrap ${
+                <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
                   isActiveRoute("/purchase-orders") || isActiveRoute("/po-matching")
-                    ? "text-primary-600 font-semibold border-b-2 border-primary-600 -mb-[1px]"
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
                   <span>Purchases</span>
