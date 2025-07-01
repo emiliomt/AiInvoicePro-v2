@@ -55,20 +55,28 @@ export default function AiWorkflow() {
   });
 
   // Fetch current user
-  const { data: user } = useQuery({
+  const { data: user } = useQuery<{ id: string; email: string }>({
     queryKey: ['/api/user'],
   });
 
   // Create task mutation
   const createTaskMutation = useMutation({
     mutationFn: async (data: { connectionId: number; taskDescription: string }) => {
-      const response = await fetch('/api/erp/tasks', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      });
-      if (!response.ok) throw new Error('Failed to create task');
-      return await response.json();
+      try {
+        const response = await fetch('/api/erp/tasks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(data),
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to create task');
+        }
+        return await response.json();
+      } catch (error) {
+        console.error('Task creation error:', error);
+        throw error;
+      }
     },
     onSuccess: (task) => {
       setActiveTaskId(task.id);
@@ -92,11 +100,19 @@ export default function AiWorkflow() {
   // Delete task mutation
   const deleteTaskMutation = useMutation({
     mutationFn: async (taskId: number) => {
-      const response = await fetch(`/api/erp/tasks/${taskId}`, {
-        method: 'DELETE',
-      });
-      if (!response.ok) throw new Error('Failed to delete task');
-      return await response.json();
+      try {
+        const response = await fetch(`/api/erp/tasks/${taskId}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to delete task');
+        }
+        return await response.json();
+      } catch (error) {
+        console.error('Task deletion error:', error);
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/tasks'] });
@@ -252,7 +268,7 @@ export default function AiWorkflow() {
             </CardHeader>
             <CardContent>
               <ProgressTracker
-                userId={(user as any).id}
+                userId={user?.id || ''}
                 taskId={activeTaskId}
                 onComplete={handleProgressComplete}
                 onError={handleProgressError}
