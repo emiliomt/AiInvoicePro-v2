@@ -39,6 +39,13 @@ export function ProgressTracker({ userId, taskId, onComplete, onError }: Progres
       setWs(websocket);
     };
 
+    websocket.onerror = (error) => {
+      console.error('WebSocket error:', error);
+      if (onError) {
+        onError(error);
+      }
+    };
+
     websocket.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
