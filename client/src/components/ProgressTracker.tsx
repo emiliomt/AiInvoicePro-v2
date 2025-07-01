@@ -28,6 +28,9 @@ export function ProgressTracker({ userId, taskId, onComplete, onError }: Progres
   const [ws, setWs] = useState<WebSocket | null>(null);
 
   useEffect(() => {
+    // Don't connect if no userId
+    if (!userId) return;
+
     // Connect to WebSocket for real-time updates
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const wsUrl = `${protocol}//${window.location.host}/progress?userId=${userId}`;

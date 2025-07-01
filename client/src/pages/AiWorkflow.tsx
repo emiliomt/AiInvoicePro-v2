@@ -297,12 +297,30 @@ export default function AiWorkflow() {
                         </div>
                         <div className="flex items-center gap-2">
                           {task.screenshots && task.screenshots.length > 0 && (
-                            <Button size="sm" variant="outline">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => {
+                                toast({
+                                  title: "Screenshots",
+                                  description: `Task has ${task.screenshots?.length} screenshots available`,
+                                });
+                              }}
+                            >
                               <Eye className="h-4 w-4" />
                             </Button>
                           )}
                           {task.result && (
-                            <Button size="sm" variant="outline">
+                            <Button 
+                              size="sm" 
+                              variant="outline"
+                              onClick={() => {
+                                toast({
+                                  title: "Download Results",
+                                  description: "Task results are available for download",
+                                });
+                              }}
+                            >
                               <Download className="h-4 w-4" />
                             </Button>
                           )}
