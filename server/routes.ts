@@ -547,17 +547,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Purchase order routes
   app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
-      const purchaseOrders = await storage.getPurchaseOrders();
-      res.json(purchaseOrders);
-    } catch (error) {
-      console.error("Error fetching purchase orders:", error);
-      res.status(500).json({ message: "Failed to fetch purchase orders" });
-    }
-  });
-
-  app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
-    try {
-      const purchaseOrders = await storage.getPurchaseOrders();
+      const userId = (req.user as any).claims.sub;
+      const purchaseOrders = await storage.getPurchaseOrders(userId);
       res.json(purchaseOrders);
     } catch (error) {
       console.error("Error fetching purchase orders:", error);
@@ -567,8 +558,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
+      const userId = (req.user as any).claims.sub;
       const poData = req.body;
-      const purchaseOrder = await storage.createPurchaseOrder(poData);
+      const purchaseOrder = await storage.createPurchaseOrder(poData, userId);
       res.json(purchaseOrder);
     } catch (error) {
       console.error("Error creating purchase order:", error);
