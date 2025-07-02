@@ -495,17 +495,22 @@ class ERPAutomationService {
       });
 
       const context = await this.browser.newContext({
-        viewport: { width: 1920, height: 1080 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        viewport: { width: 1366, height: 768 },
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ignoreHTTPSErrors: true,
+        acceptDownloads: false
       });
 
       const page = await context.newPage();
+      
+      // Block resources for faster connection testing
+      await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
 
-      // Test basic URL accessibility
+      // Test basic URL accessibility with faster timeout
       console.log(`Testing connection to: ${connection.baseUrl}`);
       const response = await page.goto(connection.baseUrl, { 
         waitUntil: 'domcontentloaded',
-        timeout: 30000 
+        timeout: 15000 
       });
 
       if (!response) {
@@ -519,8 +524,8 @@ class ERPAutomationService {
         throw new Error(`Server returned error status: ${status}`);
       }
 
-      // Wait for page to stabilize
-      await page.waitForTimeout(2000);
+      // Wait for page to stabilize (reduced time)
+      await page.waitForTimeout(1000);
 
       // Try to find common login elements to verify it's an ERP system
       const pageTitle = await page.title();
