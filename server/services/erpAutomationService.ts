@@ -186,20 +186,39 @@ class ERPAutomationService {
     }, 60 * 60 * 1000);
 
     try {
-      // Launch browser
+      // Launch browser with performance optimizations
       this.browser = await chromium.launch({ 
         headless: true,
         executablePath: getChromiumPath(),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox', 
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-images', // Disable images for faster loading
+          '--disable-javascript-harmony-shipping',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding',
+          '--disable-features=TranslateUI'
+        ]
       });
 
       const context = await this.browser.newContext({
-        viewport: { width: 1920, height: 1080 },
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+        viewport: { width: 1366, height: 768 }, // Smaller viewport for faster rendering
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        ignoreHTTPSErrors: true, // Ignore SSL errors to prevent hanging
+        javaScriptEnabled: true,
+        acceptDownloads: false, // Disable downloads to prevent hanging
       });
 
       const page = await context.newPage();
-      logs.push('Browser launched successfully');
+      
+      // Block unnecessary resources for faster loading
+      await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
+      
+      logs.push('Browser launched successfully with optimizations');
 
       // Take initial screenshot
       try {
@@ -283,8 +302,8 @@ class ERPAutomationService {
           throw stepError;
         }
 
-        // Add delay between steps
-        await page.waitForTimeout(1000);
+        // Add minimal delay between steps
+        await page.waitForTimeout(300);
       }
 
       await this.browser.close();
@@ -464,7 +483,15 @@ class ERPAutomationService {
       this.browser = await chromium.launch({ 
         headless: true,
         executablePath: getChromiumPath(),
-        args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage']
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+          '--disable-plugins',
+          '--disable-images',
+          '--disable-features=TranslateUI'
+        ]
       });
 
       const context = await this.browser.newContext({
@@ -555,9 +582,9 @@ class ERPAutomationService {
   }
 
   private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<string> {
-    // Try original selector first
+    // Try original selector first with shorter timeout
     try {
-      await page.waitForSelector(originalSelector, { timeout: timeout / 4 });
+      await page.waitForSelector(originalSelector, { timeout: Math.min(timeout / 3, 3000) });
       return originalSelector;
     } catch (error) {
       console.warn(`Original selector failed: ${originalSelector}`);
@@ -794,14 +821,15 @@ class ERPAutomationService {
       );
     }
 
-    // Try fallback selectors with individual timeouts
-    for (const selector of fallbackSelectors) {
+    // Try fallback selectors with faster timeouts (limit to first 10 most likely selectors)
+    const prioritizedSelectors = fallbackSelectors.slice(0, 10);
+    for (const selector of prioritizedSelectors) {
       try {
-        await page.waitForSelector(selector, { timeout: Math.max(2000, timeout / 8) });
+        await page.waitForSelector(selector, { timeout: Math.min(1500, timeout / 6) });
         console.log(`Fallback selector worked: ${selector}`);
         return selector;
       } catch (error) {
-        console.warn(`Fallback selector failed: ${selector}`);
+        // Silent fail for faster execution
       }
     }
 
