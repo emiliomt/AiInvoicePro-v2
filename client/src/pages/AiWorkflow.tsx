@@ -13,6 +13,7 @@ import { ProgressTracker } from '@/components/ProgressTracker';
 import { Bot, Play, Clock, CheckCircle, XCircle, Eye, Download, Trash2, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 
 interface ERPConnection {
   id: number;
@@ -44,6 +45,7 @@ export default function AiWorkflow() {
   const [activeTab, setActiveTab] = useState<'create' | 'scheduled'>('create');
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [selectedTask, setSelectedTask] = useState<ERPTask | null>(null);
 
   // Fetch ERP connections
   const { data: connections = [], isLoading: connectionsLoading } = useQuery<ERPConnection[]>({
@@ -437,6 +439,92 @@ export default function AiWorkflow() {
           </Card>
         )}
       </div>
+       {selectedTask && (
+          <Dialog open={!!selectedTask} onOpenChange={() => setSelectedTask(null)}>
+            <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Task Details</DialogTitle>
+                <DialogDescription>
+                  Task #{selectedTask.id} - {selectedTask.status}
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-medium mb-2">Description</h4>
+                  <p className="text-sm text-gray-600">{selectedTask.taskDescription}</p>
+                </div>
+
+                <div>
+                  <h4 className="font-medium mb-2">Execution Details</h4>
+                  <div className="grid grid-cols-2 gap-4 text-sm">
+                    <div>
+                      <span className="font-medium">Status:</span> {selectedTask.status}
+                    </div>
+                    <div>
+                      <span className="font-medium">Created:</span> {new Date(selectedTask.createdAt).toLocaleString()}
+                    </div>
+                    {selectedTask.executionTime && (
+                      <div>
+                        <span className="font-medium">Duration:</span> {Math.round(selectedTask.executionTime / 1000)}s
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {selectedTask.screenshots && selectedTask.screenshots.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-2">Screenshots ({selectedTask.screenshots.length})</h4>
+                    <div className="grid grid-cols-2 gap-4 max-h-96 overflow-y-auto">
+                      {selectedTask.screenshots.map((screenshot, index) => (
+                        <div key={index} className="border rounded-lg overflow-hidden">
+                          <div className="bg-gray-100 px-3 py-1 text-xs font-medium">
+                            Screenshot {index + 1}
+                          </div>
+                          <img
+                            src={`data:image/png;base64,${screenshot}`}
+                            alt={`Screenshot ${index + 1}`}
+                            className="w-full h-auto cursor-pointer hover:opacity-80"
+                            onClick={() => window.open(`data:image/png;base64,${screenshot}`, '_blank')}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {selectedTask.logs && (
+                  <div>
+                    <h4 className="font-medium mb-2">Execution Logs</h4>
+                    <div className="bg-gray-50 p-3 rounded-md max-h-40 overflow-y-auto">
+                      <pre className="text-xs whitespace-pre-wrap">{selectedTask.logs}</pre>
+                    </div>
+                  </div>
+                )}
+
+                {selectedTask.errorMessage && (
+                  <div>
+                    <h4 className="font-medium mb-2 text-red-600">Error Message</h4>
+                    <div className="bg-red-50 p-3 rounded-md">
+                      <p className="text-sm text-red-800">{selectedTask.errorMessage}</p>
+                    </div>
+                  </div>
+                )}
+
+                {selectedTask.result && Object.keys(selectedTask.result).length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-2">Extracted Data</h4>
+                    <div className="bg-green-50 p-3 rounded-md">
+                      <pre className="text-xs whitespace-pre-wrap">
+                        {JSON.stringify(selectedTask.result, null, 2)}
+                      </pre>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </DialogContent>
+          </Dialog>
+        )}
     </div>
   );
 }
