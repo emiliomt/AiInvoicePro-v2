@@ -2266,11 +2266,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Approve invoice-PO match
-  app.post("/api/invoice-po-matches/:matchId/approve", async (req, res) => {
+  app.post("/api/invoice-po-matches/:matchId/approve", isAuthenticated, async (req: any, res) => {
     try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
       const matchId = parseInt(req.params.matchId);
-      await storage.updateInvoicePoMatch(matchId, { status: 'manual' });
-      res.json({ message: "Match approved successfully" });
+      const updatedMatch = await storage.updateInvoicePoMatch(matchId, { 
+        status: 'manual',
+        approvedAt: new Date(),
+        approvedBy: (user as any).claims.sub,
+        statusChangedAt: new Date(),
+      });
+      
+      // Update invoice status to matched
+      const matches = await storage.getInvoicePoMatchesWithDetails();
+      const targetMatch = matches.find(m => m.id === matchId);
+      if (targetMatch?.invoice) {
+        await storage.updateInvoice(targetMatch.invoice.id, { status: 'matched' });
+      }
+      
+      res.json({ message: "Match approved successfully", match: updatedMatch });
     } catch (error) {
       console.error("Error approving invoice-PO match:", error);
       res.status(500).json({ message: "Failed to approve match" });

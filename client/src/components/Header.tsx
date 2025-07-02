@@ -62,7 +62,7 @@ export default function Header() {
           </div>
 
           {/* Navigation */}
-          <nav className="hidden md:flex space-x-6 lg:space-x-8">
+          <nav className="hidden md:flex space-x-6 lg:space-x-8 ml-8">
             {/* Dashboard Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

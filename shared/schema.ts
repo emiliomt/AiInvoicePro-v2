@@ -239,6 +239,12 @@ export const invoicePoMatches = pgTable("invoice_po_matches", {
   matchScore: decimal("match_score", { precision: 5, scale: 2 }).notNull(), // 0-100
   status: matchStatusEnum("status").default("auto"),
   matchDetails: jsonb("match_details"), // Details about what matched
+  matchedAt: timestamp("matched_at").defaultNow(), // When the match was initially created
+  approvedAt: timestamp("approved_at"), // When the match was approved (if manual status)
+  rejectedAt: timestamp("rejected_at"), // When the match was rejected (if unresolved status)
+  approvedBy: varchar("approved_by"), // User who approved the match
+  rejectedBy: varchar("rejected_by"), // User who rejected the match
+  statusChangedAt: timestamp("status_changed_at"), // Last status change timestamp
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -690,6 +696,8 @@ export const insertPurchaseOrderSchema = createInsertSchema(purchaseOrders).omit
 
 export const insertInvoicePoMatchSchema = createInsertSchema(invoicePoMatches).omit({
   id: true,
+  matchedAt: true,
+  statusChangedAt: true,
   createdAt: true,
   updatedAt: true,
 });
