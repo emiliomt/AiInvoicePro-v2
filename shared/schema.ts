@@ -27,6 +27,25 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
+// Companies table for multi-tenancy support
+export const companies = pgTable("companies", {
+  id: serial("id").primaryKey(),
+  name: varchar("name", { length: 255 }).notNull(),
+  domain: varchar("domain", { length: 255 }).unique(), // Company email domain for auto-assignment
+  plan: varchar("plan", { length: 50 }).default("basic"), // subscription plan
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// User roles enum
+export const userRoleEnum = pgEnum("user_role", [
+  "admin",    // Company admin - full access
+  "manager",  // Department manager - limited admin access
+  "user",     // Regular user - standard access
+  "viewer"    // Read-only access
+]);
+
 // User storage table.
 // (IMPORTANT) This table is mandatory for Replit Auth, don't drop it.
 export const users = pgTable("users", {
@@ -35,6 +54,8 @@ export const users = pgTable("users", {
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
+  companyId: integer("company_id").references(() => companies.id),
+  role: userRoleEnum("role").default("user"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -61,6 +82,7 @@ export const approvalStatusEnum = pgEnum("approval_status", [
 export const invoices = pgTable("invoices", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
   fileName: varchar("file_name").notNull(),
   fileUrl: varchar("file_url"),
   status: invoiceStatusEnum("status").default("pending"),
@@ -187,6 +209,7 @@ export const matchStatusEnum = pgEnum("match_status", [
 // Projects table with validation criteria
 export const projects = pgTable("projects", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companies.id),
   projectId: varchar("project_id", { length: 100 }).unique().notNull(),
   name: varchar("name", { length: 255 }).notNull(),
   description: text("description"),
@@ -210,6 +233,7 @@ export const projects = pgTable("projects", {
 // Purchase orders table
 export const purchaseOrders = pgTable("purchase_orders", {
   id: serial("id").primaryKey(),
+  companyId: integer("company_id").references(() => companies.id),
   poId: varchar("po_id", { length: 100 }).unique().notNull(),
   vendorName: varchar("vendor_name", { length: 255 }).notNull(),
   projectId: varchar("project_id", { length: 100 }).references(() => projects.projectId),
@@ -348,6 +372,7 @@ export const erpTaskStatusEnum = pgEnum("erp_task_status", [
 export const erpConnections = pgTable("erp_connections", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
   name: varchar("name", { length: 255 }).notNull(),
   baseUrl: varchar("base_url", { length: 500 }).notNull(),
   username: varchar("username", { length: 255 }).notNull(),
@@ -390,10 +415,31 @@ export const feedbackLogs = pgTable("feedback_logs", {
 });
 
 // Relations
+export const companiesRelations = relations(companies, ({ many }) => ({
+  users: many(users),
+  invoices: many(invoices),
+  projects: many(projects),
+  purchaseOrders: many(purchaseOrders),
+  erpConnections: many(erpConnections),
+}));
+
+export const usersRelations = relations(users, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [users.companyId],
+    references: [companies.id],
+  }),
+  invoices: many(invoices),
+  erpConnections: many(erpConnections),
+}));
+
 export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   user: one(users, {
     fields: [invoices.userId],
     references: [users.id],
+  }),
+  company: one(companies, {
+    fields: [invoices.companyId],
+    references: [companies.id],
   }),
   lineItems: many(lineItems),
   approvals: many(approvals),
@@ -435,11 +481,19 @@ export const pettyCashLogRelations = relations(pettyCashLog, ({ one }) => ({
   }),
 }));
 
-export const projectsRelations = relations(projects, ({ many }) => ({
+export const projectsRelations = relations(projects, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [projects.companyId],
+    references: [companies.id],
+  }),
   purchaseOrders: many(purchaseOrders),
 }));
 
 export const purchaseOrdersRelations = relations(purchaseOrders, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [purchaseOrders.companyId],
+    references: [companies.id],
+  }),
   project: one(projects, {
     fields: [purchaseOrders.projectId],
     references: [projects.projectId],
