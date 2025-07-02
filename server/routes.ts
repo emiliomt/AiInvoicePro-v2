@@ -247,7 +247,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Project management routes
   app.get('/api/projects', isAuthenticated, async (req, res) => {
     try {
-      const projects = await storage.getProjects();
+      const userId = (req.user as any).claims.sub;
+      const projects = await storage.getProjects(userId);
       res.json(projects);
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -271,8 +272,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/projects', isAuthenticated, async (req, res) => {
     try {
+      const userId = (req.user as any).claims.sub;
       const projectData = req.body;
-      const project = await storage.createProject(projectData);
+      const project = await storage.createProject(projectData, userId);
       res.json(project);
     } catch (error) {
       console.error("Error creating project:", error);

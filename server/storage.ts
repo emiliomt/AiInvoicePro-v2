@@ -139,7 +139,7 @@ export interface IStorage {
   getPurchaseOrders(userId?: string): Promise<PurchaseOrder[]>;
   getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
   getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | undefined>;
-  createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
+  createPurchaseOrder(po: InsertPurchaseOrder, userId?: string): Promise<PurchaseOrder>;
   updatePurchaseOrder(id: number, updates: Partial<InsertPurchaseOrder>): Promise<PurchaseOrder>;
   deletePurchaseOrder(id: number): Promise<void>;
 
@@ -939,8 +939,21 @@ export class DatabaseStorage implements IStorage {
     return project;
   }
 
-  async createProject(project: InsertProject): Promise<Project> {
-    const [newProject] = await db.insert(projects).values(project).returning();
+  async createProject(project: InsertProject, userId?: string): Promise<Project> {
+    let projectWithCompany = project;
+    
+    // If userId is provided, set the company ID from the user's company
+    if (userId) {
+      const user = await this.getUser(userId);
+      if (user?.companyId) {
+        projectWithCompany = {
+          ...project,
+          companyId: user.companyId
+        };
+      }
+    }
+    
+    const [newProject] = await db.insert(projects).values(projectWithCompany).returning();
     return newProject;
   }
 
@@ -1042,8 +1055,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Purchase order operations
-  async getPurchaseOrders(): Promise<PurchaseOrder[]> {
-    return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+  async getPurchaseOrders(userId?: string): Promise<PurchaseOrder[]> {
+    if (!userId) {
+      // If no userId provided, return all purchase orders (for backwards compatibility)
+      return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+    }
+    
+    // Get user's company and filter purchase orders by company
+    const user = await this.getUser(userId);
+    if (!user?.companyId) {
+      // If user has no company, return all purchase orders (fallback)
+      return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
+    }
+    
+    // Return only purchase orders from the same company
+    return await db
+      .select()
+      .from(purchaseOrders)
+      .where(eq(purchaseOrders.companyId, user.companyId))
+      .orderBy(desc(purchaseOrders.createdAt));
   }
 
   async getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined> {
@@ -1056,8 +1086,21 @@ export class DatabaseStorage implements IStorage {
     return po;
   }
 
-  async createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder> {
-    const [newPo] = await db.insert(purchaseOrders).values(po).returning();
+  async createPurchaseOrder(po: InsertPurchaseOrder, userId?: string): Promise<PurchaseOrder> {
+    let poWithCompany = po;
+    
+    // If userId is provided, set the company ID from the user's company
+    if (userId) {
+      const user = await this.getUser(userId);
+      if (user?.companyId) {
+        poWithCompany = {
+          ...po,
+          companyId: user.companyId
+        };
+      }
+    }
+    
+    const [newPo] = await db.insert(purchaseOrders).values(poWithCompany).returning();
     return newPo;
   }
 
