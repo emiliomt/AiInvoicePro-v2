@@ -647,6 +647,9 @@ export const lineItemClassificationsRelations = relations(lineItemClassification
 }));
 
 // Types
+export type InsertCompany = typeof companies.$inferInsert;
+export type Company = typeof companies.$inferSelect;
+
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
 

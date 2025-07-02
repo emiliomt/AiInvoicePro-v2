@@ -1,4 +1,5 @@
 import {
+  companies,
   users,
   invoices,
   lineItems,
@@ -19,6 +20,8 @@ import {
   lineItemClassifications,
   erpConnections,
   erpTasks,
+  type Company,
+  type InsertCompany,
   type User,
   type UpsertUser,
   type InsertInvoice,
