@@ -16,6 +16,12 @@ interface InvoicePOMatch {
   matchDetails: any;
   status: string;
   createdAt: string;
+  matchedAt?: string;
+  approvedAt?: string;
+  rejectedAt?: string;
+  approvedBy?: string;
+  rejectedBy?: string;
+  statusChangedAt?: string;
   invoice: {
     id: number;
     fileName: string;
@@ -59,9 +65,11 @@ export default function POMatching() {
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoice-po-matches"] });
+      
+      const currentTime = new Date().toLocaleTimeString();
       toast({
         title: "AI Matching Complete",
-        description: `Processed ${data.totalProcessed} invoices, found ${data.totalMatched} matches`,
+        description: `${currentTime}: Processed ${data.totalProcessed} invoices, found ${data.totalMatched} new matches. Check the status timeline below to see when each match occurred.`,
       });
     },
     onError: () => {
@@ -132,6 +140,19 @@ export default function POMatching() {
         return <Badge variant="destructive">Rejected</Badge>;
       default:
         return <Badge variant="outline">{status}</Badge>;
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'auto':
+        return <AlertTriangle className="text-yellow-500" size={16} />;
+      case 'manual':
+        return <CheckCircle className="text-green-500" size={16} />;
+      case 'unresolved':
+        return <XCircle className="text-red-500" size={16} />;
+      default:
+        return <Target className="text-gray-500" size={16} />;
     }
   };
 
@@ -239,6 +260,53 @@ export default function POMatching() {
           </Card>
         </div>
 
+        {/* Recent Match Activity */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle className="flex items-center space-x-2">
+              <TrendingUp className="text-blue-600" size={20} />
+              <span>Recent Match Activity</span>
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-2">
+              {invoicePoMatches
+                .sort((a, b) => new Date(b.statusChangedAt || b.createdAt).getTime() - new Date(a.statusChangedAt || a.createdAt).getTime())
+                .slice(0, 5)
+                .map((match) => (
+                  <div key={match.id} className="flex items-center justify-between text-sm p-2 bg-gray-50 rounded">
+                    <div className="flex items-center space-x-2">
+                      {match.status === 'auto' ? (
+                        <AlertTriangle className="text-yellow-500" size={16} />
+                      ) : match.status === 'manual' ? (
+                        <CheckCircle className="text-green-500" size={16} />
+                      ) : match.status === 'unresolved' ? (
+                        <XCircle className="text-red-500" size={16} />
+                      ) : (
+                        <Target className="text-gray-500" size={16} />
+                      )}
+                      <span className="font-medium">Invoice {match.invoice.fileName}</span>
+                      <span className="text-gray-500">matched to PO {match.purchaseOrder.poId}</span>
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {match.status === 'manual' && match.approvedAt 
+                        ? `Approved ${new Date(match.approvedAt).toLocaleString()}`
+                        : match.status === 'unresolved' && match.rejectedAt
+                        ? `Rejected ${new Date(match.rejectedAt).toLocaleString()}`
+                        : `Matched ${new Date(match.matchedAt || match.createdAt).toLocaleString()}`
+                      }
+                    </div>
+                  </div>
+                ))}
+              {invoicePoMatches.length === 0 && (
+                <div className="text-center text-gray-500 py-4">
+                  No matches yet. Click "Start AI Matching" to begin finding matches.
+                </div>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+
         {/* Invoice-PO Matches */}
         <Card>
           <CardHeader>
@@ -296,6 +364,40 @@ export default function POMatching() {
                           {getMatchScoreBadge(match.matchScore)}
                           {getStatusBadge(match.status)}
                         </div>
+                      </div>
+
+                      {/* Status Timeline */}
+                      <div className="text-xs text-gray-600 space-y-1">
+                        <div className="flex items-center space-x-2">
+                          <span className="font-medium">Matched:</span>
+                          <span>{new Date(match.matchedAt || match.createdAt).toLocaleString()}</span>
+                        </div>
+                        
+                        {match.status === 'manual' && match.approvedAt && (
+                          <div className="flex items-center space-x-2 text-green-600">
+                            <CheckCircle size={12} />
+                            <span className="font-medium">Approved:</span>
+                            <span>{new Date(match.approvedAt).toLocaleString()}</span>
+                            {match.approvedBy && <span className="text-gray-500">by {match.approvedBy}</span>}
+                          </div>
+                        )}
+                        
+                        {match.status === 'unresolved' && match.rejectedAt && (
+                          <div className="flex items-center space-x-2 text-red-600">
+                            <XCircle size={12} />
+                            <span className="font-medium">Rejected:</span>
+                            <span>{new Date(match.rejectedAt).toLocaleString()}</span>
+                            {match.rejectedBy && <span className="text-gray-500">by {match.rejectedBy}</span>}
+                          </div>
+                        )}
+                        
+                        {match.status === 'auto' && (
+                          <div className="flex items-center space-x-2 text-blue-600">
+                            <AlertTriangle size={12} />
+                            <span className="font-medium">Status:</span>
+                            <span>Pending manual review</span>
+                          </div>
+                        )}
                       </div>
 
                       {match.matchDetails && (

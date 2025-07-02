@@ -2225,7 +2225,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               'auto'
             );
 
-            const savedMatch = await storage.createInvoicePoMatch(matchRecord);
+            // Add timestamp for when the match was created
+            const matchWithTimestamp = {
+              ...matchRecord,
+              matchedAt: new Date(),
+              statusChangedAt: new Date(),
+            };
+
+            const savedMatch = await storage.createInvoicePoMatch(matchWithTimestamp);
             allMatches.push({
               invoiceId: verifiedInvoice.invoice.id,
               matches: matches,
@@ -2296,11 +2303,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Reject invoice-PO match
-  app.post("/api/invoice-po-matches/:matchId/reject", async (req, res) => {
+  app.post("/api/invoice-po-matches/:matchId/reject", isAuthenticated, async (req: any, res) => {
     try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
       const matchId = parseInt(req.params.matchId);
-      await storage.updateInvoicePoMatch(matchId, { status: 'unresolved' });
-      res.json({ message: "Match rejected successfully" });
+      const updatedMatch = await storage.updateInvoicePoMatch(matchId, { 
+        status: 'unresolved',
+        rejectedAt: new Date(),
+        rejectedBy: (user as any).claims.sub,
+        statusChangedAt: new Date(),
+      });
+      
+      res.json({ message: "Match rejected successfully", match: updatedMatch });
     } catch (error) {
       console.error("Error rejecting invoice-PO match:", error);
       res.status(500).json({ message: "Failed to reject match" });
