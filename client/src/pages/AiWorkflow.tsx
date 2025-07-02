@@ -64,35 +64,41 @@ export default function AiWorkflow() {
   const createTaskMutation = useMutation({
     mutationFn: async (data: { connectionId: number; taskDescription: string }) => {
       try {
+        console.log('Creating task with data:', data);
         const response = await fetch('/api/erp/tasks', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+          },
           body: JSON.stringify(data),
         });
+
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to create task');
+          throw new Error(errorData.error || errorData.message || 'Failed to create task');
         }
+
         return await response.json();
       } catch (error) {
         console.error('Task creation error:', error);
         throw error;
       }
     },
-    onSuccess: (task) => {
-      setActiveTaskId(task.id);
+    onSuccess: (data) => {
+      console.log('Task created successfully:', data);
+      setActiveTaskId(data.id);
       setShowProgress(true);
-      setTaskDescription('');
       queryClient.invalidateQueries({ queryKey: ['/api/erp/tasks'] });
       toast({
         title: "Task Started",
-        description: "ERP automation task has been started successfully",
+        description: "Your automation task has been started",
       });
     },
     onError: (error: any) => {
+      console.error('Create task mutation error:', error);
       toast({
         title: "Task Failed",
-        description: error.message || "Failed to start ERP automation task",
+        description: error.message || "Failed to create automation task",
         variant: "destructive",
       });
     },
@@ -165,18 +171,33 @@ export default function AiWorkflow() {
     if (!selectedConnection || !taskDescription.trim()) {
       toast({
         title: "Missing Information",
-        description: "Please select a connection and provide a task description",
+        description: "Please select a connection and enter a task description",
         variant: "destructive",
       });
       return;
     }
 
-    const workflowName = `Workflow ${new Date().toLocaleDateString()}`;
-    saveWorkflowMutation.mutate({
-      name: workflowName,
-      description: taskDescription.trim(),
-      connectionId: selectedConnection,
-    });
+    try {
+      const workflowName = `Workflow ${new Date().toLocaleDateString()} ${new Date().toLocaleTimeString()}`;
+      console.log('Saving workflow with data:', {
+        name: workflowName,
+        description: taskDescription,
+        connectionId: selectedConnection,
+      });
+
+      saveWorkflowMutation.mutate({
+        name: workflowName,
+        description: taskDescription,
+        connectionId: selectedConnection,
+      });
+    } catch (error) {
+      console.error('Error in handleSaveWorkflow:', error);
+      toast({
+        title: "Save Failed",
+        description: "An error occurred while preparing to save the workflow",
+        variant: "destructive",
+      });
+    }
   };
 
   const handleProgressComplete = (data: any) => {
