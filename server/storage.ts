@@ -127,16 +127,16 @@ export interface IStorage {
   getPettyCashLogs(status?: string): Promise<(PettyCashLog & { invoice: Invoice })[]>;
   isPettyCashInvoice(totalAmount: string): Promise<boolean>;
 
-  // Project operations
-  getProjects(): Promise<Project[]>;
+  // Project operations  
+  getProjects(userId?: string): Promise<Project[]>;
   getProject(projectId: string): Promise<Project | undefined>;
-  createProject(project: InsertProject): Promise<Project>;
+  createProject(project: InsertProject, userId?: string): Promise<Project>;
   updateProject(projectId: string, updates: Partial<InsertProject>): Promise<Project>;
   deleteProject(projectId: string): Promise<void>;
   deleteAllProjects(): Promise<void>;
 
   // Purchase order operations
-  getPurchaseOrders(): Promise<PurchaseOrder[]>;
+  getPurchaseOrders(userId?: string): Promise<PurchaseOrder[]>;
   getPurchaseOrder(id: number): Promise<PurchaseOrder | undefined>;
   getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | undefined>;
   createPurchaseOrder(po: InsertPurchaseOrder): Promise<PurchaseOrder>;
@@ -241,7 +241,14 @@ export class DatabaseStorage implements IStorage {
 
   // Invoice operations
   async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
-    const [created] = await db.insert(invoices).values(invoice).returning();
+    // Get user's company and set it for the invoice
+    const user = await this.getUser(invoice.userId);
+    const invoiceWithCompany = {
+      ...invoice,
+      companyId: user?.companyId || null
+    };
+    
+    const [created] = await db.insert(invoices).values(invoiceWithCompany).returning();
     return created;
   }
 
@@ -251,10 +258,22 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getInvoicesByUserId(userId: string): Promise<Invoice[]> {
+    // Get user's company to filter data
+    const user = await this.getUser(userId);
+    if (!user?.companyId) {
+      // If user has no company, only return their own invoices
+      return await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.userId, userId))
+        .orderBy(desc(invoices.createdAt));
+    }
+    
+    // Return all invoices from the same company
     return await db
       .select()
       .from(invoices)
-      .where(eq(invoices.userId, userId))
+      .where(eq(invoices.companyId, user.companyId))
       .orderBy(desc(invoices.createdAt));
   }
 
@@ -894,8 +913,25 @@ export class DatabaseStorage implements IStorage {
   }
 
   // Project operations
-  async getProjects(): Promise<Project[]> {
-    return await db.select().from(projects).orderBy(desc(projects.createdAt));
+  async getProjects(userId?: string): Promise<Project[]> {
+    if (!userId) {
+      // If no userId provided, return all projects (for backwards compatibility)
+      return await db.select().from(projects).orderBy(desc(projects.createdAt));
+    }
+    
+    // Get user's company and filter projects by company
+    const user = await this.getUser(userId);
+    if (!user?.companyId) {
+      // If user has no company, return all projects (fallback)
+      return await db.select().from(projects).orderBy(desc(projects.createdAt));
+    }
+    
+    // Return only projects from the same company
+    return await db
+      .select()
+      .from(projects)
+      .where(eq(projects.companyId, user.companyId))
+      .orderBy(desc(projects.createdAt));
   }
 
   async getProject(projectId: string): Promise<Project | undefined> {
