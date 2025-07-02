@@ -41,6 +41,7 @@ export default function AiWorkflow() {
   const [taskDescription, setTaskDescription] = useState('');
   const [activeTaskId, setActiveTaskId] = useState<number | null>(null);
   const [showProgress, setShowProgress] = useState(false);
+  const [activeTab, setActiveTab] = useState<'create' | 'scheduled'>('create');
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -123,6 +124,27 @@ export default function AiWorkflow() {
     },
   });
 
+  // Save workflow mutation
+  const saveWorkflowMutation = useMutation({
+    mutationFn: async (data: { name: string; description: string; connectionId: number }) => {
+      return await apiRequest('/api/workflows', 'POST', data);
+    },
+    onSuccess: () => {
+      setTaskDescription('');
+      toast({
+        title: "Workflow Saved",
+        description: "Your automation workflow has been saved successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Save Failed",
+        description: error.message || "Failed to save workflow",
+        variant: "destructive",
+      });
+    },
+  });
+
   const handleCreateTask = () => {
     if (!selectedConnection || !taskDescription.trim()) {
       toast({
@@ -136,6 +158,24 @@ export default function AiWorkflow() {
     createTaskMutation.mutate({
       connectionId: selectedConnection,
       taskDescription: taskDescription.trim(),
+    });
+  };
+
+  const handleSaveWorkflow = () => {
+    if (!selectedConnection || !taskDescription.trim()) {
+      toast({
+        title: "Missing Information",
+        description: "Please select a connection and provide a task description",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const workflowName = `Workflow ${new Date().toLocaleDateString()}`;
+    saveWorkflowMutation.mutate({
+      name: workflowName,
+      description: taskDescription.trim(),
+      connectionId: selectedConnection,
     });
   };
 
@@ -249,14 +289,22 @@ export default function AiWorkflow() {
               </ul>
             </div>
 
-            <Button 
-              onClick={handleCreateTask}
-              disabled={createTaskMutation.isPending || !selectedConnection || !taskDescription.trim()}
-              className="w-full"
-            >
-              <Play className="h-4 w-4 mr-2" />
-              {createTaskMutation.isPending ? 'Starting Task...' : 'Start Automation'}
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button 
+                onClick={handleCreateTask}
+                disabled={createTaskMutation.isPending || !selectedConnection || !taskDescription.trim()}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                {createTaskMutation.isPending ? 'Starting...' : 'Start Automation'}
+              </Button>
+              <Button 
+                variant="outline"
+                onClick={handleSaveWorkflow}
+                disabled={saveWorkflowMutation.isPending || !selectedConnection || !taskDescription.trim()}
+              >
+                {saveWorkflowMutation.isPending ? 'Saving...' : 'Save Task'}
+              </Button>
+            </div>
           </CardContent>
         </Card>
 

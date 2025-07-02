@@ -20,6 +20,8 @@ import {
   lineItemClassifications,
   erpConnections,
   erpTasks,
+  savedWorkflows,
+  scheduledTasks,
   type Company,
   type InsertCompany,
   type User,
@@ -57,6 +59,10 @@ import {
   type InsertErpConnection,
   type ErpTask,
   type InsertErpTask,
+  type SavedWorkflow,
+  type InsertSavedWorkflow,
+  type ScheduledTask,
+  type InsertScheduledTask,
   type FeedbackLog,
   type InsertClassificationKeyword,
   type ClassificationKeyword,
@@ -214,6 +220,21 @@ export interface IStorage {
   getErpTasks(userId: string): Promise<ErpTask[]>;
   getErpTask(id: number): Promise<ErpTask | undefined>;
   updateErpTask(id: number, updates: Partial<InsertErpTask>): Promise<ErpTask>;
+
+  // Saved Workflows methods
+  createSavedWorkflow(workflow: Omit<InsertSavedWorkflow, 'userId' | 'companyId'>, userId: string): Promise<SavedWorkflow>;
+  getSavedWorkflows(userId: string): Promise<(SavedWorkflow & { connection: ErpConnection })[]>;
+  getSavedWorkflow(id: number): Promise<SavedWorkflow | undefined>;
+  updateSavedWorkflow(id: number, updates: Partial<InsertSavedWorkflow>): Promise<SavedWorkflow>;
+  deleteSavedWorkflow(id: number): Promise<void>;
+
+  // Scheduled Tasks methods
+  createScheduledTask(task: Omit<InsertScheduledTask, 'userId' | 'companyId'>, userId: string): Promise<ScheduledTask>;
+  getScheduledTasks(userId: string): Promise<(ScheduledTask & { workflow: SavedWorkflow & { connection: ErpConnection } })[]>;
+  getScheduledTask(id: number): Promise<ScheduledTask | undefined>;
+  updateScheduledTask(id: number, updates: Partial<InsertScheduledTask>): Promise<ScheduledTask>;
+  deleteScheduledTask(id: number): Promise<void>;
+  getActiveScheduledTasks(): Promise<(ScheduledTask & { workflow: SavedWorkflow & { connection: ErpConnection } })[]>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -1973,6 +1994,142 @@ export class DatabaseStorage implements IStorage {
       .where(eq(erpTasks.id, id))
       .returning();
     return updated;
+  }
+
+  // Saved Workflows methods
+  async createSavedWorkflow(workflow: Omit<InsertSavedWorkflow, 'userId' | 'companyId'>, userId: string): Promise<SavedWorkflow> {
+    const user = await this.getUser(userId);
+    const [created] = await db
+      .insert(savedWorkflows)
+      .values({
+        ...workflow,
+        userId,
+        companyId: user?.companyId || null,
+      })
+      .returning();
+    return created;
+  }
+
+  async getSavedWorkflows(userId: string): Promise<(SavedWorkflow & { connection: ErpConnection })[]> {
+    const user = await this.getUser(userId);
+    if (!user) return [];
+
+    const results = await db
+      .select()
+      .from(savedWorkflows)
+      .innerJoin(erpConnections, eq(savedWorkflows.connectionId, erpConnections.id))
+      .where(
+        and(
+          eq(savedWorkflows.userId, userId),
+          eq(savedWorkflows.isActive, true)
+        )
+      )
+      .orderBy(desc(savedWorkflows.createdAt));
+
+    return results.map(result => ({
+      ...result.saved_workflows,
+      connection: result.erp_connections,
+    }));
+  }
+
+  async getSavedWorkflow(id: number): Promise<SavedWorkflow | undefined> {
+    const [workflow] = await db
+      .select()
+      .from(savedWorkflows)
+      .where(eq(savedWorkflows.id, id));
+    return workflow;
+  }
+
+  async updateSavedWorkflow(id: number, updates: Partial<InsertSavedWorkflow>): Promise<SavedWorkflow> {
+    const [updated] = await db
+      .update(savedWorkflows)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(savedWorkflows.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteSavedWorkflow(id: number): Promise<void> {
+    await db.delete(savedWorkflows).where(eq(savedWorkflows.id, id));
+  }
+
+  // Scheduled Tasks methods
+  async createScheduledTask(task: Omit<InsertScheduledTask, 'userId' | 'companyId'>, userId: string): Promise<ScheduledTask> {
+    const user = await this.getUser(userId);
+    const [created] = await db
+      .insert(scheduledTasks)
+      .values({
+        ...task,
+        userId,
+        companyId: user?.companyId || null,
+      })
+      .returning();
+    return created;
+  }
+
+  async getScheduledTasks(userId: string): Promise<(ScheduledTask & { workflow: SavedWorkflow & { connection: ErpConnection } })[]> {
+    const user = await this.getUser(userId);
+    if (!user) return [];
+
+    const results = await db
+      .select()
+      .from(scheduledTasks)
+      .innerJoin(savedWorkflows, eq(scheduledTasks.workflowId, savedWorkflows.id))
+      .innerJoin(erpConnections, eq(savedWorkflows.connectionId, erpConnections.id))
+      .where(eq(scheduledTasks.userId, userId))
+      .orderBy(desc(scheduledTasks.createdAt));
+
+    return results.map(result => ({
+      ...result.scheduled_tasks,
+      workflow: {
+        ...result.saved_workflows,
+        connection: result.erp_connections,
+      },
+    }));
+  }
+
+  async getScheduledTask(id: number): Promise<ScheduledTask | undefined> {
+    const [task] = await db
+      .select()
+      .from(scheduledTasks)
+      .where(eq(scheduledTasks.id, id));
+    return task;
+  }
+
+  async updateScheduledTask(id: number, updates: Partial<InsertScheduledTask>): Promise<ScheduledTask> {
+    const [updated] = await db
+      .update(scheduledTasks)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(scheduledTasks.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteScheduledTask(id: number): Promise<void> {
+    await db.delete(scheduledTasks).where(eq(scheduledTasks.id, id));
+  }
+
+  async getActiveScheduledTasks(): Promise<(ScheduledTask & { workflow: SavedWorkflow & { connection: ErpConnection } })[]> {
+    const results = await db
+      .select()
+      .from(scheduledTasks)
+      .innerJoin(savedWorkflows, eq(scheduledTasks.workflowId, savedWorkflows.id))
+      .innerJoin(erpConnections, eq(savedWorkflows.connectionId, erpConnections.id))
+      .where(
+        and(
+          eq(scheduledTasks.isActive, true),
+          eq(savedWorkflows.isActive, true),
+          eq(erpConnections.isActive, true)
+        )
+      );
+
+    return results.map(result => ({
+      ...result.scheduled_tasks,
+      workflow: {
+        ...result.saved_workflows,
+        connection: result.erp_connections,
+      },
+    }));
   }
 }
 

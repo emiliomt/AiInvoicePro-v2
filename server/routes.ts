@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema } from "@shared/schema";
+import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema, insertSavedWorkflowSchema, insertScheduledTaskSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
@@ -2670,6 +2670,196 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     res.status(400).json({ error: errorMessage });
   }
 });
+
+  // Saved Workflows routes
+  app.post('/api/workflows', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertSavedWorkflowSchema.parse(req.body);
+      const workflow = await storage.createSavedWorkflow(data, (user as any).claims.sub);
+      res.json(workflow);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/workflows', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflows = await storage.getSavedWorkflows((user as any).claims.sub);
+      res.json(workflows);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/workflows/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      const data = insertSavedWorkflowSchema.partial().parse(req.body);
+      const updated = await storage.updateSavedWorkflow(workflowId, data);
+      res.json(updated);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/workflows/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      await storage.deleteSavedWorkflow(workflowId);
+      res.json({ message: 'Workflow deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Execute workflow manually
+  app.post('/api/workflows/:id/execute', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      // Create a new ERP task based on the saved workflow
+      const task = await storage.createErpTask({
+        connectionId: workflow.connectionId,
+        taskDescription: workflow.description,
+        userId: (user as any).claims.sub,
+        status: 'processing',
+      });
+
+      // Get connection details and execute
+      const connection = await storage.getErpConnection(workflow.connectionId);
+      if (connection) {
+        executeTaskAsync(task.id, connection, workflow.description);
+      }
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Scheduled Tasks routes
+  app.post('/api/scheduled-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertScheduledTaskSchema.parse(req.body);
+      const task = await storage.createScheduledTask(data, (user as any).claims.sub);
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/scheduled-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const tasks = await storage.getScheduledTasks((user as any).claims.sub);
+      res.json(tasks);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/scheduled-tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getScheduledTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Scheduled task not found' });
+      }
+
+      const data = insertScheduledTaskSchema.partial().parse(req.body);
+      const updated = await storage.updateScheduledTask(taskId, data);
+      res.json(updated);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/scheduled-tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getScheduledTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Scheduled task not found' });
+      }
+
+      await storage.deleteScheduledTask(taskId);
+      res.json({ message: 'Scheduled task deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
 
   const httpServer = createServer(app);
   return httpServer;

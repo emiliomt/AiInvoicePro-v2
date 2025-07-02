@@ -401,6 +401,36 @@ export const erpTasks = pgTable("erp_tasks", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Saved automation workflows
+export const savedWorkflows = pgTable("saved_workflows", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
+  connectionId: integer("connection_id").references(() => erpConnections.id).notNull(),
+  name: varchar("name", { length: 255 }).notNull(),
+  description: text("description").notNull(),
+  isActive: boolean("is_active").default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Scheduled automation tasks
+export const scheduledTasks = pgTable("scheduled_tasks", {
+  id: serial("id").primaryKey(),
+  workflowId: integer("workflow_id").references(() => savedWorkflows.id).notNull(),
+  userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
+  name: varchar("name", { length: 255 }).notNull(),
+  cronExpression: varchar("cron_expression", { length: 100 }), // e.g., "0 9 * * *" for daily at 9 AM
+  timezone: varchar("timezone", { length: 50 }).default("UTC"),
+  isActive: boolean("is_active").default(true),
+  lastRun: timestamp("last_run"),
+  nextRun: timestamp("next_run"),
+  runCount: integer("run_count").default(0),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Feedback logs table for extraction error reporting
 export const feedbackLogs = pgTable("feedback_logs", {
   id: serial("id").primaryKey(),
@@ -587,6 +617,29 @@ export const erpTasksRelations = relations(erpTasks, ({ one }) => ({
   connection: one(erpConnections, {
     fields: [erpTasks.connectionId],
     references: [erpConnections.id],
+  }),
+}));
+
+export const savedWorkflowsRelations = relations(savedWorkflows, ({ one, many }) => ({
+  connection: one(erpConnections, {
+    fields: [savedWorkflows.connectionId],
+    references: [erpConnections.id],
+  }),
+  company: one(companies, {
+    fields: [savedWorkflows.companyId],
+    references: [companies.id],
+  }),
+  scheduledTasks: many(scheduledTasks),
+}));
+
+export const scheduledTasksRelations = relations(scheduledTasks, ({ one }) => ({
+  workflow: one(savedWorkflows, {
+    fields: [scheduledTasks.workflowId],
+    references: [savedWorkflows.id],
+  }),
+  company: one(companies, {
+    fields: [scheduledTasks.companyId],
+    references: [companies.id],
   }),
 }));
 
@@ -778,6 +831,12 @@ export type ErpConnection = typeof erpConnections.$inferSelect;
 export type InsertErpTask = typeof erpTasks.$inferInsert;
 export type ErpTask = typeof erpTasks.$inferSelect;
 
+export type InsertSavedWorkflow = typeof savedWorkflows.$inferInsert;
+export type SavedWorkflow = typeof savedWorkflows.$inferSelect;
+
+export type InsertScheduledTask = typeof scheduledTasks.$inferInsert;
+export type ScheduledTask = typeof scheduledTasks.$inferSelect;
+
 // ERP Automation Zod schemas
 export const insertErpConnectionSchema = createInsertSchema(erpConnections).omit({
   id: true,
@@ -800,4 +859,26 @@ export const insertErpTaskSchema = createInsertSchema(erpTasks).omit({
   screenshots: true,
   executionTime: true,
   errorMessage: true,
+});
+
+export const insertSavedWorkflowSchema = createInsertSchema(savedWorkflows).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+  isActive: true,
+});
+
+export const createSavedWorkflowSchema = insertSavedWorkflowSchema;
+
+export const insertScheduledTaskSchema = createInsertSchema(scheduledTasks).omit({
+  id: true,
+  userId: true,
+  companyId: true,
+  createdAt: true,
+  updatedAt: true,
+  lastRun: true,
+  nextRun: true,
+  runCount: true,
 });
