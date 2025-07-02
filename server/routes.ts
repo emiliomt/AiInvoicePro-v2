@@ -496,7 +496,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ocrText: ocrText,
               fileName: fileName,
               uploadedBy: req.user?.id || "anonymous",
-            });
+            }, userId);
 
             processedPOs.push(newPurchaseOrder);
             console.log(`Purchase order saved with ID: ${newPurchaseOrder.id} for file: ${fileName}`);
