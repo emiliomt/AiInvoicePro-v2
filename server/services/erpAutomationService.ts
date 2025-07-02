@@ -111,7 +111,7 @@ class ERPAutomationService {
             "action": "navigate|click|type|wait|screenshot|extract",
             "selector": "CSS selector or XPath (when applicable)",
             "value": "text to type or data to extract (when applicable)",
-            "timeout": 15000,
+            "timeout": 8000,
             "description": "Human readable description of this step"
           }
         ],
@@ -125,13 +125,13 @@ class ERPAutomationService {
       Important guidelines:
       1. Always start with navigation to the base URL
       2. Include login steps using the provided credentials with Spanish field detection
-      3. Add generous wait steps after clicks and navigation (minimum 5000ms for SINCO)
+      3. Add smart wait steps after clicks and navigation (2-3 seconds for most actions)
       4. Take screenshots at key points for debugging
       5. Handle common errors and timeouts with retries
       6. Extract relevant data when needed
-      7. Use longer timeouts (minimum 30000ms) for element detection
+      7. Use shorter, adaptive timeouts (5-15 seconds) for element detection
       8. For SINCO specifically: wait after page load, then find first text input for username
-      9. Always add a wait step before attempting login after filling credentials
+      9. Add brief wait step before attempting login after filling credentials
     `;
 
     try {
@@ -229,23 +229,24 @@ class ERPAutomationService {
           progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
         }
 
-        // Step-level timeout (5 minutes per step maximum)
+        // Step-level timeout (2 minutes per step maximum)
         const stepTimeout = setTimeout(() => {
-          throw new Error(`Step ${i + 1} timed out after 5 minutes`);
-        }, 5 * 60 * 1000);
+          throw new Error(`Step ${i + 1} timed out after 2 minutes`);
+        }, 2 * 60 * 1000);
 
         try {
           await this.executeStep(page, step, connection, screenshots, extractedData, logs);
           logs.push(`Step ${i + 1} completed successfully`);
           clearTimeout(stepTimeout);
 
-          // Take automatic screenshot after important steps
+          // Take automatic screenshot after important steps (optimized)
           if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
             try {
-              await page.waitForTimeout(2000); // Wait for UI to stabilize
+              await page.waitForTimeout(1000); // Wait for UI to stabilize
               const screenshot = await page.screenshot({ 
-                fullPage: true,
-                type: 'png'
+                fullPage: false, // Viewport only for speed
+                type: 'png',
+                quality: 80 // Reduce quality for speed
               });
               const base64Screenshot = screenshot.toString('base64');
               screenshots.push(base64Screenshot);
@@ -331,32 +332,34 @@ class ERPAutomationService {
     extractedData: any,
     logs: string[]
   ): Promise<void> {
-    const timeout = step.timeout || 15000;
+    const timeout = step.timeout || 8000;
 
     switch (step.action) {
       case 'navigate':
         const url = step.value || connection.baseUrl;
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 30000 });
+        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
         // Wait for page to stabilize
-        await page.waitForTimeout(3000);
+        await page.waitForTimeout(1500);
         break;
 
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
         const clickSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
 
-        // For SINCO navigation clicks, add extra wait and handling
+        // For SINCO navigation clicks, add smart wait and handling
         if (step.description.toLowerCase().includes('module') || step.description.toLowerCase().includes('fe')) {
           // Click and wait for navigation to complete
           await page.click(clickSelector);
           // Wait for any navigation or dynamic content loading
-          await page.waitForTimeout(5000);
+          await page.waitForTimeout(2000);
           // Wait for network to be idle after navigation
-          await page.waitForLoadState('networkidle', { timeout: 10000 }).catch(() => {
+          await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
             console.warn('Network idle timeout - continuing anyway');
           });
         } else {
           await page.click(clickSelector);
+          // Brief wait after regular clicks
+          await page.waitForTimeout(500);
         }
         break;
 
