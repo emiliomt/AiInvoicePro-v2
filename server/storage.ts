@@ -220,6 +220,7 @@ export interface IStorage {
   getErpTasks(userId: string): Promise<ErpTask[]>;
   getErpTask(id: number): Promise<ErpTask | undefined>;
   updateErpTask(id: number, updates: Partial<InsertErpTask>): Promise<ErpTask>;
+  deleteErpTask(id: number): Promise<void>;
 
   // Saved Workflows methods
   createSavedWorkflow(workflow: Omit<InsertSavedWorkflow, 'userId' | 'companyId'>, userId: string): Promise<SavedWorkflow>;
@@ -1994,6 +1995,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(erpTasks.id, id))
       .returning();
     return updated;
+  }
+
+  async deleteErpTask(id: number): Promise<void> {
+    await db.delete(erpTasks).where(eq(erpTasks.id, id));
   }
 
   // Saved Workflows methods

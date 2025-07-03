@@ -2573,6 +2573,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Delete ERP task
+  app.delete('/api/erp/tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getErpTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      await storage.deleteErpTask(taskId);
+      res.json({ message: 'Task deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // Async function to execute ERP tasks with timeout protection
   async function executeTaskAsync(taskId: number, connection: any, taskDescription: string) {
     // Set a maximum execution time of 20 minutes for the entire task

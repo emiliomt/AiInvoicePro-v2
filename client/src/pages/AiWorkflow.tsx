@@ -112,10 +112,13 @@ export default function AiWorkflow() {
       try {
         const response = await fetch(`/api/erp/tasks/${taskId}`, {
           method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+          },
         });
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to delete task');
+          throw new Error(errorData.error || errorData.message || 'Failed to delete task');
         }
         return await response.json();
       } catch (error) {
@@ -128,6 +131,13 @@ export default function AiWorkflow() {
       toast({
         title: "Task Deleted",
         description: "Task has been deleted successfully",
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Delete Failed",
+        description: error.message || "Failed to delete task",
+        variant: "destructive",
       });
     },
   });
