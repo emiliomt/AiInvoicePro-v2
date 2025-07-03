@@ -848,14 +848,14 @@ export type InsertLineItemClassification = typeof lineItemClassifications.$infer
 export type LineItemClassification = typeof lineItemClassifications.$inferSelect;
 
 // Invoice Importer types
-export type InsertInvoiceImporterConfig = typeof invoiceImporterConfigs.$inferInsert;
 export type InvoiceImporterConfig = typeof invoiceImporterConfigs.$inferSelect;
+export type InsertInvoiceImporterConfig = typeof invoiceImporterConfigs.$inferInsert;
 
-export type InsertInvoiceImporterLog = typeof invoiceImporterLogs.$inferInsert;
 export type InvoiceImporterLog = typeof invoiceImporterLogs.$inferSelect;
+export type InsertInvoiceImporterLog = typeof invoiceImporterLogs.$inferInsert;
 
-export type InsertImportedInvoice = typeof importedInvoices.$inferInsert;
 export type ImportedInvoice = typeof importedInvoices.$inferSelect;
+export type InsertImportedInvoice = typeof importedInvoices.$inferInsert;
 
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({

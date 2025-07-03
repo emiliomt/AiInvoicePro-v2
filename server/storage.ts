@@ -832,7 +832,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(approvals.status, "pending"),
-          userId ? eq(invoices.userId, userId) : undefined
+          userId ? eq(invoices.userId, userId) : undefined```python
         )
       );
 
