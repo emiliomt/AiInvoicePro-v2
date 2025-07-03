@@ -832,7 +832,7 @@ export class DatabaseStorage implements IStorage {
       .where(
         and(
           eq(approvals.status, "pending"),
-          userId ? eq(invoices.userId, userId) : undefined```python
+          userId ? eq(invoices.userId, userId) : undefined
         )
       );
 
@@ -841,10 +841,12 @@ export class DatabaseStorage implements IStorage {
       .select({ count: count() })
       .from(invoices)
       .where(
-        and(
-          sql`DATE(${invoices.updatedAt}) = CURRENT_DATE`,
-          userId ? eq(invoices.userId, userId) : undefined
-        )
+        userId 
+          ? and(
+              sql`DATE(${invoices.updatedAt}) = CURRENT_DATE`,
+              eq(invoices.userId, userId)
+            )
+          : sql`DATE(${invoices.updatedAt}) = CURRENT_DATE`
       );
 
     // Total value
@@ -1419,22 +1421,20 @@ export class DatabaseStorage implements IStorage {
       const currentMonth = new Date();
       currentMonth.setDate(1);
 
-      // Get actual flag data for this month using SQL to avoid ORM issues
-      const result = await db.execute(sql`
-        SELECT 
-          flag_type,
-          severity,
-          COUNT(*) as count
-        FROM invoice_flags 
-        WHERE created_at >= ${currentMonth}
-        GROUP BY flag_type, severity
-        ORDER BY COUNT(*) DESC
-      `);
+      // Get actual flag data for this month using Drizzle ORM
+      const result = await db
+        .select({
+          flag_type: invoiceFlags.flagType,
+          severity: invoiceFlags.severity,
+          count: count()
+        })
+        .from(invoiceFlags)
+        .where(gte(invoiceFlags.createdAt, currentMonth))
+        .groupBy(invoiceFlags.flagType, invoiceFlags.severity)
+        .orderBy(desc(count()));
 
-      // Handle different result formats from different database drivers
-      const rows = Array.isArray(result) ? result : (result as any).rows || [];
-
-      return rows.map((row: any) => ({
+      // Handle result from Drizzle ORM query
+      return result.map((row: any) => ({
         issueType: row.flag_type?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown',
         count: parseInt(row.count) || 0,
         severity: row.severity || 'medium',
