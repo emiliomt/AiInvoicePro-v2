@@ -25,7 +25,7 @@ import Settings from "./pages/Settings";
 import ERPConnect from "./pages/ERPConnect";
 import AiWorkflow from "./pages/AiWorkflow";
 import InvoiceImporter from "./pages/InvoiceImporter";
-import React from "react";
+import React, { useEffect } from "react";
 import Header from "@/components/Header";
 
 const Profile = () => (
@@ -100,6 +100,23 @@ function Router() {
 }
 
 function App() {
+  const { isAuthenticated, isLoading } = useAuth();
+
+  useEffect(() => {
+    // Handle unhandled promise rejections
+    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
+      console.error('Unhandled promise rejection:', event.reason);
+      // Prevent the default behavior of logging to console
+      event.preventDefault();
+    };
+
+    window.addEventListener('unhandledrejection', handleUnhandledRejection);
+
+    return () => {
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
+    };
+  }, []);
+
   return (
     <ErrorBoundary FallbackComponent={ErrorFallback}>
       <QueryClientProvider client={queryClient}>

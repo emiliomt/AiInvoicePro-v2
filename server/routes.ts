@@ -1553,7 +1553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -1826,7 +1826,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get pending approvals
-  app.get('/api/approvals/pending', isAuthenticated, async (req: any, res) => {
+  app.get('/api/approvals/pending', isAuthenticated, async (req, res) => {
     try {
       const pendingApprovals = await storage.getPendingApprovals();
       res.json(pendingApprovals);
@@ -2282,14 +2282,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         approvedBy: (user as any).claims.sub,
         statusChangedAt: new Date(),
       });
-      
+
       // Update invoice status to matched
       const matches = await storage.getInvoicePoMatchesWithDetails();
       const targetMatch = matches.find(m => m.id === matchId);
       if (targetMatch?.invoice) {
         await storage.updateInvoice(targetMatch.invoice.id, { status: 'matched' });
       }
-      
+
       res.json({ message: "Match approved successfully", match: updatedMatch });
     } catch (error) {
       console.error("Error approving invoice-PO match:", error);
@@ -2312,7 +2312,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         rejectedBy: (user as any).claims.sub,
         statusChangedAt: new Date(),
       });
-      
+
       res.json({ message: "Match rejected successfully", match: updatedMatch });
     } catch (error) {
       console.error("Error rejecting invoice-PO match:", error);
@@ -3017,7 +3017,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       const logId = parseInt(req.params.logId);
       const progress = invoiceImporterService.getProgress(logId);
-      
+
       if (!progress) {
         return res.status(404).json({ error: 'Import task not found' });
       }
@@ -3039,5 +3039,16 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   }
 
   const httpServer = createServer(app);
+
+  // Custom error handler middleware
+  const { Request, Response, NextFunction } = await import('express');
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+
+    console.error('Express error handler:', err);
+    res.status(status).json({ message });
+    // Don't re-throw the error to prevent unhandled rejection
+  });
   return httpServer;
 }

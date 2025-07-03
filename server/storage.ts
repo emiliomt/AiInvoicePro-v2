@@ -252,12 +252,12 @@ export interface IStorage {
   getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | undefined>;
   updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<InvoiceImporterConfig>;
   deleteInvoiceImporterConfig(id: number): Promise<void>;
-  
+
   createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
   getInvoiceImporterLogs(configId: number): Promise<InvoiceImporterLog[]>;
   getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | undefined>;
   updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<InvoiceImporterLog>;
-  
+
   createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice>;
   getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]>;
   getImportedInvoice(id: number): Promise<ImportedInvoice | undefined>;
@@ -295,7 +295,7 @@ export class DatabaseStorage implements IStorage {
       ...invoice,
       companyId: user?.companyId || null
     };
-    
+
     const [created] = await db.insert(invoices).values(invoiceWithCompany).returning();
     return created;
   }
@@ -316,7 +316,7 @@ export class DatabaseStorage implements IStorage {
         .where(eq(invoices.userId, userId))
         .orderBy(desc(invoices.createdAt));
     }
-    
+
     // Return all invoices from the same company
     return await db
       .select()
@@ -966,14 +966,14 @@ export class DatabaseStorage implements IStorage {
       // If no userId provided, return all projects (for backwards compatibility)
       return await db.select().from(projects).orderBy(desc(projects.createdAt));
     }
-    
+
     // Get user's company and filter projects by company
     const user = await this.getUser(userId);
     if (!user?.companyId) {
       // If user has no company, return all projects (fallback)
       return await db.select().from(projects).orderBy(desc(projects.createdAt));
     }
-    
+
     // Return only projects from the same company
     return await db
       .select()
@@ -989,7 +989,7 @@ export class DatabaseStorage implements IStorage {
 
   async createProject(project: InsertProject, userId?: string): Promise<Project> {
     let projectWithCompany = project;
-    
+
     // If userId is provided, set the company ID from the user's company
     if (userId) {
       const user = await this.getUser(userId);
@@ -1000,7 +1000,7 @@ export class DatabaseStorage implements IStorage {
         };
       }
     }
-    
+
     const [newProject] = await db.insert(projects).values(projectWithCompany).returning();
     return newProject;
   }
@@ -1108,14 +1108,14 @@ export class DatabaseStorage implements IStorage {
       // If no userId provided, return all purchase orders (for backwards compatibility)
       return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
     }
-    
+
     // Get user's company and filter purchase orders by company
     const user = await this.getUser(userId);
     if (!user?.companyId) {
       // If user has no company, return all purchase orders (fallback)
       return await db.select().from(purchaseOrders).orderBy(desc(purchaseOrders.createdAt));
     }
-    
+
     // Return only purchase orders from the same company
     return await db
       .select()
@@ -1136,7 +1136,7 @@ export class DatabaseStorage implements IStorage {
 
   async createPurchaseOrder(po: InsertPurchaseOrder, userId?: string): Promise<PurchaseOrder> {
     let poWithCompany = po;
-    
+
     // If userId is provided, set the company ID from the user's company
     if (userId) {
       const user = await this.getUser(userId);
@@ -1147,7 +1147,7 @@ export class DatabaseStorage implements IStorage {
         };
       }
     }
-    
+
     const [newPo] = await db.insert(purchaseOrders).values(poWithCompany).returning();
     return newPo;
   }
@@ -1433,7 +1433,7 @@ export class DatabaseStorage implements IStorage {
 
       // Handle different result formats from different database drivers
       const rows = Array.isArray(result) ? result : (result as any).rows || [];
-      
+
       return rows.map((row: any) => ({
         issueType: row.flag_type?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase()) || 'Unknown',
         count: parseInt(row.count) || 0,
@@ -2171,7 +2171,7 @@ export class DatabaseStorage implements IStorage {
       userId,
       companyId: user?.companyId || null
     };
-    
+
     const [created] = await db.insert(invoiceImporterConfigs).values(configWithUserAndCompany).returning();
     return created;
   }
@@ -2210,7 +2210,7 @@ export class DatabaseStorage implements IStorage {
   async deleteInvoiceImporterConfig(id: number): Promise<void> {
     await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
   }
-  
+
   async createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog> {
     const [created] = await db.insert(invoiceImporterLogs).values(log).returning();
     return created;
@@ -2237,7 +2237,7 @@ export class DatabaseStorage implements IStorage {
       .returning();
     return updated;
   }
-  
+
   async createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice> {
     const [created] = await db.insert(importedInvoices).values(invoice).returning();
     return created;
@@ -2267,3 +2267,28 @@ export class DatabaseStorage implements IStorage {
 }
 
 export const storage = new DatabaseStorage();
+import { drizzle } from "drizzle-orm/postgres-js";
+import postgres from "postgres";
+import * as schema from "@shared/schema";
+
+if (!process.env.DATABASE_URL) {
+  throw new Error("DATABASE_URL environment variable is required");
+}
+
+const client = postgres(process.env.DATABASE_URL, { 
+  max: 10,
+  idle_timeout: 20,
+  connect_timeout: 30,
+  max_lifetime: 60 * 30,
+  onnotice: () => {}, // Suppress notices
+  debug: false, // Reduce logging
+});
+
+export const db = drizzle(client, { schema });
+
+// Test connection on startup
+client`SELECT 1`.then(() => {
+  console.log('Database connected successfully');
+}).catch((error) => {
+  console.error('Database connection failed:', error);
+});
