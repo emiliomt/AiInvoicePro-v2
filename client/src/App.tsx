@@ -1,5 +1,5 @@
 import { Route, Switch } from "wouter";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
@@ -121,7 +121,7 @@ function AppContent() {
   );
 }
 
-export default function App() {
+function App() {
   return (
     <QueryClientProvider client={queryClient}>
       <AppContent />
@@ -129,3 +129,5 @@ export default function App() {
     </QueryClientProvider>
   );
 }
+
+export default App;

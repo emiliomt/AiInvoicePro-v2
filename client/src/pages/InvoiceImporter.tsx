@@ -110,7 +110,20 @@ export default function InvoiceImporter() {
   // Create configuration mutation
   const createConfigMutation = useMutation({
     mutationFn: async (data: ImportConfig) => {
-      return await apiRequest('/api/invoice-importer/configs', 'POST', data);
+      const response = await fetch('/api/invoice-importer/configs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify(data),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to create configuration');
+      }
+      
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
@@ -133,7 +146,20 @@ export default function InvoiceImporter() {
   // Execute import mutation
   const executeImportMutation = useMutation({
     mutationFn: async (configId: number) => {
-      return await apiRequest(`/api/invoice-importer/configs/${configId}/execute`, 'POST', {});
+      const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({}),
+      });
+      
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to execute import');
+      }
+      
+      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/logs'] });
