@@ -241,132 +241,173 @@ export default function InvoiceImporter() {
               New Import Task
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[500px]">
-            <DialogHeader>
-              <DialogTitle>Create Import Configuration</DialogTitle>
-              <DialogDescription>
+          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="pb-4">
+              <DialogTitle className="text-xl font-semibold">Create Import Configuration</DialogTitle>
+              <DialogDescription className="text-muted-foreground">
                 Set up a new automated invoice import task from your ERP system.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleCreateConfig)} className="space-y-4">
-                <FormField
-                  control={form.control}
-                  name="taskName"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Task Name</FormLabel>
-                      <FormControl>
-                        <Input placeholder="e.g., Daily Invoice Import" {...field} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="description"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Description</FormLabel>
-                      <FormControl>
-                        <Textarea 
-                          placeholder="Optional description of the import task"
-                          {...field}
-                        />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="connectionId"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>ERP Connection</FormLabel>
-                      <Select onValueChange={(value) => field.onChange(parseInt(value))} value={field.value?.toString()}>
+              <form onSubmit={form.handleSubmit(handleCreateConfig)} className="space-y-6">
+                {/* Basic Information Section */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">Basic Information</h3>
+                  
+                  <FormField
+                    control={form.control}
+                    name="taskName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">Task Name</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an ERP connection" />
-                          </SelectTrigger>
+                          <Input 
+                            placeholder="e.g., Daily Invoice Import" 
+                            className="mt-1"
+                            {...field} 
+                          />
                         </FormControl>
-                        <SelectContent>
-                          {connections.map((connection: ErpConnection) => (
-                            <SelectItem key={connection.id} value={connection.id.toString()}>
-                              {connection.name} ({connection.baseUrl})
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <FormField
-                  control={form.control}
-                  name="fileTypes"
-                  render={({ field }) => (
-                    <FormItem className="space-y-3">
-                      <FormLabel>File Types to Import</FormLabel>
-                      <FormControl>
-                        <RadioGroup
-                          onValueChange={field.onChange}
-                          value={field.value}
-                          className="flex flex-col space-y-1"
-                        >
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="xml" id="xml" />
-                            <Label htmlFor="xml">XML only</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="pdf" id="pdf" />
-                            <Label htmlFor="pdf">PDF only</Label>
-                          </div>
-                          <div className="flex items-center space-x-2">
-                            <RadioGroupItem value="both" id="both" />
-                            <Label htmlFor="both">Both XML and PDF</Label>
-                          </div>
-                        </RadioGroup>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
-
-                <FormField
-                  control={form.control}
-                  name="scheduleType"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Import Schedule</FormLabel>
-                      <Select onValueChange={field.onChange} value={field.value}>
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">Description</FormLabel>
                         <FormControl>
-                          <SelectTrigger>
-                            <SelectValue />
-                          </SelectTrigger>
+                          <Textarea 
+                            placeholder="Optional description of the import task"
+                            className="mt-1 resize-none"
+                            rows={3}
+                            {...field}
+                          />
                         </FormControl>
-                        <SelectContent>
-                          <SelectItem value="once">Run once</SelectItem>
-                          <SelectItem value="daily">Daily at specific time</SelectItem>
-                          <SelectItem value="weekly">Weekly on specific day/time</SelectItem>
-                          <SelectItem value="hourly">Every X hours</SelectItem>
-                          <SelectItem value="multiple_daily">X times per day (evenly spaced)</SelectItem>
-                        </SelectContent>
-                      </Select>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
 
-                <div className="flex justify-end pt-4">
-                  <Button type="submit" disabled={createConfigMutation.isPending}>
+                  <FormField
+                    control={form.control}
+                    name="connectionId"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">ERP Connection</FormLabel>
+                        <Select onValueChange={(value) => field.onChange(parseInt(value))} value={field.value?.toString()}>
+                          <FormControl>
+                            <SelectTrigger className="mt-1 w-full">
+                              <SelectValue placeholder="Select an ERP connection" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {connections.map((connection: ErpConnection) => (
+                              <SelectItem key={connection.id} value={connection.id.toString()}>
+                                {connection.name} ({connection.baseUrl})
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* File Types Section */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">File Configuration</h3>
+                  
+                  <FormField
+                    control={form.control}
+                    name="fileTypes"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">File Types to Import</FormLabel>
+                        <FormControl>
+                          <fieldset className="mt-3">
+                            <RadioGroup
+                              onValueChange={field.onChange}
+                              value={field.value}
+                              className="space-y-3"
+                            >
+                              <div className="flex items-center space-x-3">
+                                <RadioGroupItem value="xml" id="xml" />
+                                <Label htmlFor="xml" className="text-sm font-normal cursor-pointer">
+                                  XML only
+                                </Label>
+                              </div>
+                              <div className="flex items-center space-x-3">
+                                <RadioGroupItem value="pdf" id="pdf" />
+                                <Label htmlFor="pdf" className="text-sm font-normal cursor-pointer">
+                                  PDF only
+                                </Label>
+                              </div>
+                              <div className="flex items-center space-x-3">
+                                <RadioGroupItem value="both" id="both" />
+                                <Label htmlFor="both" className="text-sm font-normal cursor-pointer">
+                                  Both XML and PDF
+                                </Label>
+                              </div>
+                            </RadioGroup>
+                          </fieldset>
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {/* Schedule Section */}
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">Schedule Configuration</h3>
+                  
+                  <FormField
+                    control={form.control}
+                    name="scheduleType"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel className="text-sm font-medium">Import Schedule</FormLabel>
+                        <Select onValueChange={field.onChange} value={field.value}>
+                          <FormControl>
+                            <SelectTrigger className="mt-1 w-full">
+                              <SelectValue placeholder="Select schedule type" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            <SelectItem value="once">Run once</SelectItem>
+                            <SelectItem value="hourly">Every hour</SelectItem>
+                            <SelectItem value="daily">Once per day</SelectItem>
+                            <SelectItem value="weekly">Once per week</SelectItem>
+                            <SelectItem value="multiple_daily">Multiple times per day</SelectItem>
+                          </SelectContent>
+                        </Select>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                <DialogFooter className="pt-6 border-t">
+                  <Button 
+                    type="button" 
+                    variant="outline" 
+                    onClick={() => setShowCreateDialog(false)}
+                    disabled={createConfigMutation.isPending}
+                  >
+                    Cancel
+                  </Button>
+                  <Button 
+                    type="submit" 
+                    disabled={createConfigMutation.isPending}
+                    className="ml-2"
+                  >
                     {createConfigMutation.isPending ? 'Creating...' : 'Create Configuration'}
                   </Button>
-                </div>
+                </DialogFooter>
               </form>
             </Form>
           </DialogContent>
