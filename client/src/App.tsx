@@ -1,130 +1,92 @@
-import { Switch, Route } from "wouter";
-import { queryClient } from "./lib/queryClient";
-import { QueryClientProvider } from "@tanstack/react-query";
+import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "@/components/ui/toaster";
-import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
-import { ErrorBoundary } from "react-error-boundary";
-import NotFound from "@/pages/not-found";
+
+// Pages
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
-import Invoices from "./pages/Invoices";
-import InvoicePreview from "./pages/InvoicePreview";
-import POMatching from "./pages/POMatching";
-import ProjectMatcher from "./pages/ProjectMatcher";
-import Reports from "./pages/Reports";
-import ValidationRules from "./pages/ValidationRules";
-import AILearningDashboard from "./pages/AILearningDashboard";
-import InvoiceVerification from "./pages/InvoiceVerification";
-import VerifiedInvoices from "./pages/VerifiedInvoices";
+import Invoices from "@/pages/Invoices";
+import Profile from "@/pages/Profile";
+import Approvals from "@/pages/Approvals";
+import Settings from "@/pages/Settings";
+import Reports from "@/pages/Reports";
+import PettyCash from "@/pages/PettyCash";
+import ProjectValidation from "@/pages/ProjectValidation";
+import ValidationRules from "@/pages/ValidationRules";
+import POMatching from "@/pages/POMatching";
+import PurchaseOrders from "@/pages/PurchaseOrders";
+import ProjectMatcher from "@/pages/ProjectMatcher";
+import VerifiedInvoices from "@/pages/VerifiedInvoices";
+import InvoiceVerification from "@/pages/InvoiceVerification";
+import AILearningDashboard from "@/pages/AILearningDashboard";
 import LineItemClassification from "@/pages/LineItemClassification";
-import PurchaseOrders from "./pages/PurchaseOrders";
-import PettyCash from "./pages/PettyCash";
-import ProjectValidation from "./pages/ProjectValidation";
-import Settings from "./pages/Settings";
-import ERPConnect from "./pages/ERPConnect";
-import AiWorkflow from "./pages/AiWorkflow";
-import InvoiceImporter from "./pages/InvoiceImporter";
-import React, { useEffect } from "react";
-import Header from "@/components/Header";
+import ERPConnect from "@/pages/ERPConnect";
+import RPADashboard from "@/pages/RPADashboard";
+import AiWorkflow from "@/pages/AiWorkflow";
+import InvoiceImporter from "@/pages/InvoiceImporter";
+import InvoicePreview from "@/pages/InvoicePreview";
+import NotFound from "@/pages/not-found";
 
-const Profile = () => (
-  <div>
-    <h1>Profile</h1>
-    <p>This is the profile page.</p>
-  </div>
-);
+// Create a query client
+const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      retry: 1,
+      refetchOnWindowFocus: false,
+    },
+  },
+});
 
-function ErrorFallback({ error }: { error: Error }) {
-  return (
-    <div className="flex items-center justify-center min-h-screen">
-      <div className="text-center">
-        <h2 className="text-2xl font-bold text-red-600 mb-2">
-          Something went wrong
-        </h2>
-        <p className="text-gray-600 mb-4">{error.message}</p>
-        <button
-          onClick={() => window.location.reload()}
-          className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600"
-        >
-          Reload page
-        </button>
+function AppContent() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
-    </div>
-  );
-}
-
-function Router() {
-  const { isAuthenticated, isLoading } = useAuth();
+    );
+  }
 
   return (
-    <Switch>
-      {isLoading || !isAuthenticated ? (
-        <Route path="/" component={Landing} />
-      ) : (
-        <>
-          <Route path="/" component={Dashboard} />
-          <Route path="/dashboard" component={Dashboard} />
-          <Route path="/invoices" component={Invoices} />
-          <Route path="/preview/:id" component={InvoicePreview} />
-          <Route path="/validation-rules" component={ValidationRules} />
-          <Route path="/invoice-verification" component={InvoiceVerification} />
-          <Route path="/verified-invoices" component={VerifiedInvoices} />
-          <Route path="/classification" component={LineItemClassification} />
-          <Route path="/petty-cash" component={PettyCash} />
-          <Route path="/po-matching" component={POMatching} />
-          <Route path="/project-matcher" component={ProjectMatcher} />
-          <Route path="/purchase-orders" component={PurchaseOrders} />
-          <Route path="/reports" component={Reports} />
-          <Route path="/project-validation" component={ProjectValidation} />
-          <Route path="/profile" component={Profile} />
-          <Route path="/settings" component={Settings} />
-          <Route path="/ai-learning" component={AILearningDashboard} />
-          <Route path="/erp-connect">
-            <Header />
-            <ERPConnect />
-          </Route>
-          <Route path="/ai-workflow">
-            <Header />
-            <AiWorkflow />
-          </Route>
-          <Route path="/invoice-importer">
-            <Header />
-            <InvoiceImporter />
-          </Route>
-        </>
-      )}
-      <Route component={NotFound} />
-    </Switch>
+    <Router>
+      <Routes>
+        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
+        <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/" />} />
+        <Route path="/invoices" element={user ? <Invoices /> : <Navigate to="/" />} />
+        <Route path="/invoices/:id/preview" element={user ? <InvoicePreview /> : <Navigate to="/" />} />
+        <Route path="/profile" element={user ? <Profile /> : <Navigate to="/" />} />
+        <Route path="/approvals" element={user ? <Approvals /> : <Navigate to="/" />} />
+        <Route path="/settings" element={user ? <Settings /> : <Navigate to="/" />} />
+        <Route path="/reports" element={user ? <Reports /> : <Navigate to="/" />} />
+        <Route path="/petty-cash" element={user ? <PettyCash /> : <Navigate to="/" />} />
+        <Route path="/project-validation" element={user ? <ProjectValidation /> : <Navigate to="/" />} />
+        <Route path="/validation-rules" element={user ? <ValidationRules /> : <Navigate to="/" />} />
+        <Route path="/po-matching" element={user ? <POMatching /> : <Navigate to="/" />} />
+        <Route path="/purchase-orders" element={user ? <PurchaseOrders /> : <Navigate to="/" />} />
+        <Route path="/project-matcher" element={user ? <ProjectMatcher /> : <Navigate to="/" />} />
+        <Route path="/verified-invoices" element={user ? <VerifiedInvoices /> : <Navigate to="/" />} />
+        <Route path="/invoice-verification" element={user ? <InvoiceVerification /> : <Navigate to="/" />} />
+        <Route path="/ai-learning" element={user ? <AILearningDashboard /> : <Navigate to="/" />} />
+        <Route path="/line-item-classification" element={user ? <LineItemClassification /> : <Navigate to="/" />} />
+        <Route path="/erp-connect" element={user ? <ERPConnect /> : <Navigate to="/" />} />
+        <Route path="/rpa-dashboard" element={user ? <RPADashboard /> : <Navigate to="/" />} />
+        <Route path="/ai-workflow" element={user ? <AiWorkflow /> : <Navigate to="/" />} />
+        <Route path="/invoice-importer" element={user ? <InvoiceImporter /> : <Navigate to="/" />} />
+        <Route path="*" element={<NotFound />} />
+      </Routes>
+      <Toaster />
+    </Router>
   );
 }
 
-function App() {
-  useEffect(() => {
-    // Handle unhandled promise rejections
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      console.error('Unhandled promise rejection:', event.reason);
-      // Prevent the default behavior of logging to console
-      event.preventDefault();
-    };
-
-    window.addEventListener('unhandledrejection', handleUnhandledRejection);
-
-    return () => {
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection);
-    };
-  }, []);
-
+export default function App() {
   return (
-    <ErrorBoundary FallbackComponent={ErrorFallback}>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <Toaster />
-          <Router />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ErrorBoundary>
+    <QueryClientProvider client={queryClient}>
+      <AppContent />
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
   );
 }
-
-export default App;
