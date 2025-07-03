@@ -926,8 +926,12 @@ export const insertApprovedInvoiceProjectSchema = createInsertSchema(approvedInv
 // Invoice Importer Zod schemas
 export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImporterConfigs).omit({
   id: true,
+  userId: true,
+  companyId: true,
   createdAt: true,
   updatedAt: true,
+  lastRun: true,
+  nextRun: true,
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
