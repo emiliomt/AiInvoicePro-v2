@@ -28,6 +28,26 @@ const importConfigSchema = z.object({
   scheduleType: z.enum(['once', 'daily', 'weekly', 'hourly', 'multiple_daily']),
   scheduleTime: z.string().optional(),
   scheduleDay: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
+  timesPerDay: z.number().optional(),
+}).refine((data) => {
+  if (data.scheduleType === 'daily' && !data.scheduleTime) {
+    return false;
+  }
+  if (data.scheduleType === 'weekly' && (!data.scheduleDay || !data.scheduleTime)) {
+    return false;
+  }
+  if (data.scheduleType === 'hourly' && (!data.startTime || !data.endTime)) {
+    return false;
+  }
+  if (data.scheduleType === 'multiple_daily' && !data.timesPerDay) {
+    return false;
+  }
+  return true;
+}, {
+  message: "Please fill in all required schedule fields",
+  path: ["scheduleType"]
 });
 
 type ImportConfig = z.infer<typeof importConfigSchema>;
@@ -87,8 +107,15 @@ export default function InvoiceImporter() {
       description: '',
       fileTypes: 'both',
       scheduleType: 'once',
+      scheduleTime: '',
+      scheduleDay: '',
+      startTime: '',
+      endTime: '',
+      timesPerDay: 1,
     },
   });
+
+  const watchedScheduleType = form.watch('scheduleType');
 
   // Fetch ERP connections
   const { data: connections = [] } = useQuery({
@@ -241,29 +268,29 @@ export default function InvoiceImporter() {
               New Import Task
             </Button>
           </DialogTrigger>
-          <DialogContent className="sm:max-w-[600px] max-h-[90vh] overflow-y-auto">
-            <DialogHeader className="pb-4">
+          <DialogContent className="sm:max-w-[650px] max-h-[90vh] overflow-y-auto">
+            <DialogHeader className="pb-4 border-b">
               <DialogTitle className="text-xl font-semibold">Create Import Configuration</DialogTitle>
               <DialogDescription className="text-muted-foreground">
                 Set up a new automated invoice import task from your ERP system.
               </DialogDescription>
             </DialogHeader>
             <Form {...form}>
-              <form onSubmit={form.handleSubmit(handleCreateConfig)} className="space-y-6">
+              <form onSubmit={form.handleSubmit(handleCreateConfig)} className="space-y-6 px-1">
                 {/* Basic Information Section */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">Basic Information</h3>
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2 mb-4">Basic Information</h3>
                   
                   <FormField
                     control={form.control}
                     name="taskName"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="space-y-2">
                         <FormLabel className="text-sm font-medium">Task Name</FormLabel>
                         <FormControl>
                           <Input 
                             placeholder="e.g., Daily Invoice Import" 
-                            className="mt-1"
+                            className="h-10 rounded-md border border-input bg-background px-3 py-2"
                             {...field} 
                           />
                         </FormControl>
@@ -276,13 +303,12 @@ export default function InvoiceImporter() {
                     control={form.control}
                     name="description"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="space-y-2">
                         <FormLabel className="text-sm font-medium">Description</FormLabel>
                         <FormControl>
                           <Textarea 
                             placeholder="Optional description of the import task"
-                            className="mt-1 resize-none"
-                            rows={3}
+                            className="min-h-[80px] resize-none rounded-md border border-input bg-background px-3 py-2"
                             {...field}
                           />
                         </FormControl>
@@ -295,11 +321,11 @@ export default function InvoiceImporter() {
                     control={form.control}
                     name="connectionId"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="space-y-2">
                         <FormLabel className="text-sm font-medium">ERP Connection</FormLabel>
                         <Select onValueChange={(value) => field.onChange(parseInt(value))} value={field.value?.toString()}>
                           <FormControl>
-                            <SelectTrigger className="mt-1 w-full">
+                            <SelectTrigger className="h-10 w-full rounded-md border border-input bg-background px-3 py-2">
                               <SelectValue placeholder="Select an ERP connection" />
                             </SelectTrigger>
                           </FormControl>
@@ -317,43 +343,41 @@ export default function InvoiceImporter() {
                   />
                 </div>
 
-                {/* File Types Section */}
+                {/* File Configuration Section */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">File Configuration</h3>
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2 mb-4">File Configuration</h3>
                   
                   <FormField
                     control={form.control}
                     name="fileTypes"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="space-y-3">
                         <FormLabel className="text-sm font-medium">File Types to Import</FormLabel>
                         <FormControl>
-                          <fieldset className="mt-3">
-                            <RadioGroup
-                              onValueChange={field.onChange}
-                              value={field.value}
-                              className="space-y-3"
-                            >
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="xml" id="xml" />
-                                <Label htmlFor="xml" className="text-sm font-normal cursor-pointer">
-                                  XML only
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="pdf" id="pdf" />
-                                <Label htmlFor="pdf" className="text-sm font-normal cursor-pointer">
-                                  PDF only
-                                </Label>
-                              </div>
-                              <div className="flex items-center space-x-3">
-                                <RadioGroupItem value="both" id="both" />
-                                <Label htmlFor="both" className="text-sm font-normal cursor-pointer">
-                                  Both XML and PDF
-                                </Label>
-                              </div>
-                            </RadioGroup>
-                          </fieldset>
+                          <RadioGroup
+                            onValueChange={field.onChange}
+                            value={field.value}
+                            className="space-y-3"
+                          >
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="xml" id="xml" />
+                              <Label htmlFor="xml" className="text-sm font-normal cursor-pointer">
+                                XML only
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="pdf" id="pdf" />
+                              <Label htmlFor="pdf" className="text-sm font-normal cursor-pointer">
+                                PDF only
+                              </Label>
+                            </div>
+                            <div className="flex items-center space-x-3">
+                              <RadioGroupItem value="both" id="both" />
+                              <Label htmlFor="both" className="text-sm font-normal cursor-pointer">
+                                Both XML and PDF
+                              </Label>
+                            </div>
+                          </RadioGroup>
                         </FormControl>
                         <FormMessage />
                       </FormItem>
@@ -361,19 +385,19 @@ export default function InvoiceImporter() {
                   />
                 </div>
 
-                {/* Schedule Section */}
+                {/* Schedule Configuration Section */}
                 <div className="space-y-4">
-                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2">Schedule Configuration</h3>
+                  <h3 className="text-sm font-medium text-gray-900 border-b pb-2 mb-4">Schedule Configuration</h3>
                   
                   <FormField
                     control={form.control}
                     name="scheduleType"
                     render={({ field }) => (
-                      <FormItem>
+                      <FormItem className="space-y-2">
                         <FormLabel className="text-sm font-medium">Import Schedule</FormLabel>
                         <Select onValueChange={field.onChange} value={field.value}>
                           <FormControl>
-                            <SelectTrigger className="mt-1 w-full">
+                            <SelectTrigger className="h-10 w-full rounded-md border border-input bg-background px-3 py-2">
                               <SelectValue placeholder="Select schedule type" />
                             </SelectTrigger>
                           </FormControl>
@@ -389,21 +413,173 @@ export default function InvoiceImporter() {
                       </FormItem>
                     )}
                   />
+
+                  {/* Dynamic Schedule Fields */}
+                  {watchedScheduleType === 'daily' && (
+                    <FormField
+                      control={form.control}
+                      name="scheduleTime"
+                      render={({ field }) => (
+                        <FormItem className="space-y-2">
+                          <FormLabel className="text-sm font-medium">Time</FormLabel>
+                          <FormControl>
+                            <Input 
+                              type="time"
+                              className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                              {...field} 
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
+
+                  {watchedScheduleType === 'weekly' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="scheduleDay"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">Day of Week</FormLabel>
+                            <Select onValueChange={field.onChange} value={field.value}>
+                              <FormControl>
+                                <SelectTrigger className="h-10 rounded-md border border-input bg-background px-3 py-2">
+                                  <SelectValue placeholder="Select day" />
+                                </SelectTrigger>
+                              </FormControl>
+                              <SelectContent>
+                                <SelectItem value="monday">Monday</SelectItem>
+                                <SelectItem value="tuesday">Tuesday</SelectItem>
+                                <SelectItem value="wednesday">Wednesday</SelectItem>
+                                <SelectItem value="thursday">Thursday</SelectItem>
+                                <SelectItem value="friday">Friday</SelectItem>
+                                <SelectItem value="saturday">Saturday</SelectItem>
+                                <SelectItem value="sunday">Sunday</SelectItem>
+                              </SelectContent>
+                            </Select>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="scheduleTime"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">Time</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time"
+                                className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {watchedScheduleType === 'hourly' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="startTime"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">Start Time</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time"
+                                className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="endTime"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">End Time</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time"
+                                className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
+
+                  {watchedScheduleType === 'multiple_daily' && (
+                    <div className="grid grid-cols-2 gap-4">
+                      <FormField
+                        control={form.control}
+                        name="timesPerDay"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">Times per Day</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="number"
+                                min="1"
+                                max="24"
+                                placeholder="e.g., 3"
+                                className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                {...field}
+                                onChange={(e) => field.onChange(parseInt(e.target.value) || 1)}
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name="startTime"
+                        render={({ field }) => (
+                          <FormItem className="space-y-2">
+                            <FormLabel className="text-sm font-medium">Start Time (Optional)</FormLabel>
+                            <FormControl>
+                              <Input 
+                                type="time"
+                                className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                {...field} 
+                              />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                    </div>
+                  )}
                 </div>
 
-                <DialogFooter className="pt-6 border-t">
+                <DialogFooter className="pt-6 border-t flex gap-3 justify-end">
                   <Button 
                     type="button" 
                     variant="outline" 
                     onClick={() => setShowCreateDialog(false)}
                     disabled={createConfigMutation.isPending}
+                    className="rounded-md"
                   >
                     Cancel
                   </Button>
                   <Button 
                     type="submit" 
-                    disabled={createConfigMutation.isPending}
-                    className="ml-2"
+                    disabled={createConfigMutation.isPending || !form.formState.isValid}
+                    className="rounded-md"
                   >
                     {createConfigMutation.isPending ? 'Creating...' : 'Create Configuration'}
                   </Button>
