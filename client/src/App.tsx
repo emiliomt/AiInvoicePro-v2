@@ -1,5 +1,5 @@
-import { BrowserRouter as Router, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Route, Switch } from "wouter";
+import { QueryClientProvider } from "@tanstack/react-query";
 import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
 import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
@@ -29,20 +29,13 @@ import InvoiceImporter from "@/pages/InvoiceImporter";
 import InvoicePreview from "@/pages/InvoicePreview";
 import NotFound from "@/pages/not-found";
 
-// Create a query client
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: {
-      retry: 1,
-      refetchOnWindowFocus: false,
-    },
-  },
-});
+// Import the existing query client from lib
+import { queryClient } from "@/lib/queryClient";
 
 function AppContent() {
-  const { user, loading } = useAuth();
+  const { user, isLoading } = useAuth();
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
@@ -51,34 +44,80 @@ function AppContent() {
   }
 
   return (
-    <Router>
-      <Routes>
-        <Route path="/" element={user ? <Navigate to="/dashboard" /> : <Landing />} />
-        <Route path="/dashboard" element={user ? <Dashboard /> : <Navigate to="/" />} />
-        <Route path="/invoices" element={user ? <Invoices /> : <Navigate to="/" />} />
-        <Route path="/invoices/:id/preview" element={user ? <InvoicePreview /> : <Navigate to="/" />} />
-        <Route path="/profile" element={user ? <Profile /> : <Navigate to="/" />} />
-        <Route path="/approvals" element={user ? <Approvals /> : <Navigate to="/" />} />
-        <Route path="/settings" element={user ? <Settings /> : <Navigate to="/" />} />
-        <Route path="/reports" element={user ? <Reports /> : <Navigate to="/" />} />
-        <Route path="/petty-cash" element={user ? <PettyCash /> : <Navigate to="/" />} />
-        <Route path="/project-validation" element={user ? <ProjectValidation /> : <Navigate to="/" />} />
-        <Route path="/validation-rules" element={user ? <ValidationRules /> : <Navigate to="/" />} />
-        <Route path="/po-matching" element={user ? <POMatching /> : <Navigate to="/" />} />
-        <Route path="/purchase-orders" element={user ? <PurchaseOrders /> : <Navigate to="/" />} />
-        <Route path="/project-matcher" element={user ? <ProjectMatcher /> : <Navigate to="/" />} />
-        <Route path="/verified-invoices" element={user ? <VerifiedInvoices /> : <Navigate to="/" />} />
-        <Route path="/invoice-verification" element={user ? <InvoiceVerification /> : <Navigate to="/" />} />
-        <Route path="/ai-learning" element={user ? <AILearningDashboard /> : <Navigate to="/" />} />
-        <Route path="/line-item-classification" element={user ? <LineItemClassification /> : <Navigate to="/" />} />
-        <Route path="/erp-connect" element={user ? <ERPConnect /> : <Navigate to="/" />} />
-        <Route path="/rpa-dashboard" element={user ? <RPADashboard /> : <Navigate to="/" />} />
-        <Route path="/ai-workflow" element={user ? <AiWorkflow /> : <Navigate to="/" />} />
-        <Route path="/invoice-importer" element={user ? <InvoiceImporter /> : <Navigate to="/" />} />
-        <Route path="*" element={<NotFound />} />
-      </Routes>
+    <div>
+      <Switch>
+        <Route path="/">
+          {user ? <Dashboard /> : <Landing />}
+        </Route>
+        <Route path="/dashboard">
+          {user ? <Dashboard /> : <Landing />}
+        </Route>
+        <Route path="/invoices">
+          {user ? <Invoices /> : <Landing />}
+        </Route>
+        <Route path="/invoices/:id/preview">
+          {user ? <InvoicePreview /> : <Landing />}
+        </Route>
+        <Route path="/profile">
+          {user ? <Profile /> : <Landing />}
+        </Route>
+        <Route path="/approvals">
+          {user ? <Approvals /> : <Landing />}
+        </Route>
+        <Route path="/settings">
+          {user ? <Settings /> : <Landing />}
+        </Route>
+        <Route path="/reports">
+          {user ? <Reports /> : <Landing />}
+        </Route>
+        <Route path="/petty-cash">
+          {user ? <PettyCash /> : <Landing />}
+        </Route>
+        <Route path="/project-validation">
+          {user ? <ProjectValidation /> : <Landing />}
+        </Route>
+        <Route path="/validation-rules">
+          {user ? <ValidationRules /> : <Landing />}
+        </Route>
+        <Route path="/po-matching">
+          {user ? <POMatching /> : <Landing />}
+        </Route>
+        <Route path="/purchase-orders">
+          {user ? <PurchaseOrders /> : <Landing />}
+        </Route>
+        <Route path="/project-matcher">
+          {user ? <ProjectMatcher /> : <Landing />}
+        </Route>
+        <Route path="/verified-invoices">
+          {user ? <VerifiedInvoices /> : <Landing />}
+        </Route>
+        <Route path="/invoice-verification">
+          {user ? <InvoiceVerification /> : <Landing />}
+        </Route>
+        <Route path="/ai-learning">
+          {user ? <AILearningDashboard /> : <Landing />}
+        </Route>
+        <Route path="/line-item-classification">
+          {user ? <LineItemClassification /> : <Landing />}
+        </Route>
+        <Route path="/erp-connect">
+          {user ? <ERPConnect /> : <Landing />}
+        </Route>
+        <Route path="/rpa-dashboard">
+          {user ? <RPADashboard /> : <Landing />}
+        </Route>
+        <Route path="/ai-workflow">
+          {user ? <AiWorkflow /> : <Landing />}
+        </Route>
+        <Route path="/invoice-importer">
+          {user ? <InvoiceImporter /> : <Landing />}
+        </Route>
+        <Route>
+          <NotFound />
+        </Route>
+      </Switch>
       <Toaster />
-    </Router>
+    </div>
   );
 }
 
