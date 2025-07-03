@@ -2,7 +2,7 @@ import type { Express } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema, insertSavedWorkflowSchema, insertScheduledTaskSchema } from "@shared/schema";
+import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema, insertSavedWorkflowSchema, insertScheduledTaskSchema, insertInvoiceImporterConfigSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
@@ -15,6 +15,7 @@ import { findBestProjectMatch } from "./services/aiService.js";
 import { projectMatcher } from "./projectMatcher.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
+import { invoiceImporterService } from "./services/invoiceImporterService.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -2883,6 +2884,159 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       res.status(500).json({ error: errorMessage });
     }
   });
+
+  // Invoice Importer routes
+  app.post('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertInvoiceImporterConfigSchema.parse(req.body);
+      const config = await storage.createInvoiceImporterConfig(data, (user as any).claims.sub);
+      res.json(config);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
+      res.json(configs);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/invoice-importer/configs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      const updates = insertInvoiceImporterConfigSchema.partial().parse(req.body);
+      const updatedConfig = await storage.updateInvoiceImporterConfig(configId, updates);
+      res.json(updatedConfig);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/invoice-importer/configs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      await storage.deleteInvoiceImporterConfig(configId);
+      res.json({ message: 'Import configuration deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.post('/api/invoice-importer/configs/:id/execute', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Start the import process asynchronously
+      executeImportAsync(configId);
+
+      res.json({ message: 'Invoice import started successfully', configId });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/invoice-importer/logs/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.configId);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      const logs = await storage.getInvoiceImporterLogs(configId);
+      res.json(logs);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/invoice-importer/progress/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logId = parseInt(req.params.logId);
+      const progress = invoiceImporterService.getProgress(logId);
+      
+      if (!progress) {
+        return res.status(404).json({ error: 'Import task not found' });
+      }
+
+      res.json(progress);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Helper function for executing import tasks asynchronously
+  async function executeImportAsync(configId: number) {
+    try {
+      await invoiceImporterService.executeImportTask(configId);
+    } catch (error) {
+      console.error(`Import task ${configId} failed:`, error);
+    }
+  }
 
   const httpServer = createServer(app);
   return httpServer;

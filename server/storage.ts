@@ -22,6 +22,9 @@ import {
   erpTasks,
   savedWorkflows,
   scheduledTasks,
+  invoiceImporterConfigs,
+  invoiceImporterLogs,
+  importedInvoices,
   type Company,
   type InsertCompany,
   type User,
@@ -68,6 +71,12 @@ import {
   type ClassificationKeyword,
   type InsertLineItemClassification,
   type LineItemClassification,
+  type InvoiceImporterConfig,
+  type InsertInvoiceImporterConfig,
+  type InvoiceImporterLog,
+  type InsertInvoiceImporterLog,
+  type ImportedInvoice,
+  type InsertImportedInvoice,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte, lte } from "drizzle-orm";
@@ -236,6 +245,23 @@ export interface IStorage {
   updateScheduledTask(id: number, updates: Partial<InsertScheduledTask>): Promise<ScheduledTask>;
   deleteScheduledTask(id: number): Promise<void>;
   getActiveScheduledTasks(): Promise<(ScheduledTask & { workflow: SavedWorkflow & { connection: ErpConnection } })[]>;
+
+  // Invoice Importer methods
+  createInvoiceImporterConfig(config: Omit<InsertInvoiceImporterConfig, 'userId' | 'companyId'>, userId: string): Promise<InvoiceImporterConfig>;
+  getInvoiceImporterConfigs(userId: string): Promise<(InvoiceImporterConfig & { connection: ErpConnection })[]>;
+  getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | undefined>;
+  updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<InvoiceImporterConfig>;
+  deleteInvoiceImporterConfig(id: number): Promise<void>;
+  
+  createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
+  getInvoiceImporterLogs(configId: number): Promise<InvoiceImporterLog[]>;
+  getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | undefined>;
+  updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<InvoiceImporterLog>;
+  
+  createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice>;
+  getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]>;
+  getImportedInvoice(id: number): Promise<ImportedInvoice | undefined>;
+  updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -2135,6 +2161,108 @@ export class DatabaseStorage implements IStorage {
         connection: result.erp_connections,
       },
     }));
+  }
+
+  // Invoice Importer methods
+  async createInvoiceImporterConfig(config: Omit<InsertInvoiceImporterConfig, 'userId' | 'companyId'>, userId: string): Promise<InvoiceImporterConfig> {
+    const user = await this.getUser(userId);
+    const configWithUserAndCompany = {
+      ...config,
+      userId,
+      companyId: user?.companyId || null
+    };
+    
+    const [created] = await db.insert(invoiceImporterConfigs).values(configWithUserAndCompany).returning();
+    return created;
+  }
+
+  async getInvoiceImporterConfigs(userId: string): Promise<(InvoiceImporterConfig & { connection: ErpConnection })[]> {
+    const user = await this.getUser(userId);
+    if (!user?.companyId) return [];
+
+    const configs = await db
+      .select()
+      .from(invoiceImporterConfigs)
+      .leftJoin(erpConnections, eq(invoiceImporterConfigs.connectionId, erpConnections.id))
+      .where(eq(invoiceImporterConfigs.companyId, user.companyId))
+      .orderBy(desc(invoiceImporterConfigs.createdAt));
+
+    return configs.map(result => ({
+      ...result.invoice_importer_configs,
+      connection: result.erp_connections!,
+    }));
+  }
+
+  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | undefined> {
+    const [config] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+    return config;
+  }
+
+  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<InvoiceImporterConfig> {
+    const [updated] = await db
+      .update(invoiceImporterConfigs)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(invoiceImporterConfigs.id, id))
+      .returning();
+    return updated;
+  }
+
+  async deleteInvoiceImporterConfig(id: number): Promise<void> {
+    await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+  }
+  
+  async createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog> {
+    const [created] = await db.insert(invoiceImporterLogs).values(log).returning();
+    return created;
+  }
+
+  async getInvoiceImporterLogs(configId: number): Promise<InvoiceImporterLog[]> {
+    return await db
+      .select()
+      .from(invoiceImporterLogs)
+      .where(eq(invoiceImporterLogs.configId, configId))
+      .orderBy(desc(invoiceImporterLogs.createdAt));
+  }
+
+  async getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | undefined> {
+    const [log] = await db.select().from(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
+    return log;
+  }
+
+  async updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<InvoiceImporterLog> {
+    const [updated] = await db
+      .update(invoiceImporterLogs)
+      .set(updates)
+      .where(eq(invoiceImporterLogs.id, id))
+      .returning();
+    return updated;
+  }
+  
+  async createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice> {
+    const [created] = await db.insert(importedInvoices).values(invoice).returning();
+    return created;
+  }
+
+  async getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]> {
+    return await db
+      .select()
+      .from(importedInvoices)
+      .where(eq(importedInvoices.logId, logId))
+      .orderBy(desc(importedInvoices.createdAt));
+  }
+
+  async getImportedInvoice(id: number): Promise<ImportedInvoice | undefined> {
+    const [invoice] = await db.select().from(importedInvoices).where(eq(importedInvoices.id, id));
+    return invoice;
+  }
+
+  async updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice> {
+    const [updated] = await db
+      .update(importedInvoices)
+      .set(updates)
+      .where(eq(importedInvoices.id, id))
+      .returning();
+    return updated;
   }
 }
 

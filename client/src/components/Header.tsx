@@ -143,7 +143,7 @@ export default function Header() {
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
-                  isActiveRoute("/erp-connect") || isActiveRoute("/ai-workflow")
+                  isActiveRoute("/erp-connect") || isActiveRoute("/ai-workflow") || isActiveRoute("/invoice-importer")
                     ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
@@ -160,6 +160,10 @@ export default function Header() {
                 <DropdownMenuItem onClick={() => window.location.href = '/ai-workflow'}>
                   <Bot size={16} className="mr-2" />
                   AI Workflows
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/invoice-importer'}>
+                  <FileText size={16} className="mr-2" />
+                  ERP Invoice Importer
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>

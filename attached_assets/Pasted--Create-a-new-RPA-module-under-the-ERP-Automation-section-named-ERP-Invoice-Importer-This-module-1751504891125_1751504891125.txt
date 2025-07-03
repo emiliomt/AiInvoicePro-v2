@@ -1,0 +1,88 @@
+ Create a new RPA module under the "ERP Automation" section named ERP Invoice Importer.
+
+This module should function as a Robotic Process Automation (RPA) workflow that simulates user behavior to extract XML and/or PDF invoices from a web-based ERP system (e.g., SINCO).
+
+🧩 Functionality:
+Use the existing ERP Connections dropdown to select a saved connection.
+
+Let users configure:
+
+ERP Connection
+
+Import Task Name and Description
+
+File Types to Import:
+
+( ) XML only
+
+( ) PDF only
+
+(•) Both XML and PDF
+
+Import Schedule:
+
+Run once
+
+Daily at specific time
+
+Weekly on specific day/time
+
+Every X hours
+
+X times per day (evenly spaced)
+
+Display a task execution panel:
+
+Real-time progress (e.g. "Step 6/12: Downloading XML from row 3")
+
+Step-by-step history (success/fail logs)
+
+On execution, the RPA should:
+
+Log in to the ERP using credentials from the selected connection
+
+Navigate to the appropriate section (e.g., “Documentos Recibidos”)
+
+Loop through each invoice row
+
+Simulate clicks to open invoice details
+
+Download files (XML/PDF) as specified
+
+Log each step and capture any errors
+
+Save imported invoice files and metadata to the system.
+
+Display all imported invoices in the Invoices module, just like manually uploaded ones. That means:
+
+If no invoices exist, replace the “No invoices found” screen
+
+Maintain search/filter/detail functionality for imported entries
+
+Include a “Run Now” button for immediate execution.
+
+🐍 Python Libraries to Use:
+Selenium – for browser-based UI automation (simulate login, click, navigation)
+pip install selenium
+
+pyautogui – for desktop-level click/key automation (if needed)
+pip install pyautogui
+
+requests – for internal HTTP communication if any downloads or callbacks require it
+pip install requests
+
+apscheduler – for cron-style and recurring schedule logic (hourly, daily, N times/day)
+pip install apscheduler
+
+xml.etree.ElementTree or xmltodict – to parse invoice XMLs
+pip install xmltodict
+
+pdfminer.six or PyPDF2 – to extract data from PDF invoices if needed
+pip install pdfminer.six
+
+pydantic – for structuring invoice metadata
+pip install pydantic
+
+🔁 Backend RPA task execution should be managed using apscheduler and tied to authenticated user accounts.
+
+➕ Add this module under ERP Automation > Invoice Importer

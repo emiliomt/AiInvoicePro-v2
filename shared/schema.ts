@@ -444,6 +444,64 @@ export const feedbackLogs = pgTable("feedback_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Invoice Importer module enums
+export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["once", "daily", "weekly", "hourly", "multiple_daily"]);
+export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled"]);
+
+// Invoice Importer configurations
+export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
+  connectionId: integer("connection_id").references(() => erpConnections.id).notNull(),
+  taskName: varchar("task_name", { length: 255 }).notNull(),
+  description: text("description"),
+  fileTypes: fileTypeEnum("file_types").default("both"),
+  scheduleType: scheduleTypeEnum("schedule_type").default("once"),
+  scheduleTime: varchar("schedule_time", { length: 50 }), // "14:30" for daily, "monday-14:30" for weekly, "4" for hourly, "3" for multiple daily
+  scheduleDay: varchar("schedule_day", { length: 20 }), // for weekly scheduling
+  isActive: boolean("is_active").default(true),
+  lastRun: timestamp("last_run"),
+  nextRun: timestamp("next_run"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Invoice Importer execution logs
+export const invoiceImporterLogs = pgTable("invoice_importer_logs", {
+  id: serial("id").primaryKey(),
+  configId: integer("config_id").references(() => invoiceImporterConfigs.id).notNull(),
+  status: importerStatusEnum("status").default("pending"),
+  totalInvoices: integer("total_invoices").default(0),
+  processedInvoices: integer("processed_invoices").default(0),
+  successfulImports: integer("successful_imports").default(0),
+  failedImports: integer("failed_imports").default(0),
+  logs: text("logs"),
+  screenshots: text("screenshots").array(),
+  errorMessage: text("error_message"),
+  executionTime: integer("execution_time"), // in milliseconds
+  startedAt: timestamp("started_at"),
+  completedAt: timestamp("completed_at"),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Imported invoice metadata
+export const importedInvoices = pgTable("imported_invoices", {
+  id: serial("id").primaryKey(),
+  logId: integer("log_id").references(() => invoiceImporterLogs.id).notNull(),
+  invoiceId: integer("invoice_id").references(() => invoices.id), // linked after processing
+  originalFileName: varchar("original_file_name", { length: 255 }),
+  fileType: varchar("file_type", { length: 10 }), // xml, pdf
+  fileSize: integer("file_size"),
+  filePath: varchar("file_path", { length: 500 }),
+  erpDocumentId: varchar("erp_document_id", { length: 100 }), // ERP system reference
+  downloadedAt: timestamp("downloaded_at"),
+  processedAt: timestamp("processed_at"),
+  metadata: jsonb("metadata"), // extracted invoice data
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const companiesRelations = relations(companies, ({ many }) => ({
   users: many(users),
@@ -643,6 +701,38 @@ export const scheduledTasksRelations = relations(scheduledTasks, ({ one }) => ({
   }),
 }));
 
+// Invoice Importer relations
+export const invoiceImporterConfigsRelations = relations(invoiceImporterConfigs, ({ one, many }) => ({
+  company: one(companies, {
+    fields: [invoiceImporterConfigs.companyId],
+    references: [companies.id],
+  }),
+  connection: one(erpConnections, {
+    fields: [invoiceImporterConfigs.connectionId],
+    references: [erpConnections.id],
+  }),
+  logs: many(invoiceImporterLogs),
+}));
+
+export const invoiceImporterLogsRelations = relations(invoiceImporterLogs, ({ one, many }) => ({
+  config: one(invoiceImporterConfigs, {
+    fields: [invoiceImporterLogs.configId],
+    references: [invoiceImporterConfigs.id],
+  }),
+  importedInvoices: many(importedInvoices),
+}));
+
+export const importedInvoicesRelations = relations(importedInvoices, ({ one }) => ({
+  log: one(invoiceImporterLogs, {
+    fields: [importedInvoices.logId],
+    references: [invoiceImporterLogs.id],
+  }),
+  invoice: one(invoices, {
+    fields: [importedInvoices.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
 // Classification keyword categories enum
 export const classificationCategoryEnum = pgEnum("classification_category", [
   "consumable_materials",
@@ -757,6 +847,16 @@ export type ClassificationKeyword = typeof classificationKeywords.$inferSelect;
 export type InsertLineItemClassification = typeof lineItemClassifications.$inferInsert;
 export type LineItemClassification = typeof lineItemClassifications.$inferSelect;
 
+// Invoice Importer types
+export type InsertInvoiceImporterConfig = typeof invoiceImporterConfigs.$inferInsert;
+export type InvoiceImporterConfig = typeof invoiceImporterConfigs.$inferSelect;
+
+export type InsertInvoiceImporterLog = typeof invoiceImporterLogs.$inferInsert;
+export type InvoiceImporterLog = typeof invoiceImporterLogs.$inferSelect;
+
+export type InsertImportedInvoice = typeof importedInvoices.$inferInsert;
+export type ImportedInvoice = typeof importedInvoices.$inferSelect;
+
 // Zod schemas
 export const insertInvoiceSchema = createInsertSchema(invoices).omit({
   id: true,
@@ -823,6 +923,22 @@ export const insertApprovedInvoiceProjectSchema = createInsertSchema(approvedInv
   createdAt: true,
 });
 
+// Invoice Importer Zod schemas
+export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImporterConfigs).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
+
+export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertImportedInvoiceSchema = createInsertSchema(importedInvoices).omit({
+  id: true,
+  createdAt: true,
+});
 
 // ERP Automation Types
 export type InsertErpConnection = typeof erpConnections.$inferInsert;

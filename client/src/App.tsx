@@ -24,6 +24,7 @@ import ProjectValidation from "./pages/ProjectValidation";
 import Settings from "./pages/Settings";
 import ERPConnect from "./pages/ERPConnect";
 import AiWorkflow from "./pages/AiWorkflow";
+import InvoiceImporter from "./pages/InvoiceImporter";
 import React from "react";
 import Header from "@/components/Header";
 
@@ -86,6 +87,10 @@ function Router() {
           <Route path="/ai-workflow">
             <Header />
             <AiWorkflow />
+          </Route>
+          <Route path="/invoice-importer">
+            <Header />
+            <InvoiceImporter />
           </Route>
         </>
       )}
