@@ -18,6 +18,7 @@ import { Form, FormControl, FormDescription, FormField, FormItem, FormLabel, For
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
+import Header from '@/components/Header';
 
 const importConfigSchema = z.object({
   taskName: z.string().min(1, 'Task name is required'),
@@ -223,7 +224,9 @@ export default function InvoiceImporter() {
   }
 
   return (
-    <div className="container mx-auto px-4 py-8">
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <div className="container mx-auto px-4 py-8">
       <div className="flex justify-between items-center mb-6">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">ERP Invoice Importer</h1>
@@ -576,6 +579,7 @@ export default function InvoiceImporter() {
           )}
         </TabsContent>
       </Tabs>
+      </div>
     </div>
   );
 }
