@@ -118,12 +118,12 @@ export default function InvoiceImporter() {
         },
         body: JSON.stringify(data),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Failed to create configuration');
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -154,12 +154,12 @@ export default function InvoiceImporter() {
         },
         body: JSON.stringify({}),
       });
-      
+
       if (!response.ok) {
         const errorData = await response.json().catch(() => ({}));
         throw new Error(errorData.message || 'Failed to execute import');
       }
-      
+
       return response.json();
     },
     onSuccess: () => {
@@ -362,11 +362,11 @@ export default function InvoiceImporter() {
                   )}
                 />
 
-                <DialogFooter>
+                <div className="flex justify-end pt-4">
                   <Button type="submit" disabled={createConfigMutation.isPending}>
                     {createConfigMutation.isPending ? 'Creating...' : 'Create Configuration'}
                   </Button>
-                </DialogFooter>
+                </div>
               </form>
             </Form>
           </DialogContent>
@@ -482,7 +482,7 @@ export default function InvoiceImporter() {
                 </Button>
                 <h3 className="text-lg font-semibold">{selectedConfig.taskName} - Execution History</h3>
               </div>
-              
+
               {logs.length === 0 ? (
                 <Card>
                   <CardContent className="flex flex-col items-center justify-center py-16">
@@ -532,7 +532,7 @@ export default function InvoiceImporter() {
                             <div className="font-medium text-red-600">{log.failedImports}</div>
                           </div>
                         </div>
-                        
+
                         {log.executionTime && (
                           <div className="mt-4 text-sm">
                             <span className="text-muted-foreground">Execution Time:</span>
@@ -541,7 +541,7 @@ export default function InvoiceImporter() {
                             </span>
                           </div>
                         )}
-                        
+
                         {log.errorMessage && (
                           <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-md">
                             <div className="text-sm text-red-800">
@@ -549,7 +549,7 @@ export default function InvoiceImporter() {
                             </div>
                           </div>
                         )}
-                        
+
                         {log.logs && (
                           <div className="mt-4">
                             <div className="text-sm font-medium mb-2">Execution Logs:</div>
