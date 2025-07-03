@@ -31,6 +31,8 @@ const importConfigSchema = z.object({
   startTime: z.string().optional(),
   endTime: z.string().optional(),
   timesPerDay: z.number().optional(),
+  spacingValue: z.number().optional(),
+  spacingUnit: z.enum(['minutes', 'hours']).optional(),
 }).refine((data) => {
   if (data.scheduleType === 'daily' && !data.scheduleTime) {
     return false;
@@ -41,12 +43,22 @@ const importConfigSchema = z.object({
   if (data.scheduleType === 'hourly' && (!data.startTime || !data.endTime)) {
     return false;
   }
-  if (data.scheduleType === 'multiple_daily' && !data.timesPerDay) {
-    return false;
+  if (data.scheduleType === 'multiple_daily') {
+    if (!data.timesPerDay || !data.spacingValue || !data.spacingUnit) {
+      return false;
+    }
+    // Validate that the spacing makes sense for the number of executions
+    const spacingInMinutes = data.spacingUnit === 'hours' ? data.spacingValue * 60 : data.spacingValue;
+    const totalTimeNeeded = (data.timesPerDay - 1) * spacingInMinutes;
+    const minutesInDay = 24 * 60;
+    
+    if (totalTimeNeeded >= minutesInDay) {
+      return false;
+    }
   }
   return true;
 }, {
-  message: "Please fill in all required schedule fields",
+  message: "Please fill in all required schedule fields and ensure spacing allows for all executions within a day",
   path: ["scheduleType"]
 });
 
@@ -112,6 +124,8 @@ export default function InvoiceImporter() {
       startTime: '',
       endTime: '',
       timesPerDay: 1,
+      spacingValue: 60,
+      spacingUnit: 'minutes',
     },
   });
 
@@ -523,13 +537,13 @@ export default function InvoiceImporter() {
                   )}
 
                   {watchedScheduleType === 'multiple_daily' && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-4">
                       <FormField
                         control={form.control}
                         name="timesPerDay"
                         render={({ field }) => (
                           <FormItem className="space-y-2">
-                            <FormLabel className="text-sm font-medium">Times per Day</FormLabel>
+                            <FormLabel className="text-sm font-medium">Number of executions per day</FormLabel>
                             <FormControl>
                               <Input 
                                 type="number"
@@ -545,12 +559,57 @@ export default function InvoiceImporter() {
                           </FormItem>
                         )}
                       />
+                      
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="spacingValue"
+                          render={({ field }) => (
+                            <FormItem className="space-y-2">
+                              <FormLabel className="text-sm font-medium">Spacing between executions</FormLabel>
+                              <FormControl>
+                                <Input 
+                                  type="number"
+                                  min="1"
+                                  placeholder="e.g., 120"
+                                  className="h-10 rounded-md border border-input bg-background px-3 py-2"
+                                  {...field}
+                                  onChange={(e) => field.onChange(parseInt(e.target.value) || 60)}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="spacingUnit"
+                          render={({ field }) => (
+                            <FormItem className="space-y-2">
+                              <FormLabel className="text-sm font-medium">Unit</FormLabel>
+                              <Select onValueChange={field.onChange} value={field.value}>
+                                <FormControl>
+                                  <SelectTrigger className="h-10 rounded-md border border-input bg-background px-3 py-2">
+                                    <SelectValue />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  <SelectItem value="minutes">Minutes</SelectItem>
+                                  <SelectItem value="hours">Hours</SelectItem>
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+
                       <FormField
                         control={form.control}
                         name="startTime"
                         render={({ field }) => (
                           <FormItem className="space-y-2">
-                            <FormLabel className="text-sm font-medium">Start Time (Optional)</FormLabel>
+                            <FormLabel className="text-sm font-medium">Start time (optional)</FormLabel>
                             <FormControl>
                               <Input 
                                 type="time"
@@ -558,6 +617,9 @@ export default function InvoiceImporter() {
                                 {...field} 
                               />
                             </FormControl>
+                            <FormDescription className="text-xs text-muted-foreground">
+                              When should the first execution run? If not specified, executions will start immediately.
+                            </FormDescription>
                             <FormMessage />
                           </FormItem>
                         )}
