@@ -287,7 +287,7 @@ export default function InvoiceImporter() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>ERP Connection</FormLabel>
-                      <Select onValueChange={(value) => field.onChange(parseInt(value))}>
+                      <Select onValueChange={(value) => field.onChange(parseInt(value))} value={field.value?.toString()}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue placeholder="Select an ERP connection" />
@@ -315,7 +315,7 @@ export default function InvoiceImporter() {
                       <FormControl>
                         <RadioGroup
                           onValueChange={field.onChange}
-                          defaultValue={field.value}
+                          value={field.value}
                           className="flex flex-col space-y-1"
                         >
                           <div className="flex items-center space-x-2">
@@ -343,7 +343,7 @@ export default function InvoiceImporter() {
                   render={({ field }) => (
                     <FormItem>
                       <FormLabel>Import Schedule</FormLabel>
-                      <Select onValueChange={field.onChange} defaultValue={field.value}>
+                      <Select onValueChange={field.onChange} value={field.value}>
                         <FormControl>
                           <SelectTrigger>
                             <SelectValue />

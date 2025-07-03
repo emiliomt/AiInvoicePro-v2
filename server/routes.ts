@@ -2893,10 +2893,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      console.log('Incoming request body:', JSON.stringify(req.body, null, 2));
       const data = insertInvoiceImporterConfigSchema.parse(req.body);
+      console.log('Parsed data:', JSON.stringify(data, null, 2));
       const config = await storage.createInvoiceImporterConfig(data, (user as any).claims.sub);
       res.json(config);
     } catch (error) {
+      console.error('Error in invoice importer config creation:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: errorMessage });
     }
