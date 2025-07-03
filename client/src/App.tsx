@@ -100,8 +100,6 @@ function Router() {
 }
 
 function App() {
-  const { isAuthenticated, isLoading } = useAuth();
-
   useEffect(() => {
     // Handle unhandled promise rejections
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
