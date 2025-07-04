@@ -3055,6 +3055,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Fix JSON serialization in progress endpoint
   app.get('/api/invoice-importer/progress/:logId', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;

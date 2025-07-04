@@ -22,70 +22,101 @@ interface ProgressTrackerProps {
 
 export function ProgressTracker({ userId, taskId, onComplete }: ProgressTrackerProps) {
   const [progress, setProgress] = useState<ProgressUpdate | null>(null);
-  const [connected, setConnected] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('connecting');
 
   useEffect(() => {
-    // Use the current host and protocol to construct WebSocket URL
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = window.location.host;
-    const ws = new WebSocket(`${protocol}//${host}/ws`);
+    let ws: WebSocket | null = null;
+    let mounted = true;
+    let reconnectAttempts = 0;
+    const maxReconnectAttempts = 5;
 
-    ws.onopen = () => {
-      setConnected(true);
-      // Subscribe to progress updates for this user
-      ws.send(JSON.stringify({
-        type: 'subscribe',
-        userId: userId
-      }));
-    };
+    const connectWebSocket = () => {
+      if (!mounted || reconnectAttempts >= maxReconnectAttempts) return;
 
-    ws.onmessage = (event) => {
       try {
-        // Check if the data is valid JSON before parsing
-        if (!event.data || event.data.trim() === '') {
-          console.warn('Received empty WebSocket message');
-          return;
-        }
+        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+        const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-        // Try to parse as JSON, but handle non-JSON messages gracefully
-        let data;
-        try {
-          data = JSON.parse(event.data);
-        } catch (parseError) {
-          console.warn('Received non-JSON WebSocket message:', event.data);
-          return;
-        }
+        console.log(`Attempting WebSocket connection to: ${wsUrl}`);
+        ws = new WebSocket(wsUrl);
 
-        if (data && data.taskId === taskId) {
-          setProgress({
-            ...data,
-            timestamp: new Date(data.timestamp)
-          });
+        ws.onopen = () => {
+          console.log('WebSocket connected for progress tracking');
+          setConnectionStatus('connected');
+          reconnectAttempts = 0;
 
-          if (data.status === 'completed' || data.status === 'failed') {
-            onComplete?.();
+          // Subscribe to progress updates
+          ws?.send(JSON.stringify({
+            type: 'subscribe',
+            userId: userId
+          }));
+        };
+
+        ws.onmessage = (event) => {
+          try {
+            const data = JSON.parse(event.data);
+
+            if (data.type === 'progress' && data.taskId === taskId) {
+              setProgress({
+                ...data,
+                timestamp: new Date(data.timestamp)
+              });
+
+              // Check if completed
+              if (data.status === 'completed' || data.status === 'failed') {
+                if (onComplete) {
+                  onComplete();
+                }
+              }
+            } else if (data.type === 'connected' || data.type === 'subscribed') {
+              setConnectionStatus('connected');
+            } else if (data.type === 'error') {
+              console.error('WebSocket server error:', data.message);
+              setConnectionStatus('error');
+            }
+          } catch (error) {
+            console.error('Error parsing WebSocket message:', error);
           }
-        }
+        };
+
+        ws.onclose = () => {
+          console.log('WebSocket disconnected');
+          setConnectionStatus('disconnected');
+
+          // Attempt to reconnect after a delay
+          if (mounted && reconnectAttempts < maxReconnectAttempts) {
+            reconnectAttempts++;
+            console.log(`Attempting to reconnect (${reconnectAttempts}/${maxReconnectAttempts})...`);
+            setTimeout(connectWebSocket, 3000 * reconnectAttempts);
+          }
+        };
+
+        ws.onerror = (error) => {
+          console.error('WebSocket error:', error);
+          setConnectionStatus('error');
+        };
+
       } catch (error) {
-        console.error('Error handling WebSocket message:', error);
+        console.error('Failed to create WebSocket connection:', error);
+        setConnectionStatus('error');
+
+        // Retry connection
+        if (mounted && reconnectAttempts < maxReconnectAttempts) {
+          reconnectAttempts++;
+          setTimeout(connectWebSocket, 3000 * reconnectAttempts);
+        }
       }
     };
 
-    ws.onclose = () => {
-      setConnected(false);
-    };
-
-    ws.onerror = (error) => {
-      console.error('WebSocket error:', error);
-      setConnected(false);
-    };
+    connectWebSocket();
 
     return () => {
-      if (ws.readyState === WebSocket.OPEN || ws.readyState === WebSocket.CONNECTING) {
+      mounted = false;
+      if (ws) {
         ws.close();
       }
     };
-  }, [userId, taskId, onComplete]);
+  }, [taskId, userId, onComplete]);
 
   if (!progress) {
     return (
@@ -94,12 +125,12 @@ export function ProgressTracker({ userId, taskId, onComplete }: ProgressTrackerP
           <div className="flex items-center gap-2">
             <Clock className="w-4 h-4 animate-spin" />
             <span>Waiting for progress updates...</span>
-            {!connected && (
+            {connectionStatus !== 'connected' && (
               <Badge variant="outline" className="text-orange-600">
-                Connecting...
+                {connectionStatus === 'connecting' ? 'Connecting...' : connectionStatus}
               </Badge>
             )}
-            {connected && (
+            {connectionStatus === 'connected' && (
               <Badge variant="outline" className="text-green-600">
                 Connected
               </Badge>
@@ -141,26 +172,39 @@ export function ProgressTracker({ userId, taskId, onComplete }: ProgressTrackerP
   return (
     <Card>
       <CardHeader className="pb-2">
-        <CardTitle className="text-sm flex items-center gap-2">
-          {getStatusIcon()}
-          Import Progress
-          {getStatusBadge()}
+        <CardTitle className="text-sm flex items-center justify-between">
+          <span>Import Progress</span>
+          <div className="flex items-center gap-2">
+            <div className={`w-2 h-2 rounded-full ${
+              connectionStatus === 'connected' ? 'bg-green-500' : 
+              connectionStatus === 'connecting' ? 'bg-yellow-500' : 
+              'bg-red-500'
+            }`} title={`WebSocket ${connectionStatus}`} />
+            <Badge variant={progress.status === 'completed' ? 'default' : progress.status === 'failed' ? 'destructive' : 'secondary'}>
+              {progress.status}
+            </Badge>
+          </div>
         </CardTitle>
-        <CardDescription>
-          Step {progress.step} of {progress.totalSteps}
-        </CardDescription>
       </CardHeader>
       <CardContent>
         <div className="space-y-3">
-          <Progress value={progressPercentage} className="w-full" />
-
-          <div className="text-sm text-gray-600">
-            {progress.message}
+          <div>
+            <div className="flex justify-between text-sm mb-1">
+              <span>{progress.message}</span>
+              <span>{progress.step}/{progress.totalSteps}</span>
+            </div>
+            <Progress value={(progress.step / progress.totalSteps) * 100} className="h-2" />
           </div>
 
           <div className="text-xs text-gray-500">
             Last updated: {progress.timestamp.toLocaleTimeString()}
           </div>
+
+          {connectionStatus !== 'connected' && (
+            <div className="text-xs text-orange-600 bg-orange-50 p-2 rounded">
+              Connection status: {connectionStatus}
+            </div>
+          )}
 
           {progress.data && (
             <div className="text-xs bg-gray-50 p-2 rounded">

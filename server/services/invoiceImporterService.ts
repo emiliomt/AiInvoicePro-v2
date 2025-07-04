@@ -325,17 +325,20 @@ class InvoiceImporterService {
     progress.currentStep = stepId;
 
     // Send progress update via WebSocket
-    const config = await storage.getInvoiceImporterConfig(logId);
-    if (config) {
-      progressTracker.sendProgress(config.userId, {
-        taskId: logId,
-        step: stepId,
-        totalSteps: progress.totalSteps,
-        status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'processing',
-        message: step?.description || `Step ${stepId}`,
-        timestamp: new Date(),
-        data: progress,
-      });
+    const log = await storage.getInvoiceImporterLog(logId);
+    if (log) {
+      const config = await storage.getInvoiceImporterConfig(log.configId);
+      if (config) {
+        progressTracker.sendProgress(config.userId, {
+          taskId: logId,
+          step: stepId,
+          totalSteps: progress.totalSteps,
+          status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'processing',
+          message: step?.description || `Step ${stepId}`,
+          timestamp: new Date(),
+          data: progress,
+        });
+      }
     }
 
     // Update logs in database
