@@ -80,12 +80,16 @@ interface ERPConnection {
 export default function InvoiceImporter() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  
+
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [editingConfig, setEditingConfig] = useState<InvoiceImporterConfig | null>(null);
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<InvoiceImporterConfig | null>(null);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
+  const [isRunning, setIsRunning] = useState(false);
+  const [logs, setLogs] = useState<string[]>([]);
+  const [progress, setProgress] = useState(0);
+  const [showProgress, setShowProgress] = useState(false);
 
   // Fetch invoice importer configurations
   const { data: configs = [], isLoading: configsLoading } = useQuery<InvoiceImporterConfig[]>({
@@ -186,7 +190,7 @@ export default function InvoiceImporter() {
         try {
           const res = await apiRequest('GET', `/api/invoice-importer/progress/${data.logId}`);
           const responseText = await res.text();
-          
+
           // Check if response is valid JSON
           let progress;
           try {
@@ -203,7 +207,7 @@ export default function InvoiceImporter() {
             });
             return;
           }
-          
+
           if (progress.status === 'completed' || progress.status === 'failed') {
             clearInterval(pollInterval);
             setRunningTasks(prev => {
@@ -301,6 +305,48 @@ export default function InvoiceImporter() {
         return `${config.scheduleTime || '1'} times per day`;
       default:
         return 'Not scheduled';
+    }
+  };
+
+  const handleRunNow = async (configId: number) => {
+    setIsRunning(true);
+    setShowProgress(true);
+    setLogs([]);
+    setProgress(0);
+
+    // Show immediate feedback
+    toast({
+      title: "Starting Import",
+      description: "Initializing ERP invoice import process...",
+    });
+
+    try {
+      const response = await fetch(`/api/invoice-importer/run/${configId}`, {
+        method: 'POST',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to start import');
+      }
+
+      const result = await response.json();
+      toast({
+        title: "Import Started",
+        description: "ERP invoice import is now running. Check the progress below.",
+      });
+
+      // Refresh the configurations to update the "Last Run" status
+      // refetch(); // 'refetch' is not defined. Remove it to avoid errors.
+    } catch (error) {
+      console.error('Error starting import:', error);
+      toast({
+        title: "Error",
+        description: "Failed to start import process.",
+        variant: "destructive",
+      });
+      setShowProgress(false);
+    } finally {
+      setIsRunning(false);
     }
   };
 
