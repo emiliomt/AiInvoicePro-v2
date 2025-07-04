@@ -1,109 +1,138 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 
-export interface ProgressUpdate {
+interface ProgressUpdate {
   taskId: number;
   step: number;
   totalSteps: number;
-  status: 'started' | 'processing' | 'completed' | 'failed';
+  status: 'processing' | 'completed' | 'failed';
   message: string;
   timestamp: Date;
-  screenshot?: string;
   data?: any;
+}
+
+interface UserConnection {
+  userId: string;
+  ws: WebSocket;
 }
 
 class ProgressTracker {
   private wss: WebSocketServer | null = null;
-  private connections = new Map<string, WebSocket>();
+  private connections: Map<string, UserConnection[]> = new Map();
 
   initialize(server: Server) {
-    this.wss = new WebSocketServer({ server, path: '/progress' });
-    
-    this.wss.on('connection', (ws, req) => {
-      const userId = this.extractUserIdFromRequest(req);
-      if (userId) {
-        this.connections.set(userId, ws);
-        console.log(`Progress WebSocket connected for user ${userId}`);
-        
-        ws.on('close', () => {
-          this.connections.delete(userId);
-          console.log(`Progress WebSocket disconnected for user ${userId}`);
-        });
+    this.wss = new WebSocketServer({ server, path: '/ws' });
 
-        ws.on('error', (error) => {
-          console.error(`Progress WebSocket error for user ${userId}:`, error);
-          this.connections.delete(userId);
-        });
+    this.wss.on('connection', (ws: WebSocket, req) => {
+      console.log('WebSocket connection established');
+
+      ws.on('message', (message: Buffer) => {
+        try {
+          const messageStr = message.toString();
+
+          // Validate that the message is not empty
+          if (!messageStr || messageStr.trim() === '') {
+            console.warn('Received empty WebSocket message');
+            return;
+          }
+
+          const data = JSON.parse(messageStr);
+
+          if (data.type === 'subscribe' && data.userId) {
+            this.addConnection(data.userId, ws);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+          // Send error response back to client
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: 'error',
+              message: 'Invalid message format'
+            }));
+          }
+        }
+      });
+
+      ws.on('close', () => {
+        this.removeConnection(ws);
+      });
+
+      ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        this.removeConnection(ws);
+      });
+
+      // Send initial connection confirmation
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({
+          type: 'connected',
+          message: 'WebSocket connection established'
+        }));
       }
     });
   }
 
-  private extractUserIdFromRequest(req: any): string | null {
-    // Extract user ID from session or query params
-    const url = new URL(req.url, 'http://localhost');
-    return url.searchParams.get('userId');
+  private addConnection(userId: string, ws: WebSocket) {
+    if (!this.connections.has(userId)) {
+      this.connections.set(userId, []);
+    }
+
+    this.connections.get(userId)!.push({ userId, ws });
+    console.log(`User ${userId} subscribed to progress updates`);
+
+    // Send subscription confirmation
+    if (ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({
+        type: 'subscribed',
+        userId: userId,
+        message: 'Successfully subscribed to progress updates'
+      }));
+    }
   }
 
-  sendProgress(userId: string, update: ProgressUpdate) {
-    const ws = this.connections.get(userId);
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      try {
-        ws.send(JSON.stringify({
-          type: 'progress',
-          ...update
-        }));
-      } catch (error) {
-        console.error('Failed to send progress update:', error);
-        this.connections.delete(userId);
+  private removeConnection(ws: WebSocket) {
+    for (const [userId, connections] of this.connections.entries()) {
+      const index = connections.findIndex(conn => conn.ws === ws);
+      if (index !== -1) {
+        connections.splice(index, 1);
+        if (connections.length === 0) {
+          this.connections.delete(userId);
+        }
+        console.log(`User ${userId} unsubscribed from progress updates`);
+        break;
       }
     }
   }
 
-  sendStepUpdate(userId: string, taskId: number, step: number, totalSteps: number, message: string, screenshot?: string) {
-    this.sendProgress(userId, {
-      taskId,
-      step,
-      totalSteps,
-      status: 'processing',
-      message,
-      timestamp: new Date(),
-      screenshot
-    });
-  }
+  sendProgress(userId: string, progress: ProgressUpdate) {
+    const connections = this.connections.get(userId);
+    if (!connections) {
+      console.log(`No connections found for user ${userId}`);
+      return;
+    }
 
-  sendTaskStart(userId: string, taskId: number, totalSteps: number, message: string) {
-    this.sendProgress(userId, {
-      taskId,
-      step: 0,
-      totalSteps,
-      status: 'started',
-      message,
-      timestamp: new Date()
-    });
-  }
+    try {
+      // Ensure timestamp is serializable
+      const progressData = {
+        ...progress,
+        timestamp: progress.timestamp.toISOString(),
+        type: 'progress'
+      };
 
-  sendTaskComplete(userId: string, taskId: number, message: string, data?: any) {
-    this.sendProgress(userId, {
-      taskId,
-      step: -1,
-      totalSteps: -1,
-      status: 'completed',
-      message,
-      timestamp: new Date(),
-      data
-    });
-  }
+      const message = JSON.stringify(progressData);
 
-  sendTaskFailed(userId: string, taskId: number, message: string, error?: any) {
-    this.sendProgress(userId, {
-      taskId,
-      step: -1,
-      totalSteps: -1,
-      status: 'failed',
-      message,
-      timestamp: new Date(),
-      data: { error }
-    });
+      connections.forEach(({ ws }) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          try {
+            ws.send(message);
+          } catch (error) {
+            console.error('Error sending message to WebSocket:', error);
+          }
+        }
+      });
+    } catch (error) {
+      console.error('Error serializing progress data:', error);
+    }
   }
 }
 
