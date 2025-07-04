@@ -102,7 +102,7 @@ export default function InvoiceImporter() {
   });
 
   // Fetch logs for selected configuration
-  const { data: logs = [], isLoading: logsLoading } = useQuery<InvoiceImporterLog[]>({
+  const { data: importerLogs = [], isLoading: logsLoading } = useQuery<InvoiceImporterLog[]>({
     queryKey: ['/api/invoice-importer/logs', selectedConfig?.id],
     enabled: !!selectedConfig,
   });
@@ -609,12 +609,12 @@ export default function InvoiceImporter() {
             <div className="space-y-4 max-h-96 overflow-y-auto">
               {logsLoading ? (
                 <div className="text-center py-4">Loading logs...</div>
-              ) : logs.length === 0 ? (
+              ) : importerLogs.length === 0 ? (
                 <div className="text-center py-4 text-gray-500">
                   No execution logs found
                 </div>
               ) : (
-                logs.map((log: InvoiceImporterLog) => (
+                importerLogs.map((log: InvoiceImporterLog) => (
                   <Card key={log.id}>
                     <CardHeader className="pb-2">
                       <div className="flex justify-between items-start">
