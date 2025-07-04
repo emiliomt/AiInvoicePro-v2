@@ -1723,7 +1723,8 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getFeedbackLogs(limit?: number) {
-    const query = db
+    const query =```text
+db
       .select({
         id: feedbackLogs.id,
         invoiceId: feedbackLogs.invoiceId,
