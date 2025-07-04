@@ -28,7 +28,7 @@ export function ProgressTracker({ userId, taskId, onComplete }: ProgressTrackerP
     // Use the current host and protocol to construct WebSocket URL
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.host;
-    const ws = new WebSocket(`${protocol://${host}/ws}`);
+    const ws = new WebSocket(`${protocol}//${host}/ws`);
 
     ws.onopen = () => {
       setConnected(true);
