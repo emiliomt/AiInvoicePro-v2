@@ -1,4 +1,4 @@
-import type { Express } from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
@@ -3050,7 +3050,6 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   const httpServer = createServer(app);
 
   // Custom error handler middleware
-  const { Request, Response, NextFunction } = await import('express');
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";

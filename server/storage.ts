@@ -452,7 +452,7 @@ export class DatabaseStorage implements IStorage {
 
     // Finally delete all the invoices
     const result = await db.delete(invoices).where(eq(invoices.userId, userId));
-    return result.rowCount || 0;
+    return result.length || 0;
   }
 
   // Line item operations
@@ -1223,7 +1223,8 @@ export class DatabaseStorage implements IStorage {
         matchDetails: invoicePoMatches.matchDetails,
         matchedAt: invoicePoMatches.matchedAt,
         approvedAt: invoicePoMatches.approvedAt,
-        rejectedAt: invoicePoMatches.rejectedBy,
+        rejectedAt: invoicePoMatches.rejectedAt,
+        rejectedBy: invoicePoMatches.rejectedBy,
         approvedBy: invoicePoMatches.approvedBy,
         statusChangedAt: invoicePoMatches.statusChangedAt,
         createdAt: invoicePoMatches.createdAt,
