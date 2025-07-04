@@ -185,7 +185,25 @@ export default function InvoiceImporter() {
       const pollInterval = setInterval(async () => {
         try {
           const res = await apiRequest('GET', `/api/invoice-importer/progress/${data.logId}`);
-          const progress = await res.json();
+          const responseText = await res.text();
+          
+          // Check if response is valid JSON
+          let progress;
+          try {
+            progress = JSON.parse(responseText);
+          } catch (jsonError) {
+            console.error('JSON parsing error:', jsonError);
+            console.error('Response text:', responseText);
+            console.error('Response status:', res.status);
+            clearInterval(pollInterval);
+            setRunningTasks(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(configId);
+              return newSet;
+            });
+            return;
+          }
+          
           if (progress.status === 'completed' || progress.status === 'failed') {
             clearInterval(pollInterval);
             setRunningTasks(prev => {
@@ -196,6 +214,7 @@ export default function InvoiceImporter() {
             queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/logs', configId] });
           }
         } catch (error) {
+          console.error('Progress polling error:', error);
           clearInterval(pollInterval);
           setRunningTasks(prev => {
             const newSet = new Set(prev);

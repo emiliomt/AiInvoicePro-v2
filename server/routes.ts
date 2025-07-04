@@ -2995,6 +2995,44 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Alternative endpoint for frontend compatibility
+  app.post('/api/invoice-importer/run/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration (same company)
+      if (!currentUser?.companyId || config.companyId !== currentUser.companyId) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
+      }
+
+      // Create execution log first
+      const log = await storage.createInvoiceImporterLog({
+        configId,
+        status: 'pending',
+        startedAt: new Date(),
+      });
+
+      // Start the import process asynchronously
+      executeImportAsync(configId);
+
+      res.json({ message: 'Invoice import started successfully', configId, logId: log.id });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   app.get('/api/invoice-importer/logs/:configId', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;
@@ -3031,7 +3069,26 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import task not found' });
       }
 
-      res.json(progress);
+      // Ensure dates are properly serialized
+      try {
+        const serializedProgress = {
+          ...progress,
+          startedAt: progress.startedAt.toISOString(),
+          completedAt: progress.completedAt?.toISOString(),
+          steps: progress.steps.map(step => ({
+            ...step,
+            timestamp: step.timestamp.toISOString()
+          }))
+        };
+
+        // Test JSON serialization
+        JSON.stringify(serializedProgress);
+        res.json(serializedProgress);
+      } catch (serializationError) {
+        console.error('JSON serialization error:', serializationError);
+        console.error('Progress object:', progress);
+        res.status(500).json({ error: 'Failed to serialize progress data' });
+      }
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: errorMessage });
