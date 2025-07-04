@@ -71,7 +71,7 @@ class InvoiceImporterService {
       // Mark as completed
       progress.status = 'completed';
       progress.completedAt = new Date();
-      
+
       await storage.updateInvoiceImporterLog(log.id, {
         status: 'completed',
         completedAt: new Date(),
@@ -149,11 +149,11 @@ class InvoiceImporterService {
     // Step 5: Load invoice list
     await this.updateStepStatus(logId, progress, 5, 'running');
     await this.simulateDelay(5000);
-    
+
     // Simulate finding invoices
     const mockInvoiceCount = Math.floor(Math.random() * 10) + 5; // 5-14 invoices
     progress.totalInvoices = mockInvoiceCount;
-    
+
     await this.updateStepStatus(logId, progress, 5, 'completed');
 
     // Step 6: Scan available invoices
@@ -165,7 +165,7 @@ class InvoiceImporterService {
     if (config.fileTypes === 'xml' || config.fileTypes === 'both') {
       await this.processXMLDownloads(logId, progress, config);
     }
-    
+
     if (config.fileTypes === 'pdf' || config.fileTypes === 'both') {
       await this.processPDFDownloads(logId, progress, config);
     }
@@ -188,15 +188,15 @@ class InvoiceImporterService {
 
   private async processXMLDownloads(logId: number, progress: ImporterProgress, config: InvoiceImporterConfig): Promise<void> {
     await this.updateStepStatus(logId, progress, 8, 'running');
-    
+
     // Simulate downloading XML files
     for (let i = 0; i < progress.totalInvoices; i++) {
       progress.processedInvoices = i + 1;
-      
+
       // Simulate success/failure rate (90% success)
       if (Math.random() > 0.1) {
         progress.successfulImports++;
-        
+
         // Create mock imported invoice record
         await storage.createImportedInvoice({
           logId,
@@ -216,7 +216,7 @@ class InvoiceImporterService {
       } else {
         progress.failedImports++;
       }
-      
+
       // Update progress
       progressTracker.sendProgress(config.userId, {
         taskId: logId,
@@ -227,22 +227,22 @@ class InvoiceImporterService {
         timestamp: new Date(),
         data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
       });
-      
+
       await this.simulateDelay(1500);
     }
-    
+
     await this.updateStepStatus(logId, progress, 8, 'completed');
   }
 
   private async processPDFDownloads(logId: number, progress: ImporterProgress, config: InvoiceImporterConfig): Promise<void> {
     await this.updateStepStatus(logId, progress, 9, 'running');
-    
+
     // Similar to XML processing but for PDFs
     for (let i = 0; i < progress.totalInvoices; i++) {
       // Simulate success/failure rate (85% success for PDFs)
       if (Math.random() > 0.15) {
         progress.successfulImports++;
-        
+
         await storage.createImportedInvoice({
           logId,
           originalFileName: `invoice_${i + 1}.pdf`,
@@ -261,7 +261,7 @@ class InvoiceImporterService {
       } else {
         progress.failedImports++;
       }
-      
+
       progressTracker.sendProgress(config.userId, {
         taskId: logId,
         step: 9,
@@ -271,24 +271,24 @@ class InvoiceImporterService {
         timestamp: new Date(),
         data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
       });
-      
+
       await this.simulateDelay(2000);
     }
-    
+
     await this.updateStepStatus(logId, progress, 9, 'completed');
   }
 
   private async processInvoiceMetadata(logId: number, progress: ImporterProgress): Promise<void> {
     // Process and validate imported invoice metadata
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
-    
+
     for (const importedInvoice of importedInvoices) {
       // Here you would normally process the file and extract data
       // For now, we'll just update the processed timestamp
       await storage.updateImportedInvoice(importedInvoice.id, {
         processedAt: new Date(),
       });
-      
+
       await this.simulateDelay(500);
     }
   }
@@ -296,13 +296,13 @@ class InvoiceImporterService {
   private async storeImportedInvoices(logId: number, progress: ImporterProgress): Promise<void> {
     // Convert imported invoices to regular invoice records
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
-    
+
     for (const importedInvoice of importedInvoices) {
       if (importedInvoice.metadata) {
         // Create invoice record from imported data
         // This would normally involve full OCR and AI extraction
         // For now, we'll create a placeholder
-        
+
         await this.simulateDelay(1000);
       }
     }
