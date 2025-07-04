@@ -1421,6 +1421,12 @@ export class DatabaseStorage implements IStorage {
       const currentMonth = new Date();
       currentMonth.setDate(1);
 
+      // First check if there are any flags to avoid SQL errors
+      const flagCount = await db.select({ count: count() }).from(invoiceFlags);
+      if (!flagCount[0]?.count || flagCount[0].count === 0) {
+        return [];
+      }
+
       // Get actual flag data for this month using Drizzle ORM
       const result = await db
         .select({
