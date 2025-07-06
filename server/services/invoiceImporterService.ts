@@ -58,13 +58,16 @@ class InvoiceImporterService {
     };
 
     this.activeImports.set(log.id, progress);
+    console.log(`Started import task ${log.id} for config ${configId}, stored in activeImports`);
 
     try {
       // Get connection details
       const connection = await storage.getErpConnection(config.connectionId);
       if (!connection) {
-        throw new Error('ERP connection not found');
+        throw new Error(`ERP connection not found for connectionId ${config.connectionId}`);
       }
+      
+      console.log(`Found ERP connection for import task ${log.id}: ${connection.name}`);
 
       await this.performImportProcess(log.id, config, connection, progress);
 

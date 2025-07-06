@@ -106,8 +106,11 @@ class ProgressTracker {
 
   sendProgress(userId: string, progress: ProgressUpdate) {
     const connections = this.connections.get(userId);
-    if (!connections) {
-      console.log(`No connections found for user ${userId}`);
+    if (!connections || connections.length === 0) {
+      // Don't spam logs - only log this occasionally
+      if (Math.random() < 0.1) {
+        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
+      }
       return;
     }
 

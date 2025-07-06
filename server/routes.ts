@@ -3064,9 +3064,32 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const logId = parseInt(req.params.logId);
+      console.log(`Progress request for logId ${logId}`);
+      
       const progress = invoiceImporterService.getProgress(logId);
+      console.log(`Progress found for logId ${logId}:`, progress ? 'Yes' : 'No');
 
       if (!progress) {
+        // Also check the database for the log status
+        const log = await storage.getInvoiceImporterLog(logId);
+        if (log) {
+          console.log(`Found log in database for ${logId} with status: ${log.status}`);
+          // Return basic progress info from database
+          return res.json({
+            taskId: logId,
+            status: log.status,
+            currentStep: log.status === 'completed' ? 12 : log.status === 'running' ? 6 : 1,
+            totalSteps: 12,
+            message: log.status === 'completed' ? 'Import completed' : 
+                    log.status === 'running' ? 'Import in progress' : 'Import starting',
+            startedAt: log.startedAt,
+            completedAt: log.completedAt,
+            totalInvoices: log.totalInvoices || 0,
+            processedInvoices: log.processedInvoices || 0,
+            successfulImports: log.successfulImports || 0,
+            failedImports: log.failedImports || 0
+          });
+        }
         return res.status(404).json({ error: 'Import task not found' });
       }
 
