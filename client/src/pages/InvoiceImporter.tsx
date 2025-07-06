@@ -87,6 +87,7 @@ export default function InvoiceImporter() {
   const [selectedConfig, setSelectedConfig] = useState<InvoiceImporterConfig | null>(null);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
   const [completedTasks, setCompletedTasks] = useState<Set<number>>(new Set());
+  const [taskProgress, setTaskProgress] = useState<Map<number, any>>(new Map());
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
@@ -183,36 +184,62 @@ export default function InvoiceImporter() {
     onMutate: (configId) => {
       // Immediately set the task as running for UI feedback
       setRunningTasks(prev => new Set(prev).add(configId));
+      setCompletedTasks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(configId);
+        return newSet;
+      });
+      console.log(`Starting import task for config ${configId}`);
       toast({
         title: "Starting Import",
         description: "Initializing ERP invoice import process...",
       });
     },
     onSuccess: (data, configId) => {
+      console.log(`Import task started successfully for config ${configId}, logId: ${data.logId}`);
       toast({
         title: "Import Started",
         description: "ERP invoice import is now running. Progress will be displayed below.",
       });
+      
+      // Ensure minimum visibility time for the running state (10 seconds)
+      const minVisibilityTimeout = setTimeout(() => {
+        console.log(`Minimum visibility timeout reached for config ${configId}`);
+      }, 10000);
+      
       // Poll for progress updates
       const pollInterval = setInterval(async () => {
         try {
           const res = await apiRequest('GET', `/api/invoice-importer/progress/${data.logId}`);
           const responseText = await res.text();
+          console.log(`Progress poll for config ${configId}: status ${res.status}, response length: ${responseText.length}`);
 
           // Check if response is valid JSON
           let progress;
           try {
             progress = JSON.parse(responseText);
+            console.log(`Progress data for config ${configId}:`, progress);
+            
+            // Store progress data for display
+            setTaskProgress(prev => {
+              const newMap = new Map(prev);
+              newMap.set(configId, progress);
+              return newMap;
+            });
           } catch (jsonError) {
             console.error('JSON parsing error:', jsonError);
             console.error('Response text:', responseText);
             console.error('Response status:', res.status);
             clearInterval(pollInterval);
-            setRunningTasks(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(configId);
-              return newSet;
-            });
+            // Keep task visible even if progress polling fails
+            setTimeout(() => {
+              console.log(`Removing failed task ${configId} after polling failure`);
+              setRunningTasks(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(configId);
+                return newSet;
+              });
+            }, 10000);
             return;
           }
 
@@ -228,9 +255,11 @@ export default function InvoiceImporter() {
               variant: progress.status === 'completed' ? "default" : "destructive",
             });
             
-            // Mark task as completed and keep visible for 5 seconds
+            // Mark task as completed and keep visible for 15 seconds
+            console.log(`Import task completed for config ${configId}, status: ${progress.status}`);
             setCompletedTasks(prev => new Set(prev).add(configId));
             setTimeout(() => {
+              console.log(`Removing completed task ${configId} from UI`);
               setRunningTasks(prev => {
                 const newSet = new Set(prev);
                 newSet.delete(configId);
@@ -241,7 +270,7 @@ export default function InvoiceImporter() {
                 newSet.delete(configId);
                 return newSet;
               });
-            }, 5000);
+            }, 15000);
             
             queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/logs', configId] });
           }
@@ -564,6 +593,18 @@ export default function InvoiceImporter() {
                         <Clock className="w-4 h-4" />
                         {isCompleted ? "Completed: " : "Started: "}{new Date().toLocaleTimeString()}
                       </div>
+                      
+                      {/* Show progress details if available */}
+                      {taskProgress.has(taskId) && (
+                        <div className="mt-3 p-3 bg-white rounded border">
+                          <div className="text-xs font-medium text-gray-700 mb-2">
+                            Progress Details:
+                          </div>
+                          <div className="text-xs text-gray-600">
+                            {JSON.stringify(taskProgress.get(taskId), null, 2)}
+                          </div>
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 );
