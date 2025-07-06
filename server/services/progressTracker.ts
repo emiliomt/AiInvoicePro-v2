@@ -137,6 +137,58 @@ class ProgressTracker {
       console.error('Error serializing progress data:', error);
     }
   }
+
+  private sendMessage(userId: string, message: any) {
+    const connections = this.connections.get(userId);
+    if (!connections || connections.length === 0) {
+      // Don't spam logs - only log this occasionally
+      if (Math.random() < 0.1) {
+        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
+      }
+      return;
+    }
+
+    const messageString = JSON.stringify(message);
+
+    connections.forEach(({ ws }) => {
+      if (ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(messageString);
+        } catch (error) {
+          console.error('Error sending message to WebSocket:', error);
+        }
+      }
+    });
+  }
+
+  sendTaskComplete(userId: string, taskId: number, success: boolean, message: string, result?: any) {
+    this.sendMessage(userId, {
+      type: 'task_complete',
+      taskId,
+      success,
+      message,
+      result,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  sendTaskCancelled(userId: string, taskId: number, reason: string) {
+    this.sendMessage(userId, {
+      type: 'task_cancelled',
+      taskId,
+      reason,
+      timestamp: new Date().toISOString()
+    });
+  }
+
+  sendTaskTimeout(userId: string, taskId: number, duration: number) {
+    this.sendMessage(userId, {
+      type: 'task_timeout',
+      taskId,
+      duration,
+      timestamp: new Date().toISOString()
+    });
+  }
 }
 
 export const progressTracker = new ProgressTracker();

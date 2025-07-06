@@ -163,16 +163,44 @@ class ERPAutomationService {
     const screenshots: string[] = [];
     const logs: string[] = [];
     let extractedData: any = {};
+    let timeoutHandle: NodeJS.Timeout | null = null;
 
-    // Global timeout (1 hour)
-    const globalTimeout = setTimeout(() => {
-      const timeoutMessage = 'RPA script execution timed out after 1 hour';
-      logs.push(timeoutMessage);
+    // Global timeout (15 minutes for better responsiveness)
+    const globalTimeoutPromise = new Promise<TaskResult>((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        const timeoutMessage = 'RPA script execution timed out after 15 minutes';
+        logs.push(timeoutMessage);
+        console.error('Task timeout:', timeoutMessage);
+
+        if (this.browser) {
+          this.browser.close().catch(closeError => {
+            console.warn('Failed to close browser after timeout:', closeError);
+          });
+          this.browser = null;
+        }
+
+        reject(new Error(timeoutMessage));
+      }, 15 * 60 * 1000); // 15 minutes
+    });
+
+    // Wrap the main execution in Promise.race to handle timeout
+    const executionPromise = this.executeScriptWithTimeout(script, connection, userId, taskId, screenshots, logs, extractedData, startTime);
+    
+    try {
+      const result = await Promise.race([executionPromise, globalTimeoutPromise]);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      return result;
+    } catch (error) {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      logs.push(`Execution failed: ${errorMessage}`);
 
       if (this.browser) {
-        this.browser.close().catch(closeError => {
-          console.warn('Failed to close browser after timeout:', closeError);
-        });
+        try {
+          await this.browser.close();
+        } catch (closeError) {
+          console.warn('Failed to close browser:', closeError);
+        }
         this.browser = null;
       }
 
@@ -180,11 +208,22 @@ class ERPAutomationService {
         success: false,
         screenshots,
         logs,
-        errorMessage: timeoutMessage,
+        errorMessage,
         executionTime: Date.now() - startTime
       };
-    }, 60 * 60 * 1000);
+    }
+  }
 
+  private async executeScriptWithTimeout(
+    script: RPAScript, 
+    connection: ERPConnection,
+    userId: string | undefined,
+    taskId: number | undefined,
+    screenshots: string[],
+    logs: string[],
+    extractedData: any,
+    startTime: number
+  ): Promise<TaskResult> {
     try {
       // Launch browser with performance optimizations
       this.browser = await chromium.launch({ 
@@ -308,7 +347,6 @@ class ERPAutomationService {
 
       await this.browser.close();
       this.browser = null;
-      clearTimeout(globalTimeout);
 
       return {
         success: true,
@@ -331,15 +369,7 @@ class ERPAutomationService {
         this.browser = null;
       }
 
-      clearTimeout(globalTimeout);
-
-      return {
-        success: false,
-        screenshots,
-        logs,
-        errorMessage,
-        executionTime: Date.now() - startTime
-      };
+      throw error; // Re-throw to be handled by the main method
     }
   }
 
