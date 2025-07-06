@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Edit, Play, Settings, Calendar, Clock, FileText, Download, Activity } from 'lucide-react';
+import { Plus, Trash2, Edit, Play, Settings, Calendar, Clock, FileText, Download, Activity, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -179,11 +179,18 @@ export default function InvoiceImporter() {
       const res = await apiRequest('POST', `/api/invoice-importer/run/${configId}`);
       return await res.json();
     },
-    onSuccess: (data, configId) => {
+    onMutate: (configId) => {
+      // Immediately set the task as running for UI feedback
       setRunningTasks(prev => new Set(prev).add(configId));
       toast({
-        title: "Success",
-        description: "Import task started successfully",
+        title: "Starting Import",
+        description: "Initializing ERP invoice import process...",
+      });
+    },
+    onSuccess: (data, configId) => {
+      toast({
+        title: "Import Started",
+        description: "ERP invoice import is now running. Progress will be displayed below.",
       });
       // Poll for progress updates
       const pollInterval = setInterval(async () => {
@@ -228,7 +235,13 @@ export default function InvoiceImporter() {
         }
       }, 2000);
     },
-    onError: (error: any) => {
+    onError: (error: any, configId) => {
+      // Remove from running tasks on error
+      setRunningTasks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(configId);
+        return newSet;
+      });
       toast({
         title: "Error",
         description: error.message || "Failed to start import task",
@@ -420,11 +433,20 @@ export default function InvoiceImporter() {
                         variant="outline"
                         size="sm"
                         onClick={() => handleRunImport(config)}
-                        disabled={runningTasks.has(config.id)}
+                        disabled={runningTasks.has(config.id) || runImportMutation.isPending}
                         className="flex items-center gap-1"
                       >
-                        <Play className="w-4 h-4" />
-                        {runningTasks.has(config.id) ? 'Running...' : 'Run Now'}
+                        {runningTasks.has(config.id) || runImportMutation.isPending ? (
+                          <>
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                            Running...
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            Run Now
+                          </>
+                        )}
                       </Button>
                       <Button
                         variant="outline"
@@ -465,11 +487,59 @@ export default function InvoiceImporter() {
                       </p>
                     </div>
                   </div>
+                  
+                  {/* Show immediate progress feedback when task is running */}
+                  {runningTasks.has(config.id) && (
+                    <div className="mt-4 p-4 bg-blue-50 border border-blue-200 rounded-lg">
+                      <div className="flex items-center gap-3">
+                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        <div>
+                          <p className="text-sm font-medium text-blue-900">Import task running...</p>
+                          <p className="text-xs text-blue-700">
+                            The system is processing your request. Progress details will appear below once available.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
             ))
           )}
         </div>
+
+        {/* Active Import Tasks Section */}
+        {runningTasks.size > 0 && (
+          <div className="mt-8">
+            <h2 className="text-xl font-semibold text-gray-900 mb-4">Active Import Tasks</h2>
+            <div className="space-y-4">
+              {Array.from(runningTasks).map((taskId) => {
+                const config = configs.find(c => c.id === taskId);
+                if (!config) return null;
+                
+                return (
+                  <Card key={taskId} className="border-blue-200 bg-blue-50">
+                    <CardHeader className="pb-3">
+                      <CardTitle className="text-lg flex items-center gap-2">
+                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        {config.taskName}
+                      </CardTitle>
+                      <CardDescription>
+                        Import task is currently running - detailed progress will appear below
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="flex items-center gap-2 text-sm text-blue-700">
+                        <Clock className="w-4 h-4" />
+                        Started: {new Date().toLocaleTimeString()}
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              })}
+            </div>
+          </div>
+        )}
 
         {/* Configuration Modal */}
         <Dialog open={showConfigModal} onOpenChange={setShowConfigModal}>
