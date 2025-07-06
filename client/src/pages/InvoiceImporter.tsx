@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Edit, Play, Settings, Calendar, Clock, FileText, Download, Activity, Loader2 } from 'lucide-react';
+import { Plus, Trash2, Edit, Play, Settings, Calendar, Clock, FileText, Download, Activity, Loader2, CheckCircle, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -86,6 +86,7 @@ export default function InvoiceImporter() {
   const [showLogsModal, setShowLogsModal] = useState(false);
   const [selectedConfig, setSelectedConfig] = useState<InvoiceImporterConfig | null>(null);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
+  const [completedTasks, setCompletedTasks] = useState<Set<number>>(new Set());
   const [isRunning, setIsRunning] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
   const [progress, setProgress] = useState(0);
@@ -217,11 +218,31 @@ export default function InvoiceImporter() {
 
           if (progress.status === 'completed' || progress.status === 'failed') {
             clearInterval(pollInterval);
-            setRunningTasks(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(configId);
-              return newSet;
+            
+            // Show completion message and keep task visible for a few seconds
+            toast({
+              title: progress.status === 'completed' ? "Import Completed" : "Import Failed",
+              description: progress.status === 'completed' 
+                ? "Invoice import task completed successfully. Check logs for details."
+                : "Import task failed. Check logs for error details.",
+              variant: progress.status === 'completed' ? "default" : "destructive",
             });
+            
+            // Mark task as completed and keep visible for 5 seconds
+            setCompletedTasks(prev => new Set(prev).add(configId));
+            setTimeout(() => {
+              setRunningTasks(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(configId);
+                return newSet;
+              });
+              setCompletedTasks(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(configId);
+                return newSet;
+              });
+            }, 5000);
+            
             queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/logs', configId] });
           }
         } catch (error) {
@@ -233,7 +254,7 @@ export default function InvoiceImporter() {
             return newSet;
           });
         }
-      }, 2000);
+      }, 1000);
     },
     onError: (error: any, configId) => {
       // Remove from running tasks on error
@@ -517,21 +538,31 @@ export default function InvoiceImporter() {
                 const config = configs.find(c => c.id === taskId);
                 if (!config) return null;
                 
+                const isCompleted = completedTasks.has(taskId);
+                const isRunning = !isCompleted;
+                
                 return (
-                  <Card key={taskId} className="border-blue-200 bg-blue-50">
+                  <Card key={taskId} className={isCompleted ? "border-green-200 bg-green-50" : "border-blue-200 bg-blue-50"}>
                     <CardHeader className="pb-3">
                       <CardTitle className="text-lg flex items-center gap-2">
-                        <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        {isCompleted ? (
+                          <CheckCircle className="w-5 h-5 text-green-600" />
+                        ) : (
+                          <Loader2 className="w-5 h-5 animate-spin text-blue-600" />
+                        )}
                         {config.taskName}
                       </CardTitle>
                       <CardDescription>
-                        Import task is currently running - detailed progress will appear below
+                        {isCompleted 
+                          ? "Import task completed successfully - will be removed shortly"
+                          : "Import task is currently running - detailed progress will appear below"
+                        }
                       </CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="flex items-center gap-2 text-sm text-blue-700">
+                      <div className={`flex items-center gap-2 text-sm ${isCompleted ? 'text-green-700' : 'text-blue-700'}`}>
                         <Clock className="w-4 h-4" />
-                        Started: {new Date().toLocaleTimeString()}
+                        {isCompleted ? "Completed: " : "Started: "}{new Date().toLocaleTimeString()}
                       </div>
                     </CardContent>
                   </Card>
