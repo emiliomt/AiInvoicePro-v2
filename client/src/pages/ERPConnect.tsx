@@ -14,6 +14,7 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
+import Header from "@/components/Header";
 
 // Form schema for ERP connection
 const erpConnectionSchema = z.object({
@@ -146,18 +147,18 @@ export default function ERPConnect() {
     onSuccess: (data, id) => {
       setTestingConnection(null);
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
-      
+
       const title = data.success ? 'Connection Test Successful' : 'Connection Test Failed';
       const description = data.message || (data.success 
         ? 'Successfully connected to the ERP system' 
         : 'Unable to connect to the ERP system');
-      
+
       toast({
         title,
         description,
         variant: data.success ? 'default' : 'destructive',
       });
-      
+
       // Log additional details for debugging
       if (data.details) {
         console.log('Connection test details:', data.details);
@@ -212,13 +213,19 @@ export default function ERPConnect() {
 
   if (isLoading) {
     return (
+      
       <div className="flex items-center justify-center h-64">
         <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
       </div>
+      
     );
   }
 
   return (
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
     <div className="p-6 max-w-6xl mx-auto">
       <div className="flex justify-between items-center mb-6">
         <div>
@@ -379,7 +386,7 @@ export default function ERPConnect() {
                     <p><strong>Last Used:</strong> {new Date(connection.lastUsed).toLocaleDateString()}</p>
                   )}
                 </div>
-                
+
                 <div className="flex gap-2">
                   <Button
                     size="sm"
@@ -416,6 +423,8 @@ export default function ERPConnect() {
           ))}
         </div>
       )}
+    </div>
+          </main>
     </div>
   );
 }
