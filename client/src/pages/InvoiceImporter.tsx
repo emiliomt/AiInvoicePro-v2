@@ -313,7 +313,7 @@ export default function InvoiceImporter() {
                   </CardHeader>
                   <CardContent>
                     <p>ERP Connection: {config.erpConnection}</p>
-                    <p>File Types: {config.fileTypes.join(', ')}</p>
+                    <p>File Types: {Array.isArray(config.fileTypes) ? config.fileTypes.join(', ') : config.fileTypes}</p>
                     <p>Schedule: {config.schedule}</p>
                     <div className="flex justify-between mt-4">
                       <p>Last Run: {config.lastRun || 'Never'}</p>
