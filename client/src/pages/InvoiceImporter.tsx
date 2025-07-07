@@ -215,12 +215,13 @@ export default function InvoiceImporter() {
         setNewConfig({ name: '', connectionId: '', fileTypes: 'pdf', schedule: 'manual' });
         fetchConfigs();
       } else {
-        throw new Error('Failed to create configuration');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create configuration');
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to create configuration",
+        description: error instanceof Error ? error.message : "Failed to create configuration",
         variant: "destructive"
       });
     }
