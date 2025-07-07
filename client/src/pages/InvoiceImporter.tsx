@@ -14,13 +14,19 @@ import Header from '@/components/Header';
 
 interface ImportConfig {
   id: number;
-  name: string;
-  erpConnection: string;
-  fileTypes: string[];
-  schedule: string;
+  taskName: string;
+  connectionId: number;
+  fileTypes: string;
+  scheduleType: string;
   lastRun: string | null;
   nextRun: string | null;
-  status: 'active' | 'paused' | 'error';
+  isActive: boolean;
+  connection?: {
+    id: number;
+    name: string;
+    baseUrl: string;
+    isActive: boolean;
+  };
 }
 
 interface ImportLog {
@@ -53,7 +59,7 @@ export default function InvoiceImporter() {
     name: '',
     connectionId: '',
     fileTypes: 'pdf',
-    schedule: 'manual'
+    schedule: 'once'
   });
   const { toast } = useToast();
 
@@ -199,10 +205,10 @@ export default function InvoiceImporter() {
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          name: newConfig.name,
+          taskName: newConfig.name,
           connectionId: parseInt(newConfig.connectionId),
           fileTypes: newConfig.fileTypes,
-          schedule: newConfig.schedule
+          scheduleType: newConfig.schedule
         })
       });
 
@@ -212,7 +218,7 @@ export default function InvoiceImporter() {
           description: "Import configuration created successfully"
         });
         setShowCreateDialog(false);
-        setNewConfig({ name: '', connectionId: '', fileTypes: 'pdf', schedule: 'manual' });
+        setNewConfig({ name: '', connectionId: '', fileTypes: 'pdf', schedule: 'once' });
         fetchConfigs();
       } else {
         const errorData = await response.json();
@@ -306,7 +312,7 @@ export default function InvoiceImporter() {
                   <Card key={config.id}>
                     <CardHeader>
                       <div className="flex justify-between items-center">
-                        <CardTitle>{config.name}</CardTitle>
+                        <CardTitle>{config.taskName}</CardTitle>
                         <div>
                           <Button variant="outline" size="sm" onClick={() => handleRunNow(config.id)}>
                             <Play className="w-4 h-4 mr-2" />
@@ -316,9 +322,9 @@ export default function InvoiceImporter() {
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <p>ERP Connection: {config.erpConnection}</p>
-                      <p>File Types: {Array.isArray(config.fileTypes) ? config.fileTypes.join(', ') : config.fileTypes}</p>
-                      <p>Schedule: {config.schedule}</p>
+                      <p>ERP Connection: {config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
+                      <p>File Types: {config.fileTypes}</p>
+                      <p>Schedule: {config.scheduleType}</p>
                       <div className="flex justify-between mt-4">
                         <p>Last Run: {config.lastRun || 'Never'}</p>
                         <p>Next Run: {config.nextRun || 'Not Scheduled'}</p>
@@ -432,10 +438,11 @@ export default function InvoiceImporter() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
+                    <SelectItem value="once">Manual</SelectItem>
                     <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="monthly">Monthly</SelectItem>
+                    <SelectItem value="hourly">Hourly</SelectItem>
+                    <SelectItem value="multiple_daily">Multiple Daily</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
