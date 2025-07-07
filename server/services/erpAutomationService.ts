@@ -177,10 +177,10 @@ class ERPAutomationService {
     let extractedData: any = {};
     let timeoutHandle: NodeJS.Timeout | null = null;
 
-    // Global timeout (15 minutes for better responsiveness)
+    // Global timeout (5 minutes for faster responsiveness)
     const globalTimeoutPromise = new Promise<TaskResult>((_, reject) => {
       timeoutHandle = setTimeout(() => {
-        const timeoutMessage = 'RPA script execution timed out after 15 minutes';
+        const timeoutMessage = 'RPA script execution timed out after 5 minutes';
         logs.push(timeoutMessage);
         console.error('Task timeout:', timeoutMessage);
 
@@ -192,12 +192,12 @@ class ERPAutomationService {
         }
 
         reject(new Error(timeoutMessage));
-      }, 15 * 60 * 1000); // 15 minutes
+      }, 5 * 60 * 1000); // 5 minutes
     });
 
     // Wrap the main execution in Promise.race to handle timeout
     const executionPromise = this.executeScriptWithTimeout(script, connection, userId, taskId, screenshots, logs, extractedData, startTime);
-    
+
     try {
       const result = await Promise.race([executionPromise, globalTimeoutPromise]);
       if (timeoutHandle) clearTimeout(timeoutHandle);
@@ -269,10 +269,10 @@ class ERPAutomationService {
       });
 
       const page = await context.newPage();
-      
+
       // Block unnecessary resources for faster loading
       await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
-      
+
       logs.push('Browser launched successfully with optimizations');
 
       // Take initial screenshot
@@ -297,7 +297,7 @@ class ERPAutomationService {
         const step = script.steps[i];
         const stepMessage = `Step ${i + 1}/${script.steps.length}: ${step.description}`;
         logs.push(`Executing ${stepMessage}`);
-        
+
         // Send progress update for each step
         if (userId && taskId) {
           progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
@@ -403,7 +403,7 @@ class ERPAutomationService {
       case 'navigate':
         const url = step.value || connection.baseUrl;
         logs.push(`Navigating to: ${url}`);
-        
+
         try {
           await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
           logs.push(`Navigation successful - page loaded`);
@@ -411,12 +411,12 @@ class ERPAutomationService {
           logs.push(`Navigation failed, trying networkidle: ${navError}`);
           await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
         }
-        
+
         // Wait for page to stabilize and check if it actually loaded
         await page.waitForTimeout(2000);
         const pageTitle = await page.title();
         logs.push(`Page title: ${pageTitle}`);
-        
+
         // Verify we're not stuck on an error page
         const pageContent = await page.textContent('body');
         if (pageContent?.includes('Error') || pageContent?.includes('404')) {
@@ -565,7 +565,7 @@ class ERPAutomationService {
       });
 
       const page = await context.newPage();
-      
+
       // Block resources for faster connection testing
       await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
 
@@ -597,34 +597,34 @@ class ERPAutomationService {
       // Enhanced login form detection for SINCO
       const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
       const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="usuario"], input[placeholder*="usuario"]').count() > 0;
-      
+
       // Check for SINCO-specific elements
       const hasSincoElements = await page.locator('*:has-text("SINCO"), *:has-text("SincoDycon"), *:has-text("Usuario"), *:has-text("Contraseña")').count() > 0;
-      
+
       // Test actual login with provided credentials
       let loginTestResult = null;
       if (hasPasswordField && hasUsernameField) {
         try {
           console.log('Testing login credentials...');
-          
+
           // Find username field using comprehensive selectors
           const usernameSelector = await this.findUsernameField(page);
           const passwordSelector = await this.findPasswordField(page);
-          
+
           if (usernameSelector && passwordSelector) {
             await page.fill(usernameSelector, connection.username);
             await page.fill(passwordSelector, connection.password);
-            
+
             // Find and click login button
             const loginButtonSelector = await this.findLoginButton(page);
             if (loginButtonSelector) {
               await page.click(loginButtonSelector);
               await page.waitForTimeout(3000);
-              
+
               // Check if login was successful
               const currentUrl = page.url();
               const hasError = await page.locator('*:has-text("Error"), *:has-text("Incorrect"), *:has-text("Invalid"), *:has-text("Usuario"), *:has-text("credenciales")').count() > 0;
-              
+
               loginTestResult = {
                 attempted: true,
                 urlChanged: currentUrl !== connection.baseUrl,
@@ -786,7 +786,7 @@ class ERPAutomationService {
       return originalSelector;
     } catch (error) {
       console.warn(`Original selector failed: ${originalSelector}, trying fallbacks...`);
-      
+
       // Take a debug screenshot to see current page state
       try {
         const debugScreenshot = await page.screenshot({ fullPage: false });
@@ -876,7 +876,7 @@ class ERPAutomationService {
         '.sidebar *:visible',
         '.menu *:visible',
         '.nav *:visible',
-        // Look for elements with role attributes
+        // Look for elementswith role attributes
         '[role="menuitem"]:visible',
         '[role="button"]:visible',
         '[role="link"]:visible',
