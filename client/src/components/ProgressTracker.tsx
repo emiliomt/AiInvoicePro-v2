@@ -43,16 +43,127 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [ws, setWs] = useState<WebSocket | null>(null);
 
   useEffect(() => {
     if (isOpen && configId) {
-      startPolling();
+      initializeConnection();
     } else {
-      stopPolling();
+      cleanup();
     }
 
-    return () => stopPolling();
+    return () => cleanup();
   }, [isOpen, configId]);
+
+  const initializeConnection = () => {
+    // Try WebSocket first, fallback to polling
+    connectWebSocket();
+    // Also start polling as backup
+    startPolling();
+  };
+
+  const connectWebSocket = () => {
+    try {
+      setConnectionStatus('connecting');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      
+      const websocket = new WebSocket(wsUrl);
+      
+      websocket.onopen = () => {
+        console.log('WebSocket connected');
+        setConnectionStatus('connected');
+        setWs(websocket);
+        
+        // Subscribe to progress updates
+        websocket.send(JSON.stringify({
+          type: 'subscribe',
+          userId: 'current-user', // This should be actual user ID
+          configId: configId
+        }));
+      };
+
+      websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          console.log('WebSocket message received:', data);
+          
+          if (data.type === 'progress' && data.configId === configId) {
+            handleProgressUpdate(data);
+          } else if (data.type === 'task_complete' && data.configId === configId) {
+            handleTaskComplete(data);
+          } else if (data.type === 'error') {
+            console.error('WebSocket error:', data.message);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionStatus('disconnected');
+        setWs(null);
+        
+        // Retry connection after 3 seconds
+        setTimeout(() => {
+          if (isOpen && configId) {
+            connectWebSocket();
+          }
+        }, 3000);
+      };
+
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+      };
+      
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      setConnectionStatus('error');
+    }
+  };
+
+  const handleProgressUpdate = (data: any) => {
+    setProgress(prevProgress => {
+      if (!prevProgress) {
+        return data;
+      }
+      
+      return {
+        ...prevProgress,
+        ...data,
+        steps: data.steps || prevProgress.steps,
+        screenshots: data.screenshots || prevProgress.screenshots
+      };
+    });
+  };
+
+  const handleTaskComplete = (data: any) => {
+    setProgress(prevProgress => {
+      if (!prevProgress) return null;
+      
+      return {
+        ...prevProgress,
+        status: data.success ? 'completed' : 'failed',
+        errorMessage: data.success ? undefined : data.message,
+        completedAt: data.timestamp
+      };
+    });
+    
+    // Stop polling when task is complete
+    setIsPolling(false);
+  };
+
+  const cleanup = () => {
+    setIsPolling(false);
+    if (ws) {
+      ws.close();
+      setWs(null);
+    }
+    setConnectionStatus('disconnected');
+  };
 
   const startPolling = () => {
     setIsPolling(true);
@@ -67,9 +178,12 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
     if (!isPolling) return;
 
     try {
-      const response = await fetch(`/api/invoice-importer/progress/${configId}`);
+      const response = await fetch(`/api/invoice-importer/progress/${configId}`, {
+        credentials: 'include'
+      });
       if (response.ok) {
         const data = await response.json();
+        console.log('Polling progress data:', data);
         setProgress(data);
         
         // Continue polling if task is still running
@@ -78,10 +192,59 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         } else {
           setIsPolling(false);
         }
+      } else {
+        console.error('Failed to fetch progress:', response.status, response.statusText);
+        // Show error in UI
+        setProgress({
+          id: 0,
+          configId,
+          status: 'failed',
+          totalInvoices: 0,
+          processedInvoices: 0,
+          successfulImports: 0,
+          failedImports: 0,
+          steps: [{
+            id: 'error',
+            title: 'Failed to fetch progress',
+            status: 'failed',
+            timestamp: new Date().toISOString(),
+            details: `HTTP ${response.status}: ${response.statusText}`
+          }],
+          logs: `Failed to fetch progress: ${response.status} ${response.statusText}`,
+          screenshots: [],
+          errorMessage: `Failed to fetch progress data from server (${response.status})`,
+          startedAt: new Date().toISOString(),
+          completedAt: new Date().toISOString(),
+          executionTime: 0
+        });
+        setIsPolling(false);
       }
     } catch (error) {
       console.error('Error polling progress:', error);
-      setTimeout(pollProgress, 5000); // Retry after 5 seconds on error
+      // Show error in UI
+      setProgress({
+        id: 0,
+        configId,
+        status: 'failed',
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        steps: [{
+          id: 'error',
+          title: 'Connection error',
+          status: 'failed',
+          timestamp: new Date().toISOString(),
+          details: error instanceof Error ? error.message : 'Unknown error'
+        }],
+        logs: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        screenshots: [],
+        errorMessage: `Failed to connect to server: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        startedAt: new Date().toISOString(),
+        completedAt: new Date().toISOString(),
+        executionTime: 0
+      });
+      setIsPolling(false);
     }
   };
 
@@ -135,9 +298,20 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
           <DialogHeader>
             <div className="flex items-center justify-between">
               <DialogTitle>Import Progress - {configName}</DialogTitle>
-              <Button variant="ghost" size="sm" onClick={onClose}>
-                <X className="w-4 h-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {/* Connection Status Indicator */}
+                <div className="flex items-center gap-1 text-xs">
+                  <div className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected' ? 'bg-green-500' : 
+                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 
+                    connectionStatus === 'error' ? 'bg-red-500' : 'bg-gray-400'
+                  }`} />
+                  <span className="capitalize text-gray-600">{connectionStatus}</span>
+                </div>
+                <Button variant="ghost" size="sm" onClick={onClose}>
+                  <X className="w-4 h-4" />
+                </Button>
+              </div>
             </div>
           </DialogHeader>
 
@@ -291,6 +465,23 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
             <div className="text-center py-12">
               <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-blue-600" />
               <p className="text-gray-600">Loading import progress...</p>
+              <div className="mt-4 text-sm text-gray-500 space-y-1">
+                <p>Config ID: {configId}</p>
+                <p>Connection: {connectionStatus}</p>
+                <p>Polling: {isPolling ? 'Active' : 'Inactive'}</p>
+                <p>Time: {new Date().toLocaleTimeString()}</p>
+              </div>
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="mt-4"
+                onClick={() => {
+                  console.log('Force refresh progress');
+                  pollProgress();
+                }}
+              >
+                Refresh Progress
+              </Button>
             </div>
           )}
         </DialogContent>
