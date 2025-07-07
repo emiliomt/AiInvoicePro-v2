@@ -66,6 +66,16 @@ class ERPAutomationService {
       Task: ${taskDescription}
       ERP System URL: ${connection.baseUrl}
 
+      INVOICE EXTRACTION SPECIFIC INSTRUCTIONS:
+      ${taskDescription.includes('invoice') ? `
+      - After login, navigate to "FE" (Facturación Electrónica) module
+      - Look for "Documentos recibidos" or "Facturas recibidas" 
+      - Find invoice tables with document numbers and download links
+      - Extract invoice document IDs, numbers, dates, and amounts
+      - Look for download buttons for XML and PDF files
+      - Focus on finding clickable document links in table cells
+      ` : ''}
+
       IMPORTANT: This is a Spanish ERP system (SINCO). The login page uses Spanish labels:
       - Username field: Look for "Usuario" label or the first visible text input field
       - Password field: Look for "Contraseña" label or input[type="password"]
@@ -91,11 +101,13 @@ class ERPAutomationService {
 
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
       - Login process (with Spanish interface)
-      - Navigation to specific modules
+      - Navigation to specific modules (especially FE for invoices)
       - Form filling
       - File uploads
-      - Data extraction
+      - Data extraction (especially from invoice tables)
       - Report generation
+      - Invoice document downloading
+      - Table data extraction for invoice lists
 
       IMPORTANT: Include screenshot steps at key points for debugging:
       - After successful login

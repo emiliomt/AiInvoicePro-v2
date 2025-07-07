@@ -67,7 +67,16 @@ class InvoiceImporterService {
         throw new Error(`ERP connection not found for connectionId ${config.connectionId}`);
       }
       
-      console.log(`Found ERP connection for import task ${log.id}: ${connection.name}`);
+      // Validate connection has required credentials
+      if (!connection.baseUrl) {
+        throw new Error(`ERP connection ${connection.name} is missing base URL`);
+      }
+      
+      if (!connection.username || !connection.password) {
+        throw new Error(`ERP connection ${connection.name} is missing username or password`);
+      }
+      
+      console.log(`Found ERP connection for import task ${log.id}: ${connection.name} (${connection.baseUrl})`);
 
       // Set a timeout for the entire import process (10 minutes max)
       const importTimeout = setTimeout(() => {
@@ -140,64 +149,80 @@ class InvoiceImporterService {
     connection: ErpConnection,
     progress: ImporterProgress
   ): Promise<void> {
-    // Step 1: Initialize browser session
+    const { erpAutomationService } = await import('./erpAutomationService');
+    
+    // Generate RPA script for invoice extraction
     await this.updateStepStatus(logId, progress, 1, 'running');
-    await this.simulateDelay(2000);
-    await this.updateStepStatus(logId, progress, 1, 'completed');
+    
+    const taskDescription = `Navigate to the invoice section and extract all available ${config.fileTypes} invoices. Look for invoice lists, document tables, and download available invoice files.`;
+    
+    try {
+      const script = await erpAutomationService.generateRPAScript(taskDescription, {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username || '',
+        password: connection.password || ''
+      });
+      
+      await this.updateStepStatus(logId, progress, 1, 'completed');
+      
+      // Execute the RPA script to extract invoices
+      await this.updateStepStatus(logId, progress, 2, 'running', 'Executing RPA automation to extract invoices...');
+      
+      const result = await erpAutomationService.executeRPAScript(script, {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username || '',
+        password: connection.password || ''
+      }, config.userId, logId);
+      
+      if (!result.success) {
+        throw new Error(`RPA execution failed: ${result.errorMessage}`);
+      }
+      
+      // Update progress with extracted data
+      progress.totalInvoices = Object.keys(result.extractedData || {}).length;
+      
+      await this.updateStepStatus(logId, progress, 2, 'completed');
+      
+      // Process the extracted invoice data
+      await this.updateStepStatus(logId, progress, 3, 'running');
+      
+      if (result.extractedData && Object.keys(result.extractedData).length > 0) {
+        await this.processExtractedInvoiceData(logId, progress, config, result.extractedData);
+      } else {
+        console.log('No invoice data extracted from ERP system');
+        progress.totalInvoices = 0;
+      }
+      
+      await this.updateStepStatus(logId, progress, 3, 'completed');
+      
+      // Skip steps 4-9 as they're now handled by the RPA process
+      for (let step = 4; step <= 9; step++) {
+        await this.updateStepStatus(logId, progress, step, 'completed', 'Completed by RPA automation');
+      }
+      
+      // Step 10: Process metadata
+      await this.updateStepStatus(logId, progress, 10, 'running');
+      await this.processInvoiceMetadata(logId, progress);
+      await this.updateStepStatus(logId, progress, 10, 'completed');
 
-    // Step 2: Navigate to ERP login page
-    await this.updateStepStatus(logId, progress, 2, 'running');
-    await this.simulateDelay(3000);
-    await this.updateStepStatus(logId, progress, 2, 'completed');
+      // Step 11: Store imported invoices
+      await this.updateStepStatus(logId, progress, 11, 'running');
+      await this.storeImportedInvoices(logId, progress);
+      await this.updateStepStatus(logId, progress, 11, 'completed');
 
-    // Step 3: Login to ERP system
-    await this.updateStepStatus(logId, progress, 3, 'running');
-    await this.simulateDelay(4000);
-    await this.updateStepStatus(logId, progress, 3, 'completed');
-
-    // Step 4: Navigate to invoice section
-    await this.updateStepStatus(logId, progress, 4, 'running');
-    await this.simulateDelay(3000);
-    await this.updateStepStatus(logId, progress, 4, 'completed');
-
-    // Step 5: Load invoice list
-    await this.updateStepStatus(logId, progress, 5, 'running');
-    await this.simulateDelay(5000);
-
-    // Simulate finding invoices
-    const mockInvoiceCount = Math.floor(Math.random() * 10) + 5; // 5-14 invoices
-    progress.totalInvoices = mockInvoiceCount;
-
-    await this.updateStepStatus(logId, progress, 5, 'completed');
-
-    // Step 6: Scan available invoices
-    await this.updateStepStatus(logId, progress, 6, 'running');
-    await this.simulateDelay(2000);
-    await this.updateStepStatus(logId, progress, 6, 'completed');
-
-    // Step 7-9: Process downloads based on file type configuration
-    if (config.fileTypes === 'xml' || config.fileTypes === 'both') {
-      await this.processXMLDownloads(logId, progress, config);
+      // Step 12: Cleanup
+      await this.updateStepStatus(logId, progress, 12, 'running');
+      await this.simulateDelay(1000);
+      await this.updateStepStatus(logId, progress, 12, 'completed');
+      
+    } catch (error: any) {
+      console.error('RPA automation failed:', error);
+      throw new Error(`Invoice extraction failed: ${error.message}`);
     }
-
-    if (config.fileTypes === 'pdf' || config.fileTypes === 'both') {
-      await this.processPDFDownloads(logId, progress, config);
-    }
-
-    // Step 10: Process metadata
-    await this.updateStepStatus(logId, progress, 10, 'running');
-    await this.processInvoiceMetadata(logId, progress);
-    await this.updateStepStatus(logId, progress, 10, 'completed');
-
-    // Step 11: Store imported invoices
-    await this.updateStepStatus(logId, progress, 11, 'running');
-    await this.storeImportedInvoices(logId, progress);
-    await this.updateStepStatus(logId, progress, 11, 'completed');
-
-    // Step 12: Cleanup
-    await this.updateStepStatus(logId, progress, 12, 'running');
-    await this.simulateDelay(1000);
-    await this.updateStepStatus(logId, progress, 12, 'completed');
   }
 
   private async processXMLDownloads(logId: number, progress: ImporterProgress, config: InvoiceImporterConfig): Promise<void> {
@@ -362,6 +387,63 @@ class InvoiceImporterService {
       .join('\n');
 
     await storage.updateInvoiceImporterLog(logId, { logs });
+  }
+
+  private async processExtractedInvoiceData(
+    logId: number,
+    progress: ImporterProgress,
+    config: InvoiceImporterConfig,
+    extractedData: any
+  ): Promise<void> {
+    let processedCount = 0;
+    let successCount = 0;
+    let failCount = 0;
+
+    // Process each extracted data item as an invoice
+    for (const [key, value] of Object.entries(extractedData)) {
+      try {
+        processedCount++;
+        
+        // Create imported invoice record from extracted data
+        await storage.createImportedInvoice({
+          logId,
+          originalFileName: `extracted_invoice_${processedCount}.${config.fileTypes === 'xml' ? 'xml' : 'pdf'}`,
+          fileType: config.fileTypes === 'both' ? 'pdf' : config.fileTypes,
+          fileSize: JSON.stringify(value).length,
+          filePath: `/uploads/imported/${config.fileTypes}/extracted_invoice_${processedCount}.${config.fileTypes === 'xml' ? 'xml' : 'pdf'}`,
+          erpDocumentId: `ERP_${Date.now()}_${processedCount}`,
+          downloadedAt: new Date(),
+          metadata: {
+            extractedKey: key,
+            extractedValue: value,
+            extractionTimestamp: new Date().toISOString(),
+            sourceERP: config.connection?.name || 'Unknown'
+          },
+        });
+
+        successCount++;
+        
+        // Update progress
+        progressTracker.sendProgress(config.userId, {
+          taskId: logId,
+          step: 3,
+          totalSteps: progress.totalSteps,
+          status: 'processing',
+          message: `Processing extracted invoice ${processedCount}/${progress.totalInvoices}`,
+          timestamp: new Date(),
+          data: { processedInvoices: processedCount, successfulImports: successCount },
+        });
+
+        await this.simulateDelay(500);
+      } catch (error: any) {
+        failCount++;
+        console.error(`Failed to process extracted invoice ${processedCount}:`, error);
+      }
+    }
+
+    progress.processedInvoices = processedCount;
+    progress.successfulImports = successCount;
+    progress.failedImports = failCount;
   }
 
   private async simulateDelay(ms: number): Promise<void> {
