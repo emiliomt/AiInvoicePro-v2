@@ -225,7 +225,8 @@ class ERPAutomationService {
     startTime: number
   ): Promise<TaskResult> {
     try {
-      // Launch browser with performance optimizations
+      // Launch browser with performance optimizations and debugging
+      logs.push('Launching browser with optimizations...');
       this.browser = await chromium.launch({ 
         headless: true,
         executablePath: getChromiumPath(),
@@ -240,7 +241,10 @@ class ERPAutomationService {
           '--disable-background-timer-throttling',
           '--disable-backgrounding-occluded-windows',
           '--disable-renderer-backgrounding',
-          '--disable-features=TranslateUI'
+          '--disable-features=TranslateUI',
+          '--disable-web-security', // Help with CORS issues
+          '--disable-features=VizDisplayCompositor',
+          '--timeout=60000' // 60 second timeout
         ]
       });
 
@@ -287,15 +291,15 @@ class ERPAutomationService {
           progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
         }
 
-        // Step-level timeout (2 minutes per step maximum)
-        const stepTimeout = setTimeout(() => {
-          throw new Error(`Step ${i + 1} timed out after 2 minutes`);
-        }, 2 * 60 * 1000);
+        // Step-level timeout (1 minute per step maximum to prevent hanging)
+        const stepPromise = this.executeStep(page, step, connection, screenshots, extractedData, logs);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error(`Step ${i + 1} timed out after 1 minute`)), 60000);
+        });
 
         try {
-          await this.executeStep(page, step, connection, screenshots, extractedData, logs);
+          await Promise.race([stepPromise, timeoutPromise]);
           logs.push(`Step ${i + 1} completed successfully`);
-          clearTimeout(stepTimeout);
 
           // Take automatic screenshot after important steps (optimized)
           if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
@@ -386,9 +390,26 @@ class ERPAutomationService {
     switch (step.action) {
       case 'navigate':
         const url = step.value || connection.baseUrl;
-        await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 20000 });
-        // Wait for page to stabilize
-        await page.waitForTimeout(1500);
+        logs.push(`Navigating to: ${url}`);
+        
+        try {
+          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
+          logs.push(`Navigation successful - page loaded`);
+        } catch (navError) {
+          logs.push(`Navigation failed, trying networkidle: ${navError}`);
+          await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
+        }
+        
+        // Wait for page to stabilize and check if it actually loaded
+        await page.waitForTimeout(2000);
+        const pageTitle = await page.title();
+        logs.push(`Page title: ${pageTitle}`);
+        
+        // Verify we're not stuck on an error page
+        const pageContent = await page.textContent('body');
+        if (pageContent?.includes('Error') || pageContent?.includes('404')) {
+          throw new Error(`Page loaded with error content: ${pageContent.substring(0, 100)}`);
+        }
         break;
 
       case 'click':
@@ -619,10 +640,19 @@ class ERPAutomationService {
   private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<string> {
     // Try original selector first with shorter timeout
     try {
-      await page.waitForSelector(originalSelector, { timeout: Math.min(timeout / 3, 3000) });
+      await page.waitForSelector(originalSelector, { timeout: Math.min(timeout / 3, 2000) });
+      console.log(`Original selector worked: ${originalSelector}`);
       return originalSelector;
     } catch (error) {
-      console.warn(`Original selector failed: ${originalSelector}`);
+      console.warn(`Original selector failed: ${originalSelector}, trying fallbacks...`);
+      
+      // Take a debug screenshot to see current page state
+      try {
+        const debugScreenshot = await page.screenshot({ fullPage: false });
+        console.log(`Debug screenshot taken (${debugScreenshot.length} bytes)`);
+      } catch (screenshotError) {
+        console.warn('Debug screenshot failed');
+      }
     }
 
     // Generate comprehensive fallback selectors for Spanish ERP systems

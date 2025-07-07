@@ -69,7 +69,18 @@ class InvoiceImporterService {
       
       console.log(`Found ERP connection for import task ${log.id}: ${connection.name}`);
 
-      await this.performImportProcess(log.id, config, connection, progress);
+      // Set a timeout for the entire import process (10 minutes max)
+      const importTimeout = setTimeout(() => {
+        throw new Error('Import process timed out after 10 minutes');
+      }, 10 * 60 * 1000);
+
+      try {
+        await this.performImportProcess(log.id, config, connection, progress);
+        clearTimeout(importTimeout);
+      } catch (importError) {
+        clearTimeout(importTimeout);
+        throw importError;
+      }
 
       // Mark as completed
       progress.status = 'completed';

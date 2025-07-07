@@ -3068,6 +3068,12 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       
       const progress = invoiceImporterService.getProgress(logId);
       console.log(`Progress found for logId ${logId}:`, progress ? 'Yes' : 'No');
+      
+      if (progress) {
+        console.log(`Current step: ${progress.currentStep}/${progress.totalSteps}`);
+        console.log(`Status: ${progress.status}`);
+        console.log(`Last step: ${progress.steps[progress.currentStep - 1]?.description || 'None'}`);
+      };
 
       if (!progress) {
         // Also check the database for the log status
