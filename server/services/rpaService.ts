@@ -67,43 +67,85 @@ export class RPAService {
     const startTime = new Date();
     
     console.log(`Starting RPA extraction job: ${job.jobName} (${executionId})`);
+    console.log(`Connection type: ${connection.erpSystemType}`);
+    console.log(`Job criteria:`, job.extractionCriteria);
     
     try {
       const config = connection.connectionConfig as any;
       const criteria = job.extractionCriteria as any;
+      
+      // Validate connection configuration
+      if (!config) {
+        throw new Error('Connection configuration is missing');
+      }
       
       // Extract documents based on ERP system type
       let extractionResult: ERPExtractionResult;
       
       switch (connection.erpSystemType) {
         case 'custom_api':
+          console.log('Using Custom API extraction method');
           extractionResult = await this.extractFromCustomAPI(config, criteria, job.documentType);
           break;
         case 'sftp':
+          console.log('Using SFTP extraction method');
           extractionResult = await this.extractFromSFTP(config, criteria, job.documentType);
           break;
         case 'database':
+          console.log('Using Database extraction method');
           extractionResult = await this.extractFromDatabase(config, criteria, job.documentType);
           break;
         case 'sharepoint':
+          console.log('Using SharePoint extraction method');
           extractionResult = await this.extractFromSharePoint(config, criteria, job.documentType);
           break;
         case 'sap':
+          console.log('Using SAP extraction method');
           extractionResult = await this.extractFromSAP(config, criteria, job.documentType);
           break;
         case 'oracle':
+          console.log('Using Oracle extraction method');
           extractionResult = await this.extractFromOracle(config, criteria, job.documentType);
           break;
         default:
-          throw new Error(`Unsupported ERP system: ${connection.erpSystemType}`);
+          throw new Error(`Unsupported ERP system: ${connection.erpSystemType}. Supported types: custom_api, sftp, database, sharepoint, sap, oracle`);
       }
       
-      console.log(`RPA extraction completed: ${extractionResult.documentsProcessed} documents processed`);
+      console.log(`RPA extraction completed successfully:`);
+      console.log(`- Documents found: ${extractionResult.documentsFound}`);
+      console.log(`- Documents processed: ${extractionResult.documentsProcessed}`);
+      console.log(`- Documents skipped: ${extractionResult.documentsSkipped}`);
+      console.log(`- Errors encountered: ${extractionResult.errorCount}`);
+      
+      if (extractionResult.errors.length > 0) {
+        console.log('Extraction errors:', extractionResult.errors);
+      }
+      
       return extractionResult;
       
     } catch (error: any) {
-      console.error(`RPA extraction job failed: ${error.message}`);
-      throw error;
+      console.error(`RPA extraction job failed for ${job.jobName}:`, error);
+      console.error(`Error details:`, {
+        message: error.message,
+        stack: error.stack,
+        jobId: executionId,
+        connectionType: connection.erpSystemType,
+        executionTime: Date.now() - startTime.getTime()
+      });
+      
+      // Return a structured error result instead of throwing
+      return {
+        documentsFound: 0,
+        documentsProcessed: 0,
+        documentsSkipped: 0,
+        errorCount: 1,
+        extractedDocuments: [],
+        errors: [{
+          documentId: 'job_execution',
+          error: error.message || 'Unknown extraction error',
+          timestamp: new Date().toISOString()
+        }]
+      };
     }
   }
 

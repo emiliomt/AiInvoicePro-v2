@@ -1847,6 +1847,57 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+
+
+  // RPA Diagnostic endpoint
+  app.get('/api/erp/diagnostic/:connectionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.connectionId);
+      const connection = await storage.getErpConnection(connectionId);
+
+      if (!connection || connection.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Decrypt password
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+
+      const connectionData = {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      };
+
+      // Run comprehensive diagnostics
+      const diagnostics = {
+        connectionTest: await erpAutomationService.testConnection(connectionData),
+        timestamp: new Date().toISOString(),
+        connectionInfo: {
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username,
+          lastUsed: connection.lastUsed,
+          isActive: connection.isActive
+        }
+      };
+
+      res.json(diagnostics);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Diagnostic test failed'
+      });
+    }
+  });
+
   app.get('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
     try {
       const ruleId = parseInt(req.params.id);

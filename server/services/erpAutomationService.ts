@@ -576,15 +576,59 @@ class ERPAutomationService {
       }
 
       // Wait for page to stabilize (reduced time)
-      await page.waitForTimeout(1000);
+      await page.waitForTimeout(2000);
 
       // Try to find common login elements to verify it's an ERP system
       const pageTitle = await page.title();
-      const pageContent = await page.content();
+      console.log(`Page title: ${pageTitle}`);
 
-      // Look for common ERP/login indicators
-      const hasLoginForm = await page.locator('input[type="password"]').count() > 0;
-      const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="login"]').count() > 0;
+      // Enhanced login form detection for SINCO
+      const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
+      const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="usuario"], input[placeholder*="usuario"]').count() > 0;
+      
+      // Check for SINCO-specific elements
+      const hasSincoElements = await page.locator('*:has-text("SINCO"), *:has-text("SincoDycon"), *:has-text("Usuario"), *:has-text("Contraseña")').count() > 0;
+      
+      // Test actual login with provided credentials
+      let loginTestResult = null;
+      if (hasPasswordField && hasUsernameField) {
+        try {
+          console.log('Testing login credentials...');
+          
+          // Find username field using comprehensive selectors
+          const usernameSelector = await this.findUsernameField(page);
+          const passwordSelector = await this.findPasswordField(page);
+          
+          if (usernameSelector && passwordSelector) {
+            await page.fill(usernameSelector, connection.username);
+            await page.fill(passwordSelector, connection.password);
+            
+            // Find and click login button
+            const loginButtonSelector = await this.findLoginButton(page);
+            if (loginButtonSelector) {
+              await page.click(loginButtonSelector);
+              await page.waitForTimeout(3000);
+              
+              // Check if login was successful
+              const currentUrl = page.url();
+              const hasError = await page.locator('*:has-text("Error"), *:has-text("Incorrect"), *:has-text("Invalid"), *:has-text("Usuario"), *:has-text("credenciales")').count() > 0;
+              
+              loginTestResult = {
+                attempted: true,
+                urlChanged: currentUrl !== connection.baseUrl,
+                hasError: hasError,
+                currentUrl: currentUrl
+              };
+            }
+          }
+        } catch (loginError) {
+          console.warn('Login test failed:', loginError);
+          loginTestResult = {
+            attempted: true,
+            error: loginError instanceof Error ? loginError.message : 'Unknown login error'
+          };
+        }
+      }
 
       await this.browser.close();
       this.browser = null;
@@ -592,17 +636,33 @@ class ERPAutomationService {
       const details = {
         status,
         title: pageTitle,
-        hasLoginForm,
+        hasLoginForm: hasPasswordField,
         hasUsernameField,
+        hasSincoElements,
+        loginTest: loginTestResult,
         url: connection.baseUrl
       };
 
-      if (hasLoginForm && hasUsernameField) {
-        return {
-          success: true,
-          message: 'Successfully connected to ERP system. Login form detected.',
-          details
-        };
+      if (hasPasswordField && hasUsernameField) {
+        if (loginTestResult?.attempted && !loginTestResult?.hasError && loginTestResult?.urlChanged) {
+          return {
+            success: true,
+            message: 'Successfully connected to ERP system and login credentials appear to be working.',
+            details
+          };
+        } else if (loginTestResult?.attempted && loginTestResult?.hasError) {
+          return {
+            success: false,
+            message: 'Connection successful but login credentials appear to be invalid. Please check username and password.',
+            details
+          };
+        } else {
+          return {
+            success: true,
+            message: 'Successfully connected to ERP system. Login form detected but credentials not fully tested.',
+            details
+          };
+        }
       } else if (status < 400) {
         return {
           success: true,
@@ -635,6 +695,75 @@ class ERPAutomationService {
         }
       };
     }
+  }
+
+  private async findUsernameField(page: any): Promise<string | null> {
+    const selectors = [
+      'input[name*="usuario" i]',
+      'input[placeholder*="usuario" i]',
+      'input[id*="usuario" i]',
+      'input[name*="user" i]',
+      'input[placeholder*="user" i]',
+      'input[type="text"]:visible',
+      'input[type="email"]:visible',
+      'form input:first-of-type'
+    ];
+
+    for (const selector of selectors) {
+      try {
+        if (await page.locator(selector).count() > 0) {
+          return selector;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private async findPasswordField(page: any): Promise<string | null> {
+    const selectors = [
+      'input[type="password"]',
+      'input[name*="clave" i]',
+      'input[name*="contrasena" i]',
+      'input[name*="contraseña" i]',
+      'input[placeholder*="contraseña" i]'
+    ];
+
+    for (const selector of selectors) {
+      try {
+        if (await page.locator(selector).count() > 0) {
+          return selector;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
+  }
+
+  private async findLoginButton(page: any): Promise<string | null> {
+    const selectors = [
+      'button:has-text("Iniciar sesión")',
+      'button:has-text("Iniciar")',
+      'button:has-text("Login")',
+      'button:has-text("Entrar")',
+      'input[type="submit"]',
+      'button[type="submit"]',
+      'button:visible',
+      'form button:last-of-type'
+    ];
+
+    for (const selector of selectors) {
+      try {
+        if (await page.locator(selector).count() > 0) {
+          return selector;
+        }
+      } catch (error) {
+        continue;
+      }
+    }
+    return null;
   }
 
   private async waitForSelectorWithFallback(page: Page, originalSelector: string, timeout: number): Promise<string> {
