@@ -276,8 +276,8 @@ class InvoiceImporterService {
       } else {
         progress.failedImports++;
       }
-
-
+    }
+  }
 
   private async processExtractedInvoiceDataFast(
     logId: number,
@@ -390,23 +390,6 @@ class InvoiceImporterService {
       // Minimal delay between batches
       await this.simulateDelay(50);
     }
-  }
-
-      // Update progress
-      progressTracker.sendProgress(config.userId, {
-        taskId: logId,
-        step: 8,
-        totalSteps: progress.totalSteps,
-        status: 'processing',
-        message: `Downloading XML ${i + 1}/${progress.totalInvoices}`,
-        timestamp: new Date(),
-        data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
-      });
-
-      await this.simulateDelay(1500);
-    }
-
-    await this.updateStepStatus(logId, progress, 8, 'completed');
   }
 
   private async processPDFDownloads(logId: number, progress: ImporterProgress, config: InvoiceImporterConfig): Promise<void> {
