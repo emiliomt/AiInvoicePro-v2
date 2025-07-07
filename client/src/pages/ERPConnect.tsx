@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Trash2, Edit, TestTube, Settings, Wifi } from 'lucide-react';
+import { Plus, Trash2, Edit, TestTube, Settings, Wifi, CheckCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -150,7 +150,7 @@ export default function ERPConnect() {
 
       const title = data.success ? 'Connection Test Successful' : 'Connection Test Failed';
       const description = data.message || (data.success 
-        ? 'Successfully connected to the ERP system' 
+        ? 'Successfully connected to the ERP system - Connection verified!' 
         : 'Unable to connect to the ERP system');
 
       toast({
@@ -368,9 +368,17 @@ export default function ERPConnect() {
                     <Wifi className="h-5 w-5 text-blue-600" />
                     <CardTitle className="text-lg">{connection.name}</CardTitle>
                   </div>
-                  <Badge variant={connection.isActive ? "default" : "secondary"}>
-                    {connection.isActive ? 'Active' : 'Inactive'}
-                  </Badge>
+                  <div className="flex gap-2">
+                    <Badge variant={connection.isActive ? "default" : "secondary"}>
+                      {connection.isActive ? 'Active' : 'Inactive'}
+                    </Badge>
+                    {connection.lastUsed && (
+                      <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                        <CheckCircle className="w-3 h-3 mr-1" />
+                        Verified
+                      </Badge>
+                    )}
+                  </div>
                 </div>
                 <CardDescription className="truncate max-w-[250px]" title={connection.baseUrl}>
                   {connection.baseUrl}
@@ -383,7 +391,13 @@ export default function ERPConnect() {
                     <p><strong>Description:</strong> {connection.description}</p>
                   )}
                   {connection.lastUsed && (
-                    <p><strong>Last Used:</strong> {new Date(connection.lastUsed).toLocaleDateString()}</p>
+                    <p><strong>Last Verified:</strong> {new Date(connection.lastUsed).toLocaleDateString()}</p>
+                  )}
+                  {connection.lastUsed && (
+                    <p className="text-green-600 font-medium flex items-center gap-1">
+                      <CheckCircle className="w-4 h-4" />
+                      Connection Verified
+                    </p>
                   )}
                 </div>
 
