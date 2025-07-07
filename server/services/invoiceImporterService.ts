@@ -31,6 +31,24 @@ export interface ImporterProgress {
 class InvoiceImporterService {
   private activeImports = new Map<number, ImporterProgress>();
 
+  private async logStep(logId: number, stepTitle: string, status: 'pending' | 'running' | 'completed' | 'failed', details?: string): Promise<void> {
+    try {
+      const log = await storage.getInvoiceImporterLog(logId);
+      if (!log) return;
+
+      const timestamp = new Date().toISOString();
+      const stepLog = `[${timestamp}] [STEP] ${stepTitle} [${status.toUpperCase()}]${details ? ` - ${details}` : ''}`;
+      
+      const updatedLogs = log.logs ? `${log.logs}\n${stepLog}` : stepLog;
+      
+      await storage.updateInvoiceImporterLog(logId, {
+        logs: updatedLogs
+      });
+    } catch (error) {
+      console.error('Failed to log step:', error);
+    }
+  }
+
   async executeImportTask(configId: number): Promise<void> {
     const config = await storage.getInvoiceImporterConfig(configId);
     if (!config) {
@@ -61,21 +79,29 @@ class InvoiceImporterService {
     console.log(`Started import task ${log.id} for config ${configId}, stored in activeImports`);
 
     try {
+      // Log initialization
+      await this.logStep(log.id, 'Initializing import process', 'running');
+
       // Get connection details
+      await this.logStep(log.id, 'Retrieving ERP connection details', 'running');
       const connection = await storage.getErpConnection(config.connectionId);
       if (!connection) {
+        await this.logStep(log.id, 'ERP connection not found', 'failed');
         throw new Error(`ERP connection not found for connectionId ${config.connectionId}`);
       }
       
       // Validate connection has required credentials
       if (!connection.baseUrl) {
+        await this.logStep(log.id, 'ERP connection validation failed', 'failed', 'Missing base URL');
         throw new Error(`ERP connection ${connection.name} is missing base URL`);
       }
       
       if (!connection.username || !connection.password) {
+        await this.logStep(log.id, 'ERP connection validation failed', 'failed', 'Missing credentials');
         throw new Error(`ERP connection ${connection.name} is missing username or password`);
       }
       
+      await this.logStep(log.id, 'ERP connection validated successfully', 'completed', `Connection: ${connection.name}`);
       console.log(`Found ERP connection for import task ${log.id}: ${connection.name} (${connection.baseUrl})`);
 
       // Set a timeout for the entire import process (10 minutes max)
@@ -92,6 +118,10 @@ class InvoiceImporterService {
       }
 
       // Mark as completed
+      await this.logStep(log.id, 'Import process completed successfully', 'completed', 
+        `Processed ${progress.processedInvoices}/${progress.totalInvoices} invoices. ` +
+        `${progress.successfulImports} successful, ${progress.failedImports} failed.`);
+      
       progress.status = 'completed';
       progress.completedAt = new Date();
 
@@ -152,11 +182,14 @@ class InvoiceImporterService {
     const { erpAutomationService } = await import('./erpAutomationService');
     
     // Step 1: Initialize browser (faster)
+    await this.logStep(logId, 'Initializing browser automation', 'running');
     await this.updateStepStatus(logId, progress, 1, 'running');
     await this.simulateDelay(500); // Reduced delay
+    await this.logStep(logId, 'Browser automation initialized', 'completed');
     await this.updateStepStatus(logId, progress, 1, 'completed');
     
     // Step 2: Generate optimized RPA script
+    await this.logStep(logId, 'Generating automation script', 'running');
     await this.updateStepStatus(logId, progress, 2, 'running');
     const taskDescription = `Quick login and navigate to FE module. Extract invoice document list from Documentos recibidos section. Focus on document numbers and download links only.`;
     
@@ -169,9 +202,11 @@ class InvoiceImporterService {
         password: connection.password || ''
       });
       
+      await this.logStep(logId, 'Automation script generated successfully', 'completed');
       await this.updateStepStatus(logId, progress, 2, 'completed');
       
       // Step 3: Execute optimized RPA script
+      await this.logStep(logId, 'Connecting to ERP system', 'running');
       await this.updateStepStatus(logId, progress, 3, 'running', 'Connecting to ERP system...');
       
       const result = await erpAutomationService.executeRPAScript(script, {
@@ -183,9 +218,11 @@ class InvoiceImporterService {
       }, config.userId, logId);
       
       if (!result.success) {
+        await this.logStep(logId, 'ERP connection failed', 'failed', result.errorMessage);
         throw new Error(`ERP connection failed: ${result.errorMessage}`);
       }
       
+      await this.logStep(logId, 'Successfully connected to ERP system', 'completed');
       await this.updateStepStatus(logId, progress, 3, 'completed');
       
       // Step 4: Navigate to invoice section

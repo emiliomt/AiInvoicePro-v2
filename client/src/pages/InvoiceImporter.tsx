@@ -11,6 +11,7 @@ import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings,
 import { useToast } from '../hooks/use-toast';
 import { FileUpload } from '../components/ui/file-upload';
 import Header from '@/components/Header';
+import { ProgressTracker } from '../components/ProgressTracker';
 
 interface ImportConfig {
   id: number;
@@ -61,6 +62,9 @@ export default function InvoiceImporter() {
     fileTypes: 'pdf',
     schedule: 'once'
   });
+  const [showProgressTracker, setShowProgressTracker] = useState(false);
+  const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
+  const [runningConfigName, setRunningConfigName] = useState<string>('');
   const { toast } = useToast();
 
   useEffect(() => {
@@ -165,8 +169,11 @@ export default function InvoiceImporter() {
   };
 
   const handleRunNow = async (configId: number) => {
+    const config = configs.find(c => c.id === configId);
+    if (!config) return;
+
     try {
-      const response = await fetch(`/api/invoice-importer/run/${configId}`, {
+      const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
         method: 'POST'
       });
 
@@ -175,14 +182,21 @@ export default function InvoiceImporter() {
           title: "Import Started",
           description: "Invoice import process has been initiated"
         });
+        
+        // Show progress tracker
+        setRunningConfigId(configId);
+        setRunningConfigName(config.taskName);
+        setShowProgressTracker(true);
+        
         fetchLogs();
       } else {
-        throw new Error('Failed to start import');
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start import');
       }
     } catch (error) {
       toast({
         title: "Error",
-        description: "Failed to start import process",
+        description: error instanceof Error ? error.message : "Failed to start import process",
         variant: "destructive"
       });
     }
@@ -457,6 +471,16 @@ export default function InvoiceImporter() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Progress Tracker */}
+        {runningConfigId && (
+          <ProgressTracker
+            isOpen={showProgressTracker}
+            onClose={() => setShowProgressTracker(false)}
+            configId={runningConfigId}
+            configName={runningConfigName}
+          />
+        )}
       </div>
     </div>
     </div>

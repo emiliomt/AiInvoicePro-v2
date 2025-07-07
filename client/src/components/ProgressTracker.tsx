@@ -1,180 +1,320 @@
-import React from 'react';
-import { Progress } from './ui/progress';
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { CheckCircle, Clock, AlertCircle, Play, Database, Download, FileText, Settings } from 'lucide-react';
+import { Progress } from './ui/progress';
+import { Button } from './ui/button';
+import { CheckCircle, Clock, AlertCircle, Loader2, X, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
 
 interface ProgressStep {
-  id: number;
-  description: string;
+  id: string;
+  title: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
-  timestamp: Date;
+  timestamp?: string;
+  details?: string;
+  screenshot?: string;
 }
 
-interface ProgressData {
-  taskId: number;
-  currentStep: number;
-  totalSteps: number;
-  steps: ProgressStep[];
+interface ImportProgress {
+  id: number;
+  configId: number;
+  status: 'pending' | 'running' | 'completed' | 'failed';
   totalInvoices: number;
   processedInvoices: number;
   successfulImports: number;
   failedImports: number;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  startedAt: Date;
-  completedAt?: Date;
+  steps: ProgressStep[];
+  logs: string;
+  screenshots: string[];
+  errorMessage?: string;
+  startedAt?: string;
+  completedAt?: string;
+  executionTime?: number;
 }
 
 interface ProgressTrackerProps {
-  progress?: ProgressData;
-  isVisible: boolean;
+  isOpen: boolean;
+  onClose: () => void;
+  configId: number;
+  configName: string;
 }
 
-const getStepIcon = (step: ProgressStep) => {
-  const iconProps = { className: "w-4 h-4" };
+export default function ProgressTracker({ isOpen, onClose, configId, configName }: ProgressTrackerProps) {
+  const [progress, setProgress] = useState<ImportProgress | null>(null);
+  const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
 
-  // Map step descriptions to appropriate icons
-  if (step.description.toLowerCase().includes('browser') || step.description.toLowerCase().includes('initializing')) {
-    return <Settings {...iconProps} />;
-  }
-  if (step.description.toLowerCase().includes('login') || step.description.toLowerCase().includes('navigating')) {
-    return <Play {...iconProps} />;
-  }
-  if (step.description.toLowerCase().includes('download') || step.description.toLowerCase().includes('extract')) {
-    return <Download {...iconProps} />;
-  }
-  if (step.description.toLowerCase().includes('invoice') || step.description.toLowerCase().includes('document')) {
-    return <FileText {...iconProps} />;
-  }
-  if (step.description.toLowerCase().includes('storing') || step.description.toLowerCase().includes('processing')) {
-    return <Database {...iconProps} />;
-  }
+  useEffect(() => {
+    if (isOpen && configId) {
+      startPolling();
+    } else {
+      stopPolling();
+    }
 
-  return <Clock {...iconProps} />;
-};
+    return () => stopPolling();
+  }, [isOpen, configId]);
 
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'completed':
-      return <CheckCircle className="w-5 h-5 text-green-500" />;
-    case 'running':
-      return <Clock className="w-5 h-5 text-blue-500 animate-spin" />;
-    case 'failed':
-      return <AlertCircle className="w-5 h-5 text-red-500" />;
-    default:
-      return <Clock className="w-5 h-5 text-gray-400" />;
-  }
-};
+  const startPolling = () => {
+    setIsPolling(true);
+    pollProgress();
+  };
 
-const getStatusColor = (status: string) => {
-  switch (status) {
-    case 'completed':
-      return 'bg-green-100 border-green-200';
-    case 'running':
-      return 'bg-blue-100 border-blue-200';
-    case 'failed':
-      return 'bg-red-100 border-red-200';
-    default:
-      return 'bg-gray-50 border-gray-200';
-  }
-};
+  const stopPolling = () => {
+    setIsPolling(false);
+  };
 
-export const ProgressTracker: React.FC<ProgressTrackerProps> = ({ progress, isVisible }) => {
-  if (!isVisible || !progress) return null;
+  const pollProgress = async () => {
+    if (!isPolling) return;
 
-  const overallProgress = (progress.currentStep / progress.totalSteps) * 100;
-  const invoiceProgress = progress.totalInvoices > 0 ? (progress.processedInvoices / progress.totalInvoices) * 100 : 0;
+    try {
+      const response = await fetch(`/api/invoice-importer/progress/${configId}`);
+      if (response.ok) {
+        const data = await response.json();
+        setProgress(data);
+        
+        // Continue polling if task is still running
+        if (data.status === 'running' || data.status === 'pending') {
+          setTimeout(pollProgress, 2000); // Poll every 2 seconds
+        } else {
+          setIsPolling(false);
+        }
+      }
+    } catch (error) {
+      console.error('Error polling progress:', error);
+      setTimeout(pollProgress, 5000); // Retry after 5 seconds on error
+    }
+  };
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'running':
+        return <Loader2 className="w-4 h-4 text-blue-600 animate-spin" />;
+      case 'failed':
+        return <AlertCircle className="w-4 h-4 text-red-600" />;
+      default:
+        return <Clock className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    const variants = {
+      pending: 'bg-gray-100 text-gray-800',
+      running: 'bg-blue-100 text-blue-800',
+      completed: 'bg-green-100 text-green-800',
+      failed: 'bg-red-100 text-red-800'
+    };
+    return variants[status as keyof typeof variants] || variants.pending;
+  };
+
+  const formatDuration = (ms: number) => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  const calculateProgress = () => {
+    if (!progress) return 0;
+    if (progress.totalInvoices === 0) return 0;
+    return (progress.processedInvoices / progress.totalInvoices) * 100;
+  };
 
   return (
-    <div className="bg-white border rounded-lg p-6 space-y-6">
-      {/* Header with ERP Logo */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-            <Database className="w-6 h-6 text-white" />
-          </div>
-          <div>
-            <h3 className="font-semibold text-lg">ERP Invoice Import</h3>
-            <p className="text-sm text-gray-500">Task #{progress.taskId}</p>
-          </div>
-        </div>
-        <Badge variant={progress.status === 'completed' ? 'default' : progress.status === 'failed' ? 'destructive' : 'secondary'}>
-          {progress.status.charAt(0).toUpperCase() + progress.status.slice(1)}
-        </Badge>
-      </div>
+    <>
+      <Dialog open={isOpen} onOpenChange={onClose}>
+        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <DialogTitle>Import Progress - {configName}</DialogTitle>
+              <Button variant="ghost" size="sm" onClick={onClose}>
+                <X className="w-4 h-4" />
+              </Button>
+            </div>
+          </DialogHeader>
 
-      {/* Overall Progress Bar */}
-      <div className="space-y-2">
-        <div className="flex justify-between text-sm">
-          <span className="font-medium">Overall Progress</span>
-          <span className="text-gray-500">Step {progress.currentStep} of {progress.totalSteps}</span>
-        </div>
-        <Progress value={overallProgress} className="h-3" />
-        <div className="text-xs text-gray-500 text-right">{Math.round(overallProgress)}% complete</div>
-      </div>
+          {progress ? (
+            <div className="space-y-6">
+              {/* Overall Progress */}
+              <Card>
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="text-lg">Overall Progress</CardTitle>
+                    <Badge className={getStatusBadge(progress.status)}>
+                      {progress.status.toUpperCase()}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-blue-600">{progress.totalInvoices}</div>
+                      <div className="text-sm text-gray-500">Total Invoices</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-600">{progress.processedInvoices}</div>
+                      <div className="text-sm text-gray-500">Processed</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-green-600">{progress.successfulImports}</div>
+                      <div className="text-sm text-gray-500">Successful</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-red-600">{progress.failedImports}</div>
+                      <div className="text-sm text-gray-500">Failed</div>
+                    </div>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Progress</span>
+                      <span>{Math.round(calculateProgress())}%</span>
+                    </div>
+                    <Progress value={calculateProgress()} className="h-2" />
+                  </div>
 
-      {/* Invoice Progress Bar (if applicable) */}
-      {progress.totalInvoices > 0 && (
-        <div className="space-y-2">
-          <div className="flex justify-between text-sm">
-            <span className="font-medium">Invoices Processed</span>
-            <span className="text-gray-500">{progress.processedInvoices} of {progress.totalInvoices}</span>
-          </div>
-          <Progress value={invoiceProgress} className="h-3" />
-          <div className="flex justify-between text-xs text-gray-500">
-            <span>{Math.round(invoiceProgress)}% complete</span>
-            <div className="space-x-4">
-              <span className="text-green-600">✓ {progress.successfulImports} success</span>
-              {progress.failedImports > 0 && (
-                <span className="text-red-600">✗ {progress.failedImports} failed</span>
+                  {progress.executionTime && (
+                    <div className="text-sm text-gray-500">
+                      Execution Time: {formatDuration(progress.executionTime)}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Step-by-Step Progress */}
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-lg">Step-by-Step Progress</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-4">
+                    {progress.steps && progress.steps.length > 0 ? (
+                      progress.steps.map((step, index) => (
+                        <div key={step.id} className="flex items-start space-x-3 p-3 rounded-lg bg-gray-50">
+                          <div className="flex-shrink-0 mt-1">
+                            {getStatusIcon(step.status)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center justify-between">
+                              <h4 className="text-sm font-medium text-gray-900">{step.title}</h4>
+                              <Badge className={getStatusBadge(step.status)} variant="secondary">
+                                {step.status}
+                              </Badge>
+                            </div>
+                            {step.details && (
+                              <p className="text-sm text-gray-600 mt-1">{step.details}</p>
+                            )}
+                            {step.timestamp && (
+                              <p className="text-xs text-gray-500 mt-1">
+                                {new Date(step.timestamp).toLocaleTimeString()}
+                              </p>
+                            )}
+                          </div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="text-center py-8 text-gray-500">
+                        <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+                        <p>Initializing import process...</p>
+                      </div>
+                    )}
+                  </div>
+                </CardContent>
+              </Card>
+
+              {/* Screenshots */}
+              {progress.screenshots && progress.screenshots.length > 0 && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Screenshots</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      {progress.screenshots.map((screenshot, index) => (
+                        <div key={index} className="relative">
+                          <img
+                            src={screenshot}
+                            alt={`Screenshot ${index + 1}`}
+                            className="w-full h-32 object-cover rounded-lg border cursor-pointer hover:opacity-80 transition-opacity"
+                            onClick={() => setSelectedScreenshot(screenshot)}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="absolute top-2 right-2 bg-white/80 hover:bg-white/90"
+                            onClick={() => setSelectedScreenshot(screenshot)}
+                          >
+                            <Eye className="w-3 h-3" />
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Error Message */}
+              {progress.errorMessage && (
+                <Card className="border-red-200 bg-red-50">
+                  <CardHeader>
+                    <CardTitle className="text-lg text-red-800">Error Details</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <p className="text-sm text-red-700">{progress.errorMessage}</p>
+                  </CardContent>
+                </Card>
+              )}
+
+              {/* Raw Logs */}
+              {progress.logs && (
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Detailed Logs</CardTitle>
+                  </CardHeader>
+                  <CardContent>
+                    <pre className="text-xs bg-gray-100 p-4 rounded-lg overflow-x-auto whitespace-pre-wrap">
+                      {progress.logs}
+                    </pre>
+                  </CardContent>
+                </Card>
               )}
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* Step Details */}
-      <div className="space-y-3">
-        <h4 className="font-medium text-sm text-gray-700">Progress Details</h4>
-        <div className="space-y-2 max-h-64 overflow-y-auto">
-          {progress.steps.map((step) => (
-            <div 
-              key={step.id}
-              className={`flex items-center space-x-3 p-3 rounded-lg border transition-all ${getStatusColor(step.status)}`}
-            >
-              <div className="flex items-center space-x-2">
-                {getStepIcon(step)}
-                {getStatusIcon(step.status)}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
-                  {step.description}
-                </p>
-                <p className="text-xs text-gray-500">
-                  {step.timestamp.toLocaleTimeString()}
-                </p>
-              </div>
-              <div className="flex-shrink-0">
-                <span className={`inline-flex px-2 py-1 text-xs rounded-full font-medium ${
-                  step.status === 'completed' ? 'bg-green-100 text-green-800' :
-                  step.status === 'running' ? 'bg-blue-100 text-blue-800' :
-                  step.status === 'failed' ? 'bg-red-100 text-red-800' :
-                  'bg-gray-100 text-gray-600'
-                }`}>
-                  {step.status}
-                </span>
-              </div>
+          ) : (
+            <div className="text-center py-12">
+              <Loader2 className="w-8 h-8 mx-auto mb-4 animate-spin text-blue-600" />
+              <p className="text-gray-600">Loading import progress...</p>
             </div>
-          ))}
-        </div>
-      </div>
+          )}
+        </DialogContent>
+      </Dialog>
 
-      {/* Timing Information */}
-      <div className="flex justify-between text-xs text-gray-500 pt-4 border-t">
-        <span>Started: {progress.startedAt.toLocaleTimeString()}</span>
-        {progress.completedAt && (
-          <span>Completed: {progress.completedAt.toLocaleTimeString()}</span>
-        )}
-      </div>
-    </div>
+      {/* Screenshot Modal */}
+      <Dialog open={!!selectedScreenshot} onOpenChange={() => setSelectedScreenshot(null)}>
+        <DialogContent className="max-w-4xl">
+          <DialogHeader>
+            <DialogTitle>Screenshot</DialogTitle>
+          </DialogHeader>
+          {selectedScreenshot && (
+            <div className="max-h-[80vh] overflow-auto">
+              <img
+                src={selectedScreenshot}
+                alt="Screenshot"
+                className="w-full h-auto rounded-lg"
+              />
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </>
   );
-};
+}
+
+export { ProgressTracker };

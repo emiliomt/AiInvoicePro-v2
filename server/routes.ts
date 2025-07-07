@@ -3187,6 +3187,98 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
   const httpServer = createServer(app);
 
+  // Progress tracking endpoint for invoice importer
+  app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.configId);
+      const config = await storage.getInvoiceImporterConfig(configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration (same company)
+      if (!currentUser?.companyId || config.companyId !== currentUser.companyId) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
+      }
+
+      // Get the latest log for this configuration
+      const logs = await storage.getInvoiceImporterLogs(configId);
+      const latestLog = logs[0]; // Most recent log
+
+      if (!latestLog) {
+        return res.json({
+          id: 0,
+          configId,
+          status: 'pending',
+          totalInvoices: 0,
+          processedInvoices: 0,
+          successfulImports: 0,
+          failedImports: 0,
+          steps: [],
+          logs: '',
+          screenshots: [],
+          errorMessage: null,
+          startedAt: null,
+          completedAt: null,
+          executionTime: null
+        });
+      }
+
+      // Parse steps from logs if available
+      let steps = [];
+      try {
+        if (latestLog.logs) {
+          const logLines = latestLog.logs.split('\n');
+          steps = logLines
+            .filter(line => line.includes('[STEP]'))
+            .map((line, index) => {
+              const stepMatch = line.match(/\[STEP\]\s*(.+)/);
+              const statusMatch = line.match(/\[(COMPLETED|RUNNING|FAILED|PENDING)\]/);
+              return {
+                id: `step-${index}`,
+                title: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
+                status: statusMatch ? statusMatch[1].toLowerCase() : 'pending',
+                timestamp: new Date().toISOString(),
+                details: ''
+              };
+            });
+        }
+      } catch (error) {
+        console.error('Error parsing steps from logs:', error);
+      }
+
+      const response = {
+        id: latestLog.id,
+        configId: latestLog.configId,
+        status: latestLog.status,
+        totalInvoices: latestLog.totalInvoices,
+        processedInvoices: latestLog.processedInvoices,
+        successfulImports: latestLog.successfulImports,
+        failedImports: latestLog.failedImports,
+        steps,
+        logs: latestLog.logs || '',
+        screenshots: latestLog.screenshots || [],
+        errorMessage: latestLog.errorMessage,
+        startedAt: latestLog.startedAt,
+        completedAt: latestLog.completedAt,
+        executionTime: latestLog.executionTime
+      };
+
+      res.json(response);
+    } catch (error) {
+      console.error('Error fetching import progress:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // Custom error handler middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
