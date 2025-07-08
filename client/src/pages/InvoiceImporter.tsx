@@ -7,9 +7,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Upload, Loader2 } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
-import { FileUpload } from '../components/ui/file-upload';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
 
@@ -53,9 +52,7 @@ export default function InvoiceImporter() {
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [activeTab, setActiveTab] = useState('upload');
-  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
+  const [activeTab, setActiveTab] = useState('configurations');
   const [newConfig, setNewConfig] = useState({
     name: '',
     connectionId: '',
@@ -109,53 +106,7 @@ export default function InvoiceImporter() {
     }
   };
 
-  const handleFileSelect = (files: File[]) => {
-    setSelectedFiles(files);
-  };
-
-  const handleUpload = async () => {
-    if (selectedFiles.length === 0) {
-      toast({
-        title: "No Files Selected",
-        description: "Please select files to upload",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      const formData = new FormData();
-      selectedFiles.forEach(file => {
-        formData.append('invoice', file);
-      });
-
-      const response = await fetch('/api/invoices/upload', {
-        method: 'POST',
-        body: formData
-      });
-
-      if (response.ok) {
-        const result = await response.json();
-        toast({
-          title: "Upload Successful",
-          description: result.message || `${selectedFiles.length} invoice(s) uploaded successfully.`
-        });
-        setSelectedFiles([]);
-      } else {
-        throw new Error('Upload failed');
-      }
-    } catch (error) {
-      toast({
-        title: "Upload Failed",
-        description: "Failed to upload invoices. Please try again.",
-        variant: "destructive"
-      });
-    } finally {
-      setIsUploading(false);
-    }
-  };
+  
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -255,7 +206,7 @@ export default function InvoiceImporter() {
         <div className="flex justify-between items-center">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
-            <p className="text-gray-600 mt-2">Upload invoices manually or configure automated ERP imports</p>
+            <p className="text-gray-600 mt-2">Configure automated ERP invoice import processes</p>
           </div>
           <Button 
             onClick={() => setShowCreateDialog(true)}
@@ -267,49 +218,13 @@ export default function InvoiceImporter() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="upload">Manual Upload</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="configurations">Configurations</TabsTrigger>
             <TabsTrigger value="logs">Import Logs</TabsTrigger>
             <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="upload" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <CardTitle className="flex items-center space-x-2">
-                  <Upload className="w-5 h-5" />
-                  <span>Upload Invoices</span>
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-6">
-                <FileUpload onFileSelect={handleFileSelect} multiple={true} />
-
-                {isUploading && (
-                  <div className="p-4 bg-blue-50 rounded-xl border border-blue-200">
-                    <div className="flex items-center space-x-3">
-                      <Loader2 className="animate-spin h-5 w-5 text-primary-600" />
-                      <div>
-                        <p className="text-sm font-medium text-primary-900">Uploading invoices...</p>
-                        <p className="text-xs text-primary-700">Processing {selectedFiles.length} file(s)</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {selectedFiles.length > 0 && !isUploading && (
-                  <div className="flex justify-end">
-                    <Button 
-                      onClick={handleUpload}
-                      className="bg-primary-600 hover:bg-primary-700"
-                    >
-                      Upload {selectedFiles.length} File{selectedFiles.length > 1 ? 's' : ''}
-                    </Button>
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          </TabsContent>
+          
 
           <TabsContent value="configurations" className="space-y-4">
             {configs.length === 0 ? (
