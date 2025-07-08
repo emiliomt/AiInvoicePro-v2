@@ -57,7 +57,11 @@ export default function InvoiceImporter() {
     name: '',
     connectionId: '',
     fileTypes: 'pdf',
-    schedule: 'once'
+    schedule: 'once',
+    executionsPerDay: 3,
+    spacingValue: 120,
+    spacingUnit: 'minutes',
+    startTime: '09:00'
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
@@ -153,6 +157,26 @@ export default function InvoiceImporter() {
     }
   };
 
+  const validateMultipleDailySchedule = () => {
+    if (newConfig.schedule !== 'multiple_daily') return true;
+    
+    const { executionsPerDay, spacingValue, spacingUnit } = newConfig;
+    const spacingInMinutes = spacingUnit === 'hours' ? spacingValue * 60 : spacingValue;
+    const totalTimeRequired = (executionsPerDay - 1) * spacingInMinutes;
+    const minutesInDay = 24 * 60;
+    
+    if (totalTimeRequired >= minutesInDay) {
+      toast({
+        title: "Invalid Schedule",
+        description: `Cannot fit ${executionsPerDay} executions with ${spacingValue} ${spacingUnit} spacing in a single day`,
+        variant: "destructive"
+      });
+      return false;
+    }
+    
+    return true;
+  };
+
   const handleCreateConfig = async () => {
     if (!newConfig.name || !newConfig.connectionId) {
       toast({
@@ -163,18 +187,32 @@ export default function InvoiceImporter() {
       return;
     }
 
+    if (!validateMultipleDailySchedule()) {
+      return;
+    }
+
     try {
+      const configData = {
+        taskName: newConfig.name,
+        connectionId: parseInt(newConfig.connectionId),
+        fileTypes: newConfig.fileTypes,
+        scheduleType: newConfig.schedule,
+        ...(newConfig.schedule === 'multiple_daily' && {
+          scheduleConfig: {
+            executionsPerDay: newConfig.executionsPerDay,
+            spacingValue: newConfig.spacingValue,
+            spacingUnit: newConfig.spacingUnit,
+            startTime: newConfig.startTime
+          }
+        })
+      };
+
       const response = await fetch('/api/invoice-importer/configs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({
-          taskName: newConfig.name,
-          connectionId: parseInt(newConfig.connectionId),
-          fileTypes: newConfig.fileTypes,
-          scheduleType: newConfig.schedule
-        })
+        body: JSON.stringify(configData)
       });
 
       if (response.ok) {
@@ -183,7 +221,16 @@ export default function InvoiceImporter() {
           description: "Import configuration created successfully"
         });
         setShowCreateDialog(false);
-        setNewConfig({ name: '', connectionId: '', fileTypes: 'pdf', schedule: 'once' });
+        setNewConfig({ 
+          name: '', 
+          connectionId: '', 
+          fileTypes: 'pdf', 
+          schedule: 'once',
+          executionsPerDay: 3,
+          spacingValue: 120,
+          spacingUnit: 'minutes',
+          startTime: '09:00'
+        });
         fetchConfigs();
       } else {
         const errorData = await response.json();
@@ -371,10 +418,81 @@ export default function InvoiceImporter() {
                     <SelectItem value="daily">Daily</SelectItem>
                     <SelectItem value="weekly">Weekly</SelectItem>
                     <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="multiple_daily">Multiple Daily</SelectItem>
+                    <SelectItem value="multiple_daily">Multiple times per day</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
+
+              {/* Multiple Daily Schedule Configuration */}
+              {newConfig.schedule === 'multiple_daily' && (
+                <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
+                  <h4 className="font-medium text-sm text-gray-700">Multiple Daily Execution Settings</h4>
+                  
+                  <div>
+                    <Label htmlFor="executions-per-day">Number of executions per day</Label>
+                    <Input
+                      id="executions-per-day"
+                      type="number"
+                      min="2"
+                      max="24"
+                      value={newConfig.executionsPerDay}
+                      onChange={(e) => setNewConfig({ 
+                        ...newConfig, 
+                        executionsPerDay: parseInt(e.target.value) || 2 
+                      })}
+                    />
+                  </div>
+
+                  <div>
+                    <Label htmlFor="spacing">Spacing between executions</Label>
+                    <div className="flex gap-2">
+                      <Input
+                        id="spacing"
+                        type="number"
+                        min="1"
+                        value={newConfig.spacingValue}
+                        onChange={(e) => setNewConfig({ 
+                          ...newConfig, 
+                          spacingValue: parseInt(e.target.value) || 1 
+                        })}
+                        className="flex-1"
+                      />
+                      <Select
+                        value={newConfig.spacingUnit}
+                        onValueChange={(value) => setNewConfig({ ...newConfig, spacingUnit: value })}
+                      >
+                        <SelectTrigger className="w-24">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="minutes">minutes</SelectItem>
+                          <SelectItem value="hours">hours</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="start-time">Start time (optional)</Label>
+                    <Input
+                      id="start-time"
+                      type="time"
+                      value={newConfig.startTime}
+                      onChange={(e) => setNewConfig({ ...newConfig, startTime: e.target.value })}
+                    />
+                    <p className="text-xs text-gray-500 mt-1">
+                      Time when the first execution should run
+                    </p>
+                  </div>
+
+                  {/* Schedule Preview */}
+                  <div className="text-xs text-gray-600 bg-white p-2 rounded border">
+                    <strong>Preview:</strong> {newConfig.executionsPerDay} executions per day, 
+                    every {newConfig.spacingValue} {newConfig.spacingUnit}, 
+                    starting at {newConfig.startTime}
+                  </div>
+                </div>
+              )}
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel
