@@ -71,7 +71,38 @@
   --warning-foreground: hsl(48, 100%, 95%);
 }
 
+/* iPhone-specific optimizations */
 @layer base {
+  /* Prevent iOS webkit zooming on form inputs */
+  input, textarea, select {
+    font-size: 16px !important;
+  }
+
+  /* Improve touch targets for mobile */
+  @media (max-width: 768px) {
+    button, a, [role="button"] {
+      min-height: 44px;
+      min-width: 44px;
+    }
+  }
+
+  /* Smooth scrolling for iOS */
+  html {
+    -webkit-overflow-scrolling: touch;
+  }
+  
+  /* Prevent iOS bounce effect on mobile menu */
+  .mobile-menu-container {
+    position: fixed;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: none;
+  }
+
+  /* Improve mobile tap highlighting */
+  * {
+    -webkit-tap-highlight-color: rgba(0, 0, 0, 0.1);
+  }
+
   * {
     @apply border-border;
   }
