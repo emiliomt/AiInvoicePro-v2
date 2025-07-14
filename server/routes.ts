@@ -3070,14 +3070,29 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Create execution log first
       const log = await storage.createInvoiceImporterLog({
         configId,
-        status: 'pending',
+        status: 'running',
         startedAt: new Date(),
       });
 
-      // Start the import process asynchronously
-      executeImportAsync(configId);
+      console.log(`Starting import process for config ${configId}, log ID: ${log.id}`);
 
-      res.json({ message: 'Invoice import started successfully', configId, logId: log.id });
+      // Start the import process asynchronously but don't wait for it
+      setImmediate(() => {
+        invoiceImporterService.executeImportTask(configId)
+          .then(() => {
+            console.log(`Import task ${configId} completed successfully`);
+          })
+          .catch((error) => {
+            console.error(`Import task ${configId} failed:`, error);
+          });
+      });
+
+      res.json({ 
+        message: 'Invoice import started successfully', 
+        configId, 
+        logId: log.id,
+        status: 'running'
+      });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: errorMessage });
@@ -3123,28 +3138,57 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       if (progress) {
         console.log(`Current step: ${progress.currentStep}/${progress.totalSteps}`);
         console.log(`Status: ${progress.status}`);
-        console.log(`Last step: ${progress.steps[progress.currentStep - 1]?.description || 'None'}`);
-      };
+        console.log(`Message: ${progress.message}`);
+      }
 
       if (!progress) {
-        // Also check the database for the log status
+        // Check the database for the log status
         const log = await storage.getInvoiceImporterLog(logId);
         if (log) {
           console.log(`Found log in database for ${logId} with status: ${log.status}`);
+          
+          // Parse steps from logs if available
+          let steps = [];
+          try {
+            if (log.logs) {
+              const logLines = log.logs.split('\n');
+              steps = logLines
+                .filter(line => line.includes('[STEP]') || line.includes('Step'))
+                .map((line, index) => ({
+                  id: index + 1,
+                  description: line.replace(/\[.*?\]/g, '').trim() || `Step ${index + 1}`,
+                  status: line.includes('COMPLETED') ? 'completed' : 
+                         line.includes('RUNNING') ? 'running' : 
+                         line.includes('FAILED') ? 'failed' : 'pending',
+                  timestamp: new Date().toISOString()
+                }));
+            }
+          } catch (error) {
+            console.error('Error parsing steps from logs:', error);
+          }
+
           // Return basic progress info from database
           return res.json({
             taskId: logId,
             status: log.status,
-            currentStep: log.status === 'completed' ? 12 : log.status === 'running' ? 6 : 1,
+            currentStep: log.status === 'completed' ? 12 : 
+                        log.status === 'running' ? Math.max(1, steps.length) : 1,
             totalSteps: 12,
             message: log.status === 'completed' ? 'Import completed' : 
-                    log.status === 'running' ? 'Import in progress' : 'Import starting',
-            startedAt: log.startedAt,
-            completedAt: log.completedAt,
+                    log.status === 'running' ? 'Import in progress' : 
+                    log.status === 'failed' ? `Import failed: ${log.errorMessage}` : 'Import starting',
+            startedAt: log.startedAt?.toISOString(),
+            completedAt: log.completedAt?.toISOString(),
             totalInvoices: log.totalInvoices || 0,
             processedInvoices: log.processedInvoices || 0,
             successfulImports: log.successfulImports || 0,
-            failedImports: log.failedImports || 0
+            failedImports: log.failedImports || 0,
+            steps: steps.length > 0 ? steps : [{
+              id: 1,
+              description: log.status === 'running' ? 'Import in progress...' : 'Initializing import process...',
+              status: log.status === 'running' ? 'running' : 'pending',
+              timestamp: new Date().toISOString()
+            }]
           });
         }
         return res.status(404).json({ error: 'Import task not found' });

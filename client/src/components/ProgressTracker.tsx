@@ -68,14 +68,14 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
       setConnectionStatus('connecting');
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
-      
+
       const websocket = new WebSocket(wsUrl);
-      
+
       websocket.onopen = () => {
         console.log('WebSocket connected');
         setConnectionStatus('connected');
         setWs(websocket);
-        
+
         // Subscribe to progress updates
         websocket.send(JSON.stringify({
           type: 'subscribe',
@@ -88,7 +88,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         try {
           const data = JSON.parse(event.data);
           console.log('WebSocket message received:', data);
-          
+
           if (data.type === 'progress' && data.configId === configId) {
             handleProgressUpdate(data);
           } else if (data.type === 'task_complete' && data.configId === configId) {
@@ -105,7 +105,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         console.log('WebSocket disconnected');
         setConnectionStatus('disconnected');
         setWs(null);
-        
+
         // Retry connection after 3 seconds
         setTimeout(() => {
           if (isOpen && configId) {
@@ -118,7 +118,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         console.error('WebSocket error:', error);
         setConnectionStatus('error');
       };
-      
+
     } catch (error) {
       console.error('Failed to create WebSocket connection:', error);
       setConnectionStatus('error');
@@ -130,7 +130,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
       if (!prevProgress) {
         return data;
       }
-      
+
       return {
         ...prevProgress,
         ...data,
@@ -143,7 +143,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
   const handleTaskComplete = (data: any) => {
     setProgress(prevProgress => {
       if (!prevProgress) return null;
-      
+
       return {
         ...prevProgress,
         status: data.success ? 'completed' : 'failed',
@@ -151,7 +151,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         completedAt: data.timestamp
       };
     });
-    
+
     // Stop polling when task is complete
     setIsPolling(false);
   };
@@ -179,22 +179,34 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
 
     try {
       const response = await fetch(`/api/invoice-importer/progress/${configId}`, {
-        credentials: 'include'
+        credentials: 'include',
       });
-      if (response.ok) {
-        const data = await response.json();
-        console.log('Polling progress data:', data);
-        setProgress(data);
-        
-        // Continue polling if task is still running
-        if (data.status === 'running' || data.status === 'pending') {
-          setTimeout(pollProgress, 2000); // Poll every 2 seconds
-        } else {
-          setIsPolling(false);
-        }
-      } else {
-        console.error('Failed to fetch progress:', response.status, response.statusText);
-        // Show error in UI
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      console.log('Progress update received:', {
+        taskId: data.taskId,
+        status: data.status,
+        currentStep: data.currentStep,
+        message: data.message,
+        totalInvoices: data.totalInvoices
+      });
+
+      setProgress(data);
+
+      // Stop polling if completed or failed
+      if (data.status === 'completed' || data.status === 'failed') {
+        console.log(`Import ${data.status}, stopping progress polling`);
+        setIsPolling(false);
+      }
+    } catch (error) {
+      console.error('Error polling progress:', error);
+
+      // Only show error if we haven't received any progress yet
+      if (!progress || progress.status === 'pending') {
         setProgress({
           id: 0,
           configId,
@@ -205,46 +217,20 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
           failedImports: 0,
           steps: [{
             id: 'error',
-            title: 'Failed to fetch progress',
+            title: 'Connection error',
             status: 'failed',
             timestamp: new Date().toISOString(),
-            details: `HTTP ${response.status}: ${response.statusText}`
+            details: error instanceof Error ? error.message : 'Unknown error'
           }],
-          logs: `Failed to fetch progress: ${response.status} ${response.statusText}`,
+          logs: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
           screenshots: [],
-          errorMessage: `Failed to fetch progress data from server (${response.status})`,
+          errorMessage: `Failed to connect to server: ${error instanceof Error ? error.message : 'Unknown error'}`,
           startedAt: new Date().toISOString(),
           completedAt: new Date().toISOString(),
           executionTime: 0
         });
         setIsPolling(false);
       }
-    } catch (error) {
-      console.error('Error polling progress:', error);
-      // Show error in UI
-      setProgress({
-        id: 0,
-        configId,
-        status: 'failed',
-        totalInvoices: 0,
-        processedInvoices: 0,
-        successfulImports: 0,
-        failedImports: 0,
-        steps: [{
-          id: 'error',
-          title: 'Connection error',
-          status: 'failed',
-          timestamp: new Date().toISOString(),
-          details: error instanceof Error ? error.message : 'Unknown error'
-        }],
-        logs: `Connection error: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        screenshots: [],
-        errorMessage: `Failed to connect to server: ${error instanceof Error ? error.message : 'Unknown error'}`,
-        startedAt: new Date().toISOString(),
-        completedAt: new Date().toISOString(),
-        executionTime: 0
-      });
-      setIsPolling(false);
     }
   };
 
@@ -275,7 +261,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
     const seconds = Math.floor(ms / 1000);
     const minutes = Math.floor(seconds / 60);
     const hours = Math.floor(minutes / 60);
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
     } else if (minutes > 0) {
@@ -346,7 +332,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
                       <div className="text-sm text-gray-500">Failed</div>
                     </div>
                   </div>
-                  
+
                   <div className="space-y-2">
                     <div className="flex justify-between text-sm">
                       <span>Progress</span>

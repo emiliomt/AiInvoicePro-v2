@@ -38,9 +38,9 @@ class InvoiceImporterService {
 
       const timestamp = new Date().toISOString();
       const stepLog = `[${timestamp}] [STEP] ${stepTitle} [${status.toUpperCase()}]${details ? ` - ${details}` : ''}`;
-      
+
       const updatedLogs = log.logs ? `${log.logs}\n${stepLog}` : stepLog;
-      
+
       await storage.updateInvoiceImporterLog(logId, {
         logs: updatedLogs
       });
@@ -50,109 +50,103 @@ class InvoiceImporterService {
   }
 
   async executeImportTask(configId: number): Promise<void> {
-    const config = await storage.getInvoiceImporterConfig(configId);
-    if (!config) {
-      throw new Error('Import configuration not found');
-    }
-
-    // Create execution log
-    const log = await storage.createInvoiceImporterLog({
-      configId,
-      status: 'running',
-      startedAt: new Date(),
-    });
-
-    const progress: ImporterProgress = {
-      taskId: log.id,
-      currentStep: 0,
-      totalSteps: 12,
-      steps: this.initializeSteps(),
-      totalInvoices: 0,
-      processedInvoices: 0,
-      successfulImports: 0,
-      failedImports: 0,
-      status: 'running',
-      startedAt: new Date(),
-    };
-
-    this.activeImports.set(log.id, progress);
-    console.log(`Started import task ${log.id} for config ${configId}, stored in activeImports`);
+    console.log(`Starting import task for config ${configId}`);
 
     try {
-      // Log initialization
-      await this.logStep(log.id, 'Initializing import process', 'running');
-
-      // Get connection details
-      await this.logStep(log.id, 'Retrieving ERP connection details', 'running');
-      const connection = await storage.getErpConnection(config.connectionId);
-      if (!connection) {
-        await this.logStep(log.id, 'ERP connection not found', 'failed');
-        throw new Error(`ERP connection not found for connectionId ${config.connectionId}`);
-      }
-      
-      // Validate connection has required credentials
-      if (!connection.baseUrl) {
-        await this.logStep(log.id, 'ERP connection validation failed', 'failed', 'Missing base URL');
-        throw new Error(`ERP connection ${connection.name} is missing base URL`);
-      }
-      
-      if (!connection.username || !connection.password) {
-        await this.logStep(log.id, 'ERP connection validation failed', 'failed', 'Missing credentials');
-        throw new Error(`ERP connection ${connection.name} is missing username or password`);
-      }
-      
-      await this.logStep(log.id, 'ERP connection validated successfully', 'completed', `Connection: ${connection.name}`);
-      console.log(`Found ERP connection for import task ${log.id}: ${connection.name} (${connection.baseUrl})`);
-
-      // Set a timeout for the entire import process (10 minutes max)
-      const importTimeout = setTimeout(() => {
-        throw new Error('Import process timed out after 10 minutes');
-      }, 10 * 60 * 1000);
-
-      try {
-        await this.performImportProcess(log.id, config, connection, progress);
-        clearTimeout(importTimeout);
-      } catch (importError) {
-        clearTimeout(importTimeout);
-        throw importError;
+      // Get configuration
+      const config = await storage.getInvoiceImporterConfig(configId);
+      if (!config) {
+        throw new Error('Import configuration not found');
       }
 
-      // Mark as completed
-      await this.logStep(log.id, 'Import process completed successfully', 'completed', 
-        `Processed ${progress.processedInvoices}/${progress.totalInvoices} invoices. ` +
-        `${progress.successfulImports} successful, ${progress.failedImports} failed.`);
-      
-      progress.status = 'completed';
-      progress.completedAt = new Date();
+      // Create or get existing log
+      let log = await storage.getLatestInvoiceImporterLog(configId);
+      if (!log || log.status === 'completed' || log.status === 'failed') {
+        log = await storage.createInvoiceImporterLog({
+          configId,
+          status: 'running',
+          startedAt: new Date(),
+        });
+      }
 
-      await storage.updateInvoiceImporterLog(log.id, {
-        status: 'completed',
-        completedAt: new Date(),
-        totalInvoices: progress.totalInvoices,
-        processedInvoices: progress.processedInvoices,
-        successfulImports: progress.successfulImports,
-        failedImports: progress.failedImports,
-        executionTime: Date.now() - progress.startedAt.getTime(),
+      const logId = log.id;
+
+      // Initialize progress
+      const progress: ImporterProgress = {
+        taskId: logId,
+        currentStep: 1,
+        totalSteps: 12,
+        status: 'running',
+        message: 'Import process started...',
+        startedAt: new Date(),
+        completedAt: undefined,
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        steps: this.initializeSteps(),
+      };
+
+      // Store progress in memory for real-time tracking
+      this.activeImports.set(logId, progress);
+
+      // Update database log immediately
+      await storage.updateInvoiceImporterLog(logId, {
+        status: 'running',
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        logs: 'Import task started...',
       });
 
-    } catch (error: any) {
-      progress.status = 'failed';
-      progress.errorMessage = error.message;
-      progress.completedAt = new Date();
+      console.log(`Import task ${logId} initialized, starting RPA process...`);
 
-      await storage.updateInvoiceImporterLog(log.id, {
+      // Send initial progress update
+      await this.updateStepStatus(logId, progress, 1, 'running', 'Starting import process...');
+
+      // Start the actual import process
+      await this.performImportProcess(logId, config, connection, progress);
+
+      // Mark as completed
+      progress.status = 'completed';
+      progress.completedAt = new Date();
+      progress.message = 'Import completed successfully';
+      progress.currentStep = 12;
+
+      await storage.updateInvoiceImporterLog(logId, {
+        status: 'completed',
+        completedAt: new Date(),
+        logs: this.generateLogsFromSteps(progress.steps),
+      });
+
+      console.log(`Import task ${logId} completed successfully`);
+
+    } catch (error: any) {
+      console.error(`Import task failed:`, error);
+
+      // Find the correct log ID
+      const logs = await storage.getInvoiceImporterLogs(configId);
+      const latestLog = logs[0];
+      const logId = latestLog?.id || configId;
+
+      // Update progress if available
+      const progress = this.activeImports.get(logId);
+      if (progress) {
+        progress.status = 'failed';
+        progress.message = `Import failed: ${error.message}`;
+        progress.completedAt = new Date();
+      }
+
+      // Update database
+      await storage.updateInvoiceImporterLog(logId, {
         status: 'failed',
         errorMessage: error.message,
         completedAt: new Date(),
-        executionTime: Date.now() - progress.startedAt.getTime(),
+        logs: `Import failed: ${error.message}`,
       });
 
       throw error;
-    } finally {
-      // Clean up active import after a delay
-      setTimeout(() => {
-        this.activeImports.delete(log.id);
-      }, 5 * 60 * 1000); // Keep for 5 minutes
     }
   }
 
@@ -180,19 +174,19 @@ class InvoiceImporterService {
     progress: ImporterProgress
   ): Promise<void> {
     const { erpAutomationService } = await import('./erpAutomationService');
-    
+
     // Step 1: Initialize browser (faster)
     await this.logStep(logId, 'Initializing browser automation', 'running');
     await this.updateStepStatus(logId, progress, 1, 'running');
     await this.simulateDelay(500); // Reduced delay
     await this.logStep(logId, 'Browser automation initialized', 'completed');
     await this.updateStepStatus(logId, progress, 1, 'completed');
-    
+
     // Step 2: Generate optimized RPA script
     await this.logStep(logId, 'Generating automation script', 'running');
     await this.updateStepStatus(logId, progress, 2, 'running');
     const taskDescription = `Quick login and navigate to FE module. Extract invoice document list from Documentos recibidos section. Focus on document numbers and download links only.`;
-    
+
     try {
       const script = await erpAutomationService.generateRPAScript(taskDescription, {
         id: connection.id,
@@ -201,14 +195,14 @@ class InvoiceImporterService {
         username: connection.username || '',
         password: connection.password || ''
       });
-      
+
       await this.logStep(logId, 'Automation script generated successfully', 'completed');
       await this.updateStepStatus(logId, progress, 2, 'completed');
-      
+
       // Step 3: Execute optimized RPA script
       await this.logStep(logId, 'Connecting to ERP system', 'running');
       await this.updateStepStatus(logId, progress, 3, 'running', 'Connecting to ERP system...');
-      
+
       const result = await erpAutomationService.executeRPAScript(script, {
         id: connection.id,
         name: connection.name,
@@ -216,38 +210,38 @@ class InvoiceImporterService {
         username: connection.username || '',
         password: connection.password || ''
       }, config.userId, logId);
-      
+
       if (!result.success) {
         await this.logStep(logId, 'ERP connection failed', 'failed', result.errorMessage);
         throw new Error(`ERP connection failed: ${result.errorMessage}`);
       }
-      
+
       await this.logStep(logId, 'Successfully connected to ERP system', 'completed');
       await this.updateStepStatus(logId, progress, 3, 'completed');
-      
+
       // Step 4: Navigate to invoice section
       await this.updateStepStatus(logId, progress, 4, 'running');
       await this.simulateDelay(300);
       await this.updateStepStatus(logId, progress, 4, 'completed');
-      
+
       // Step 5: Load invoice list
       await this.updateStepStatus(logId, progress, 5, 'running');
-      
+
       // Process extracted data more efficiently
       if (result.extractedData && Object.keys(result.extractedData).length > 0) {
         progress.totalInvoices = Object.keys(result.extractedData).length;
         await this.updateStepStatus(logId, progress, 5, 'completed');
-        
+
         // Step 6: Scan invoices (fast)
         await this.updateStepStatus(logId, progress, 6, 'running');
         await this.simulateDelay(200);
         await this.updateStepStatus(logId, progress, 6, 'completed');
-        
+
         // Step 7-9: Process downloads efficiently
         await this.updateStepStatus(logId, progress, 7, 'running');
         await this.processExtractedInvoiceDataFast(logId, progress, config, result.extractedData);
         await this.updateStepStatus(logId, progress, 7, 'completed');
-        
+
         // Skip to processed steps
         await this.updateStepStatus(logId, progress, 8, 'completed', 'File extraction completed');
         await this.updateStepStatus(logId, progress, 9, 'completed', 'Document processing completed');
@@ -255,13 +249,13 @@ class InvoiceImporterService {
         console.log('No invoice data extracted from ERP system');
         progress.totalInvoices = 0;
         await this.updateStepStatus(logId, progress, 5, 'completed', 'No invoices found');
-        
+
         // Mark remaining steps as completed
         for (let step = 6; step <= 9; step++) {
           await this.updateStepStatus(logId, progress, step, 'completed', 'No data to process');
         }
       }
-      
+
       // Step 10: Process metadata (optimized)
       await this.updateStepStatus(logId, progress, 10, 'running');
       await this.processInvoiceMetadataFast(logId, progress);
@@ -276,7 +270,7 @@ class InvoiceImporterService {
       await this.updateStepStatus(logId, progress, 12, 'running');
       await this.simulateDelay(200);
       await this.updateStepStatus(logId, progress, 12, 'completed');
-      
+
     } catch (error: any) {
       console.error('RPA automation failed:', error);
       throw new Error(`Invoice extraction failed: ${error.message}`);
@@ -332,11 +326,11 @@ class InvoiceImporterService {
     // Process in batches for better performance
     for (let i = 0; i < entries.length; i += batchSize) {
       const batch = entries.slice(i, i + batchSize);
-      
+
       await Promise.all(batch.map(async ([key, value]) => {
         try {
           processedCount++;
-          
+
           // Create imported invoice record from extracted data
           await storage.createImportedInvoice({
             logId,
@@ -365,7 +359,7 @@ class InvoiceImporterService {
       progress.processedInvoices = processedCount;
       progress.successfulImports = successCount;
       progress.failedImports = failCount;
-      
+
       progressTracker.sendProgress(config.userId, {
         taskId: logId,
         step: 7,
@@ -384,7 +378,7 @@ class InvoiceImporterService {
   private async processInvoiceMetadataFast(logId: number, progress: ImporterProgress): Promise<void> {
     // Get imported invoices and process them in batches
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
-    
+
     if (importedInvoices.length === 0) {
       return;
     }
@@ -392,7 +386,7 @@ class InvoiceImporterService {
     const batchSize = 10;
     for (let i = 0; i < importedInvoices.length; i += batchSize) {
       const batch = importedInvoices.slice(i, i + batchSize);
-      
+
       await Promise.all(batch.map(async (importedInvoice) => {
         await storage.updateImportedInvoice(importedInvoice.id, {
           processedAt: new Date(),
@@ -415,7 +409,7 @@ class InvoiceImporterService {
     const batchSize = 10;
     for (let i = 0; i < importedInvoices.length; i += batchSize) {
       const batch = importedInvoices.slice(i, i + batchSize);
-      
+
       await Promise.all(batch.map(async (importedInvoice) => {
         if (importedInvoice.metadata) {
           // Create placeholder invoice record - in real implementation this would involve OCR/AI
@@ -559,7 +553,7 @@ class InvoiceImporterService {
     for (const [key, value] of Object.entries(extractedData)) {
       try {
         processedCount++;
-        
+
         // Create imported invoice record from extracted data
         await storage.createImportedInvoice({
           logId,
@@ -578,7 +572,7 @@ class InvoiceImporterService {
         });
 
         successCount++;
-        
+
         // Update progress
         progressTracker.sendProgress(config.userId, {
           taskId: logId,
