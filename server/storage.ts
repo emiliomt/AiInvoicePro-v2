@@ -2235,6 +2235,16 @@ export class DatabaseStorage implements IStorage {
     return log;
   }
 
+  async getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | undefined> {
+    const [log] = await db
+      .select()
+      .from(invoiceImporterLogs)
+      .where(eq(invoiceImporterLogs.configId, configId))
+      .orderBy(desc(invoiceImporterLogs.createdAt))
+      .limit(1);
+    return log;
+  }
+
   async updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<InvoiceImporterLog> {
     const [updated] = await db
       .update(invoiceImporterLogs)

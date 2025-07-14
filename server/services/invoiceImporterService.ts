@@ -23,6 +23,7 @@ export interface ImporterProgress {
   successfulImports: number;
   failedImports: number;
   status: 'pending' | 'running' | 'completed' | 'failed';
+  message?: string;
   startedAt: Date;
   completedAt?: Date;
   errorMessage?: string;
@@ -104,6 +105,12 @@ class InvoiceImporterService {
 
       // Send initial progress update
       await this.updateStepStatus(logId, progress, 1, 'running', 'Starting import process...');
+
+      // Get ERP connection
+      const connection = await storage.getErpConnection(config.connectionId);
+      if (!connection) {
+        throw new Error('ERP connection not found');
+      }
 
       // Start the actual import process
       await this.performImportProcess(logId, config, connection, progress);
@@ -598,6 +605,18 @@ class InvoiceImporterService {
 
   private async simulateDelay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private generateLogsFromSteps(steps: ImporterStep[]): string {
+    return steps
+      .filter(step => step.status !== 'pending')
+      .map(step => {
+        const timestamp = step.timestamp.toISOString();
+        const status = step.status.toUpperCase();
+        const errorInfo = step.errorMessage ? ` - ERROR: ${step.errorMessage}` : '';
+        return `[${timestamp}] [STEP] ${step.description} [${status}]${errorInfo}`;
+      })
+      .join('\n');
   }
 
   getProgress(taskId: number): ImporterProgress | undefined {

@@ -3132,91 +3132,123 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const logId = parseInt(req.params.logId);
       console.log(`Progress request for logId ${logId}`);
       
+      // First check if we have active progress in memory
       const progress = invoiceImporterService.getProgress(logId);
-      console.log(`Progress found for logId ${logId}:`, progress ? 'Yes' : 'No');
       
       if (progress) {
-        console.log(`Current step: ${progress.currentStep}/${progress.totalSteps}`);
-        console.log(`Status: ${progress.status}`);
-        console.log(`Message: ${progress.message}`);
+        console.log(`Active progress found for logId ${logId}`);
+        try {
+          const serializedProgress = {
+            taskId: progress.taskId,
+            currentStep: progress.currentStep,
+            totalSteps: progress.totalSteps,
+            status: progress.status,
+            message: progress.message || 'Processing...',
+            startedAt: progress.startedAt.toISOString(),
+            completedAt: progress.completedAt?.toISOString(),
+            totalInvoices: progress.totalInvoices,
+            processedInvoices: progress.processedInvoices,
+            successfulImports: progress.successfulImports,
+            failedImports: progress.failedImports,
+            steps: progress.steps.map(step => ({
+              id: step.id,
+              description: step.description,
+              status: step.status,
+              timestamp: step.timestamp.toISOString(),
+              errorMessage: step.errorMessage
+            }))
+          };
+          return res.json(serializedProgress);
+        } catch (serializationError) {
+          console.error('JSON serialization error:', serializationError);
+          // Fall through to database check
+        }
       }
 
-      if (!progress) {
-        // Check the database for the log status
-        const log = await storage.getInvoiceImporterLog(logId);
-        if (log) {
-          console.log(`Found log in database for ${logId} with status: ${log.status}`);
-          
-          // Parse steps from logs if available
-          let steps = [];
-          try {
-            if (log.logs) {
-              const logLines = log.logs.split('\n');
-              steps = logLines
-                .filter(line => line.includes('[STEP]') || line.includes('Step'))
-                .map((line, index) => ({
-                  id: index + 1,
-                  description: line.replace(/\[.*?\]/g, '').trim() || `Step ${index + 1}`,
-                  status: line.includes('COMPLETED') ? 'completed' : 
-                         line.includes('RUNNING') ? 'running' : 
-                         line.includes('FAILED') ? 'failed' : 'pending',
-                  timestamp: new Date().toISOString()
-                }));
-            }
-          } catch (error) {
-            console.error('Error parsing steps from logs:', error);
-          }
-
-          // Return basic progress info from database
-          return res.json({
-            taskId: logId,
-            status: log.status,
-            currentStep: log.status === 'completed' ? 12 : 
-                        log.status === 'running' ? Math.max(1, steps.length) : 1,
-            totalSteps: 12,
-            message: log.status === 'completed' ? 'Import completed' : 
-                    log.status === 'running' ? 'Import in progress' : 
-                    log.status === 'failed' ? `Import failed: ${log.errorMessage}` : 'Import starting',
-            startedAt: log.startedAt?.toISOString(),
-            completedAt: log.completedAt?.toISOString(),
-            totalInvoices: log.totalInvoices || 0,
-            processedInvoices: log.processedInvoices || 0,
-            successfulImports: log.successfulImports || 0,
-            failedImports: log.failedImports || 0,
-            steps: steps.length > 0 ? steps : [{
-              id: 1,
-              description: log.status === 'running' ? 'Import in progress...' : 'Initializing import process...',
-              status: log.status === 'running' ? 'running' : 'pending',
-              timestamp: new Date().toISOString()
-            }]
-          });
-        }
+      // Check the database for the log status
+      const log = await storage.getInvoiceImporterLog(logId);
+      if (!log) {
         return res.status(404).json({ error: 'Import task not found' });
       }
 
-      // Ensure dates are properly serialized
+      console.log(`Found log in database for ${logId} with status: ${log.status}`);
+      
+      // Parse steps from logs if available
+      let steps = [];
       try {
-        const serializedProgress = {
-          ...progress,
-          startedAt: progress.startedAt.toISOString(),
-          completedAt: progress.completedAt?.toISOString(),
-          steps: progress.steps.map(step => ({
-            ...step,
-            timestamp: step.timestamp.toISOString()
-          }))
-        };
-
-        // Test JSON serialization
-        JSON.stringify(serializedProgress);
-        res.json(serializedProgress);
-      } catch (serializationError) {
-        console.error('JSON serialization error:', serializationError);
-        console.error('Progress object:', progress);
-        res.status(500).json({ error: 'Failed to serialize progress data' });
+        if (log.logs) {
+          const logLines = log.logs.split('\n').filter(line => line.trim());
+          steps = logLines
+            .filter(line => line.includes('[STEP]'))
+            .map((line, index) => {
+              const stepMatch = line.match(/\[STEP\]\s*(.+?)\s*\[(\w+)\]/);
+              return {
+                id: `step-${index + 1}`,
+                description: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
+                status: stepMatch ? stepMatch[2].toLowerCase() : 'pending',
+                timestamp: new Date().toISOString()
+              };
+            });
+        }
+      } catch (error) {
+        console.error('Error parsing steps from logs:', error);
       }
+
+      // If no steps found, create default steps based on status
+      if (steps.length === 0) {
+        const defaultSteps = [
+          'Initializing import process',
+          'Connecting to ERP system',
+          'Authenticating with ERP',
+          'Navigating to invoice section',
+          'Loading invoice list',
+          'Scanning available invoices',
+          'Processing invoice downloads',
+          'Extracting XML files',
+          'Extracting PDF files',
+          'Processing invoice metadata',
+          'Storing imported invoices',
+          'Cleaning up and finalizing'
+        ];
+
+        steps = defaultSteps.map((desc, index) => ({
+          id: `step-${index + 1}`,
+          description: desc,
+          status: log.status === 'completed' ? 'completed' : 
+                 log.status === 'running' && index === 0 ? 'running' : 
+                 log.status === 'failed' && index === 0 ? 'failed' : 'pending',
+          timestamp: new Date().toISOString()
+        }));
+      }
+
+      // Return progress info from database
+      const dbProgress = {
+        taskId: logId,
+        status: log.status || 'pending',
+        currentStep: log.status === 'completed' ? 12 : 
+                    log.status === 'running' ? Math.max(1, steps.filter(s => s.status === 'completed').length + 1) : 1,
+        totalSteps: 12,
+        message: log.status === 'completed' ? 'Import completed successfully' : 
+                log.status === 'running' ? 'Import in progress...' : 
+                log.status === 'failed' ? `Import failed: ${log.errorMessage || 'Unknown error'}` : 'Import starting...',
+        startedAt: log.startedAt?.toISOString() || new Date().toISOString(),
+        completedAt: log.completedAt?.toISOString(),
+        totalInvoices: log.totalInvoices || 0,
+        processedInvoices: log.processedInvoices || 0,
+        successfulImports: log.successfulImports || 0,
+        failedImports: log.failedImports || 0,
+        steps: steps,
+        errorMessage: log.errorMessage
+      };
+
+      res.json(dbProgress);
     } catch (error) {
+      console.error('Error fetching progress:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ error: errorMessage });
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Failed to fetch progress data'
+      });
     }
   });
 
