@@ -3151,11 +3151,11 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             successfulImports: progress.successfulImports,
             failedImports: progress.failedImports,
             steps: progress.steps.map(step => ({
-              id: step.id,
-              description: step.description,
+              id: step.id.toString(),
+              title: step.description,
               status: step.status,
               timestamp: step.timestamp.toISOString(),
-              errorMessage: step.errorMessage
+              details: step.errorMessage || ''
             }))
           };
           return res.json(serializedProgress);
@@ -3184,9 +3184,10 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
               const stepMatch = line.match(/\[STEP\]\s*(.+?)\s*\[(\w+)\]/);
               return {
                 id: `step-${index + 1}`,
-                description: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
+                title: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
                 status: stepMatch ? stepMatch[2].toLowerCase() : 'pending',
-                timestamp: new Date().toISOString()
+                timestamp: new Date().toISOString(),
+                details: ''
               };
             });
         }
@@ -3197,9 +3198,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // If no steps found, create default steps based on status
       if (steps.length === 0) {
         const defaultSteps = [
-          'Initializing import process',
-          'Connecting to ERP system',
-          'Authenticating with ERP',
+          'Initializing browser session',
+          'Navigating to ERP login page',
+          'Logging into ERP system',
           'Navigating to invoice section',
           'Loading invoice list',
           'Scanning available invoices',
@@ -3213,16 +3214,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
         steps = defaultSteps.map((desc, index) => ({
           id: `step-${index + 1}`,
-          description: desc,
+          title: desc,
           status: log.status === 'completed' ? 'completed' : 
                  log.status === 'running' && index === 0 ? 'running' : 
                  log.status === 'failed' && index === 0 ? 'failed' : 'pending',
-          timestamp: new Date().toISOString()
+          timestamp: new Date().toISOString(),
+          details: ''
         }));
       }
 
       // Return progress info from database
       const dbProgress = {
+        id: logId,
+        configId: log.configId,
         taskId: logId,
         status: log.status || 'pending',
         currentStep: log.status === 'completed' ? 12 : 
@@ -3238,7 +3242,10 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         successfulImports: log.successfulImports || 0,
         failedImports: log.failedImports || 0,
         steps: steps,
-        errorMessage: log.errorMessage
+        logs: log.logs || '',
+        screenshots: log.screenshots || [],
+        errorMessage: log.errorMessage,
+        executionTime: log.executionTime
       };
 
       res.json(dbProgress);

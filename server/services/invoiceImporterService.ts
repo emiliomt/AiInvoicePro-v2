@@ -52,6 +52,7 @@ class InvoiceImporterService {
 
   async executeImportTask(configId: number): Promise<void> {
     console.log(`Starting import task for config ${configId}`);
+    let logId: number | undefined;
 
     try {
       // Get configuration
@@ -70,7 +71,7 @@ class InvoiceImporterService {
         });
       }
 
-      const logId = log.id;
+      logId = log.id;
 
       // Initialize progress
       const progress: ImporterProgress = {
@@ -132,28 +133,41 @@ class InvoiceImporterService {
     } catch (error: any) {
       console.error(`Import task failed:`, error);
 
-      // Find the correct log ID
-      const logs = await storage.getInvoiceImporterLogs(configId);
-      const latestLog = logs[0];
-      const logId = latestLog?.id || configId;
-
-      // Update progress if available
-      const progress = this.activeImports.get(logId);
-      if (progress) {
-        progress.status = 'failed';
-        progress.message = `Import failed: ${error.message}`;
-        progress.completedAt = new Date();
+      // Use the logId we have, or find the latest one
+      if (!logId) {
+        const logs = await storage.getInvoiceImporterLogs(configId);
+        const latestLog = logs[0];
+        logId = latestLog?.id;
       }
 
-      // Update database
-      await storage.updateInvoiceImporterLog(logId, {
-        status: 'failed',
-        errorMessage: error.message,
-        completedAt: new Date(),
-        logs: `Import failed: ${error.message}`,
-      });
+      if (logId) {
+        // Update progress if available
+        const progress = this.activeImports.get(logId);
+        if (progress) {
+          progress.status = 'failed';
+          progress.message = `Import failed: ${error.message}`;
+          progress.completedAt = new Date();
+          
+          // Update the current step to failed
+          const currentStep = progress.steps.find(s => s.id === progress.currentStep);
+          if (currentStep) {
+            currentStep.status = 'failed';
+            currentStep.errorMessage = error.message;
+            currentStep.timestamp = new Date();
+          }
+        }
 
-      throw error;
+        // Update database
+        await storage.updateInvoiceImporterLog(logId, {
+          status: 'failed',
+          errorMessage: error.message,
+          completedAt: new Date(),
+          logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import failed: ${error.message}`,
+        });
+      }
+
+      // Don't re-throw the error to prevent unhandled rejections
+      console.error(`Import task ${configId} failed with error: ${error.message}`);
     }
   }
 
