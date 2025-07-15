@@ -46,15 +46,29 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      staleTime: 5 * 60 * 1000, // 5 minutes
-      cacheTime: 10 * 60 * 1000, // 10 minutes
-      retry: 1,
-      refetchOnWindowFocus: false,
-      refetchOnMount: false,
-      refetchOnReconnect: false,
-    },
-    mutations: {
-      retry: 1,
+      queryFn: async ({ queryKey }) => {
+        const url = Array.isArray(queryKey) ? queryKey[0] : queryKey;
+        if (typeof url !== 'string') {
+          throw new Error('Invalid query key');
+        }
+
+        const response = await apiRequest('GET', url);
+        if (!response.ok) {
+          const error = new Error('Network response was not ok');
+          (error as any).status = response.status;
+          throw error;
+        }
+        return response.json();
+      },
+      staleTime: 1000 * 60 * 5, // 5 minutes
+      retry: (failureCount, error: any) => {
+        // Don't retry on 404s or auth errors
+        if (error?.status === 404 || error?.status === 401 || error?.status === 403) {
+          return false;
+        }
+        return failureCount < 3;
+      },
+      retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
     },
   },
 });

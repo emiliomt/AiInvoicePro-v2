@@ -51,8 +51,20 @@ export default function Invoices() {
   const [feedbackInvoice, setFeedbackInvoice] = useState<Invoice | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
 
-  const { data: invoices = [], isLoading } = useQuery<Invoice[]>({
+  const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
+    queryFn: async () => {
+      console.log('Fetching invoices...');
+      const response = await apiRequest('GET', '/api/invoices');
+      if (!response.ok) {
+        throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
+      }
+      const data = await response.json();
+      console.log('Invoices fetched:', data.length, 'invoices');
+      return data;
+    },
+    retry: 3,
+    retryDelay: 1000,
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -198,6 +210,14 @@ export default function Invoices() {
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
               <p className="text-gray-600 mt-2">Manage and view all your processed invoices</p>
             </div>
+            <div className="flex items-center space-x-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/invoices"] })}
+              >
+                Refresh
+              </Button></div>
             {invoices.length > 0 && (
               <AlertDialog>
                 <AlertDialogTrigger asChild>
@@ -231,15 +251,44 @@ export default function Invoices() {
         </div>
 
         <div className="space-y-6">
-          {invoices.length === 0 ? (
+          {error && (
+            <Card className="border-red-200 bg-red-50">
+              <CardContent className="py-6">
+                <div className="flex items-center space-x-2">
+                  <AlertTriangle className="h-5 w-5 text-red-600" />
+                  <div>
+                    <h3 className="text-sm font-medium text-red-800">Error loading invoices</h3>
+                    <p className="text-sm text-red-600 mt-1">{(error as Error).message}</p>
+                    <Button 
+                      variant="outline" 
+                      size="sm" 
+                      className="mt-2" 
+                      onClick={() => refetch()}
+                    >
+                      Try Again
+                    </Button>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+          
+          {!error && invoices.length === 0 && !isLoading ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
                 <p className="text-gray-600">Upload your first invoice to get started.</p>
+                <Button 
+                  variant="outline" 
+                  className="mt-4" 
+                  onClick={() => refetch()}
+                >
+                  Refresh
+                </Button>
               </CardContent>
             </Card>
-          ) : (
+          ) : !error && invoices.length > 0 ? (
             <div className="grid gap-6">
               {invoices.map((invoice) => (
                 <Card key={invoice.id} className="hover:shadow-md transition-shadow">
@@ -369,7 +418,7 @@ export default function Invoices() {
                 </Card>
               ))}
             </div>
-          )}
+          ) : null}
         </div>
 
         {/* Invoice Details Modal */}
