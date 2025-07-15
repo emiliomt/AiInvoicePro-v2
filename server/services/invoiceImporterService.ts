@@ -365,7 +365,7 @@ class InvoiceImporterService {
               extractedKey: key,
               extractedValue: value,
               extractionTimestamp: new Date().toISOString(),
-              sourceERP: config.connection?.name || 'Unknown'
+              sourceErpName: config.connectionId ? `Connection ID: ${config.connectionId}` : 'Unknown'
             },
           });
 
@@ -588,7 +588,7 @@ class InvoiceImporterService {
             extractedKey: key,
             extractedValue: value,
             extractionTimestamp: new Date().toISOString(),
-            sourceERP: config.connection?.name || 'Unknown'
+            sourceERP: config.connectionId ? `Connection ID: ${config.connectionId}` : 'Unknown'
           },
         });
 
