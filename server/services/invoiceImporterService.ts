@@ -54,6 +54,14 @@ class InvoiceImporterService {
     console.log(`Starting import task for config ${configId}`);
     let logId: number | undefined;
 
+    // Add a global timeout for the entire import process (10 minutes)
+    const globalTimeout = setTimeout(() => {
+      console.error(`Import task ${configId} timed out after 10 minutes`);
+      if (logId) {
+        this.handleImportTimeout(logId, 'Global timeout: Import process exceeded 10 minutes');
+      }
+    }, 10 * 60 * 1000);
+
     try {
       // Get configuration
       const config = await storage.getInvoiceImporterConfig(configId);
@@ -113,8 +121,8 @@ class InvoiceImporterService {
         throw new Error('ERP connection not found');
       }
 
-      // Start the actual import process
-      await this.performImportProcess(logId, config, connection, progress);
+      // Start the actual import process with retry logic
+      await this.performImportProcessWithRetry(logId, config, connection, progress);
 
       // Mark as completed
       progress.status = 'completed';
@@ -168,6 +176,39 @@ class InvoiceImporterService {
 
       // Don't re-throw the error to prevent unhandled rejections
       console.error(`Import task ${configId} failed with error: ${error.message}`);
+    } finally {
+      clearTimeout(globalTimeout);
+    }
+  }
+
+  private async handleImportTimeout(logId: number, message: string): Promise<void> {
+    try {
+      const progress = this.activeImports.get(logId);
+      if (progress) {
+        progress.status = 'failed';
+        progress.message = message;
+        progress.completedAt = new Date();
+        
+        // Update the current step to failed
+        const currentStep = progress.steps.find(s => s.id === progress.currentStep);
+        if (currentStep) {
+          currentStep.status = 'failed';
+          currentStep.errorMessage = message;
+          currentStep.timestamp = new Date();
+        }
+      }
+
+      await storage.updateInvoiceImporterLog(logId, {
+        status: 'failed',
+        errorMessage: message,
+        completedAt: new Date(),
+        logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import timed out: ${message}`,
+      });
+
+      // Remove from active imports
+      this.activeImports.delete(logId);
+    } catch (error) {
+      console.error('Failed to handle import timeout:', error);
     }
   }
 
@@ -186,6 +227,40 @@ class InvoiceImporterService {
       { id: 11, description: 'Storing imported invoices', status: 'pending', timestamp: new Date() },
       { id: 12, description: 'Cleaning up and finalizing', status: 'pending', timestamp: new Date() },
     ];
+  }
+
+  private async performImportProcessWithRetry(
+    logId: number,
+    config: InvoiceImporterConfig,
+    connection: ErpConnection,
+    progress: ImporterProgress
+  ): Promise<void> {
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        console.log(`Import attempt ${attempt}/${maxRetries} for log ${logId}`);
+        await this.performImportProcess(logId, config, connection, progress);
+        return; // Success, exit retry loop
+      } catch (error) {
+        lastError = error as Error;
+        console.error(`Import attempt ${attempt} failed:`, error);
+
+        if (attempt < maxRetries) {
+          // Reset progress for retry
+          progress.currentStep = 1;
+          progress.steps = this.initializeSteps();
+          await this.updateStepStatus(logId, progress, 1, 'running', `Retrying import (attempt ${attempt + 1}/${maxRetries})...`);
+          
+          // Wait before retry
+          await this.simulateDelay(3000);
+        }
+      }
+    }
+
+    // If we get here, all retries failed
+    throw lastError || new Error('Import failed after all retry attempts');
   }
 
   private async performImportProcess(

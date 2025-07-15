@@ -303,16 +303,24 @@ class ERPAutomationService {
           progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
         }
 
-        // Step-level timeout (1 minute per step maximum to prevent hanging)
+        // Step-level timeout (2 minutes per step for better reliability)
         const stepPromise = this.executeStep(page, step, connection, screenshots, extractedData, logs);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`Step ${i + 1} timed out after 1 minute`)), 60000);
+          setTimeout(() => reject(new Error(`Step ${i + 1} timed out after 2 minutes`)), 120000);
         });
 
         try {
           await Promise.race([stepPromise, timeoutPromise]);
           logs.push(`Step ${i + 1} completed successfully`);
 
+          // Add debugging info about page state after each step
+          try {
+            const pageUrl = page.url();
+            const pageTitle = await page.title();
+            logs.push(`Page state after step ${i + 1}: URL=${pageUrl}, Title=${pageTitle}`);
+          } catch (debugError) {
+            logs.push(`Could not get page state after step ${i + 1}`);
+          }
           // Take automatic screenshot after important steps (optimized)
           if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
             try {
