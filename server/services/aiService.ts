@@ -160,7 +160,47 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
       }
     }
 
-    const prompt = `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
+    // Detect if this is XML content
+    const isXML = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<Factura');
+    console.log(`Processing ${isXML ? 'XML' : 'OCR'} content for extraction`);
+    
+    const prompt = isXML ? 
+      `You are an expert XML invoice parser specialized in Latin American electronic invoices. Extract structured data from this XML document:
+
+${learningImprovements}
+
+🔍 XML EXTRACTION RULES:
+1. VENDOR INFO: Look for <Emisor>, <Supplier>, <PartyName>, <CompanyName> tags
+2. TAX IDs: Find <TaxID>, <NIT>, <RFC>, <IDValue> tags - extract only numeric values
+3. AMOUNTS: Extract from <TotalAmount>, <TaxAmount>, <SubTotal>, <PayableAmount> tags
+4. DATES: Find <IssueDate>, <InvoiceDate>, <DueDate> tags, convert to YYYY-MM-DD
+5. ADDRESSES: Extract from <Address>, <AddressLine>, <CityName>, <CountryName> tags
+6. INVOICE NUMBER: Look for <InvoiceNumber>, <ID>, <DocumentNumber> tags
+
+XML CONTENT TO ANALYZE:
+${ocrText.substring(0, 8000)} ${ocrText.length > 8000 ? '...[truncated]' : ''}
+
+🎯 XML FIELD MAPPING:
+- vendorName: <PartyName>, <CompanyName> within supplier/emisor section
+- taxId: <TaxID>, <NIT>, <IDValue> within supplier section  
+- vendorAddress: <AddressLine>, <StreetName> within supplier address
+- companyName: <PartyName>, <CompanyName> within buyer/cliente section
+- buyerTaxId: <TaxID>, <NIT> within buyer section
+- invoiceNumber: <InvoiceNumber>, <ID>, <DocumentNumber> at document level
+- invoiceDate: <IssueDate>, <InvoiceDate>, <Date>
+- totalAmount: <TotalAmount>, <PayableAmount>, <TaxInclusiveAmount>
+- taxAmount: <TaxAmount>, <TaxTotal>, <IVA>
+- subtotal: <SubTotal>, <TaxExclusiveAmount>
+- currency: <CurrencyCode>, <Currency> attributes
+- projectName: <ProjectReference>, <OrderReference>, <ContractReference>
+- projectAddress: <DeliveryAddress>, <ProjectAddress>
+- projectCity: <CityName> within delivery address
+
+Extract clean values from XML tags, remove any XML formatting.
+Return null for fields not found in XML structure.
+
+Return valid JSON only:` :
+      `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
 
 ${learningImprovements}
 
@@ -216,7 +256,9 @@ Return valid JSON only:
         messages: [
           {
             role: "system",
-            content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
+            content: isXML ? 
+              "You are an expert XML invoice parser. Extract structured data from XML content and respond only with valid JSON. Parse XML tags carefully and extract clean values. If XML tags are not found, return null for that field." :
+              "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
           },
           {
             role: "user",
