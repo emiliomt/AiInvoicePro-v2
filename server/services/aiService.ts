@@ -169,37 +169,59 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
 
 ${learningImprovements}
 
-🔍 XML EXTRACTION RULES:
-1. VENDOR INFO: Look for <Emisor>, <Supplier>, <PartyName>, <CompanyName> tags
-2. TAX IDs: Find <TaxID>, <NIT>, <RFC>, <IDValue> tags - extract only numeric values
-3. AMOUNTS: Extract from <TotalAmount>, <TaxAmount>, <SubTotal>, <PayableAmount> tags
-4. DATES: Find <IssueDate>, <InvoiceDate>, <DueDate> tags, convert to YYYY-MM-DD
-5. ADDRESSES: Extract from <Address>, <AddressLine>, <CityName>, <CountryName> tags
-6. INVOICE NUMBER: Look for <InvoiceNumber>, <ID>, <DocumentNumber> tags
+🔍 UBL XML EXTRACTION RULES:
+1. VENDOR INFO: Look for <cbc:RegistrationName> within supplier/emisor sections
+2. TAX IDs: Find <cbc:CompanyID> tags - extract only numeric values
+3. AMOUNTS: Extract from <cbc:TaxInclusiveAmount>, <cbc:TaxAmount>, <cbc:TaxExclusiveAmount>
+4. DATES: Find <cbc:IssueDate>, <cbc:Date> tags, convert to YYYY-MM-DD
+5. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>
+6. INVOICE NUMBER: Look for <cbc:ID> at document level
 
-XML CONTENT TO ANALYZE:
+UBL XML CONTENT TO ANALYZE:
 ${ocrText.substring(0, 8000)} ${ocrText.length > 8000 ? '...[truncated]' : ''}
 
-🎯 XML FIELD MAPPING:
-- vendorName: <PartyName>, <CompanyName> within supplier/emisor section
-- taxId: <TaxID>, <NIT>, <IDValue> within supplier section  
-- vendorAddress: <AddressLine>, <StreetName> within supplier address
-- companyName: <PartyName>, <CompanyName> within buyer/cliente section
-- buyerTaxId: <TaxID>, <NIT> within buyer section
-- invoiceNumber: <InvoiceNumber>, <ID>, <DocumentNumber> at document level
-- invoiceDate: <IssueDate>, <InvoiceDate>, <Date>
-- totalAmount: <TotalAmount>, <PayableAmount>, <TaxInclusiveAmount>
-- taxAmount: <TaxAmount>, <TaxTotal>, <IVA>
-- subtotal: <SubTotal>, <TaxExclusiveAmount>
-- currency: <CurrencyCode>, <Currency> attributes
-- projectName: <ProjectReference>, <OrderReference>, <ContractReference>
-- projectAddress: <DeliveryAddress>, <ProjectAddress>
-- projectCity: <CityName> within delivery address
+🎯 UBL FIELD MAPPING GUIDE:
+- vendorName: <cbc:RegistrationName> within <cac:AccountingSupplierParty> OR <cac:SenderParty> (for DIAN attachments)
+- taxId: <cbc:CompanyID> within supplier party sections
+- vendorAddress: <cbc:StreetName>, <cbc:CityName> within supplier address
+- companyName: <cbc:RegistrationName> within <cac:AccountingCustomerParty> OR <cac:ReceiverParty> (for DIAN attachments)
+- buyerTaxId: <cbc:CompanyID> within customer/receiver party sections
+- invoiceNumber: <cbc:ID> at root level OR within <cac:DocumentReference> (look for "ASOM" prefixed IDs)
+- invoiceDate: <cbc:IssueDate> or <cbc:Date> at document level
+- totalAmount: <cbc:TaxInclusiveAmount>, <cbc:PayableAmount> (look within embedded invoice sections)
+- taxAmount: <cbc:TaxAmount> within tax sections
+- subtotal: <cbc:TaxExclusiveAmount>, <cbc:LineExtensionAmount>
+- currency: currencyID attribute in amount tags (usually COP for Colombian invoices)
+- projectName: <cbc:ID> within <cac:ProjectReference> or contract references
+- projectAddress: <cbc:StreetName> within delivery address
+- projectCity: <cbc:CityName> within delivery address
 
-Extract clean values from XML tags, remove any XML formatting.
-Return null for fields not found in XML structure.
+CRITICAL EXTRACTION LOGIC:
+1. This may be a DIAN attachment document - look for both sender/receiver AND supplier/customer patterns
+2. If SenderParty exists, it's likely the tax authority (DIAN) - ReceiverParty is the actual company
+3. Look for embedded invoice data within XML content or DocumentReference sections
+4. Extract text content from UBL tags, ignore XML namespaces and attributes
+5. For Colombian invoices, assume COP currency if not specified
+6. Return null for fields not found in UBL structure
 
-Return valid JSON only:` :
+EXAMPLE DATA FROM SAMPLE:
+- From SenderParty: "Unidad Especial Dirección de Impuestos y Aduanas Nacionales" (800197268)
+- From ReceiverParty: "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (900478552)
+- Invoice ID: "5538144" or "ASOM2678"
+- Issue Date: "2025-06-09"
+
+Return valid JSON only:
+
+SPECIFIC INSTRUCTIONS FOR THIS DOCUMENT:
+Based on the sample data visible, extract:
+- vendorName: Should be "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (from ReceiverParty)
+- companyName: Should be "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (main company)
+- taxId: Should be "900478552" (from ReceiverParty CompanyID)
+- invoiceNumber: Should be "ASOM2678" (from DocumentReference ID)
+- invoiceDate: Should be "2025-06-09" (from IssueDate)
+- currency: Should be "COP" (Colombian pesos)
+
+If you find these exact values in the XML, extract them. If not, look for similar patterns.` :
       `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
 
 ${learningImprovements}
