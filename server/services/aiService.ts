@@ -116,12 +116,22 @@ Return JSON with these fields only (use null if not found):
   };
 }
 
+// Simple cache for repeated extractions
+const extractionCache = new Map<string, ExtractedInvoiceData>();
+
 export async function extractInvoiceData(ocrText: string, applyLearning: boolean = true): Promise<ExtractedInvoiceData> {
   try {
     console.log(`Starting AI extraction with ${ocrText.length} characters of OCR text`);
     
     if (!ocrText || ocrText.trim().length < 10) {
       throw new Error('Insufficient OCR text for AI extraction');
+    }
+
+    // Check cache first for performance
+    const cacheKey = ocrText.substring(0, 500); // Use first 500 chars as cache key
+    if (extractionCache.has(cacheKey)) {
+      console.log('Using cached extraction result');
+      return extractionCache.get(cacheKey)!;
     }
 
     // Check if OpenAI API key is available
@@ -200,22 +210,27 @@ Return valid JSON only:
 - If no clear values found, return null rather than placeholder text`;
 
     console.log('Sending request to OpenAI...');
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini", // Faster and cheaper model for invoice extraction
-      messages: [
-        {
-          role: "system",
-          content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
-        },
-        {
-          role: "user",
-          content: prompt
-        }
-      ],
-      response_format: { type: "json_object" },
-      temperature: 0.0, // Set to 0 for faster, more deterministic responses
-      max_tokens: 2500, // Increased for better extraction
-    });
+    const response = await Promise.race([
+      openai.chat.completions.create({
+        model: "gpt-4o-mini", // Faster and cheaper model for invoice extraction
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
+          },
+          {
+            role: "user",
+            content: prompt
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.0, // Set to 0 for faster, more deterministic responses
+        max_tokens: 1500, // Reduced for faster processing
+      }),
+      new Promise<never>((_, reject) => 
+        setTimeout(() => reject(new Error('AI request timeout')), 15000)
+      )
+    ]);
 
     console.log('Received response from OpenAI');
     const responseContent = response.choices[0].message.content;
@@ -266,6 +281,15 @@ Return valid JSON only:
     }
 
     console.log('AI extraction completed successfully with cleaned data');
+    
+    // Cache the result for performance
+    if (extractionCache.size > 100) {
+      // Clear old entries if cache gets too large
+      const firstKey = extractionCache.keys().next().value;
+      extractionCache.delete(firstKey);
+    }
+    extractionCache.set(cacheKey, cleanedData);
+    
     return cleanedData;
   } catch (error: any) {
     console.error("AI extraction failed:", error);

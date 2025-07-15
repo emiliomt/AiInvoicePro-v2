@@ -50,6 +50,12 @@ app.use((req, res, next) => {
     process.exit(1);
   });
 
+  // Add timeout for server operations
+  const serverTimeout = setTimeout(() => {
+    console.error('Server startup timeout after 30 seconds');
+    process.exit(1);
+  }, 30000);
+
   console.log('Starting server initialization...');
   
   try {
@@ -87,8 +93,10 @@ app.use((req, res, next) => {
     const port = 5000;
 
     server.listen(port, "0.0.0.0", () => {
+      clearTimeout(serverTimeout);
       log(`serving on port ${port}`);
     }).on('error', (err: any) => {
+      clearTimeout(serverTimeout);
       if (err.code === 'EADDRINUSE') {
         log(`Port ${port} is already in use, trying to find and kill existing process...`);
         process.exit(1);
