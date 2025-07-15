@@ -36,10 +36,22 @@ interface ExtractedInvoiceData {
 
 export async function extractInvoiceData(ocrText: string): Promise<ExtractedInvoiceData> {
   try {
+    console.log(`Starting AI extraction with ${ocrText.length} characters of OCR text`);
+    
+    if (!ocrText || ocrText.trim().length < 10) {
+      throw new Error('Insufficient OCR text for AI extraction');
+    }
+
+    // Check if OpenAI API key is available
+    if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
+      console.error('OpenAI API key not found in environment variables');
+      throw new Error('AI service configuration error - API key missing');
+    }
+
     const prompt = `You are an intelligent document parser specialized in Latin American electronic invoices. Your task is to extract structured data from raw OCR text or plain PDF content. Extract the fields consistently, using contextual logic to improve accuracy.
 
 OCR Text:
-${ocrText}
+${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
 
 🔹 Core Fields to Extract - Return as JSON:
 {
@@ -51,7 +63,7 @@ ${ocrText}
   "buyerAddress": "...",
   "invoiceNumber": "...",                   // Nro. Factura / Folio
   "invoiceDate": "YYYY-MM-DD",              // Fecha de emisión
-  "dueDate: "YYYY-MM-DD",                  // Fecha de vencimiento
+  "dueDate": "YYYY-MM-DD",                  // Fecha de vencimiento
   "subtotal": "0.00",
   "taxAmount": "0.00",
   "totalAmount": "0.00",
@@ -71,7 +83,7 @@ ${ocrText}
       "itemType": "Labor"                   // or "Materials"
     }
   ],
-  "confidenceScore": "0.00"                 // 0-1 confidence score
+  "confidenceScore": "0.85"                 // 0-1 confidence score
 }
 
 🧩 Extraction Logic:
@@ -84,14 +96,16 @@ ${ocrText}
 - Extract actual values from the text, don't invent data
 - Convert dates to YYYY-MM-DD format
 - Extract amounts as decimal strings without currency symbols
-- Handle both Spanish and English field labels`;
+- Handle both Spanish and English field labels
+- If no clear values found, return null rather than placeholder text`;
 
+    console.log('Sending request to OpenAI...');
     const response = await openai.chat.completions.create({
       model: "gpt-4o-mini", // Faster and cheaper model for invoice extraction
       messages: [
         {
           role: "system",
-          content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate."
+          content: "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
         },
         {
           role: "user",
@@ -100,13 +114,21 @@ ${ocrText}
       ],
       response_format: { type: "json_object" },
       temperature: 0.0, // Set to 0 for faster, more deterministic responses
-      max_tokens: 2000, // Limit tokens for faster response
+      max_tokens: 2500, // Increased for better extraction
     });
 
-    const extractedData = JSON.parse(response.choices[0].message.content || '{}');
+    console.log('Received response from OpenAI');
+    const responseContent = response.choices[0].message.content;
+    
+    if (!responseContent) {
+      throw new Error('Empty response from AI service');
+    }
+
+    const extractedData = JSON.parse(responseContent);
+    console.log('Successfully parsed AI response:', Object.keys(extractedData));
 
     // Validate and clean the response
-    return {
+    const cleanedData = {
       vendorName: extractedData.vendorName || null,
       invoiceNumber: extractedData.invoiceNumber || null,
       invoiceDate: extractedData.invoiceDate || null,
@@ -127,11 +149,24 @@ ${ocrText}
       projectCity: extractedData.projectCity || null,
       notes: extractedData.notes || null,
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
-      confidenceScore: extractedData.confidenceScore || "0.0",
+      confidenceScore: extractedData.confidenceScore || "0.75",
     };
+
+    console.log('AI extraction completed successfully with cleaned data');
+    return cleanedData;
   } catch (error: any) {
     console.error("AI extraction failed:", error);
-    throw new Error(`AI data extraction failed: ${error?.message || 'Unknown error'}`);
+    
+    // Provide more specific error messages
+    if (error.message?.includes('API key')) {
+      throw new Error('AI service configuration error - please check API key');
+    } else if (error.message?.includes('timeout')) {
+      throw new Error('AI service timeout - please try again');
+    } else if (error.message?.includes('quota')) {
+      throw new Error('AI service quota exceeded - please try again later');
+    } else {
+      throw new Error(`AI data extraction failed: ${error?.message || 'Unknown error'}`);
+    }
   }
 }
 

@@ -68,46 +68,66 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
     // Update status to show processing in progress
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
-    const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
+    // Add timeout for OCR processing
+    const ocrPromise = processInvoiceOCR(fileBuffer, invoice.id);
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('OCR processing timeout')), 60000)
+    );
+
+    const ocrText = await Promise.race([ocrPromise, timeoutPromise]) as string;
     console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
 
     if (!ocrText || ocrText.trim().length < 10) {
       throw new Error("OCR did not extract sufficient text from the document");
     }
 
-    // Extract structured data using AI
+    // Extract structured data using AI with timeout
     console.log(`Starting AI extraction for invoice ${invoice.id}`);
-    await storage.updateInvoice(invoice.id, { status: "processing" });
+    
+    const aiPromise = extractInvoiceData(ocrText);
+    const aiTimeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+    );
 
-    const extractedData = await extractInvoiceData(ocrText);
+    const extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
     console.log(`AI extraction completed for invoice ${invoice.id}:`, {
       vendor: extractedData.vendorName,
       amount: extractedData.totalAmount,
       invoiceNumber: extractedData.invoiceNumber
     });
 
+    // Validate extracted data
+    const cleanedData = {
+      vendorName: extractedData.vendorName || null,
+      invoiceNumber: extractedData.invoiceNumber || null,
+      invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+      dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+      totalAmount: extractedData.totalAmount || null,
+      taxAmount: extractedData.taxAmount || null,
+      currency: extractedData.currency || 'USD',
+    };
+
     // Update invoice with extracted data
     await storage.updateInvoice(invoice.id, {
       status: "extracted",
       ocrText,
       extractedData,
-      vendorName: extractedData.vendorName,
-      invoiceNumber: extractedData.invoiceNumber,
-      invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-      dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-      totalAmount: extractedData.totalAmount,
-      taxAmount: extractedData.taxAmount,
-      // subtotalAmount: extractedData.subtotalAmount, // Removed - not in schema
-      currency: extractedData.currency || 'USD',
+      ...cleanedData
     });
 
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    
     try {
       await storage.updateInvoice(invoice.id, { 
         status: "rejected",
-        extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
+        extractedData: { 
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+          processStep: 'extraction'
+        }
       });
     } catch (updateError) {
       console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
@@ -1191,42 +1211,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Reset status to processing
       await storage.updateInvoice(invoiceId, { status: "processing" });
 
-      res.json({ message: "OCR processing started manually" });
+      res.json({ message: "Manual OCR processing started" });
 
-      // Start processing in background
+      // Start processing in background with proper error handling
       setImmediate(async () => {
         try {
           const fs = require('fs');
           const fileBuffer = fs.readFileSync(invoice.fileUrl);
 
-          console.log(`Manual OCR processing started for invoice ${invoiceId}`);
-          const ocrText = await processInvoiceOCR(fileBuffer, invoiceId);
-
-          if (!ocrText || ocrText.trim().length < 10) {
-            throw new Error("OCR did not extract sufficient text from the document");
-          }
-
-          console.log(`Manual AI extraction started for invoice ${invoiceId}`);
-          const extractedData = await extractInvoiceData(ocrText);
-
-          // Update invoice with extracted data
-          await storage.updateInvoice(invoiceId, {
-            status: "extracted",
-            ocrText,
-            extractedData,
-            vendorName: extractedData.vendorName,
-            invoiceNumber: extractedData.invoiceNumber,
-            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-            dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-            totalAmount: extractedData.totalAmount,
-            taxAmount: extractedData.taxAmount,
-            subtotal: extractedData.subtotal,
-            projectName: extractedData.projectName,
-            confidenceScore: extractedData.confidenceScore,
-            currency: extractedData.currency || "USD",
-          });
-
-          console.log(`Manual processing completed successfully for invoice ${invoiceId}`);
+          console.log(`Manual processing started for invoice ${invoiceId} (${invoice.fileName})`);
+          
+          // Use the same processing function as automatic uploads
+          await processInvoiceAsync(invoice, fileBuffer);
+          
+          console.log(`Manual processing completed for invoice ${invoiceId}`);
         } catch (error: any) {
           console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
           await storage.updateInvoice(invoiceId, {
@@ -1234,14 +1232,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
             extractedData: { 
               error: error.message,
               errorType: "ManualProcessingError",
-              timestamp: new Date().toISOString()
+              timestamp: new Date().toISOString(),
+              step: "manual_retry"
             },
           });
         }
       });
     } catch (error) {
       console.error("Error starting manual OCR:", error);
-      res.status(500).json({ message: "Failed to start OCR processing" });
+      res.status(500).json({ message: "Failed to start manual OCR processing" });
     }
   });
 

@@ -53,7 +53,13 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
         textContent = await processImageOCR(fileBuffer, invoiceId);
       } catch (pdfError) {
         console.error(`PDF processing failed for invoice ${invoiceId}:`, pdfError);
-        throw new Error(`PDF processing failed: ${pdfError instanceof Error ? pdfError.message : 'Unknown error'}`);
+        // Try alternative PDF processing
+        console.log(`Attempting alternative PDF processing for invoice ${invoiceId}`);
+        try {
+          textContent = await processPDFAlternative(fileBuffer, invoiceId);
+        } catch (altError) {
+          throw new Error(`PDF processing failed: ${pdfError instanceof Error ? pdfError.message : 'Unknown error'}`);
+        }
       }
     } else if (fileType === 'XML') {
       // Process XML directly - extract text content
@@ -61,18 +67,66 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
       textContent = await processXMLContent(fileBuffer, invoiceId);
     } else {
       // For images, use OCR directly
+      console.log(`Processing image with OCR for invoice ${invoiceId}`);
       textContent = await processImageOCR(fileBuffer, invoiceId);
     }
 
     if (!textContent || textContent.trim().length < 10) {
+      console.error(`Insufficient text extracted for invoice ${invoiceId}: "${textContent?.substring(0, 100)}..."`);
       throw new Error('OCR processing completed but extracted insufficient text. The document may be unclear or in an unsupported format.');
     }
 
     console.log(`OCR processing completed for invoice ${invoiceId}, extracted ${textContent.length} characters`);
+    console.log(`Sample text for invoice ${invoiceId}: "${textContent.substring(0, 200)}..."`);
     return textContent;
   } catch (error) {
     console.error(`OCR processing failed for invoice ${invoiceId}:`, error);
     throw new Error(`OCR processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+// Alternative PDF processing method
+async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Promise<string> {
+  try {
+    console.log(`Alternative PDF processing for invoice ${invoiceId}`);
+    
+    // Try simpler PDF conversion settings
+    const convert = fromBuffer(fileBuffer, {
+      density: 100,
+      saveFilename: `invoice_${invoiceId}_alt`,
+      savePath: "/tmp",
+      format: "png",
+      width: 800,
+      height: 800
+    });
+
+    const result = await convert(1) as PDFConvertResult;
+
+    if (result && result.path && fs.existsSync(result.path)) {
+      const imageBuffer = fs.readFileSync(result.path);
+      
+      const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
+        logger: (m) => {
+          if (m.status === 'recognizing text') {
+            console.log(`Alt OCR Progress for invoice ${invoiceId}: ${Math.round(m.progress * 100)}%`);
+          }
+        }
+      });
+
+      // Clean up temporary file
+      try {
+        fs.unlinkSync(result.path);
+      } catch (cleanupError) {
+        console.warn(`Failed to cleanup alt temp file for invoice ${invoiceId}: ${result.path}`);
+      }
+
+      return text;
+    } else {
+      throw new Error(`Alternative PDF conversion failed for invoice ${invoiceId}`);
+    }
+  } catch (error) {
+    console.error(`Alternative PDF processing failed for invoice ${invoiceId}:`, error);
+    throw error;
   }
 }
 
