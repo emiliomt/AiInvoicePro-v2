@@ -3008,9 +3008,18 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const config = await storage.getInvoiceImporterConfig(configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
 
-      if (!config || config.userId !== (user as any).claims.sub) {
-        return res.status(404).json({ error: 'Import configuration not found or access denied' });
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration (same user or same company)
+      const hasAccess = config.userId === (user as any).claims.sub || 
+                       (currentUser?.companyId && config.companyId === currentUser.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
       await storage.deleteInvoiceImporterConfig(configId);
