@@ -3,6 +3,11 @@ import { fromBuffer } from 'pdf2pic';
 import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
+import { TextItem } from 'pdfjs-dist/types/src/display/api';
+import { createWorker } from 'tesseract.js';
+import path from 'path';
+import fs from 'fs';
 
 // Define interface for pdf2pic result
 interface PDFConvertResult {
@@ -16,20 +21,20 @@ function detectFileType(buffer: Buffer): string {
   if (buffer.slice(0, 4).toString() === '%PDF') {
     return 'PDF';
   }
-  
+
   // Check for XML files
   const textContent = buffer.toString('utf8', 0, Math.min(buffer.length, 1000));
   if (textContent.trim().startsWith('<?xml') || textContent.includes('<Invoice') || textContent.includes('<Factura')) {
     return 'XML';
   }
-  
+
   const magicBytes = buffer.slice(0, 8);
   const isPNG = magicBytes.slice(0, 4).equals(Buffer.from([0x89, 0x50, 0x4E, 0x47]));
   const isJPEG = magicBytes.slice(0, 3).equals(Buffer.from([0xFF, 0xD8, 0xFF]));
-  
+
   if (isPNG) return 'PNG';
   if (isJPEG) return 'JPEG';
-  
+
   return 'Unknown';
 }
 
@@ -89,7 +94,7 @@ export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): 
 async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Promise<string> {
   try {
     console.log(`Alternative PDF processing for invoice ${invoiceId}`);
-    
+
     // Try simpler PDF conversion settings
     const convert = fromBuffer(fileBuffer, {
       density: 100,
@@ -104,7 +109,7 @@ async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Pro
 
     if (result && result.path && fs.existsSync(result.path)) {
       const imageBuffer = fs.readFileSync(result.path);
-      
+
       const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
         logger: (m) => {
           if (m.status === 'recognizing text') {
@@ -113,14 +118,11 @@ async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Pro
         }
       });
 
-      // Clean up temporary file
-      try {
-        fs.unlinkSync(result.path);
-      } catch (cleanupError) {
-        console.warn(`Failed to cleanup alt temp file for invoice ${invoiceId}: ${result.path}`);
-      }
+      console.log(`OCR completed. Extracted text length: ${text.length}`);
 
-      return text;
+      // Clean and preprocess OCR text for better AI extraction
+      const cleanedText = preprocessOCRText(text);
+      return cleanedText;
     } else {
       throw new Error(`Alternative PDF conversion failed for invoice ${invoiceId}`);
     }
@@ -133,7 +135,7 @@ async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Pro
 // Helper function to process images with OCR
 async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<string> {
   const fileType = detectFileType(fileBuffer);
-  
+
   if (fileType === 'PDF') {
     // Convert PDF to image first
     const convert = fromBuffer(fileBuffer, {
@@ -149,7 +151,7 @@ async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<s
 
     if (result && result.path && fs.existsSync(result.path)) {
       const imageBuffer = fs.readFileSync(result.path);
-      
+
       const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
         logger: (m) => {
           if (m.status === 'recognizing text' && m.progress % 0.1 === 0) {
@@ -160,14 +162,11 @@ async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<s
         tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
       });
 
-      // Clean up temporary file
-      try {
-        fs.unlinkSync(result.path);
-      } catch (cleanupError) {
-        console.warn(`Failed to cleanup temp file for invoice ${invoiceId}: ${result.path}`);
-      }
+      console.log(`OCR completed. Extracted text length: ${text.length}`);
 
-      return text;
+      // Clean and preprocess OCR text for better AI extraction
+      const cleanedText = preprocessOCRText(text);
+      return cleanedText;
     } else {
       throw new Error(`PDF conversion failed for invoice ${invoiceId} - no valid image path returned`);
     }
@@ -183,7 +182,11 @@ async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<s
       tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
     });
 
-    return text;
+    console.log(`OCR completed. Extracted text length: ${text.length}`);
+
+    // Clean and preprocess OCR text for better AI extraction
+    const cleanedText = preprocessOCRText(text);
+    return cleanedText;
   }
 }
 
@@ -192,13 +195,13 @@ async function processXMLContent(fileBuffer: Buffer, invoiceId: number): Promise
   try {
     const xmlContent = fileBuffer.toString('utf8');
     console.log(`XML content extracted for invoice ${invoiceId}, length: ${xmlContent.length} characters`);
-    
+
     // For XML files, we can directly use the content as structured text
     // This is much more reliable than OCR since XML is already structured data
     if (!xmlContent || xmlContent.trim().length < 10) {
       throw new Error('XML file appears to be empty or corrupted');
     }
-    
+
     return xmlContent;
   } catch (error) {
     console.error(`XML processing failed for invoice ${invoiceId}:`, error);
@@ -283,3 +286,43 @@ export const ocrService = {
   }
 };
 
+// Preprocess OCR text to improve AI extraction accuracy
+function preprocessOCRText(text: string): string {
+  let cleaned = text;
+
+  // Remove excessive whitespace and normalize line breaks
+  cleaned = cleaned.replace(/\s+/g, ' ');
+  cleaned = cleaned.replace(/\n\s*\n/g, '\n');
+
+  // Fix common OCR errors in Spanish/Latin American invoices
+  cleaned = cleaned.replace(/\bEmisor\b/gi, 'Emisor');
+  cleaned = cleaned.replace(/\bFactura\b/gi, 'Factura');
+  cleaned = cleaned.replace(/\bFecha\b/gi, 'Fecha');
+  cleaned = cleaned.replace(/\bTotal\b/gi, 'Total');
+  cleaned = cleaned.replace(/\bSubtotal\b/gi, 'Subtotal');
+  cleaned = cleaned.replace(/\bIVA\b/gi, 'IVA');
+  cleaned = cleaned.replace(/\bNIT\b/gi, 'NIT');
+  cleaned = cleaned.replace(/\bRFC\b/gi, 'RFC');
+  cleaned = cleaned.replace(/\bCUIT\b/gi, 'CUIT');
+  cleaned = cleaned.replace(/\bProveedor\b/gi, 'Proveedor');
+  cleaned = cleaned.replace(/\bCliente\b/gi, 'Cliente');
+  cleaned = cleaned.replace(/\bAdquiriente\b/gi, 'Adquiriente');
+  cleaned = cleaned.replace(/\bObra\b/gi, 'Obra');
+  cleaned = cleaned.replace(/\bProyecto\b/gi, 'Proyecto');
+
+  // Fix common number formatting issues
+  cleaned = cleaned.replace(/([0-9])\.([0-9]{3})/g, '$1$2'); // Remove thousands separators
+  cleaned = cleaned.replace(/([0-9]),([0-9]{2})\b/g, '$1.$2'); // Fix decimal separators
+
+  // Fix date formatting
+  cleaned = cleaned.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, '$3-$2-$1'); // DD/MM/YYYY to YYYY-MM-DD
+  cleaned = cleaned.replace(/(\d{1,2})-(\d{1,2})-(\d{4})/g, '$3-$2-$1'); // DD-MM-YYYY to YYYY-MM-DD
+
+  // Add structure markers to help AI identify sections
+  cleaned = cleaned.replace(/\bEmisor\b/gi, '\n--- EMISOR ---\nEmisor');
+  cleaned = cleaned.replace(/\bAdquiriente\b/gi, '\n--- ADQUIRIENTE ---\nAdquiriente');
+  cleaned = cleaned.replace(/\bFactura\s+No?\s*[:.]?\s*(\S+)/gi, '\n--- FACTURA INFO ---\nFactura No: $1');
+  cleaned = cleaned.replace(/\bTotal\s*[:.]?\s*(\S+)/gi, '\n--- TOTALES ---\nTotal: $1');
+
+  return cleaned.trim();
+}

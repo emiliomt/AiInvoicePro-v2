@@ -34,6 +34,88 @@ interface ExtractedInvoiceData {
   confidenceScore: string;
 }
 
+// Helper functions for data validation
+function validateString(value: any): string | null {
+  if (!value || typeof value !== 'string') return null;
+  const cleaned = value.trim();
+  return cleaned.length > 0 ? cleaned : null;
+}
+
+function validateAmount(value: any): string | null {
+  if (!value) return null;
+  const cleaned = String(value).replace(/[^\d.-]/g, '');
+  const num = parseFloat(cleaned);
+  return !isNaN(num) && num >= 0 ? cleaned : null;
+}
+
+function validateDate(value: any): string | null {
+  if (!value) return null;
+  try {
+    const date = new Date(value);
+    return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateTaxId(value: any): string | null {
+  if (!value) return null;
+  const cleaned = String(value).replace(/[^\d-]/g, '');
+  return cleaned.length >= 5 ? cleaned : null;
+}
+
+// Simplified extraction for difficult documents
+async function attemptSimplifiedExtraction(ocrText: string): Promise<ExtractedInvoiceData> {
+  const simplePrompt = `Extract only the most obvious fields from this invoice text:
+${ocrText.substring(0, 2000)}
+
+Return JSON with these fields only (use null if not found):
+{
+  "vendorName": "first company name found",
+  "totalAmount": "largest monetary amount",
+  "invoiceNumber": "invoice/factura number",
+  "invoiceDate": "date in YYYY-MM-DD format",
+  "currency": "COP/USD/MXN"
+}`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "Extract only the most obvious invoice fields. Return valid JSON." },
+      { role: "user", content: simplePrompt }
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.0,
+    max_tokens: 500
+  });
+
+  const simpleData = JSON.parse(response.choices[0].message.content || '{}');
+  
+  return {
+    vendorName: simpleData.vendorName || null,
+    invoiceNumber: simpleData.invoiceNumber || null,
+    invoiceDate: simpleData.invoiceDate || null,
+    dueDate: null,
+    totalAmount: simpleData.totalAmount || null,
+    taxAmount: null,
+    subtotal: null,
+    currency: simpleData.currency || "COP",
+    taxId: null,
+    companyName: null,
+    concept: null,
+    projectName: null,
+    vendorAddress: null,
+    buyerTaxId: null,
+    buyerAddress: null,
+    descriptionSummary: null,
+    projectAddress: null,
+    projectCity: null,
+    notes: null,
+    lineItems: [],
+    confidenceScore: "0.5"
+  };
+}
+
 export async function extractInvoiceData(ocrText: string, applyLearning: boolean = true): Promise<ExtractedInvoiceData> {
   try {
     console.log(`Starting AI extraction with ${ocrText.length} characters of OCR text`);
@@ -57,47 +139,52 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
       if (insights.length > 0) {
         learningImprovements = `\n\n🎯 LEARNING IMPROVEMENTS (Based on Previous Errors):
 ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${insight.frequency} times)`).join('\n')}
-\nPay special attention to these fields and avoid these common mistakes.`;
+\nPay special attention to these fields and avoid these common mistakes.
+
+🔧 FIELD-SPECIFIC IMPROVEMENTS:
+- For vendorName: Look for company name immediately after "Emisor:" or "Proveedor:"
+- For totalAmount: Find the largest monetary amount, usually after "Total:" or "Total a Pagar:"
+- For taxId: Look for NIT/RFC patterns - numbers with dashes (e.g., 12-3456789-1)
+- For invoiceDate: Find date near invoice number, convert to YYYY-MM-DD format
+- For projectName: Look for construction project names, "Obra:", or building descriptions`;
       }
     }
 
-    const prompt = `You are an intelligent document parser specialized in Latin American electronic invoices. Your task is to extract structured data from raw OCR text or plain PDF content. Extract the fields consistently, using contextual logic to improve accuracy.${learningImprovements}
+    const prompt = `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
 
-OCR Text:
+${learningImprovements}
+
+🔍 EXTRACTION RULES:
+1. VENDOR INFO: Look for "Emisor", "Proveedor", "Razón Social" or company name at top
+2. TAX IDs: NIT, RFC, CUIT are always numeric with optional dashes/dots
+3. AMOUNTS: Always extract numbers only (no currency symbols, no commas)
+4. DATES: Convert to YYYY-MM-DD format, look for "Fecha", "Date"
+5. ADDRESSES: Extract complete address including street, city, state
+6. PROJECT: Look for "Obra", "Proyecto", "Project" or construction site references
+
+OCR TEXT TO ANALYZE:
 ${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
 
-🔹 Core Fields to Extract - Return as JSON:
-{
-  "vendorName": "...",                      // Emisor / Proveedor / Razón Social
-  "taxId": "...",                           // Vendor NIT / RFC / CUIT
-  "vendorAddress": "...",                   // Full vendor address including city, state, country
-  "companyName": "...",                     // Cliente / Adquiriente / Buyer
-  "buyerTaxId": "...",                      // Buyer NIT / RFC / CUIT
-  "buyerAddress": "...",
-  "invoiceNumber": "...",                   // Nro. Factura / Folio
-  "invoiceDate": "YYYY-MM-DD",              // Fecha de emisión
-  "dueDate": "YYYY-MM-DD",                  // Fecha de vencimiento
-  "subtotal": "0.00",
-  "taxAmount": "0.00",
-  "totalAmount": "0.00",
-  "currency": "COP",                        // COP / MXN / USD, etc.
-  "concept": "...",                         // Raw line item descriptions
-  "descriptionSummary": "...",              // One-line summary of services/goods
-  "projectName": "...",                     // Project or Obra (e.g. Etapa II)
-  "projectAddress": "...",                  // Extract specific project address (e.g., CALLE 98 # 65 A 54)
-  "projectCity": "...",                     // Extract city from vendor address if project city not explicit (e.g., BARRANQUILLA, ATLANTICO, COLOMBIA)
-  "notes": "...",                           // Additional observations or terms
-  "lineItems": [
-    {
-      "description": "...",
-      "unitPrice": "0.00",
-      "quantity": "0",
-      "totalPrice": "0.00",
-      "itemType": "Labor"                   // or "Materials"
-    }
-  ],
-  "confidenceScore": "0.85"                 // 0-1 confidence score
-}
+🎯 CRITICAL EXTRACTION GUIDELINES:
+- vendorName: First company name found, usually after "Emisor:" or at document top
+- taxId: Vendor's NIT/RFC - numeric string near vendor name
+- vendorAddress: Complete address of vendor including city/state
+- companyName: Buyer company, usually after "Adquiriente:" or "Cliente:"
+- buyerTaxId: Buyer's NIT/RFC - different from vendor's
+- invoiceNumber: After "Factura No:", "Invoice:", "Folio:"
+- invoiceDate: Date near invoice number, format as YYYY-MM-DD
+- totalAmount: Final amount, usually largest number, after "Total:"
+- taxAmount: IVA/Tax amount, after "IVA:", "Tax:"
+- subtotal: Base amount before tax
+- currency: Look for COP, USD, MXN, EUR symbols/text
+- projectName: Construction project name or "Obra"
+- projectAddress: Specific work site address, different from vendor address
+- projectCity: City where project is located
+
+Extract amounts as clean numbers: "1,234.56" → "1234.56"
+If field not found, return null (not empty string)
+
+Return valid JSON only:
 
 🧩 Extraction Logic:
 - Use consistent label recognition across LatAm formats (Colombia, Mexico, etc.)
@@ -140,30 +227,43 @@ ${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
     const extractedData = JSON.parse(responseContent);
     console.log('Successfully parsed AI response:', Object.keys(extractedData));
 
-    // Validate and clean the response
+    // Validate and clean the response with better data processing
     const cleanedData = {
-      vendorName: extractedData.vendorName || null,
-      invoiceNumber: extractedData.invoiceNumber || null,
-      invoiceDate: extractedData.invoiceDate || null,
-      dueDate: extractedData.dueDate || null,
-      totalAmount: extractedData.totalAmount || null,
-      taxAmount: extractedData.taxAmount || null,
-      subtotal: extractedData.subtotal || null,
-      currency: extractedData.currency || "USD",
-      taxId: extractedData.taxId || null,
-      companyName: extractedData.companyName || null,
-      concept: extractedData.concept || null,
-      projectName: extractedData.projectName || null,
-      vendorAddress: extractedData.vendorAddress || null,
-      buyerTaxId: extractedData.buyerTaxId || null,
-      buyerAddress: extractedData.buyerAddress || null,
-      descriptionSummary: extractedData.descriptionSummary || null,
-      projectAddress: extractedData.projectAddress || null,
-      projectCity: extractedData.projectCity || null,
-      notes: extractedData.notes || null,
+      vendorName: validateString(extractedData.vendorName),
+      invoiceNumber: validateString(extractedData.invoiceNumber),
+      invoiceDate: validateDate(extractedData.invoiceDate),
+      dueDate: validateDate(extractedData.dueDate),
+      totalAmount: validateAmount(extractedData.totalAmount),
+      taxAmount: validateAmount(extractedData.taxAmount),
+      subtotal: validateAmount(extractedData.subtotal),
+      currency: extractedData.currency || "COP", // Default to COP for Latin American invoices
+      taxId: validateTaxId(extractedData.taxId),
+      companyName: validateString(extractedData.companyName),
+      concept: validateString(extractedData.concept),
+      projectName: validateString(extractedData.projectName),
+      vendorAddress: validateString(extractedData.vendorAddress),
+      buyerTaxId: validateTaxId(extractedData.buyerTaxId),
+      buyerAddress: validateString(extractedData.buyerAddress),
+      descriptionSummary: validateString(extractedData.descriptionSummary),
+      projectAddress: validateString(extractedData.projectAddress),
+      projectCity: validateString(extractedData.projectCity),
+      notes: validateString(extractedData.notes),
       lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
       confidenceScore: extractedData.confidenceScore || "0.75",
     };
+
+    // Log extraction quality metrics
+    const filledFields = Object.values(cleanedData).filter(v => v !== null && v !== "").length;
+    const totalFields = Object.keys(cleanedData).length - 1; // Exclude lineItems
+    const completeness = (filledFields / totalFields) * 100;
+    
+    console.log(`Extraction completeness: ${completeness.toFixed(1)}% (${filledFields}/${totalFields} fields)`);
+    
+    // If completeness is very low, try again with a simplified approach
+    if (completeness < 30) {
+      console.log('Low completeness detected, attempting simplified extraction...');
+      return await attemptSimplifiedExtraction(ocrText);
+    }
 
     console.log('AI extraction completed successfully with cleaned data');
     return cleanedData;

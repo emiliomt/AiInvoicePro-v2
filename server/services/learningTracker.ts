@@ -308,15 +308,13 @@ Generate a specific instruction that could be added to the extraction prompt to 
   static async applyLearningFromFeedback(): Promise<void> {
     const commonErrors = await this.analyzeCommonErrors();
     
-    // Store learned patterns for future use
-    for (const error of commonErrors.slice(0, 5)) { // Top 5 most common
-      if (error.frequency >= 3) { // Only if seen multiple times
+    // Store learned patterns for future use with lower threshold
+    for (const error of commonErrors.slice(0, 10)) { // Top 10 most common
+      if (error.frequency >= 2) { // Lower threshold for faster learning
         try {
-          // You could store these improvements in a database table
-          // or use them to dynamically modify extraction prompts
           console.log(`Learning applied for ${error.field}: ${error.suggestedFix}`);
           
-          // Example: Store in a learning cache or database
+          // Store in learning cache or database
           await storage.storeLearningInsight({
             field: error.field,
             errorType: error.errorType,
@@ -324,11 +322,56 @@ Generate a specific instruction that could be added to the extraction prompt to 
             frequency: error.frequency,
             lastSeen: new Date()
           });
+          
+          // Also create specific improvement rules
+          if (error.field === 'totalAmount' && error.frequency >= 3) {
+            await this.createAmountExtractionRule(error);
+          } else if (error.field === 'vendorName' && error.frequency >= 3) {
+            await this.createVendorNameRule(error);
+          } else if (error.field === 'invoiceDate' && error.frequency >= 3) {
+            await this.createDateExtractionRule(error);
+          }
         } catch (error) {
           console.error('Error applying learning:', error);
         }
       }
     }
+  }
+
+  // Create specific rules for amount extraction
+  private static async createAmountExtractionRule(error: any): Promise<void> {
+    const rule = `For totalAmount extraction: ${error.suggestedFix}. Look for patterns like 'Total:', 'Total a Pagar:', 'Valor Total:' followed by numbers.`;
+    await storage.storeLearningInsight({
+      field: 'totalAmount',
+      errorType: 'extraction_rule',
+      suggestedFix: rule,
+      frequency: error.frequency,
+      lastSeen: new Date()
+    });
+  }
+
+  // Create specific rules for vendor name extraction
+  private static async createVendorNameRule(error: any): Promise<void> {
+    const rule = `For vendorName extraction: ${error.suggestedFix}. Look after 'Emisor:', 'Proveedor:', 'Razón Social:' labels.`;
+    await storage.storeLearningInsight({
+      field: 'vendorName',
+      errorType: 'extraction_rule',
+      suggestedFix: rule,
+      frequency: error.frequency,
+      lastSeen: new Date()
+    });
+  }
+
+  // Create specific rules for date extraction
+  private static async createDateExtractionRule(error: any): Promise<void> {
+    const rule = `For invoiceDate extraction: ${error.suggestedFix}. Look for 'Fecha:', 'Fecha de Emisión:', 'Date:' followed by date patterns.`;
+    await storage.storeLearningInsight({
+      field: 'invoiceDate',
+      errorType: 'extraction_rule',
+      suggestedFix: rule,
+      frequency: error.frequency,
+      lastSeen: new Date()
+    });
   }
 
   private static categorizeError(reason: string): string {
