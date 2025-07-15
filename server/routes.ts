@@ -104,10 +104,14 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
-    await storage.updateInvoice(invoice.id, { 
-      status: "rejected",
-      extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
-    });
+    try {
+      await storage.updateInvoice(invoice.id, { 
+        status: "rejected",
+        extractedData: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+    } catch (updateError) {
+      console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
+    }
   }
 }
 
@@ -1128,8 +1132,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               fileUrl: filePath,
             });
 
-            // Start processing immediately (don't wait for setImmediate)
-            processInvoiceAsync(invoice, file.buffer);
+            // Start processing immediately using setImmediate to avoid blocking
+            setImmediate(() => {
+              processInvoiceWrapper(invoice, file.buffer).catch(error => {
+                console.error(`Unhandled error in invoice processing for ${invoice.id}:`, error);
+              });
+            });
 
             return invoice;
           } catch (fileError) {
@@ -1145,101 +1153,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         });
 
-        // Process invoices after upload completion
-        const processInvoiceAsync = async (invoice: any, fileBuffer: Buffer) => {
+        // Process invoices after upload completion - now defined outside the loop
+        const processInvoiceWrapper = async (invoice: any, fileBuffer: Buffer) => {
           try {
-            console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
-
-            // Update status to show processing in progress
-            await storage.updateInvoice(invoice.id, { status: "processing" });
-
-            const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
-            console.log(`OCR completed for invoice ${invoice.id}, text length: ${ocrText.length}`);
-
-            if (!ocrText || ocrText.trim().length < 10) {
-              throw new Error("OCR did not extract sufficient text from the document");
-            }
-
-            // Extract structured data using AI
-            console.log(`Starting AI extraction for invoice ${invoice.id}`);
-            await storage.updateInvoice(invoice.id, { status: "processing" });
-
-            const extractedData = await extractInvoiceData(ocrText);
-            console.log(`AI extraction completed for invoice ${invoice.id}:`, {
-              vendor: extractedData.vendorName,
-              amount: extractedData.totalAmount,
-              invoiceNumber: extractedData.invoiceNumber
-            });
-
-            // Update invoice with extracted data
-            await storage.updateInvoice(invoice.id, {
-              status: "extracted",
-              ocrText,
-              extractedData,
-              vendorName: extractedData.vendorName,
-              invoiceNumber: extractedData.invoiceNumber,
-              invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-              dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-              totalAmount: extractedData.totalAmount,
-              taxAmount: extractedData.taxAmount,
-              subtotal: extractedData.subtotal,
-              projectName: extractedData.projectName,
-              confidenceScore: extractedData.confidenceScore,
-              currency: extractedData.currency || "USD",
-            });
-
-            // Check if this is a petty cash invoice
-            const isPettyCash = await storage.isPettyCashInvoice(extractedData.totalAmount || "0");
-
-            if (isPettyCash) {
-              // Create petty cash log entry
-              await storage.createPettyCashLog({
-                invoiceId: invoice.id,
-                status: "pending_approval",
-              });
-
-              // Update invoice status to indicate petty cash (use extracted status)
-              await storage.updateInvoice(invoice.id, {
-                status: "extracted",
-              });
-            }
-
-            // Create line items if present
-            let createdLineItems: any[] = [];
-            if (extractedData.lineItems && extractedData.lineItems.length > 0) {
-              const lineItemsData = extractedData.lineItems.map((item: any) => ({
-                invoiceId: invoice.id,
-                description: item.description || "Line item",
-                quantity: item.quantity || "1",
-                unitPrice: item.unitPrice || "0",
-                totalPrice: item.totalPrice || "0",
-              }));
-              createdLineItems = await storage.createLineItems(lineItemsData);
-
-              // Auto-classify line items
-              try {
-                const { ClassificationService } = await import('./services/classificationService');
-                await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
-                console.log(`Auto-classified line items for invoice ${invoice.id}`);
-              } catch (classificationError) {
-                console.error(`Failed to auto-classify line items for invoice ${invoice.id}:`, classificationError);
-                // Continue processing even if classification fails
-              }
-            }
-
-            console.log(`Invoice ${invoice.id} processing completed successfully`);
-          } catch (processingError: any) {
-            console.error(`Error processing invoice ${invoice.id}:`, processingError);
-            await storage.updateInvoice(invoice.id, {
-              status: "rejected",
-              extractedData: { 
-                error: processingError.message,
-                errorType: processingError.name || "ProcessingError",
-                timestamp: new Date().toISOString()
-              },
-            });
+            await processInvoiceAsync(invoice, fileBuffer);
+          } catch (error) {
+            console.error(`Failed to process invoice ${invoice.id}:`, error);
+            // Error is already handled in processInvoiceAsync
           }
-        }
+        };
 
         res.json({ 
           message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
