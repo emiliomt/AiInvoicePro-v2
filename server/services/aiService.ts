@@ -34,7 +34,7 @@ interface ExtractedInvoiceData {
   confidenceScore: string;
 }
 
-export async function extractInvoiceData(ocrText: string): Promise<ExtractedInvoiceData> {
+export async function extractInvoiceData(ocrText: string, applyLearning: boolean = true): Promise<ExtractedInvoiceData> {
   try {
     console.log(`Starting AI extraction with ${ocrText.length} characters of OCR text`);
     
@@ -48,7 +48,20 @@ export async function extractInvoiceData(ocrText: string): Promise<ExtractedInvo
       throw new Error('AI service configuration error - API key missing');
     }
 
-    const prompt = `You are an intelligent document parser specialized in Latin American electronic invoices. Your task is to extract structured data from raw OCR text or plain PDF content. Extract the fields consistently, using contextual logic to improve accuracy.
+    // Apply learning improvements if enabled
+    let learningImprovements = "";
+    if (applyLearning) {
+      const { storage } = await import('../storage');
+      const insights = await storage.getLearningInsights();
+      
+      if (insights.length > 0) {
+        learningImprovements = `\n\n🎯 LEARNING IMPROVEMENTS (Based on Previous Errors):
+${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${insight.frequency} times)`).join('\n')}
+\nPay special attention to these fields and avoid these common mistakes.`;
+      }
+    }
+
+    const prompt = `You are an intelligent document parser specialized in Latin American electronic invoices. Your task is to extract structured data from raw OCR text or plain PDF content. Extract the fields consistently, using contextual logic to improve accuracy.${learningImprovements}
 
 OCR Text:
 ${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}

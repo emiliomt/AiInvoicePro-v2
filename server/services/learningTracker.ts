@@ -1,5 +1,10 @@
 
 import { storage } from "../storage";
+import OpenAI from "openai";
+
+const openai = new OpenAI({ 
+  apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || ""
+});
 
 export interface LearningMetrics {
   extractionAccuracy: number;
@@ -8,6 +13,8 @@ export interface LearningMetrics {
     errorType: string;
     frequency: number;
     trend: 'improving' | 'stable' | 'declining';
+    examples: string[];
+    suggestedFix: string;
   }>;
   improvementRate: number;
   recentPerformance: Array<{
@@ -16,6 +23,12 @@ export interface LearningMetrics {
     totalExtractions: number;
     errorCount: number;
   }>;
+  learningInsights: {
+    totalFeedbackProcessed: number;
+    activelyLearning: boolean;
+    lastUpdate: Date;
+    confidenceImprovement: number;
+  };
 }
 
 export class LearningTracker {
@@ -36,25 +49,44 @@ export class LearningTracker {
     return Math.max(0, Math.min(100, accuracy));
   }
 
-  // Identify common extraction errors and their trends
+  // Identify common extraction errors and their trends with AI-powered analysis
   static async analyzeCommonErrors(): Promise<Array<{
     field: string;
     errorType: string;
     frequency: number;
     trend: 'improving' | 'stable' | 'declining';
+    examples: string[];
+    suggestedFix: string;
   }>> {
     const recentErrors = await storage.getRecentFeedbackLogs(90); // Last 90 days
     const olderErrors = await storage.getFeedbackLogsInRange(180, 90); // 90-180 days ago
 
-    // Group errors by field and type
-    const errorGroups = new Map<string, { recent: number; older: number }>();
+    // Group errors by field and type with detailed analysis
+    const errorGroups = new Map<string, { 
+      recent: number; 
+      older: number; 
+      examples: Array<{reason: string, corrected: any, original: any}>;
+      recentExamples: Array<{reason: string, corrected: any, original: any}>;
+    }>();
 
-    // Count recent errors
+    // Process recent errors with more detail
     recentErrors.forEach(log => {
       if (log.reason) {
         const key = this.categorizeError(log.reason);
-        const current = errorGroups.get(key) || { recent: 0, older: 0 };
+        const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
         current.recent++;
+        current.recentExamples.push({
+          reason: log.reason,
+          corrected: log.correctedData,
+          original: log.extractedData
+        });
+        if (current.examples.length < 5) {
+          current.examples.push({
+            reason: log.reason,
+            corrected: log.correctedData,
+            original: log.extractedData
+          });
+        }
         errorGroups.set(key, current);
       }
     });
@@ -63,30 +95,37 @@ export class LearningTracker {
     olderErrors.forEach(log => {
       if (log.reason) {
         const key = this.categorizeError(log.reason);
-        const current = errorGroups.get(key) || { recent: 0, older: 0 };
+        const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
         current.older++;
         errorGroups.set(key, current);
       }
     });
 
-    // Calculate trends
-    const commonErrors = Array.from(errorGroups.entries()).map(([key, counts]) => {
+    // Calculate trends and generate AI-powered suggestions
+    const commonErrors = [];
+    for (const [key, counts] of errorGroups.entries()) {
       const [field, errorType] = key.split('::');
       let trend: 'improving' | 'stable' | 'declining' = 'stable';
 
       if (counts.older > 0) {
         const changeRate = (counts.recent - counts.older) / counts.older;
-        if (changeRate < -0.2) trend = 'improving'; // 20% fewer errors
-        else if (changeRate > 0.2) trend = 'declining'; // 20% more errors
+        if (changeRate < -0.2) trend = 'improving';
+        else if (changeRate > 0.2) trend = 'declining';
       }
 
-      return {
+      // Generate AI-powered suggestions for fixes
+      const suggestedFix = await this.generateErrorFix(field, errorType, counts.examples);
+      const exampleReasons = counts.examples.map(e => e.reason).slice(0, 3);
+
+      commonErrors.push({
         field,
         errorType,
         frequency: counts.recent,
-        trend
-      };
-    });
+        trend,
+        examples: exampleReasons,
+        suggestedFix
+      });
+    }
 
     return commonErrors.sort((a, b) => b.frequency - a.frequency);
   }
@@ -202,19 +241,113 @@ export class LearningTracker {
     }
   }
 
+  // Generate AI-powered suggestions for fixing common errors
+  private static async generateErrorFix(field: string, errorType: string, examples: Array<{reason: string, corrected: any, original: any}>): Promise<string> {
+    if (examples.length === 0) return "No specific fix available";
+
+    try {
+      const prompt = `Analyze these extraction errors for the field "${field}" and suggest a specific improvement:
+
+Error Examples:
+${examples.map(e => `
+- Issue: ${e.reason}
+- Original: ${JSON.stringify(e.original?.[field] || 'null')}
+- Corrected: ${JSON.stringify(e.corrected?.[field] || 'null')}
+`).join('\n')}
+
+Provide a concise, actionable suggestion to improve extraction accuracy for this field.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are an AI extraction expert. Provide specific, actionable suggestions to improve data extraction accuracy." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.3,
+        max_tokens: 150
+      });
+
+      return response.choices[0].message.content || "Review extraction patterns for this field";
+    } catch (error) {
+      console.error('Error generating fix suggestion:', error);
+      return "Review extraction patterns for this field";
+    }
+  }
+
+  // Create improved extraction prompts based on feedback
+  static async generateImprovedExtractionPrompt(field: string, commonErrors: any[]): Promise<string> {
+    const relevantErrors = commonErrors.filter(e => e.field === field);
+    if (relevantErrors.length === 0) return "";
+
+    try {
+      const prompt = `Based on these common extraction errors for the "${field}" field, generate an improved extraction instruction:
+
+Common Issues:
+${relevantErrors.map(e => `- ${e.errorType}: ${e.suggestedFix} (${e.frequency} occurrences)`).join('\n')}
+
+Generate a specific instruction that could be added to the extraction prompt to improve accuracy for this field.`;
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          { role: "system", content: "You are an AI prompt engineer. Create specific extraction instructions that prevent common errors." },
+          { role: "user", content: prompt }
+        ],
+        temperature: 0.2,
+        max_tokens: 200
+      });
+
+      return response.choices[0].message.content || "";
+    } catch (error) {
+      console.error('Error generating improved prompt:', error);
+      return "";
+    }
+  }
+
+  // Apply learning from feedback to improve future extractions
+  static async applyLearningFromFeedback(): Promise<void> {
+    const commonErrors = await this.analyzeCommonErrors();
+    
+    // Store learned patterns for future use
+    for (const error of commonErrors.slice(0, 5)) { // Top 5 most common
+      if (error.frequency >= 3) { // Only if seen multiple times
+        try {
+          // You could store these improvements in a database table
+          // or use them to dynamically modify extraction prompts
+          console.log(`Learning applied for ${error.field}: ${error.suggestedFix}`);
+          
+          // Example: Store in a learning cache or database
+          await storage.storeLearningInsight({
+            field: error.field,
+            errorType: error.errorType,
+            suggestedFix: error.suggestedFix,
+            frequency: error.frequency,
+            lastSeen: new Date()
+          });
+        } catch (error) {
+          console.error('Error applying learning:', error);
+        }
+      }
+    }
+  }
+
   private static categorizeError(reason: string): string {
     const lowerReason = reason.toLowerCase();
     
-    if (lowerReason.includes('total') || lowerReason.includes('amount')) {
+    if (lowerReason.includes('total') || lowerReason.includes('amount') || lowerReason.includes('precio')) {
       return 'totalAmount::extraction_error';
-    } else if (lowerReason.includes('vendor') || lowerReason.includes('company')) {
+    } else if (lowerReason.includes('vendor') || lowerReason.includes('company') || lowerReason.includes('proveedor')) {
       return 'vendorName::extraction_error';
-    } else if (lowerReason.includes('date')) {
+    } else if (lowerReason.includes('date') || lowerReason.includes('fecha')) {
       return 'invoiceDate::extraction_error';
-    } else if (lowerReason.includes('tax') || lowerReason.includes('nit')) {
+    } else if (lowerReason.includes('tax') || lowerReason.includes('nit') || lowerReason.includes('iva')) {
       return 'taxId::extraction_error';
-    } else if (lowerReason.includes('number') || lowerReason.includes('invoice')) {
+    } else if (lowerReason.includes('number') || lowerReason.includes('invoice') || lowerReason.includes('factura')) {
       return 'invoiceNumber::extraction_error';
+    } else if (lowerReason.includes('project') || lowerReason.includes('proyecto')) {
+      return 'projectName::extraction_error';
+    } else if (lowerReason.includes('address') || lowerReason.includes('direccion')) {
+      return 'address::extraction_error';
     } else {
       return 'general::extraction_error';
     }

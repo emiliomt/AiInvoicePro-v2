@@ -1848,6 +1848,40 @@ export class DatabaseStorage implements IStorage {
     return result[0]?.count || 0;
   }
 
+  // Store learning insights for future use
+  async storeLearningInsight(insight: {
+    field: string;
+    errorType: string;
+    suggestedFix: string;
+    frequency: number;
+    lastSeen: Date;
+  }) {
+    // Store in settings table as JSON for now
+    const key = `learning_insight_${insight.field}_${insight.errorType}`;
+    await this.updateSetting(key, JSON.stringify(insight));
+  }
+
+  // Get learning insights for a specific field
+  async getLearningInsights(field?: string) {
+    const query = db
+      .select()
+      .from(settings)
+      .where(like(settings.key, 'learning_insight_%'));
+
+    const results = await query;
+    return results
+      .map(r => {
+        try {
+          const insight = JSON.parse(r.value);
+          return { key: r.key, ...insight };
+        } catch (e) {
+          return null;
+        }
+      })
+      .filter(r => r !== null)
+      .filter(r => !field || r.field === field);
+  }
+
   // Classification methods
   async getClassificationKeywords(userId?: string): Promise<Record<string, { id: number; keyword: string; isDefault: boolean }[]>> {
     const conditions = [];

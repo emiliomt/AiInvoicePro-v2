@@ -1673,8 +1673,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Append to JSONL file for potential OpenAI fine-tuning
       fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
 
+      // Apply learning from feedback asynchronously
+      const { LearningTracker } = await import('./services/learningTracker');
+      setImmediate(async () => {
+        try {
+          await LearningTracker.applyLearningFromFeedback();
+          console.log('Learning applied from latest feedback');
+        } catch (error) {
+          console.error('Error applying learning from feedback:', error);
+        }
+      });
+
       res.json({ 
-        message: "Feedback submitted successfully. Thank you for helping improve our AI extraction!",
+        message: "Feedback submitted successfully. The AI is learning from your corrections!",
         feedbackId: feedbackLog.id 
       });
     } catch (error) {
@@ -1956,12 +1967,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const improvementRate = await LearningTracker.calculateImprovementRate();
       const commonErrors = await LearningTracker.analyzeCommonErrors();
       const performanceHistory = await LearningTracker.getPerformanceHistory();
+      const totalFeedback = await storage.getTotalFeedbackCount();
+      const learningInsights = await storage.getLearningInsights();
 
       res.json({
         accuracy,
         improvementRate,
         commonErrors,
-        performanceHistory
+        performanceHistory,
+        learningInsights: {
+          totalFeedbackProcessed: totalFeedback,
+          activelyLearning: learningInsights.length > 0,
+          lastUpdate: learningInsights.length > 0 ? 
+            new Date(Math.max(...learningInsights.map(i => new Date(i.lastSeen).getTime()))) : 
+            null,
+          confidenceImprovement: improvementRate
+        }
       });
     } catch (error) {
       console.error("Error fetching learning metrics:", error);
