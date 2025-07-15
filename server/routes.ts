@@ -3002,17 +3002,26 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const configId = parseInt(req.params.id);
+      
+      if (isNaN(configId) || configId <= 0) {
+        return res.status(400).json({ error: 'Invalid configuration ID' });
+      }
+
       const config = await storage.getInvoiceImporterConfig(configId);
 
       if (!config || config.userId !== (user as any).claims.sub) {
-        return res.status(404).json({ error: 'Import configuration not found' });
+        return res.status(404).json({ error: 'Import configuration not found or access denied' });
       }
 
       await storage.deleteInvoiceImporterConfig(configId);
       res.json({ message: 'Import configuration deleted successfully' });
     } catch (error) {
+      console.error('Error deleting invoice importer config:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({ error: errorMessage });
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Failed to delete import configuration'
+      });
     }
   });
 

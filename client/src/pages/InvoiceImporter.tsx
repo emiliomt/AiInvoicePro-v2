@@ -7,10 +7,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2 } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2 } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 
 interface ImportConfig {
   id: number;
@@ -110,7 +111,7 @@ export default function InvoiceImporter() {
     }
   };
 
-  
+
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -137,12 +138,12 @@ export default function InvoiceImporter() {
           title: "Import Started",
           description: "Invoice import process has been initiated"
         });
-        
+
         // Show progress tracker
         setRunningConfigId(configId);
         setRunningConfigName(config.taskName);
         setShowProgressTracker(true);
-        
+
         fetchLogs();
       } else {
         const errorData = await response.json();
@@ -159,12 +160,12 @@ export default function InvoiceImporter() {
 
   const validateMultipleDailySchedule = () => {
     if (newConfig.schedule !== 'multiple_daily') return true;
-    
+
     const { executionsPerDay, spacingValue, spacingUnit } = newConfig;
     const spacingInMinutes = spacingUnit === 'hours' ? spacingValue * 60 : spacingValue;
     const totalTimeRequired = (executionsPerDay - 1) * spacingInMinutes;
     const minutesInDay = 24 * 60;
-    
+
     if (totalTimeRequired >= minutesInDay) {
       toast({
         title: "Invalid Schedule",
@@ -173,7 +174,7 @@ export default function InvoiceImporter() {
       });
       return false;
     }
-    
+
     return true;
   };
 
@@ -245,6 +246,31 @@ export default function InvoiceImporter() {
     }
   };
 
+  const handleDeleteConfig = async (configId: number) => {
+    try {
+        const response = await fetch(`/api/invoice-importer/configs/${configId}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            toast({
+                title: "Configuration Deleted",
+                description: "Import configuration deleted successfully"
+            });
+            fetchConfigs(); // Refresh configurations after deletion
+        } else {
+            const errorData = await response.json();
+            throw new Error(errorData.error || 'Failed to delete configuration');
+        }
+    } catch (error) {
+        toast({
+            title: "Error",
+            description: error instanceof Error ? error.message : "Failed to delete configuration",
+            variant: "destructive"
+        });
+    }
+};
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -271,7 +297,7 @@ export default function InvoiceImporter() {
             <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
           </TabsList>
 
-          
+
 
           <TabsContent value="configurations" className="space-y-4">
             {configs.length === 0 ? (
@@ -289,11 +315,31 @@ export default function InvoiceImporter() {
                     <CardHeader>
                       <div className="flex justify-between items-center">
                         <CardTitle>{config.taskName}</CardTitle>
-                        <div>
+                        <div className="flex items-center space-x-2">
                           <Button variant="outline" size="sm" onClick={() => handleRunNow(config.id)}>
                             <Play className="w-4 h-4 mr-2" />
                             Run Now
                           </Button>
+                          <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button variant="destructive" size="sm">
+                                        <Trash2 className="w-4 h-4 mr-2" />
+                                        Delete
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            This action cannot be undone. This will permanently delete the configuration.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                        <AlertDialogAction onClick={() => handleDeleteConfig(config.id)}>Delete</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
                         </div>
                       </div>
                     </CardHeader>
@@ -427,7 +473,7 @@ export default function InvoiceImporter() {
               {newConfig.schedule === 'multiple_daily' && (
                 <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
                   <h4 className="font-medium text-sm text-gray-700">Multiple Daily Execution Settings</h4>
-                  
+
                   <div>
                     <Label htmlFor="executions-per-day">Number of executions per day</Label>
                     <Input
@@ -519,3 +565,366 @@ export default function InvoiceImporter() {
     </div>
   );
 }
+```
+
+```tool_code
+import React, { useState, useEffect } from 'react';
+import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
+import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
+import { Label } from '../components/ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Badge } from '../components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2 } from 'lucide-react';
+import { useToast } from '../hooks/use-toast';
+import Header from '@/components/Header';
+import { ProgressTracker } from '../components/ProgressTracker';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+
+interface ImportConfig {
+  id: number;
+  taskName: string;
+  connectionId: number;
+  fileTypes: string;
+  scheduleType: string;
+  lastRun: string | null;
+  nextRun: string | null;
+  isActive: boolean;
+  connection?: {
+    id: number;
+    name: string;
+    baseUrl: string;
+    isActive: boolean;
+  };
+}
+
+interface ImportLog {
+  id: number;
+  configId: number;
+  timestamp: string;
+  status: 'success' | 'error' | 'warning';
+  message: string;
+  documentsProcessed: number;
+  errorsCount: number;
+}
+
+interface ERPConnection {
+  id: number;
+  name: string;
+  baseUrl: string;
+  isActive: boolean;
+}
+
+export default function InvoiceImporter() {
+  const [configs, setConfigs] = useState<ImportConfig[]>([]);
+  const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
+  const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
+  const [showCreateDialog, setShowCreateDialog] = useState(false);
+  const [activeTab, setActiveTab] = useState('configurations');
+  const [newConfig, setNewConfig] = useState({
+    name: '',
+    connectionId: '',
+    fileTypes: 'pdf',
+    schedule: 'once',
+    executionsPerDay: 3,
+    spacingValue: 120,
+    spacingUnit: 'minutes',
+    startTime: '09:00'
+  });
+  const [showProgressTracker, setShowProgressTracker] = useState(false);
+  const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
+  const [runningConfigName, setRunningConfigName] = useState<string>('');
+  const { toast } = useToast();
+
+  useEffect(() => {
+    fetchConfigs();
+    fetchLogs();
+    fetchERPConnections();
+  }, []);
+
+  const fetchConfigs = async () => {
+    try {
+      const response = await fetch('/api/invoice-importer/configs');
+      if (response.ok) {
+        const data = await response.json();
+        setConfigs(data);
+      }
+    } catch (error) {
+      console.error('Error fetching configs:', error);
+    }
+  };
+
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch('/api/invoice-importer/logs');
+      if (response.ok) {
+        const data = await response.json();
+        setLogs(data);
+      }
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    }
+  };
+
+  const fetchERPConnections = async () => {
+    try {
+      const response = await fetch('/api/erp/connections');
+      if (response.ok) {
+        const data = await response.json();
+        setErpConnections(data.filter((conn: ERPConnection) => conn.isActive));
+      }
+    } catch (error) {
+      console.error('Error fetching ERP connections:', error);
+    }
+  };
+
+
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'active': return 'bg-green-100 text-green-800';
+      case 'paused': return 'bg-yellow-100 text-yellow-800';
+      case 'error': return 'bg-red-100 text-red-800';
+      case 'success': return 'bg-green-100 text-green-800';
+      case 'warning': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
+  const handleRunNow = async (configId: number) => {
+    const config = configs.find(c => c.id === configId);
+    if (!config) return;
+
+    try {
+      const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Import Started",
+          description: "Invoice import process has been initiated"
+        });
+
+        // Show progress tracker
+        setRunningConfigId(configId);
+        setRunningConfigName(config.taskName);
+        setShowProgressTracker(true);
+
+        fetchLogs();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start import');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to start import process",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const validateMultipleDailySchedule = () => {
+    if (newConfig.schedule !== 'multiple_daily') return true;
+
+    const { executionsPerDay, spacingValue, spacingUnit } = newConfig;
+    const spacingInMinutes = spacingUnit === 'hours' ? spacingValue * 60 : spacingValue;
+    const totalTimeRequired = (executionsPerDay - 1) * spacingInMinutes;
+    const minutesInDay = 24 * 60;
+
+    if (totalTimeRequired >= minutesInDay) {
+      toast({
+        title: "Invalid Schedule",
+        description: `Cannot fit ${executionsPerDay} executions with ${spacingValue} ${spacingUnit} spacing in a single day`,
+        variant: "destructive"
+      });
+      return false;
+    }
+
+    return true;
+  };
+
+  const handleCreateConfig = async () => {
+    if (!newConfig.name || !newConfig.connectionId) {
+      toast({
+        title: "Missing Information",
+        description: "Please fill in all required fields",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    if (!validateMultipleDailySchedule()) {
+      return;
+    }
+
+    try {
+      const configData = {
+        taskName: newConfig.name,
+        connectionId: parseInt(newConfig.connectionId),
+        fileTypes: newConfig.fileTypes,
+        scheduleType: newConfig.schedule,
+        ...(newConfig.schedule === 'multiple_daily' && {
+          scheduleConfig: {
+            executionsPerDay: newConfig.executionsPerDay,
+            spacingValue: newConfig.spacingValue,
+            spacingUnit: newConfig.spacingUnit,
+            startTime: newConfig.startTime
+          }
+        })
+      };
+
+      const response = await fetch('/api/invoice-importer/configs', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(configData)
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Configuration Created",
+          description: "Import configuration created successfully"
+        });
+        setShowCreateDialog(false);
+        setNewConfig({ 
+          name: '', 
+          connectionId: '', 
+          fileTypes: 'pdf', 
+          schedule: 'once',
+          executionsPerDay: 3,
+          spacingValue: 120,
+          spacingUnit: 'minutes',
+          startTime: '09:00'
+        });
+        fetchConfigs();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create configuration');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to create configuration",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const handleDeleteConfig = async (configId: number) => {
+    try {
+      const response = await fetch(`/api/invoice-importer/configs/${configId}`, {
+        method: 'DELETE'
+      });
+      if (response.ok) {
+        toast({
+          title: "Configuration Deleted",
+          description: "Import configuration deleted successfully"
+        });
+        fetchConfigs();
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to delete configuration');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to delete configuration",
+        variant: "destructive"
+      });
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      <Header />
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="space-y-6">
+          <div className="flex justify-between items-center">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
+              <p className="text-gray-600 mt-2">Configure automated ERP invoice import processes</p>
+            </div>
+            <Button
+              onClick={() => setShowCreateDialog(true)}
+              className="flex items-center space-x-2"
+            >
+              <Plus className="w-4 h-4" />
+              <span>Create Import Configuration</span>
+            </Button>
+          </div>
+
+          <Tabs value={activeTab} onValueChange={setActiveTab}>
+            <TabsList className="grid w-full grid-cols-3">
+              <TabsTrigger value="configurations">Configurations</TabsTrigger>
+              <TabsTrigger value="logs">Import Logs</TabsTrigger>
+              <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="configurations" className="space-y-4">
+              {configs.length === 0 ? (
+                <Card>
+                  <CardContent className="text-center py-8">
+                    <Settings className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+                    <p className="text-gray-600">No import configurations found</p>
+                    <p className="text-sm text-gray-500 mt-2">Create your first configuration to start importing invoices automatically</p>
+                  </CardContent>
+                </Card>
+              ) : (
+                <div className="grid gap-4">
+                  {configs.map((config) => (
+                    <Card key={config.id}>
+                      <CardHeader>
+                        <div className="flex justify-between items-center">
+                          <CardTitle>{config.taskName}</CardTitle>
+                          <div className="flex items-center space-x-2">
+                            <Button variant="outline" size="sm" onClick={() => handleRunNow(config.id)}>
+                              <Play className="w-4 h-4 mr-2" />
+                              Run Now
+                            </Button>
+                            <AlertDialog>
+                              <AlertDialogTrigger asChild>
+                                <Button variant="destructive" size="sm">
+                                  <Trash2 className="w-4 h-4 mr-2" />
+                                  Delete
+                                </Button>
+                              </AlertDialogTrigger>
+                              <AlertDialogContent>
+                                <AlertDialogHeader>
+                                  <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                  <AlertDialogDescription>
+                                    This action cannot be undone. This will permanently delete the configuration.
+                                  </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                  <AlertDialogAction onClick={() => handleDeleteConfig(config.id)}>Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                              </AlertDialogContent>
+                            </AlertDialog>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      <CardContent>
+                        <p>ERP Connection: {config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
+                        <p>File Types: {config.fileTypes}</p>
+                        <p>Schedule: {config.scheduleType}</p>
+                        <div className="flex justify-between mt-4">
+                          <p>Last Run: {config.lastRun || 'Never'}</p>
+                          <p>Next Run: {config.nextRun || 'Not Scheduled'}</p>
+                        </div>
+                        <Badge className={getStatusColor(config.status)}>{config.status}</Badge>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </TabsContent>
+
+            <TabsContent value="logs" className="space-y-4">
+              {logs.length ===
