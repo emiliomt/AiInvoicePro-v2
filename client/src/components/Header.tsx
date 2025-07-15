@@ -1,3 +1,4 @@
+
 import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -9,7 +10,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useIsMobile } from "@/hooks/use-mobile";
-import { FileText, Bell, ChevronDown, LogOut, User, Settings, Brain, Bot, Zap, Menu, X, ChevronRight } from "lucide-react";
+import { FileText, Bell, ChevronDown, LogOut, User, Settings, Brain, Bot, Zap, Menu, ChevronRight } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useState } from "react";
 
@@ -19,7 +20,6 @@ export default function Header() {
   const isMobile = useIsMobile();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
-  // Type the user object properly
   const typedUser = user as any;
 
   const isActiveRoute = (path: string) => {
@@ -110,7 +110,6 @@ export default function Header() {
     <header className="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
-          {/* Logo and Brand */}
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
               <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
@@ -120,7 +119,6 @@ export default function Header() {
             </div>
           </div>
 
-          {/* Mobile Menu Button */}
           {isMobile && (
             <div className="flex items-center space-x-2">
               <Button variant="ghost" size="sm" className="p-2 text-gray-400 hover:text-gray-600">
@@ -134,7 +132,6 @@ export default function Header() {
                 </SheetTrigger>
                 <SheetContent side="right" className="w-80 p-0 bg-white">
                   <div className="flex flex-col h-full">
-                    {/* User Profile Section */}
                     <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-primary-50 to-primary-100">
                       <div className="flex items-center space-x-3">
                         <Avatar className="w-12 h-12 ring-2 ring-white">
@@ -152,7 +149,6 @@ export default function Header() {
                       </div>
                     </div>
 
-                    {/* Navigation Menu */}
                     <div className="flex-1 overflow-y-auto">
                       {menuItems.map((section, sectionIndex) => (
                         <div key={sectionIndex} className="border-b border-gray-200 last:border-b-0">
@@ -183,7 +179,6 @@ export default function Header() {
                       ))}
                     </div>
 
-                    {/* User Actions */}
                     <div className="border-t border-gray-200 p-4 space-y-1 bg-gray-50">
                       <Link 
                         href="/profile"
@@ -218,9 +213,7 @@ export default function Header() {
             </div>
           )}
 
-          {/* Desktop Navigation */}
           <nav className="hidden md:flex space-x-6 lg:space-x-8 ml-8">
-            {/* Dashboard Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
@@ -242,11 +235,11 @@ export default function Header() {
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            
             <Link href="/invoices" className={getLinkClassName("/invoices")}>
               Invoices
             </Link>
 
-            {/* Information Validation Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
@@ -268,11 +261,10 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Project Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
-                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher") || isActiveRoute("/petty-cash") || isActiveRoute("/classification")
+                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher") || isActiveRoute("/petty-cash") || isActiveRoute("/line-item-classification")
                     ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
@@ -290,13 +282,12 @@ export default function Header() {
                 <DropdownMenuItem onClick={() => window.location.href = '/petty-cash'}>
                   Petty Cash
                 </DropdownMenuItem>
-                <DropdownMenuItem onClick={() => window.location.href = '/classification'}>
+                <DropdownMenuItem onClick={() => window.location.href = '/line-item-classification'}>
                   Line Item Classification
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* ERP Automation Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
@@ -321,7 +312,6 @@ export default function Header() {
               </DropdownMenuContent>
             </DropdownMenu>
 
-            {/* Purchases Dropdown Menu */}
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-16 transition-colors text-sm font-medium whitespace-nowrap ${
@@ -348,7 +338,6 @@ export default function Header() {
             </Link>
           </nav>
 
-          {/* Desktop User Menu */}
           {!isMobile && (
             <div className="flex items-center space-x-4">
               <Button variant="ghost" size="sm" className="p-2 text-gray-400 hover:text-gray-600">
