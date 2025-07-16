@@ -155,7 +155,7 @@ class InvoiceImporterService {
           progress.status = 'failed';
           progress.message = `Import failed: ${error.message}`;
           progress.completedAt = new Date();
-          
+
           // Update the current step to failed
           const currentStep = progress.steps.find(s => s.id === progress.currentStep);
           if (currentStep) {
@@ -188,7 +188,7 @@ class InvoiceImporterService {
         progress.status = 'failed';
         progress.message = message;
         progress.completedAt = new Date();
-        
+
         // Update the current step to failed
         const currentStep = progress.steps.find(s => s.id === progress.currentStep);
         if (currentStep) {
@@ -252,7 +252,7 @@ class InvoiceImporterService {
           progress.currentStep = 1;
           progress.steps = this.initializeSteps();
           await this.updateStepStatus(logId, progress, 1, 'running', `Retrying import (attempt ${attempt + 1}/${maxRetries})...`);
-          
+
           // Wait before retry
           await this.simulateDelay(3000);
         }
@@ -281,7 +281,7 @@ class InvoiceImporterService {
     // Step 2: Generate optimized RPA script
     await this.logStep(logId, 'Generating automation script', 'running');
     await this.updateStepStatus(logId, progress, 2, 'running');
-    const taskDescription = `Quick login and navigate to FE module. Extract invoice document list from Documentos recibidos section. Focus on document numbers and download links only.`;
+    const taskDescription = `Quick login and navigate to FE module. Extract invoice document list from Documentos recibidos section. Focus on document numbers, download links, and any project/contract references in document descriptions.`;
 
     try {
       const script = await erpAutomationService.generateRPAScript(taskDescription, {

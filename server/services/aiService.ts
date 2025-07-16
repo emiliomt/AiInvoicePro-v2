@@ -289,7 +289,9 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
 - For totalAmount: Find the largest monetary amount, usually after "Total:" or "Total a Pagar:"
 - For taxId: Look for NIT/RFC patterns - numbers with dashes (e.g., 12-3456789-1)
 - For invoiceDate: Find date near invoice number, convert to YYYY-MM-DD format
-- For projectName: Look for construction project names, "Obra:", or building descriptions`;
+- For projectName: CRITICAL - Look for these patterns: "PROYECTO:", "OBRA:", "Project:", "CONTRACT:", "CONTRATO:", project codes, construction site names, building names, or any reference to specific work locations
+- For projectAddress: Look for delivery addresses, work site addresses, or addresses mentioned in project context that differ from company addresses
+- For projectCity: Extract city from project/delivery address or look for city names in project descriptions`;
       }
     }
 
@@ -321,11 +323,12 @@ ${learningImprovements}
 6. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>, <cbc:CountrySubentity>
 7. INVOICE DETAILS: Look for <cbc:ID>, <cbc:UUID>, <cbc:Description>, <cbc:Note>
 8. LINE ITEMS: Extract from <cac:InvoiceLine>, <cac:Item>, <cbc:InvoicedQuantity>, <cbc:Price>
+9. PROJECT INFORMATION: Look for project references in notes, descriptions, delivery addresses, and contract references
 
 FULL XML CONTENT TO ANALYZE:
 ${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for length]' : ''}
 
-🎯 ENHANCED FIELD MAPPING (FOCUS ON AMOUNTS):
+🎯 ENHANCED FIELD MAPPING (FOCUS ON AMOUNTS AND PROJECT EXTRACTION):
 - totalAmount: PRIORITY ORDER: <cbc:TaxInclusiveAmount> > <cbc:PayableAmount> > <cbc:TaxExclusiveAmount> > any <cbc:*Amount> with highest value
 - taxAmount: PRIORITY ORDER: <cbc:TaxAmount> > <cbc:TaxableAmount> > sum of all tax subtotals
 - subtotal: PRIORITY ORDER: <cbc:TaxExclusiveAmount> > <cbc:LineExtensionAmount> > <cbc:BaseAmount> > totalAmount minus taxAmount
@@ -341,9 +344,9 @@ ${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for len
 - dueDate: <cbc:DueDate> if available
 - concept: <cbc:Note> OR <cbc:Description> at document level
 - notes: Any additional <cbc:Note> or <cbc:AdditionalInformation>
-- projectName: FIRST search for "Proyecto" text pattern and extract the phrase immediately following it, THEN try <cbc:ID> in <cac:ProjectReference> OR contract/order references
-- projectAddress: <cac:DeliveryAddress> details if different from parties
-- projectCity: <cbc:CityName> from delivery address
+- projectName: EXTRACT project names using these methods in order: 1) Search for text patterns like "Proyecto:", "Obra:", "Proyecto No:", "Project:", followed by project name, 2) Look in <cbc:Note> fields for project references, 3) Check <cac:ProjectReference><cbc:ID>, 4) Look in <cac:OrderReference> or <cac:ContractDocumentReference> tags, 5) Search line item descriptions for project mentions
+- projectAddress: EXTRACT from <cac:DeliveryAddress> OR look for address patterns in notes/descriptions that differ from vendor/buyer addresses
+- projectCity: <cbc:CityName> from <cac:DeliveryAddress> OR extract city from project address if different from vendor/buyer cities
 - descriptionSummary: Concatenate item descriptions from <cac:InvoiceLine>
 
 CRITICAL AMOUNT EXTRACTION LOGIC:
@@ -423,9 +426,9 @@ ${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
 - taxAmount: IVA/Tax amount, after "IVA:", "Tax:"
 - subtotal: Base amount before tax
 - currency: Look for COP, USD, MXN, EUR symbols/text
-- projectName: Construction project name or "Obra"
-- projectAddress: Specific work site address, different from vendor address
-- projectCity: City where project is located
+- projectName: ESSENTIAL - Search for these patterns: "PROYECTO:", "OBRA:", "PROJECT:", "CONTRATO:", construction project names, building names, contract references, work order numbers, or any specific location/project identifiers
+- projectAddress: Look for delivery addresses ("Dirección de entrega:", "Lugar de entrega:", "Site:", "Sitio:"), work site addresses, or any address different from vendor/buyer addresses
+- projectCity: Extract city from project/delivery context, or look for city names mentioned with project information
 
 Extract amounts as clean numbers: "1,234.56" → "1234.56"
 If field not found, return null (not empty string)

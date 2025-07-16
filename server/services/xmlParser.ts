@@ -264,8 +264,49 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     const concept = extractTextFromXMLTag(xmlContent, 'Note') ||
                    extractTextFromXMLTag(xmlContent, 'Description');
     
-    const projectName = extractTextFromXMLTag(xmlContent, 'ProjectReference') ||
-                       extractTextFromXMLTag(xmlContent, 'OrderReference');
+    // Enhanced project name extraction
+    let projectName = extractTextFromXMLTag(xmlContent, 'ProjectReference') ||
+                     extractTextFromXMLTag(xmlContent, 'OrderReference') ||
+                     extractTextFromXMLTag(xmlContent, 'ContractDocumentReference');
+    
+    // If no project reference found, search in notes and descriptions for project patterns
+    if (!projectName) {
+      const noteContent = concept || '';
+      const projectPatterns = [
+        /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,]+)/i,
+        /(?:PROYECTO|OBRA|PROJECT)\s+([A-Z0-9\-\s]+)/i,
+        /CONTRATO\s+NO\.?\s*([A-Z0-9\-]+)/i
+      ];
+      
+      for (const pattern of projectPatterns) {
+        const match = noteContent.match(pattern);
+        if (match && match[1]) {
+          projectName = match[1].trim();
+          break;
+        }
+      }
+    }
+    
+    // Extract delivery/project address information
+    let projectAddress = null;
+    let projectCity = null;
+    
+    // Look for delivery address that might be project location
+    const deliveryPattern = /<cac:Delivery[^>]*>(.*?)<\/cac:Delivery>/gis;
+    const deliveryMatch = deliveryPattern.exec(xmlContent);
+    
+    if (deliveryMatch) {
+      const deliveryContent = deliveryMatch[1];
+      const deliveryStreet = extractTextFromXMLTag(deliveryContent, 'StreetName');
+      const deliveryCity = extractTextFromXMLTag(deliveryContent, 'CityName');
+      const deliveryState = extractTextFromXMLTag(deliveryContent, 'CountrySubentity');
+      
+      if (deliveryStreet) {
+        const addressParts = [deliveryStreet, deliveryCity, deliveryState].filter(Boolean);
+        projectAddress = addressParts.join(', ');
+        projectCity = deliveryCity;
+      }
+    }
     
     // Extract line items
     const lineItems = extractLineItems(xmlContent);
@@ -292,8 +333,8 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       buyerTaxId: customerInfo.taxId,
       buyerAddress: customerInfo.address,
       descriptionSummary,
-      projectAddress: null, // Usually same as delivery address in XML
-      projectCity: null,
+      projectAddress,
+      projectCity,
       notes: concept,
       lineItems,
       confidenceScore: '0.95' // High confidence for XML parsing
