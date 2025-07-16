@@ -161,67 +161,99 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
     }
 
     // Detect if this is XML content
-    const isXML = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<Factura');
+    const isXML = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<Factura') || ocrText.includes('<cbc:') || ocrText.includes('<cac:');
     console.log(`Processing ${isXML ? 'XML' : 'OCR'} content for extraction`);
     
     const prompt = isXML ? 
-      `You are an expert XML invoice parser specialized in Latin American electronic invoices. Extract structured data from this XML document:
+      `You are an expert XML invoice parser specialized in Latin American electronic invoices (UBL 2.1, DIAN Colombia format). Extract ALL possible structured data from this XML document:
 
 ${learningImprovements}
 
-🔍 UBL XML EXTRACTION RULES:
-1. VENDOR INFO: Look for <cbc:RegistrationName> within supplier/emisor sections
-2. TAX IDs: Find <cbc:CompanyID> tags - extract only numeric values
-3. AMOUNTS: Extract from <cbc:TaxInclusiveAmount>, <cbc:TaxAmount>, <cbc:TaxExclusiveAmount>
-4. DATES: Find <cbc:IssueDate>, <cbc:Date> tags, convert to YYYY-MM-DD
-5. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>
-6. INVOICE NUMBER: Look for <cbc:ID> at document level
+🔍 COMPREHENSIVE XML EXTRACTION RULES:
+1. VENDOR/SUPPLIER INFO: Look for <cac:AccountingSupplierParty>, <cac:SenderParty>, <cac:PartyTaxScheme>
+2. CUSTOMER/BUYER INFO: Look for <cac:AccountingCustomerParty>, <cac:ReceiverParty>
+3. TAX IDs: Find <cbc:CompanyID>, <cbc:IdentificationCode> - extract complete values including dashes
+4. AMOUNTS: Extract from <cbc:TaxInclusiveAmount>, <cbc:TaxAmount>, <cbc:TaxExclusiveAmount>, <cbc:PayableAmount>, <cbc:LineExtensionAmount>
+5. DATES: Find <cbc:IssueDate>, <cbc:DueDate>, <cbc:Date> tags, convert to YYYY-MM-DD
+6. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>, <cbc:CountrySubentity>
+7. INVOICE DETAILS: Look for <cbc:ID>, <cbc:UUID>, <cbc:Description>, <cbc:Note>
+8. LINE ITEMS: Extract from <cac:InvoiceLine>, <cac:Item>, <cbc:InvoicedQuantity>, <cbc:Price>
 
-UBL XML CONTENT TO ANALYZE:
-${ocrText.substring(0, 8000)} ${ocrText.length > 8000 ? '...[truncated]' : ''}
+FULL XML CONTENT TO ANALYZE:
+${ocrText.substring(0, 12000)} ${ocrText.length > 12000 ? '...[truncated for length]' : ''}
 
-🎯 UBL FIELD MAPPING GUIDE:
-- vendorName: <cbc:RegistrationName> within <cac:AccountingSupplierParty> OR <cac:SenderParty> (for DIAN attachments)
-- taxId: <cbc:CompanyID> within supplier party sections
-- vendorAddress: <cbc:StreetName>, <cbc:CityName> within supplier address
-- companyName: <cbc:RegistrationName> within <cac:AccountingCustomerParty> OR <cac:ReceiverParty> (for DIAN attachments)
-- buyerTaxId: <cbc:CompanyID> within customer/receiver party sections
-- invoiceNumber: <cbc:ID> at root level OR within <cac:DocumentReference> (look for "ASOM" prefixed IDs)
-- invoiceDate: <cbc:IssueDate> or <cbc:Date> at document level
-- totalAmount: <cbc:TaxInclusiveAmount>, <cbc:PayableAmount> (look within embedded invoice sections)
-- taxAmount: <cbc:TaxAmount> within tax sections
-- subtotal: <cbc:TaxExclusiveAmount>, <cbc:LineExtensionAmount>
-- currency: currencyID attribute in amount tags (usually COP for Colombian invoices)
-- projectName: <cbc:ID> within <cac:ProjectReference> or contract references
-- projectAddress: <cbc:StreetName> within delivery address
-- projectCity: <cbc:CityName> within delivery address
+🎯 ENHANCED FIELD MAPPING (extract ALL available data):
+- vendorName: <cbc:RegistrationName> in <cac:AccountingSupplierParty> OR <cac:Party> within supplier context
+- taxId: <cbc:CompanyID> in supplier's <cac:PartyTaxScheme> or <cac:PartyIdentification>
+- vendorAddress: Complete address from supplier's <cac:PostalAddress>: <cbc:StreetName>, <cbc:CityName>, <cbc:CountrySubentity>
+- companyName: <cbc:RegistrationName> in <cac:AccountingCustomerParty> OR buyer party
+- buyerTaxId: <cbc:CompanyID> in customer's <cac:PartyTaxScheme>
+- buyerAddress: Complete address from customer's <cac:PostalAddress>
+- invoiceNumber: <cbc:ID> at document root level OR <cbc:UUID>
+- invoiceDate: <cbc:IssueDate> at document level
+- dueDate: <cbc:DueDate> if available
+- totalAmount: <cbc:TaxInclusiveAmount> OR <cbc:PayableAmount> (primary total)
+- taxAmount: <cbc:TaxAmount> from <cac:TaxTotal>
+- subtotal: <cbc:TaxExclusiveAmount> OR <cbc:LineExtensionAmount>
+- currency: currencyID attribute from any amount field (COP, USD, EUR, etc.)
+- concept: <cbc:Note> OR <cbc:Description> at document level
+- notes: Any additional <cbc:Note> or <cbc:AdditionalInformation>
+- projectName: <cbc:ID> in <cac:ProjectReference> OR contract/order references
+- projectAddress: <cac:DeliveryAddress> details if different from parties
+- projectCity: <cbc:CityName> from delivery address
+- descriptionSummary: Concatenate item descriptions from <cac:InvoiceLine>
 
-CRITICAL EXTRACTION LOGIC:
-1. This may be a DIAN attachment document - look for both sender/receiver AND supplier/customer patterns
-2. If SenderParty exists, it's likely the tax authority (DIAN) - ReceiverParty is the actual company
-3. Look for embedded invoice data within XML content or DocumentReference sections
-4. Extract text content from UBL tags, ignore XML namespaces and attributes
-5. For Colombian invoices, assume COP currency if not specified
-6. Return null for fields not found in UBL structure
+CRITICAL EXTRACTION LOGIC FOR DIAN/UBL:
+1. DIAN Attachment Pattern: If document contains <cac:SenderParty> with tax authority info, focus on <cac:ReceiverParty> for actual business data
+2. Multi-level XML: Look for nested invoice data in <cac:DocumentReference> or <cac:AttachedDocument>
+3. Line Items Extraction: Process ALL <cac:InvoiceLine> elements for complete item list
+4. Tax Calculations: Extract tax breakdowns from <cac:TaxSubtotal> within <cac:TaxTotal>
+5. Currency Detection: Check currencyID attributes on amount fields
+6. Date Format: Convert all dates to YYYY-MM-DD format
+7. Comprehensive Search: Don't stop at first match - extract ALL available fields
 
-EXAMPLE DATA FROM SAMPLE:
-- From SenderParty: "Unidad Especial Dirección de Impuestos y Aduanas Nacionales" (800197268)
-- From ReceiverParty: "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (900478552)
-- Invoice ID: "5538144" or "ASOM2678"
-- Issue Date: "2025-06-09"
+ADVANCED PARSING INSTRUCTIONS:
+- Extract text content from XML tags, preserve important attributes like currencyID
+- Handle multiple tax schemes and party identifications
+- Look for both English and Spanish tag variations
+- Process embedded documents and references
+- Extract complete line item details with quantities, prices, and descriptions
+- Capture all monetary amounts with proper decimal handling
+- Preserve important metadata like document UUID, version, profile
 
-Return valid JSON only:
+Return complete JSON with ALL extracted fields (use null only if truly not found):
 
-SPECIFIC INSTRUCTIONS FOR THIS DOCUMENT:
-Based on the sample data visible, extract:
-- vendorName: Should be "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (from ReceiverParty)
-- companyName: Should be "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD" (main company)
-- taxId: Should be "900478552" (from ReceiverParty CompanyID)
-- invoiceNumber: Should be "ASOM2678" (from DocumentReference ID)
-- invoiceDate: Should be "2025-06-09" (from IssueDate)
-- currency: Should be "COP" (Colombian pesos)
-
-If you find these exact values in the XML, extract them. If not, look for similar patterns.` :
+{
+  "vendorName": "extracted supplier company name",
+  "invoiceNumber": "document ID or UUID",
+  "invoiceDate": "YYYY-MM-DD format",
+  "dueDate": "YYYY-MM-DD or null",
+  "totalAmount": "final amount as decimal string",
+  "taxAmount": "tax total as decimal string",
+  "subtotal": "pre-tax amount as decimal string",
+  "currency": "currency code from XML",
+  "taxId": "supplier tax ID",
+  "companyName": "customer company name",
+  "concept": "document description or note",
+  "projectName": "project reference if any",
+  "vendorAddress": "complete supplier address",
+  "buyerTaxId": "customer tax ID",
+  "buyerAddress": "complete customer address",
+  "descriptionSummary": "summary of all line items",
+  "projectAddress": "delivery address if different",
+  "projectCity": "delivery city",
+  "notes": "additional notes or information",
+  "lineItems": [
+    {
+      "description": "item description",
+      "quantity": "quantity as string",
+      "unitPrice": "unit price as string",
+      "totalPrice": "line total as string",
+      "itemType": "item classification if available"
+    }
+  ],
+  "confidenceScore": "0.95"
+}` :
       `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
 
 ${learningImprovements}
