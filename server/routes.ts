@@ -1133,16 +1133,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadedInvoices: any[] = [];
 
-        // Define the processing wrapper function first
-        const processInvoiceWrapper = async (invoice: any, fileBuffer: Buffer) => {
-          try {
-            await processInvoiceAsync(invoice, fileBuffer);
-          } catch (error) {
-            console.error(`Failed to process invoice ${invoice.id}:`, error);
-            // Error is already handled in processInvoiceAsync
-          }
-        };
-
         // Process invoice files in parallel for better performance
         const processPromises = invoiceFiles.map(async (file) => {
           try {
@@ -1163,10 +1153,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
             });
 
             // Start processing immediately using setImmediate to avoid blocking
-            setImmediate(() => {
-              processInvoiceWrapper(invoice, file.buffer).catch(error => {
-                console.error(`Unhandled error in invoice processing for ${invoice.id}:`, error);
-              });
+            setImmediate(async () => {
+              try {
+                await processInvoiceAsync(invoice, file.buffer);
+              } catch (error) {
+                console.error(`Failed to process invoice ${invoice.id}:`, error);
+              }
             });
 
             return invoice;
