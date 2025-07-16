@@ -1133,6 +1133,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         const uploadedInvoices: any[] = [];
 
+        // Define the processing wrapper function first
+        const processInvoiceWrapper = async (invoice: any, fileBuffer: Buffer) => {
+          try {
+            await processInvoiceAsync(invoice, fileBuffer);
+          } catch (error) {
+            console.error(`Failed to process invoice ${invoice.id}:`, error);
+            // Error is already handled in processInvoiceAsync
+          }
+        };
+
         // Process invoice files in parallel for better performance
         const processPromises = invoiceFiles.map(async (file) => {
           try {
@@ -1172,16 +1182,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
             uploadedInvoices.push(result.value);
           }
         });
-
-        // Process invoices after upload completion - now defined outside the loop
-        const processInvoiceWrapper = async (invoice: any, fileBuffer: Buffer) => {
-          try {
-            await processInvoiceAsync(invoice, fileBuffer);
-          } catch (error) {
-            console.error(`Failed to process invoice ${invoice.id}:`, error);
-            // Error is already handled in processInvoiceAsync
-          }
-        };
 
         res.json({ 
           message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
