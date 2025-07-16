@@ -34,12 +34,39 @@ export default function PettyCash() {
     },
   });
 
+  // Fetch user settings to get default currency
+  const { data: userSettings } = useQuery({
+    queryKey: ['userSettings'],
+    queryFn: async () => {
+      const response = await fetch('/api/settings/user_preferences');
+      if (!response.ok) {
+        return { defaultCurrency: 'USD' }; // Default fallback
+      }
+      const data = await response.json();
+      return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
+    },
+  });
+
+  const defaultCurrency = userSettings?.defaultCurrency || 'USD';
+  
+  const getCurrencySymbol = (currency: string) => {
+    switch (currency) {
+      case 'USD': return '$';
+      case 'MXN': return '$';
+      case 'COP': return '$';
+      case 'EUR': return '€';
+      case 'GBP': return '£';
+      default: return '$';
+    }
+  };
+
   const formatCurrency = (amount: string | number) => {
+    const symbol = getCurrencySymbol(defaultCurrency);
     if (typeof amount === 'string') {
       const num = parseFloat(amount);
-      return isNaN(num) ? '$0.00' : `$${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+      return isNaN(num) ? `${symbol}0.00` : `${symbol}${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
     }
-    return `$${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    return `${symbol}${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
   };
 
   return (

@@ -1,12 +1,11 @@
-
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { Settings } from "lucide-react";
+import { Settings, Edit, Save, X } from "lucide-react";
 
 export default function ThresholdConfig() {
   const [isEditing, setIsEditing] = useState(false);
@@ -14,38 +13,59 @@ export default function ThresholdConfig() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch current threshold setting
-  const { data: thresholdSetting, isLoading } = useQuery({
-    queryKey: ["/api/settings/petty_cash_threshold"],
-    select: (data: any) => data?.value || "1000",
+  // Fetch user settings to get default currency
+  const { data: userSettings } = useQuery({
+    queryKey: ['userSettings'],
+    queryFn: async () => {
+      const response = await fetch('/api/settings/user_preferences');
+      if (!response.ok) {
+        return { defaultCurrency: 'USD' }; // Default fallback
+      }
+      const data = await response.json();
+      return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
+    },
   });
 
-  // Update threshold mutation
-  const updateThresholdMutation = useMutation({
-    mutationFn: async (newThreshold: string) => {
-      const response = await fetch("/api/settings/petty_cash_threshold", {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ value: newThreshold }),
-      });
-      
+  // Fetch current threshold
+  const { data: currentThreshold, isLoading } = useQuery({
+    queryKey: ['/api/settings/petty_cash_threshold'],
+    queryFn: async () => {
+      const response = await fetch('/api/settings/petty_cash_threshold');
       if (!response.ok) {
-        throw new Error("Failed to update petty cash threshold");
+        throw new Error('Failed to fetch threshold');
       }
-      
+      return response.json();
+    },
+  });
+
+  // Update threshold value when data is loaded
+  useEffect(() => {
+    if (currentThreshold?.value) {
+      setThresholdValue(currentThreshold.value);
+    }
+  }, [currentThreshold]);
+
+  // Update threshold mutation
+  const updateThreshold = useMutation({
+    mutationFn: async (value: string) => {
+      const response = await fetch('/api/settings/petty_cash_threshold', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      });
+      if (!response.ok) {
+        throw new Error('Failed to update threshold');
+      }
       return response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/settings/petty_cash_threshold"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
-      setIsEditing(false);
-      setThresholdValue("");
       toast({
         title: "Success",
         description: "Petty cash threshold updated successfully",
       });
+      setIsEditing(false);
+      queryClient.invalidateQueries({ queryKey: ['/api/settings/petty_cash_threshold'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
     },
     onError: (error: Error) => {
       toast({
@@ -56,28 +76,33 @@ export default function ThresholdConfig() {
     },
   });
 
-  const handleEdit = () => {
-    setIsEditing(true);
-    setThresholdValue(thresholdSetting || "1000");
-  };
-
   const handleSave = () => {
-    const numericValue = parseFloat(thresholdValue);
-    if (isNaN(numericValue) || numericValue <= 0) {
+    if (!thresholdValue || isNaN(Number(thresholdValue))) {
       toast({
-        title: "Invalid Input",
-        description: "Please enter a valid positive number",
+        title: "Error",
+        description: "Please enter a valid threshold amount",
         variant: "destructive",
       });
       return;
     }
-    
-    updateThresholdMutation.mutate(thresholdValue);
+    updateThreshold.mutate(thresholdValue);
   };
 
   const handleCancel = () => {
+    setThresholdValue(currentThreshold?.value || "");
     setIsEditing(false);
-    setThresholdValue("");
+  };
+
+  const defaultCurrency = userSettings?.defaultCurrency || 'USD';
+  const getCurrencySymbol = (currency: string) => {
+    switch (currency) {
+      case 'USD': return '$';
+      case 'MXN': return '$';
+      case 'COP': return '$';
+      case 'EUR': return '€';
+      case 'GBP': return '£';
+      default: return '$';
+    }
   };
 
   if (isLoading) {
@@ -86,19 +111,17 @@ export default function ThresholdConfig() {
 
   return (
     <div className="flex items-center justify-between">
-      <div className="flex items-center space-x-3">
-        <Settings className="text-gray-600" size={20} />
+      <div className="flex items-center space-x-2">
+        <Settings className="text-gray-500" size={20} />
         <div>
-          <Label className="text-sm font-medium text-gray-700">
-            Petty Cash Threshold (MXN)
-          </Label>
-          <p className="text-xs text-gray-500">
+          <div className="font-medium">Petty Cash Threshold ({defaultCurrency})</div>
+          <div className="text-sm text-gray-600">
             Invoices below this amount will be classified as petty cash
-          </p>
+          </div>
         </div>
       </div>
-      
-      <div className="flex items-center space-x-3">
+
+      <div className="flex items-center space-x-2">
         {isEditing ? (
           <>
             <Input
@@ -107,32 +130,33 @@ export default function ThresholdConfig() {
               onChange={(e) => setThresholdValue(e.target.value)}
               placeholder="Enter threshold amount"
               className="w-32"
-              min="0"
-              step="0.01"
             />
-            <Button
-              size="sm"
+            <Button 
+              size="sm" 
               onClick={handleSave}
-              disabled={updateThresholdMutation.isPending}
+              disabled={updateThreshold.isPending}
             >
-              Save
+              <Save size={16} />
             </Button>
-            <Button
-              size="sm"
-              variant="outline"
+            <Button 
+              size="sm" 
+              variant="outline" 
               onClick={handleCancel}
-              disabled={updateThresholdMutation.isPending}
             >
-              Cancel
+              <X size={16} />
             </Button>
           </>
         ) : (
           <>
-            <span className="text-lg font-semibold text-gray-900">
-              ${parseFloat(thresholdSetting).toLocaleString('en-US')} MXN
+            <span className="text-lg font-semibold">
+              {getCurrencySymbol(defaultCurrency)}{Number(currentThreshold?.value || 0).toLocaleString()} {defaultCurrency}
             </span>
-            <Button size="sm" variant="outline" onClick={handleEdit}>
-              Edit
+            <Button 
+              size="sm" 
+              variant="outline" 
+              onClick={() => setIsEditing(true)}
+            >
+              <Edit size={16} />
             </Button>
           </>
         )}
