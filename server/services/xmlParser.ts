@@ -378,98 +378,35 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       currency = amountResult.currency || currency;
     }
     
-    // Get subtotal with improved fallback logic and enhanced patterns
-    console.log('Attempting to extract subtotal from XML...');
-    
-    // Primary: TaxExclusiveAmount
+    // Get subtotal - try standard XML patterns in order
     amountResult = extractAmountFromXMLTag(xmlContent, 'TaxExclusiveAmount');
     if (amountResult.amount) {
       subtotal = amountResult.amount;
       currency = amountResult.currency || currency;
-      console.log('Subtotal extracted from TaxExclusiveAmount:', subtotal);
     } else {
       // Fallback to LineExtensionAmount
       amountResult = extractAmountFromXMLTag(xmlContent, 'LineExtensionAmount');
       if (amountResult.amount) {
         subtotal = amountResult.amount;
         currency = amountResult.currency || currency;
-        console.log('Subtotal extracted from LineExtensionAmount:', subtotal);
       } else {
-        // Try TaxableAmount from TaxSubtotal
+        // Try TaxableAmount as last resort
         amountResult = extractAmountFromXMLTag(xmlContent, 'TaxableAmount');
         if (amountResult.amount) {
           subtotal = amountResult.amount;
           currency = amountResult.currency || currency;
-          console.log('Subtotal extracted from TaxableAmount:', subtotal);
-        } else {
-          // Try alternative XML patterns for subtotal
-          const alternativePatterns = [
-            /<cbc:Amount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:Amount>/gi,
-            /<cbc:BaseAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:BaseAmount>/gi,
-            /<cbc:TaxExclusiveTotal[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxExclusiveTotal>/gi,
-            /<cbc:SubtotalAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:SubtotalAmount>/gi,
-            /<cbc:LegalMonetaryTotal[^>]*>[\s\S]*?<cbc:TaxExclusiveAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxExclusiveAmount>/gi
-          ];
-          
-          for (const pattern of alternativePatterns) {
-            let match;
-            while ((match = pattern.exec(xmlContent)) !== null) {
-              if (match && match[2]) {
-                const cleanedAmount = cleanAmount(match[2]);
-                if (cleanedAmount) {
-                  subtotal = cleanedAmount;
-                  currency = match[1] || currency;
-                  console.log('Subtotal extracted from alternative pattern:', subtotal, 'from pattern:', pattern.toString());
-                  break;
-                }
-              }
-            }
-            if (subtotal) break;
-          }
-          
-          // Last resort: try to find any amount field that could be subtotal
-          if (!subtotal) {
-            console.log('Trying last resort subtotal extraction patterns...');
-            const lastResortPatterns = [
-              /subtotal[^>]*>([\d.,]+)</gi,
-              /base[^>]*amount[^>]*>([\d.,]+)</gi,
-              /tax[^>]*exclusive[^>]*>([\d.,]+)</gi,
-              /line[^>]*extension[^>]*>([\d.,]+)</gi
-            ];
-            
-            for (const pattern of lastResortPatterns) {
-              const match = xmlContent.match(pattern);
-              if (match && match[1]) {
-                const cleanedAmount = cleanAmount(match[1]);
-                if (cleanedAmount) {
-                  subtotal = cleanedAmount;
-                  console.log('Subtotal extracted from last resort pattern:', subtotal);
-                  break;
-                }
-              }
-            }
-          }
         }
       }
     }
     
-    // Enhanced calculation: if we have total and tax but no subtotal, calculate it
+    // Calculate subtotal if we have total and tax but no subtotal
     if (totalAmount && taxAmount && !subtotal) {
       const totalNum = parseFloat(totalAmount);
       const taxNum = parseFloat(taxAmount);
       if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
         subtotal = (totalNum - taxNum).toFixed(2);
-        console.log(`Calculated subtotal: ${subtotal} (${totalAmount} - ${taxAmount})`);
       }
     }
-    
-    // Final logging of extracted amounts for debugging
-    console.log('Final XML extraction amounts:', {
-      totalAmount: totalAmount,
-      taxAmount: taxAmount,
-      subtotal: subtotal,
-      currency: currency
-    });
     
     // Extract additional fields
     const concept = extractTextFromXMLTag(xmlContent, 'Note') ||

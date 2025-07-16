@@ -38,6 +38,25 @@ function detectFileType(buffer: Buffer): string {
   return 'Unknown';
 }
 
+// Helper function to process XML content
+async function processXMLContent(fileBuffer: Buffer, invoiceId: number): Promise<string> {
+  try {
+    const xmlContent = fileBuffer.toString('utf8');
+    console.log(`XML content extracted for invoice ${invoiceId}, length: ${xmlContent.length} characters`);
+
+    // For XML files, we can directly use the content as structured text
+    // This is much more reliable than OCR since XML is already structured data
+    if (!xmlContent || xmlContent.trim().length < 10) {
+      throw new Error('XML file appears to be empty or corrupted');
+    }
+
+    return xmlContent;
+  } catch (error) {
+    console.error(`XML processing failed for invoice ${invoiceId}:`, error);
+    throw new Error(`XML processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
 export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): Promise<string> {
   try {
     console.log(`Starting OCR processing for invoice ${invoiceId}, buffer size: ${fileBuffer.length} bytes`);
@@ -187,25 +206,6 @@ async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<s
     // Clean and preprocess OCR text for better AI extraction
     const cleanedText = preprocessOCRText(text);
     return cleanedText;
-  }
-}
-
-// Helper function to process XML content
-async function processXMLContent(fileBuffer: Buffer, invoiceId: number): Promise<string> {
-  try {
-    const xmlContent = fileBuffer.toString('utf8');
-    console.log(`XML content extracted for invoice ${invoiceId}, length: ${xmlContent.length} characters`);
-
-    // For XML files, we can directly use the content as structured text
-    // This is much more reliable than OCR since XML is already structured data
-    if (!xmlContent || xmlContent.trim().length < 10) {
-      throw new Error('XML file appears to be empty or corrupted');
-    }
-
-    return xmlContent;
-  } catch (error) {
-    console.error(`XML processing failed for invoice ${invoiceId}:`, error);
-    throw new Error(`XML processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
   }
 }
 
