@@ -706,7 +706,7 @@ function calculateStringSimilarity(str1: string, str2: string): number {
   const maxLength = Math.max(str1.length, str2.length);
   if (maxLength === 0) return 100;
 
-  const distance =The levenshteinDistance function calculates the Levenshtein distance between two strings, used for fuzzy string matching. str1, str2);
+  const distance = levenshteinDistance(str1, str2);
   return ((maxLength - distance) / maxLength) * 100;
 }
 
