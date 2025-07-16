@@ -896,27 +896,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Settings value is required" });
       }
 
-            // If value is an object, stringify it; if it's already a string, validate it
-      let settingsJson: string;
+      // Get current settings first to merge with new values
+      let currentSettings = {};
+      try {
+        const existing = await storage.getSetting('user_preferences');
+        if (existing?.value) {
+          currentSettings = JSON.parse(existing.value);
+        }
+      } catch (error) {
+        console.log('No existing settings found, using defaults');
+      }
+
+      // Merge new settings with existing ones
+      let newSettings = {};
       if (typeof value === 'object') {
-        settingsJson = JSON.stringify(value);
+        newSettings = { ...currentSettings, ...value };
       } else if (typeof value === 'string') {
-        settingsJson = value;
-        // Only validate non-empty strings as JSON
-        if (settingsJson.trim()) {
-          try {
-            JSON.parse(settingsJson);
-          } catch (parseError) {
-            console.error("JSON parse error:", parseError);
-            return res.status(400).json({ message: "Invalid JSON format for settings value" });
-          }
-        } else {
-          return res.status(400).json({ message: "Settings value cannot be empty" });
+        try {
+          const parsedValue = JSON.parse(value);
+          newSettings = { ...currentSettings, ...parsedValue };
+        } catch (parseError) {
+          console.error("JSON parse error:", parseError);
+          return res.status(400).json({ message: "Invalid JSON format for settings value" });
         }
       } else {
-        // Convert other types to string and then to JSON
-        settingsJson = JSON.stringify(value);
+        return res.status(400).json({ message: "Invalid settings format" });
       }
+
+      const settingsJson = JSON.stringify(newSettings);
+      console.log('Saving merged settings:', settingsJson);
 
       const setting = await storage.updateSetting('user_preferences', settingsJson);
       res.json({ 

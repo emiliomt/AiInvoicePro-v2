@@ -342,11 +342,11 @@ export default function Settings() {
                     <p className="text-sm text-gray-600">Default currency for invoices</p>
                   </div>
                   <Select
-                    value={userSettings.defaultCurrency}
+                    value={userSettings.defaultCurrency || 'USD'}
                     onValueChange={(value) => updateSetting('defaultCurrency', value)}
                   >
                     <SelectTrigger className="w-32">
-                      <SelectValue />
+                      <SelectValue placeholder="Select currency" />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="USD">USD ($)</SelectItem>
