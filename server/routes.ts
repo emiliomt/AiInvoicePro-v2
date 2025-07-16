@@ -857,7 +857,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // User settings routes
   app.get('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
-      const setting = await storage.getSetting('user_preferences');
+      // Add timeout to prevent hanging database operations
+      const settingPromise = storage.getSetting('user_preferences');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Settings fetch timeout')), 10000)
+      );
+
+      const setting = await Promise.race([settingPromise, timeoutPromise]);
+      
       if (!setting) {
         // Return default settings
         const defaultSettings = {
@@ -877,7 +884,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }),
           description: 'User preferences and settings'
         };
-        await storage.updateSetting('user_preferences', defaultSettings.value);
+        
+        // Add timeout for default settings creation
+        const createPromise = storage.updateSetting('user_preferences', defaultSettings.value);
+        const createTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Settings creation timeout')), 10000)
+        );
+        
+        await Promise.race([createPromise, createTimeoutPromise]);
         res.json(defaultSettings);
       } else {
         res.json(setting);
@@ -901,7 +915,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         const existing = await storage.getSetting('user_preferences');
         if (existing?.value) {
-          currentSettings = JSON.parse(existing.value);
+          try {
+            currentSettings = JSON.parse(existing.value);
+          } catch (jsonError) {
+            console.warn('Failed to parse existing settings, using defaults:', jsonError);
+            currentSettings = {};
+          }
         }
       } catch (error) {
         console.log('No existing settings found, using defaults');
@@ -926,7 +945,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settingsJson = JSON.stringify(newSettings);
       console.log('Saving merged settings:', settingsJson);
 
-      const setting = await storage.updateSetting('user_preferences', settingsJson);
+      // Add timeout to prevent hanging database operations
+      const settingPromise = storage.updateSetting('user_preferences', settingsJson);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Settings update timeout')), 10000)
+      );
+
+      const setting = await Promise.race([settingPromise, timeoutPromise]);
       res.json({ 
         message: "Settings updated successfully",
         setting 

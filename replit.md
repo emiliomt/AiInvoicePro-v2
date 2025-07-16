@@ -126,6 +126,7 @@ The system uses PostgreSQL with the following key entities:
 - January 15, 2025. Enhanced XML invoice processing: Improved AI extraction for XML invoices with specialized XML parsing prompts, better field mapping for electronic invoice formats, increased XML content truncation limit to 8000 characters, and added XML detection logic to differentiate between OCR and XML processing for better extraction accuracy
 - January 16, 2025. Fixed XML subtotal extraction issue: Enhanced XML parser with comprehensive fallback patterns for subtotal extraction, added alternative patterns for TaxExclusiveAmount/LineExtensionAmount/TaxableAmount, improved calculation logic for missing subtotal values, fixed TypeScript compilation errors with ES2018 features, and added extensive debugging for XML parsing to resolve "N/A" subtotal values
 - January 16, 2025. Fixed application startup error: Resolved "Cannot access 'processInvoiceWrapper' before initialization" error in invoice upload processing by removing wrapper function scope issue in setImmediate callback, ensuring proper function accessibility and preventing server crashes during invoice processing initialization
+- January 16, 2025. Enhanced application stability: Fixed recurring crash issues by completing incomplete project validation endpoint, removing orphaned code fragments causing syntax errors, and implementing timeout protection for database operations in user settings routes to prevent hanging operations that could cause memory exhaustion
 
 ## User Preferences
 
