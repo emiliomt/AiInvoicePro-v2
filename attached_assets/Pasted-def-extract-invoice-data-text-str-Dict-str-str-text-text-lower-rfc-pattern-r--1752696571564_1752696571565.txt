@@ -1,0 +1,90 @@
+def extract_invoice_data(text: str) -> Dict[str, str]:
+    text = text.lower()
+
+    rfc_pattern = r"(rfc[:\s]*)([a-zñ&]{3,4}\d{6}[a-z\d]{3})"
+    nit_pattern = r"(nit[:\s#]*)(\d{5,15}-?\d?)"
+    invoice_number_pattern = r"(n[oú]mero\s*de\s*factura[:\s#]*)([\w\-]+)"
+    date_pattern = r"(fecha\s*(de)?\s*(emisi[oó]n|factura)?[:\s]*)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})"
+    due_date_pattern = r"(fecha\s*de\s*vencimiento[:\s]*)(\d{2}/\d{2}/\d{4}|\d{4}-\d{2}-\d{2})"
+    total_pattern = r"(total\s*(a\s*pagar)?[:\s\$]*)([\d,]+\.\d{2})"
+    subtotal_pattern = r"(subtotal[:\s\$]*)([\d,]+\.\d{2})"
+    tax_pattern = r"(iva|impuesto)[\s:\$]*([\d,]+\.\d{2})"
+    currency_pattern = r"(moneda[:\s]*)([a-z]+)"
+    concept_pattern = r"(concepto|descripci[oó]n\s*de\s*servicios?)[:\s]*(.+)"
+    address_pattern = r"(direcci[oó]n[:\s]*)(.+)"
+
+    data = {
+        "vendor_name": "",
+        "vendor_tax_id": "",
+        "invoice_number": "",
+        "invoice_date": "",
+        "due_date": "",
+        "total_amount": "",
+        "tax_amount": "",
+        "subtotal": "",
+        "currency": "",
+        "buyer_name": "",
+        "concept": "",
+        "vendor_address": "",
+        "buyer_address": ""
+    }
+
+    # Vendor/Biller info
+    rfc_match = re.search(rfc_pattern, text)
+    nit_match = re.search(nit_pattern, text)
+    if rfc_match:
+        data["vendor_tax_id"] = rfc_match.group(2).upper()
+    elif nit_match:
+        data["vendor_tax_id"] = nit_match.group(2)
+
+    # Invoice meta
+    if m := re.search(invoice_number_pattern, text): data["invoice_number"] = m.group(2)
+    if m := re.search(date_pattern, text): data["invoice_date"] = m.group(4)
+    if m := re.search(due_date_pattern, text): data["due_date"] = m.group(2)
+
+    # Financials
+    if m := re.search(total_pattern, text): data["total_amount"] = m.group(3).replace(',', '')
+    if m := re.search(subtotal_pattern, text): data["subtotal"] = m.group(2).replace(',', '')
+    if m := re.search(tax_pattern, text): data["tax_amount"] = m.group(2).replace(',', '')
+    if m := re.search(currency_pattern, text): data["currency"] = m.group(2).upper()
+
+    # Concept or description
+    if m := re.search(concept_pattern, text): data["concept"] = m.group(2).strip()
+
+    # Addresses
+    addresses = re.findall(address_pattern, text)
+    if addresses:
+        data["vendor_address"] = addresses[0][1].strip()
+        if len(addresses) > 1:
+            data["buyer_address"] = addresses[1][1].strip()
+
+    # Company names
+    buyer_match = re.search(r"(raz[oó]n\s*social|cliente|empresa\s*compradora)[:\s]*(.+)", text)
+    vendor_match = re.search(r"(proveedor|empresa\s*emisora)[:\s]*(.+)", text)
+    if buyer_match:
+        data["buyer_name"] = buyer_match.group(2).strip()
+    if vendor_match:
+        data["vendor_name"] = vendor_match.group(2).strip()
+
+    return data
+
+@app.post("/upload/")
+async def upload_invoice(file: UploadFile = File(...)):
+    contents = await file.read()
+    temp_file_path = f"temp_{file.filename}"
+    with open(temp_file_path, "wb") as f:
+        f.write(contents)
+
+    try:
+        if file.filename.endswith(".pdf"):
+            with pdfplumber.open(temp_file_path) as pdf:
+                text = "\n".join([page.extract_text() or "" for page in pdf.pages])
+        elif file.filename.endswith(".txt"):
+            text = contents.decode("utf-8")
+        else:
+            return JSONResponse(status_code=400, content={"error": "Only .pdf or .txt files are allowed."})
+    finally:
+        os.remove(temp_file_path)
+
+    data = extract_invoice_data(text)
+    return JSONResponse(content=data)
