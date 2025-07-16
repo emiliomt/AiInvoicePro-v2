@@ -1427,18 +1427,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+      
       const includeMatches = req.query.includeMatches === 'true';
 
       if (includeMatches) {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
-        res.json(invoicesWithMatches);
+        res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-        res.json(invoices);
+        res.json(invoices || []);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
-      res.status(500).json({ message: "Failed to fetch invoices" });
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch invoices";
+      res.status(500).json({ 
+        message: "Failed to fetch invoices",
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      });
     }
   });
 
