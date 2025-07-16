@@ -42,10 +42,128 @@ function validateString(value: any): string | null {
 }
 
 function validateAmount(value: any): string | null {
+
+// Direct XML parsing function for amount extraction
+async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
+  totalAmount: string | null;
+  taxAmount: string | null;
+  subtotal: string | null;
+  currency: string;
+}> {
+  try {
+    // Use regex to find amount fields with currency attributes
+    const amountPatterns = [
+      /<cbc:TaxInclusiveAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxInclusiveAmount>/gi,
+      /<cbc:PayableAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:PayableAmount>/gi,
+      /<cbc:TaxExclusiveAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxExclusiveAmount>/gi,
+      /<cbc:TaxAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxAmount>/gi,
+      /<cbc:LineExtensionAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:LineExtensionAmount>/gi,
+    ];
+
+    let totalAmount = null;
+    let taxAmount = null;
+    let subtotal = null;
+    let currency = "COP";
+
+    // Search for TaxInclusiveAmount or PayableAmount as total
+    let match;
+    const taxInclusivePattern = /<cbc:TaxInclusiveAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxInclusiveAmount>/gi;
+    while ((match = taxInclusivePattern.exec(xmlContent)) !== null) {
+      currency = match[1];
+      totalAmount = validateAmount(match[2]);
+      if (totalAmount) break;
+    }
+
+    // If no TaxInclusiveAmount, try PayableAmount
+    if (!totalAmount) {
+      const payablePattern = /<cbc:PayableAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:PayableAmount>/gi;
+      while ((match = payablePattern.exec(xmlContent)) !== null) {
+        currency = match[1];
+        totalAmount = validateAmount(match[2]);
+        if (totalAmount) break;
+      }
+    }
+
+    // Search for TaxAmount
+    const taxPattern = /<cbc:TaxAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxAmount>/gi;
+    while ((match = taxPattern.exec(xmlContent)) !== null) {
+      currency = match[1];
+      taxAmount = validateAmount(match[2]);
+      if (taxAmount) break;
+    }
+
+    // Search for TaxExclusiveAmount as subtotal
+    const subtotalPattern = /<cbc:TaxExclusiveAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxExclusiveAmount>/gi;
+    while ((match = subtotalPattern.exec(xmlContent)) !== null) {
+      currency = match[1];
+      subtotal = validateAmount(match[2]);
+      if (subtotal) break;
+    }
+
+    // If no subtotal found, try LineExtensionAmount
+    if (!subtotal) {
+      const lineExtensionPattern = /<cbc:LineExtensionAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:LineExtensionAmount>/gi;
+      while ((match = lineExtensionPattern.exec(xmlContent)) !== null) {
+        currency = match[1];
+        subtotal = validateAmount(match[2]);
+        if (subtotal) break;
+      }
+    }
+
+    // If we have total and tax but no subtotal, calculate it
+    if (totalAmount && taxAmount && !subtotal) {
+      const totalNum = parseFloat(totalAmount);
+      const taxNum = parseFloat(taxAmount);
+      if (!isNaN(totalNum) && !isNaN(taxNum)) {
+        subtotal = (totalNum - taxNum).toFixed(2);
+      }
+    }
+
+    console.log('Direct XML extraction results:', { totalAmount, taxAmount, subtotal, currency });
+    return { totalAmount, taxAmount, subtotal, currency };
+  } catch (error) {
+    console.error('Direct XML parsing failed:', error);
+    return { totalAmount: null, taxAmount: null, subtotal: null, currency: "COP" };
+  }
+}
+
+
   if (!value) return null;
-  const cleaned = String(value).replace(/[^\d.-]/g, '');
+  
+  // For XML processing, be more lenient with amount formatting
+  let cleaned = String(value).trim();
+  
+  // Remove XML tags if present
+  cleaned = cleaned.replace(/<[^>]*>/g, '');
+  
+  // Handle different decimal separators and thousand separators
+  cleaned = cleaned.replace(/[^\d.,-]/g, '');
+  
+  // Handle Colombian number format (e.g., 1.234.567,89)
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    // If both comma and period, assume period is thousands separator
+    const parts = cleaned.split(',');
+    if (parts.length === 2 && parts[1].length <= 2) {
+      // Format: 1.234.567,89
+      cleaned = parts[0].replace(/\./g, '') + '.' + parts[1];
+    } else {
+      // Format: 1,234,567.89
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  } else if (cleaned.includes(',')) {
+    // Only comma - could be decimal separator
+    const parts = cleaned.split(',');
+    if (parts.length === 2 && parts[1].length <= 2) {
+      // Assume comma is decimal separator
+      cleaned = parts[0] + '.' + parts[1];
+    } else {
+      // Assume comma is thousands separator
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  }
+  
   const num = parseFloat(cleaned);
-  return !isNaN(num) && num >= 0 ? cleaned : null;
+  return !isNaN(num) && num >= 0 ? num.toFixed(2) : null;
 }
 
 function validateDate(value: any): string | null {
@@ -169,20 +287,34 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
 
 ${learningImprovements}
 
-🔍 COMPREHENSIVE XML EXTRACTION RULES:
-1. VENDOR/SUPPLIER INFO: Look for <cac:AccountingSupplierParty>, <cac:SenderParty>, <cac:PartyTaxScheme>
-2. CUSTOMER/BUYER INFO: Look for <cac:AccountingCustomerParty>, <cac:ReceiverParty>
-3. TAX IDs: Find <cbc:CompanyID>, <cbc:IdentificationCode> - extract complete values including dashes
-4. AMOUNTS: Extract from <cbc:TaxInclusiveAmount>, <cbc:TaxAmount>, <cbc:TaxExclusiveAmount>, <cbc:PayableAmount>, <cbc:LineExtensionAmount>
+🔍 COMPREHENSIVE XML EXTRACTION RULES WITH PRIORITY ON AMOUNTS:
+1. AMOUNTS (HIGHEST PRIORITY): Search exhaustively for ALL monetary values in these patterns:
+   - <cbc:TaxInclusiveAmount currencyID="COP">VALUE</cbc:TaxInclusiveAmount>
+   - <cbc:PayableAmount currencyID="COP">VALUE</cbc:PayableAmount>
+   - <cbc:TaxExclusiveAmount currencyID="COP">VALUE</cbc:TaxExclusiveAmount>
+   - <cbc:TaxAmount currencyID="COP">VALUE</cbc:TaxAmount>
+   - <cbc:LineExtensionAmount currencyID="COP">VALUE</cbc:LineExtensionAmount>
+   - <cbc:Amount currencyID="COP">VALUE</cbc:Amount>
+   - <cbc:TaxableAmount currencyID="COP">VALUE</cbc:TaxableAmount>
+   - <cbc:BaseAmount currencyID="COP">VALUE</cbc:BaseAmount>
+   - ANY tag containing "Amount" with numeric content and currencyID
+
+2. VENDOR/SUPPLIER INFO: Look for <cac:AccountingSupplierParty>, <cac:SenderParty>, <cac:PartyTaxScheme>
+3. CUSTOMER/BUYER INFO: Look for <cac:AccountingCustomerParty>, <cac:ReceiverParty>
+4. TAX IDs: Find <cbc:CompanyID>, <cbc:IdentificationCode> - extract complete values including dashes
 5. DATES: Find <cbc:IssueDate>, <cbc:DueDate>, <cbc:Date> tags, convert to YYYY-MM-DD
 6. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>, <cbc:CountrySubentity>
 7. INVOICE DETAILS: Look for <cbc:ID>, <cbc:UUID>, <cbc:Description>, <cbc:Note>
 8. LINE ITEMS: Extract from <cac:InvoiceLine>, <cac:Item>, <cbc:InvoicedQuantity>, <cbc:Price>
 
 FULL XML CONTENT TO ANALYZE:
-${ocrText.substring(0, 12000)} ${ocrText.length > 12000 ? '...[truncated for length]' : ''}
+${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for length]' : ''}
 
-🎯 ENHANCED FIELD MAPPING (extract ALL available data):
+🎯 ENHANCED FIELD MAPPING (FOCUS ON AMOUNTS):
+- totalAmount: PRIORITY ORDER: <cbc:TaxInclusiveAmount> > <cbc:PayableAmount> > <cbc:TaxExclusiveAmount> > any <cbc:*Amount> with highest value
+- taxAmount: PRIORITY ORDER: <cbc:TaxAmount> > <cbc:TaxableAmount> > sum of all tax subtotals
+- subtotal: PRIORITY ORDER: <cbc:TaxExclusiveAmount> > <cbc:LineExtensionAmount> > <cbc:BaseAmount> > totalAmount minus taxAmount
+- currency: EXTRACT from currencyID attribute (COP, USD, EUR, etc.) - look in ALL amount fields
 - vendorName: <cbc:RegistrationName> in <cac:AccountingSupplierParty> OR <cac:Party> within supplier context
 - taxId: <cbc:CompanyID> in supplier's <cac:PartyTaxScheme> or <cac:PartyIdentification>
 - vendorAddress: Complete address from supplier's <cac:PostalAddress>: <cbc:StreetName>, <cbc:CityName>, <cbc:CountrySubentity>
@@ -192,10 +324,6 @@ ${ocrText.substring(0, 12000)} ${ocrText.length > 12000 ? '...[truncated for len
 - invoiceNumber: <cbc:ID> at document root level OR <cbc:UUID>
 - invoiceDate: <cbc:IssueDate> at document level
 - dueDate: <cbc:DueDate> if available
-- totalAmount: <cbc:TaxInclusiveAmount> OR <cbc:PayableAmount> (primary total)
-- taxAmount: <cbc:TaxAmount> from <cac:TaxTotal>
-- subtotal: <cbc:TaxExclusiveAmount> OR <cbc:LineExtensionAmount>
-- currency: currencyID attribute from any amount field (COP, USD, EUR, etc.)
 - concept: <cbc:Note> OR <cbc:Description> at document level
 - notes: Any additional <cbc:Note> or <cbc:AdditionalInformation>
 - projectName: <cbc:ID> in <cac:ProjectReference> OR contract/order references
@@ -203,25 +331,23 @@ ${ocrText.substring(0, 12000)} ${ocrText.length > 12000 ? '...[truncated for len
 - projectCity: <cbc:CityName> from delivery address
 - descriptionSummary: Concatenate item descriptions from <cac:InvoiceLine>
 
-CRITICAL EXTRACTION LOGIC FOR DIAN/UBL:
-1. DIAN Attachment Pattern: If document contains <cac:SenderParty> with tax authority info, focus on <cac:ReceiverParty> for actual business data
-2. Multi-level XML: Look for nested invoice data in <cac:DocumentReference> or <cac:AttachedDocument>
-3. Line Items Extraction: Process ALL <cac:InvoiceLine> elements for complete item list
-4. Tax Calculations: Extract tax breakdowns from <cac:TaxSubtotal> within <cac:TaxTotal>
-5. Currency Detection: Check currencyID attributes on amount fields
-6. Date Format: Convert all dates to YYYY-MM-DD format
-7. Comprehensive Search: Don't stop at first match - extract ALL available fields
+CRITICAL AMOUNT EXTRACTION LOGIC:
+1. EXHAUSTIVE SEARCH: Scan the ENTIRE XML for ANY tag containing "Amount" - don't miss any monetary values
+2. CURRENCY DETECTION: Extract currencyID="XXX" from amount tags - this is crucial for proper display
+3. NUMERIC VALIDATION: Extract only the numeric content from amount tags, preserve decimals
+4. FALLBACK STRATEGY: If standard UBL tags not found, look for similar patterns or Spanish equivalents
+5. MULTIPLE AMOUNTS: If multiple amounts found, prioritize the largest for totalAmount
+6. TAX CALCULATION: Try to calculate missing amounts (subtotal = total - tax) if some amounts missing
 
-ADVANCED PARSING INSTRUCTIONS:
-- Extract text content from XML tags, preserve important attributes like currencyID
-- Handle multiple tax schemes and party identifications
-- Look for both English and Spanish tag variations
-- Process embedded documents and references
-- Extract complete line item details with quantities, prices, and descriptions
-- Capture all monetary amounts with proper decimal handling
-- Preserve important metadata like document UUID, version, profile
+ADVANCED PARSING INSTRUCTIONS FOR AMOUNTS:
+- Search case-insensitively for amount patterns
+- Handle both English and Spanish XML namespaces
+- Extract decimal amounts with proper precision (2 decimal places)
+- Look for amounts in nested structures like <cac:TaxTotal><cac:TaxSubtotal><cbc:TaxAmount>
+- Check for amounts in line items and aggregate if needed
+- Preserve currency information from currencyID attributes
 
-Return complete JSON with ALL extracted fields (use null only if truly not found):
+Return complete JSON with ALL extracted fields (extract amounts even if other fields fail):
 
 {
   "vendorName": "extracted supplier company name",
@@ -374,6 +500,19 @@ Return valid JSON only:
     if (completeness < 30) {
       console.log('Low completeness detected, attempting simplified extraction...');
       return await attemptSimplifiedExtraction(ocrText);
+    }
+
+    // Special handling for XML files with missing amounts
+    if (isXML && (!cleanedData.totalAmount || cleanedData.totalAmount === "0.00")) {
+      console.log('XML file detected with missing amounts, attempting direct XML parsing...');
+      const directAmounts = await extractAmountsDirectlyFromXML(ocrText);
+      if (directAmounts.totalAmount) {
+        cleanedData.totalAmount = directAmounts.totalAmount;
+        cleanedData.taxAmount = directAmounts.taxAmount || cleanedData.taxAmount;
+        cleanedData.subtotal = directAmounts.subtotal || cleanedData.subtotal;
+        cleanedData.currency = directAmounts.currency || cleanedData.currency;
+        console.log('Direct XML parsing found amounts:', directAmounts);
+      }
     }
 
     console.log('AI extraction completed successfully with cleaned data');
