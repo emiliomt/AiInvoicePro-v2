@@ -911,15 +911,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Get current settings first to merge with new values
-      let currentSettings = {};
+      let currentSettings = {
+        fullName: '',
+        department: '',
+        phoneNumber: '',
+        emailNotifications: true,
+        dashboardLayout: 'grid',
+        defaultCurrency: 'USD',
+        timezone: 'America/New_York',
+        aiProcessingMode: 'automatic',
+        aiCacheEnabled: true,
+        aiCacheExpiry: '24h',
+        aiAutoInvalidation: 'on_update'
+      };
+
       try {
         const existing = await storage.getSetting('user_preferences');
         if (existing?.value) {
           try {
-            currentSettings = JSON.parse(existing.value);
+            const parsed = JSON.parse(existing.value);
+            currentSettings = { ...currentSettings, ...parsed };
           } catch (jsonError) {
             console.warn('Failed to parse existing settings, using defaults:', jsonError);
-            currentSettings = {};
           }
         }
       } catch (error) {
@@ -945,13 +958,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settingsJson = JSON.stringify(newSettings);
       console.log('Saving merged settings:', settingsJson);
 
-      // Add timeout to prevent hanging database operations
-      const settingPromise = storage.updateSetting('user_preferences', settingsJson);
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Settings update timeout')), 10000)
-      );
+      // Use setSetting instead of updateSetting to ensure upsert behavior
+      const setting = await storage.setSetting({
+        key: 'user_preferences',
+        value: settingsJson,
+        description: 'User preferences and settings'
+      });
 
-      const setting = await Promise.race([settingPromise, timeoutPromise]);
       res.json({ 
         message: "Settings updated successfully",
         setting 

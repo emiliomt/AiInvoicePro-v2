@@ -140,8 +140,9 @@ export default function Settings() {
 
   const updateSetting = (key: keyof UserSettings, value: any) => {
     try {
-      const updatedSettings = { ...userSettings, [key]: value };
-      console.log('Updating settings:', updatedSettings);
+      const currentSettings = userSettings || {};
+      const updatedSettings = { ...currentSettings, [key]: value };
+      console.log('Updating settings from:', currentSettings, 'to:', updatedSettings);
       updateSettingsMutation.mutate(updatedSettings);
     } catch (error) {
       console.error('Error updating setting:', error);
