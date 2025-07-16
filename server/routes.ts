@@ -803,6 +803,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
+      // Update the project validation status
+      const updatedProject = await storage.updateProject(projectId, {
+        validationStatus,
+        isValidated,
+        validatedBy: userId,
+        validatedAt: new Date()
+      });
+
+      res.json(updatedProject);
+    } catch (error) {
+      console.error("Error validating project:", error);
+      res.status(500).json({ message: "Failed to validate project" });
+    }
+  });
+
 
 
   // Settings routes
@@ -944,21 +959,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error changing password:", error);
       res.status(500).json({ message: "Failed to change password" });
-    }
-  });
-
-      const updates = {
-        validationStatus,
-        isValidated,
-        validatedAt: new Date(),
-        validatedBy: userId,
-      };
-
-      const project = await storage.updateProject(projectId, updates);
-      res.json(project);
-    } catch (error) {
-      console.error("Error updating project validation:", error);
-      res.status(500).json({ message: "Failed to update project validation" });
     }
   });
 
