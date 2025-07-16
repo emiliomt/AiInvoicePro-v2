@@ -89,6 +89,110 @@ function extractTextFromXMLTag(xmlContent: string, tagName: string): string | nu
   return null;
 }
 
+function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData> {
+  const text = content.toLowerCase();
+  
+  // Enhanced regex patterns for Spanish/Latin American invoices
+  const rfcPattern = /(rfc[:\s]*)([a-zñ&]{3,4}\d{6}[a-z\d]{3})/g;
+  const nitPattern = /(nit[:\s#]*)(\d{5,15}-?\d?)/g;
+  const invoiceNumberPattern = /(n[oú]mero\s*de\s*factura[:\s#]*)([\w\-]+)/g;
+  const datePattern = /(fecha\s*(de)?\s*(emisi[oó]n|factura)?[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
+  const dueDatePattern = /(fecha\s*de\s*vencimiento[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
+  const totalPattern = /(total\s*(a\s*pagar)?[:\s\$]*)([\d,]+\.\d{2})/g;
+  const subtotalPattern = /(subtotal[:\s\$]*)([\d,]+\.\d{2})/g;
+  const taxPattern = /(iva|impuesto)[\s:\$]*([\d,]+\.\d{2})/g;
+  const currencyPattern = /(moneda[:\s]*)([a-z]+)/g;
+  const conceptPattern = /(concepto|descripci[oó]n\s*de\s*servicios?)[:\s]*(.+)/g;
+  const addressPattern = /(direcci[oó]n[:\s]*)(.+)/g;
+  const buyerPattern = /(raz[oó]n\s*social|cliente|empresa\s*compradora)[:\s]*(.+)/g;
+  const vendorPattern = /(proveedor|empresa\s*emisora)[:\s]*(.+)/g;
+  
+  const data: Partial<ExtractedInvoiceData> = {};
+  
+  // Extract tax IDs (RFC or NIT)
+  let match = rfcPattern.exec(text);
+  if (match) {
+    data.taxId = match[2].toUpperCase();
+  } else {
+    match = nitPattern.exec(text);
+    if (match) {
+      data.taxId = match[2];
+    }
+  }
+  
+  // Extract invoice number
+  match = invoiceNumberPattern.exec(text);
+  if (match) {
+    data.invoiceNumber = match[2];
+  }
+  
+  // Extract dates
+  match = datePattern.exec(text);
+  if (match) {
+    data.invoiceDate = match[4];
+  }
+  
+  match = dueDatePattern.exec(text);
+  if (match) {
+    data.dueDate = match[2];
+  }
+  
+  // Extract financial amounts
+  match = totalPattern.exec(text);
+  if (match) {
+    data.totalAmount = match[3].replace(',', '');
+  }
+  
+  match = subtotalPattern.exec(text);
+  if (match) {
+    data.subtotal = match[2].replace(',', '');
+  }
+  
+  match = taxPattern.exec(text);
+  if (match) {
+    data.taxAmount = match[2].replace(',', '');
+  }
+  
+  // Extract currency
+  match = currencyPattern.exec(text);
+  if (match) {
+    data.currency = match[2].toUpperCase();
+  }
+  
+  // Extract concept/description
+  match = conceptPattern.exec(text);
+  if (match) {
+    data.concept = match[2].trim();
+  }
+  
+  // Extract addresses
+  const addresses = [];
+  let addressMatch;
+  while ((addressMatch = addressPattern.exec(text)) !== null) {
+    addresses.push(addressMatch[2].trim());
+  }
+  
+  if (addresses.length > 0) {
+    data.vendorAddress = addresses[0];
+    if (addresses.length > 1) {
+      data.buyerAddress = addresses[1];
+    }
+  }
+  
+  // Extract company names
+  match = buyerPattern.exec(text);
+  if (match) {
+    data.companyName = match[2].trim();
+  }
+  
+  match = vendorPattern.exec(text);
+  if (match) {
+    data.vendorName = match[2].trim();
+  }
+  
+  return data;
+}
+
 function extractAmountFromXMLTag(xmlContent: string, tagName: string): { amount: string | null, currency: string } {
   const patterns = [
     new RegExp(`<${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
@@ -203,8 +307,11 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     const customerInfo = extractPartyInfo(xmlContent, 'customer');
     
     // Extract invoice number
-    const invoiceNumber = extractTextFromXMLTag(xmlContent, 'ID') ||
-                         extractTextFromXMLTag(xmlContent, 'UUID');
+    let invoiceNumber = extractTextFromXMLTag(xmlContent, 'ID') ||
+                       extractTextFromXMLTag(xmlContent, 'UUID');
+    
+    // Use regex patterns as fallback for better Spanish/Latin American support
+    const regexData = extractWithRegexPatterns(xmlContent);
     
     // Extract dates
     const invoiceDate = extractTextFromXMLTag(xmlContent, 'IssueDate');
@@ -324,25 +431,25 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       : null;
     
     const result: ExtractedInvoiceData = {
-      vendorName: supplierInfo.name,
-      invoiceNumber,
-      invoiceDate,
-      dueDate,
-      totalAmount,
-      taxAmount,
-      subtotal,
-      currency,
-      taxId: supplierInfo.taxId,
-      companyName: customerInfo.name,
-      concept,
+      vendorName: supplierInfo.name || regexData.vendorName,
+      invoiceNumber: invoiceNumber || regexData.invoiceNumber,
+      invoiceDate: invoiceDate || regexData.invoiceDate,
+      dueDate: dueDate || regexData.dueDate,
+      totalAmount: totalAmount || regexData.totalAmount,
+      taxAmount: taxAmount || regexData.taxAmount,
+      subtotal: subtotal || regexData.subtotal,
+      currency: currency || regexData.currency || 'COP',
+      taxId: supplierInfo.taxId || regexData.taxId,
+      companyName: customerInfo.name || regexData.companyName,
+      concept: concept || regexData.concept,
       projectName,
-      vendorAddress: supplierInfo.address,
+      vendorAddress: supplierInfo.address || regexData.vendorAddress,
       buyerTaxId: customerInfo.taxId,
-      buyerAddress: customerInfo.address,
+      buyerAddress: customerInfo.address || regexData.buyerAddress,
       descriptionSummary,
       projectAddress,
       projectCity,
-      notes: concept,
+      notes: concept || regexData.concept,
       lineItems,
       confidenceScore: '0.95' // High confidence for XML parsing
     };
