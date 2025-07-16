@@ -83,7 +83,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
     // Extract structured data using AI with timeout
     console.log(`Starting AI extraction for invoice ${invoice.id}`);
-    
+
     const aiPromise = extractInvoiceData(ocrText);
     const aiTimeoutPromise = new Promise((_, reject) => 
       setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
@@ -119,7 +119,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    
+
     try {
       await storage.updateInvoice(invoice.id, { 
         status: "rejected",
@@ -1024,7 +1024,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
               isValidated: false
             };
 
-            const project = await storage.createProject(projectData);
+            const userId = (req.user as any).claims.sub;
+            const project = await storage.createProject(projectData, userId);
             importedProjects.push(project);
           } catch (error) {
             errors.push({
@@ -1212,10 +1213,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const fileBuffer = fs.readFileSync(invoice.fileUrl);
 
           console.log(`Manual processing started for invoice ${invoiceId} (${invoice.fileName})`);
-          
+
           // Use the same processing function as automatic uploads
           await processInvoiceAsync(invoice, fileBuffer);
-          
+
           console.log(`Manual processing completed for invoice ${invoiceId}`);
         } catch (error: any) {
           console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
@@ -1419,11 +1420,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      
+
       if (!userId) {
         return res.status(401).json({ message: "User ID not found" });
       }
-      
+
       const includeMatches = req.query.includeMatches === 'true';
 
       if (includeMatches) {
@@ -2552,8 +2553,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const user = req.user;
       if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
+        return res.status(401).json({ error: 'Unauthorized' });}
 
       const taskId = parseInt(req.params.id);
       const task = await storage.getErpTask(taskId);
@@ -2946,7 +2946,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const configId = parseInt(req.params.id);
-      
+
       if (isNaN(configId) || configId <= 0) {
         return res.status(400).json({ error: 'Invalid configuration ID' });
       }
@@ -3093,10 +3093,10 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       const logId = parseInt(req.params.logId);
       console.log(`Progress request for logId ${logId}`);
-      
+
       // First check if we have active progress in memory
       const progress = invoiceImporterService.getProgress(logId);
-      
+
       if (progress) {
         console.log(`Active progress found for logId ${logId}`);
         try {
@@ -3134,7 +3134,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       console.log(`Found log in database for ${logId} with status: ${log.status}`);
-      
+
       // Parse steps from logs if available
       let steps = [];
       try {
