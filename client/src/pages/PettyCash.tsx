@@ -34,7 +34,7 @@ export default function PettyCash() {
     },
   });
 
-  // Fetch user settings to get default currency
+  // Fetch user settings to get default currency with caching
   const { data: userSettings } = useQuery({
     queryKey: ['userSettings'],
     queryFn: async () => {
@@ -45,6 +45,8 @@ export default function PettyCash() {
       const data = await response.json();
       return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
     },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
   });
 
   const defaultCurrency = userSettings?.defaultCurrency || 'USD';

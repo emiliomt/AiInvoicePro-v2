@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -13,37 +14,36 @@ export default function ThresholdConfig() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Fetch user settings to get default currency
-  const { data: userSettings } = useQuery({
-    queryKey: ['userSettings'],
+  // Combined query for both user settings and threshold to reduce API calls
+  const { data: configData, isLoading } = useQuery({
+    queryKey: ['thresholdConfig'],
     queryFn: async () => {
-      const response = await fetch('/api/settings/user_preferences');
-      if (!response.ok) {
-        return { defaultCurrency: 'USD' }; // Default fallback
-      }
-      const data = await response.json();
-      return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
-    },
-  });
+      const [userSettingsRes, thresholdRes] = await Promise.all([
+        fetch('/api/settings/user_preferences').then(res => 
+          res.ok ? res.json() : { value: JSON.stringify({ defaultCurrency: 'USD' }) }
+        ),
+        fetch('/api/settings/petty_cash_threshold').then(res => 
+          res.ok ? res.json() : { value: "100" }
+        )
+      ]);
 
-  // Fetch current threshold
-  const { data: currentThreshold, isLoading } = useQuery({
-    queryKey: ['/api/settings/petty_cash_threshold'],
-    queryFn: async () => {
-      const response = await fetch('/api/settings/petty_cash_threshold');
-      if (!response.ok) {
-        throw new Error('Failed to fetch threshold');
-      }
-      return response.json();
+      const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
+      
+      return {
+        userSettings,
+        threshold: thresholdRes
+      };
     },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+    cacheTime: 10 * 60 * 1000, // 10 minutes
   });
 
   // Update threshold value when data is loaded
   useEffect(() => {
-    if (currentThreshold?.value) {
-      setThresholdValue(currentThreshold.value);
+    if (configData?.threshold?.value) {
+      setThresholdValue(configData.threshold.value);
     }
-  }, [currentThreshold]);
+  }, [configData?.threshold?.value]);
 
   // Update threshold mutation
   const updateThreshold = useMutation({
@@ -58,13 +58,20 @@ export default function ThresholdConfig() {
       }
       return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Success",
         description: "Petty cash threshold updated successfully",
       });
       setIsEditing(false);
-      queryClient.invalidateQueries({ queryKey: ['/api/settings/petty_cash_threshold'] });
+      
+      // Optimistically update cache
+      queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
+        ...oldData,
+        threshold: data
+      }));
+      
+      // Only invalidate petty cash data, not the threshold config
       queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
     },
     onError: (error: Error) => {
@@ -89,11 +96,11 @@ export default function ThresholdConfig() {
   };
 
   const handleCancel = () => {
-    setThresholdValue(currentThreshold?.value || "");
+    setThresholdValue(configData?.threshold?.value || "");
     setIsEditing(false);
   };
 
-  const defaultCurrency = userSettings?.defaultCurrency || 'USD';
+  const defaultCurrency = configData?.userSettings?.defaultCurrency || 'USD';
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
       case 'USD': return '$';
@@ -105,8 +112,24 @@ export default function ThresholdConfig() {
     }
   };
 
+  const currentThreshold = configData?.threshold;
+
   if (isLoading) {
-    return <div>Loading threshold configuration...</div>;
+    return (
+      <div className="flex items-center justify-between animate-pulse">
+        <div className="flex items-center space-x-2">
+          <div className="w-5 h-5 bg-gray-200 rounded"></div>
+          <div>
+            <div className="w-48 h-4 bg-gray-200 rounded mb-2"></div>
+            <div className="w-64 h-3 bg-gray-200 rounded"></div>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <div className="w-24 h-6 bg-gray-200 rounded"></div>
+          <div className="w-16 h-8 bg-gray-200 rounded"></div>
+        </div>
+      </div>
+    );
   }
 
   return (
