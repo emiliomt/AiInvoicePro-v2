@@ -95,7 +95,7 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
   // Enhanced regex patterns for Spanish/Latin American invoices
   const rfcPattern = /(rfc[:\s]*)([a-zñ&]{3,4}\d{6}[a-z\d]{3})/g;
   const nitPattern = /(nit[:\s#]*)(\d{5,15}-?\d?)/g;
-  const invoiceNumberPattern = /(n[oú]mero\s*de\s*factura[:\s#]*)([\w\-]+)/g;
+  const invoiceNumberPattern = /(n[oú]mero\s*de\s*factura[:\s#]*|factura\s*n[oú]mero[:\s#]*|invoice\s*number[:\s#]*|fe[:\s#]*)([\w\-]+)/g;
   const datePattern = /(fecha\s*(de)?\s*(emisi[oó]n|factura)?[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
   const dueDatePattern = /(fecha\s*de\s*vencimiento[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
   const totalPattern = /(total\s*(a\s*pagar)?[:\s\$]*)([\d,]+\.\d{2})/g;
@@ -151,6 +151,15 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
   match = taxPattern.exec(text);
   if (match) {
     data.taxAmount = match[2].replace(',', '');
+  }
+  
+  // Calculate subtotal if we have total and tax but no subtotal
+  if (data.totalAmount && data.taxAmount && !data.subtotal) {
+    const totalNum = parseFloat(data.totalAmount);
+    const taxNum = parseFloat(data.taxAmount);
+    if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
+      data.subtotal = (totalNum - taxNum).toFixed(2);
+    }
   }
   
   // Extract currency
@@ -306,9 +315,34 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     // Extract customer info
     const customerInfo = extractPartyInfo(xmlContent, 'customer');
     
-    // Extract invoice number
-    let invoiceNumber = extractTextFromXMLTag(xmlContent, 'ID') ||
-                       extractTextFromXMLTag(xmlContent, 'UUID');
+    // Extract invoice number with priority for readable formats
+    let invoiceNumber = null;
+    
+    // Try common invoice number fields in order of preference
+    const invoiceNumberFields = ['InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number', 'InvoiceID', 'ID'];
+    
+    for (const field of invoiceNumberFields) {
+      invoiceNumber = extractTextFromXMLTag(xmlContent, field);
+      if (invoiceNumber && invoiceNumber.length < 50 && !invoiceNumber.includes('-')) {
+        // Prefer shorter, more readable invoice numbers
+        break;
+      }
+    }
+    
+    // If no readable number found, try UUID as last resort
+    if (!invoiceNumber) {
+      invoiceNumber = extractTextFromXMLTag(xmlContent, 'UUID');
+      
+      // If UUID is very long, try to extract a shorter meaningful part
+      if (invoiceNumber && invoiceNumber.length > 30) {
+        // Look for patterns like "FE-123" or similar in the content
+        const readablePattern = /(?:FE|INV|FACT)[-\s]*(\d+)/i;
+        const match = xmlContent.match(readablePattern);
+        if (match && match[1]) {
+          invoiceNumber = match[0];
+        }
+      }
+    }
     
     // Use regex patterns as fallback for better Spanish/Latin American support
     const regexData = extractWithRegexPatterns(xmlContent);
@@ -344,7 +378,7 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       currency = amountResult.currency || currency;
     }
     
-    // Get subtotal
+    // Get subtotal with improved fallback logic
     amountResult = extractAmountFromXMLTag(xmlContent, 'TaxExclusiveAmount');
     if (amountResult.amount) {
       subtotal = amountResult.amount;
@@ -362,6 +396,16 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
           subtotal = amountResult.amount;
           currency = amountResult.currency || currency;
         }
+      }
+    }
+    
+    // Enhanced calculation: if we have total and tax but no subtotal, calculate it
+    if (totalAmount && taxAmount && !subtotal) {
+      const totalNum = parseFloat(totalAmount);
+      const taxNum = parseFloat(taxAmount);
+      if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
+        subtotal = (totalNum - taxNum).toFixed(2);
+        console.log(`Calculated subtotal: ${subtotal} (${totalAmount} - ${taxAmount})`);
       }
     }
     
