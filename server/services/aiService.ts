@@ -341,7 +341,7 @@ ${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for len
 - dueDate: <cbc:DueDate> if available
 - concept: <cbc:Note> OR <cbc:Description> at document level
 - notes: Any additional <cbc:Note> or <cbc:AdditionalInformation>
-- projectName: <cbc:ID> in <cac:ProjectReference> OR contract/order references
+- projectName: FIRST search for "Proyecto" text pattern and extract the phrase immediately following it, THEN try <cbc:ID> in <cac:ProjectReference> OR contract/order references
 - projectAddress: <cac:DeliveryAddress> details if different from parties
 - projectCity: <cbc:CityName> from delivery address
 - descriptionSummary: Concatenate item descriptions from <cac:InvoiceLine>
@@ -353,6 +353,7 @@ CRITICAL AMOUNT EXTRACTION LOGIC:
 4. FALLBACK STRATEGY: If standard UBL tags not found, look for similar patterns or Spanish equivalents
 5. MULTIPLE AMOUNTS: If multiple amounts found, prioritize the largest for totalAmount
 6. TAX CALCULATION: Try to calculate missing amounts (subtotal = total - tax) if some amounts missing
+7. PROJECT NAME EXTRACTION: Look for "Proyecto" text pattern in XML content and extract the phrase/text immediately following it
 
 ADVANCED PARSING INSTRUCTIONS FOR AMOUNTS:
 - Search case-insensitively for amount patterns
