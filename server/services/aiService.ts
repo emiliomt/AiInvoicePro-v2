@@ -42,6 +42,131 @@ function validateString(value: any): string | null {
 }
 
 function validateAmount(value: any): string | null {
+  if (!value) return null;
+
+  // For XML processing, be more lenient with amount formatting
+  let cleaned = String(value).trim();
+
+  // Remove XML tags if present
+  cleaned = cleaned.replace(/<[^>]*>/g, '');
+
+  // Remove any whitespace and non-numeric characters except decimal separators
+  cleaned = cleaned.replace(/\s+/g, '');
+  cleaned = cleaned.replace(/[^\d.,-]/g, '');
+
+  // Skip if no digits found
+  if (!/\d/.test(cleaned)) return null;
+
+  // Handle different decimal separators and thousand separators
+  // Colombian format: 1.234.567,89 or international: 1,234,567.89
+  if (cleaned.includes(',') && cleaned.includes('.')) {
+    const lastComma = cleaned.lastIndexOf(',');
+    const lastPeriod = cleaned.lastIndexOf('.');
+
+    if (lastComma > lastPeriod) {
+      // Format: 1.234.567,89 (European/Colombian)
+      const parts = cleaned.split(',');
+      if (parts.length === 2 && parts[1].length <= 2) {
+        cleaned = parts[0].replace(/\./g, '') + '.' + parts[1];
+      }
+    } else {
+      // Format: 1,234,567.89 (US)
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  } else if (cleaned.includes(',')) {
+    // Only comma present
+    const parts = cleaned.split(',');
+    if (parts.length === 2 && parts[1].length <= 2) {
+      // Decimal separator: 1234,89
+      cleaned = parts[0] + '.' + parts[1];
+    } else {
+      // Thousands separator: 1,234,567
+      cleaned = cleaned.replace(/,/g, '');
+    }
+  }
+
+  // Final cleanup - ensure only one decimal point
+  const decimalParts = cleaned.split('.');
+  if (decimalParts.length > 2) {
+    // Multiple decimals - keep the last one as decimal separator
+    const lastDecimal = decimalParts.pop();
+    cleaned = decimalParts.join('') + '.' + lastDecimal;
+  }
+
+  const num = parseFloat(cleaned);
+  return !isNaN(num) && num >= 0 ? num.toFixed(2) : null;
+}
+
+function validateDate(value: any): string | null {
+  if (!value) return null;
+  try {
+    const date = new Date(value);
+    return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : null;
+  } catch {
+    return null;
+  }
+}
+
+function validateTaxId(value: any): string | null {
+  if (!value) return null;
+  const cleaned = String(value).replace(/[^\d-]/g, '');
+  return cleaned.length >= 5 ? cleaned : null;
+}
+
+// Simplified extraction for difficult documents
+async function attemptSimplifiedExtraction(ocrText: string): Promise<ExtractedInvoiceData> {
+  const simplePrompt = `Extract only the most obvious fields from this invoice text:
+${ocrText.substring(0, 2000)}
+
+Return JSON with these fields only (use null if not found):
+{
+  "vendorName": "first company name found",
+  "totalAmount": "largest monetary amount",
+  "invoiceNumber": "invoice/factura number",
+  "invoiceDate": "date in YYYY-MM-DD format",
+  "currency": "COP/USD/MXN"
+}`;
+
+  const response = await openai.chat.completions.create({
+    model: "gpt-4o-mini",
+    messages: [
+      { role: "system", content: "Extract only the most obvious invoice fields. Return valid JSON." },
+      { role: "user", content: simplePrompt }
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.0,
+    max_tokens: 500
+  });
+
+  const simpleData = JSON.parse(response.choices[0].message.content || '{}');
+
+  return {
+    vendorName: simpleData.vendorName || null,
+    invoiceNumber: simpleData.invoiceNumber || null,
+    invoiceDate: simpleData.invoiceDate || null,
+    dueDate: null,
+    totalAmount: simpleData.totalAmount || null,
+    taxAmount: null,
+    subtotal: null,
+    currency: simpleData.currency || "COP",
+    taxId: null,
+    companyName: null,
+    concept: null,
+    projectName: null,
+    vendorAddress: null,
+    buyerTaxId: null,
+    buyerAddress: null,
+    descriptionSummary: null,
+    projectAddress: null,
+    projectCity: null,
+    notes: null,
+    lineItems: [],
+    confidenceScore: "0.5"
+  };
+}
+
+// Simple cache for repeated extractions
+const extractionCache = new Map<string, ExtractedInvoiceData>();
 
 // Direct XML parsing function for amount extraction
 async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
@@ -127,120 +252,10 @@ async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
   }
 }
 
-
-  if (!value) return null;
-  
-  // For XML processing, be more lenient with amount formatting
-  let cleaned = String(value).trim();
-  
-  // Remove XML tags if present
-  cleaned = cleaned.replace(/<[^>]*>/g, '');
-  
-  // Handle different decimal separators and thousand separators
-  cleaned = cleaned.replace(/[^\d.,-]/g, '');
-  
-  // Handle Colombian number format (e.g., 1.234.567,89)
-  if (cleaned.includes(',') && cleaned.includes('.')) {
-    // If both comma and period, assume period is thousands separator
-    const parts = cleaned.split(',');
-    if (parts.length === 2 && parts[1].length <= 2) {
-      // Format: 1.234.567,89
-      cleaned = parts[0].replace(/\./g, '') + '.' + parts[1];
-    } else {
-      // Format: 1,234,567.89
-      cleaned = cleaned.replace(/,/g, '');
-    }
-  } else if (cleaned.includes(',')) {
-    // Only comma - could be decimal separator
-    const parts = cleaned.split(',');
-    if (parts.length === 2 && parts[1].length <= 2) {
-      // Assume comma is decimal separator
-      cleaned = parts[0] + '.' + parts[1];
-    } else {
-      // Assume comma is thousands separator
-      cleaned = cleaned.replace(/,/g, '');
-    }
-  }
-  
-  const num = parseFloat(cleaned);
-  return !isNaN(num) && num >= 0 ? num.toFixed(2) : null;
-}
-
-function validateDate(value: any): string | null {
-  if (!value) return null;
-  try {
-    const date = new Date(value);
-    return !isNaN(date.getTime()) ? date.toISOString().split('T')[0] : null;
-  } catch {
-    return null;
-  }
-}
-
-function validateTaxId(value: any): string | null {
-  if (!value) return null;
-  const cleaned = String(value).replace(/[^\d-]/g, '');
-  return cleaned.length >= 5 ? cleaned : null;
-}
-
-// Simplified extraction for difficult documents
-async function attemptSimplifiedExtraction(ocrText: string): Promise<ExtractedInvoiceData> {
-  const simplePrompt = `Extract only the most obvious fields from this invoice text:
-${ocrText.substring(0, 2000)}
-
-Return JSON with these fields only (use null if not found):
-{
-  "vendorName": "first company name found",
-  "totalAmount": "largest monetary amount",
-  "invoiceNumber": "invoice/factura number",
-  "invoiceDate": "date in YYYY-MM-DD format",
-  "currency": "COP/USD/MXN"
-}`;
-
-  const response = await openai.chat.completions.create({
-    model: "gpt-4o-mini",
-    messages: [
-      { role: "system", content: "Extract only the most obvious invoice fields. Return valid JSON." },
-      { role: "user", content: simplePrompt }
-    ],
-    response_format: { type: "json_object" },
-    temperature: 0.0,
-    max_tokens: 500
-  });
-
-  const simpleData = JSON.parse(response.choices[0].message.content || '{}');
-  
-  return {
-    vendorName: simpleData.vendorName || null,
-    invoiceNumber: simpleData.invoiceNumber || null,
-    invoiceDate: simpleData.invoiceDate || null,
-    dueDate: null,
-    totalAmount: simpleData.totalAmount || null,
-    taxAmount: null,
-    subtotal: null,
-    currency: simpleData.currency || "COP",
-    taxId: null,
-    companyName: null,
-    concept: null,
-    projectName: null,
-    vendorAddress: null,
-    buyerTaxId: null,
-    buyerAddress: null,
-    descriptionSummary: null,
-    projectAddress: null,
-    projectCity: null,
-    notes: null,
-    lineItems: [],
-    confidenceScore: "0.5"
-  };
-}
-
-// Simple cache for repeated extractions
-const extractionCache = new Map<string, ExtractedInvoiceData>();
-
 export async function extractInvoiceData(ocrText: string, applyLearning: boolean = true): Promise<ExtractedInvoiceData> {
   try {
     console.log(`Starting AI extraction with ${ocrText.length} characters of OCR text`);
-    
+
     if (!ocrText || ocrText.trim().length < 10) {
       throw new Error('Insufficient OCR text for AI extraction');
     }
@@ -263,7 +278,7 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
     if (applyLearning) {
       const { storage } = await import('../storage');
       const insights = await storage.getLearningInsights();
-      
+
       if (insights.length > 0) {
         learningImprovements = `\n\n🎯 LEARNING IMPROVEMENTS (Based on Previous Errors):
 ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${insight.frequency} times)`).join('\n')}
@@ -281,7 +296,7 @@ ${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${i
     // Detect if this is XML content
     const isXML = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<Factura') || ocrText.includes('<cbc:') || ocrText.includes('<cac:');
     console.log(`Processing ${isXML ? 'XML' : 'OCR'} content for extraction`);
-    
+
     const prompt = isXML ? 
       `You are an expert XML invoice parser specialized in Latin American electronic invoices (UBL 2.1, DIAN Colombia format). Extract ALL possible structured data from this XML document:
 
@@ -456,7 +471,7 @@ Return valid JSON only:
 
     console.log('Received response from OpenAI');
     const responseContent = response.choices[0].message.content;
-    
+
     if (!responseContent) {
       throw new Error('Empty response from AI service');
     }
@@ -493,9 +508,9 @@ Return valid JSON only:
     const filledFields = Object.values(cleanedData).filter(v => v !== null && v !== "").length;
     const totalFields = Object.keys(cleanedData).length - 1; // Exclude lineItems
     const completeness = (filledFields / totalFields) * 100;
-    
+
     console.log(`Extraction completeness: ${completeness.toFixed(1)}% (${filledFields}/${totalFields} fields)`);
-    
+
     // If completeness is very low, try again with a simplified approach
     if (completeness < 30) {
       console.log('Low completeness detected, attempting simplified extraction...');
@@ -516,7 +531,7 @@ Return valid JSON only:
     }
 
     console.log('AI extraction completed successfully with cleaned data');
-    
+
     // Cache the result for performance
     if (extractionCache.size > 100) {
       // Clear old entries if cache gets too large
@@ -524,11 +539,11 @@ Return valid JSON only:
       extractionCache.delete(firstKey);
     }
     extractionCache.set(cacheKey, cleanedData);
-    
+
     return cleanedData;
   } catch (error: any) {
     console.error("AI extraction failed:", error);
-    
+
     // Provide more specific error messages
     if (error.message?.includes('API key')) {
       throw new Error('AI service configuration error - please check API key');
@@ -644,7 +659,7 @@ ${ocrText}`;
     // Map extracted data to expected format
     // Use entrada_almacen_no as the primary unique identifier, fallback to orden_compra_no
     const uniquePoId = extractedData.entrada_almacen_no || extractedData.orden_compra_no || `PO-${Date.now()}`;
-    
+
     return {
       poId: uniquePoId,
       vendorName: extractedData.proveedor || "",
@@ -676,7 +691,7 @@ export async function findBestProjectMatch(extractedProjectName: string, allProj
 
   for (const project of allProjects) {
     const similarity = calculateStringSimilarity(extractedProjectName.toLowerCase(), project.name.toLowerCase());
-    
+
     // Use a lower threshold for fuzzy matching (60% instead of exact match)
     if (similarity > bestMatch.score && similarity >= 60) {
       bestMatch = { project, score: similarity };
@@ -691,7 +706,7 @@ function calculateStringSimilarity(str1: string, str2: string): number {
   const maxLength = Math.max(str1.length, str2.length);
   if (maxLength === 0) return 100;
 
-  const distance = levenshteinDistance(str1, str2);
+  const distance =The levenshteinDistance function calculates the Levenshtein distance between two strings, used for fuzzy string matching. str1, str2);
   return ((maxLength - distance) / maxLength) * 100;
 }
 
