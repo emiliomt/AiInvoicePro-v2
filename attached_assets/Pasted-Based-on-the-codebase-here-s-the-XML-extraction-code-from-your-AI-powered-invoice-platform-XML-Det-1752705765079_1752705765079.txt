@@ -1,0 +1,107 @@
+Based on the codebase, here's the XML extraction code from your AI-powered invoice platform:
+XML Detection and Processing
+
+In
+
+, XML files are detected and processed differently from PDFs and images:
+
+// Helper function to detect file type from buffer
+function detectFileType(buffer: Buffer): string {
+  if (buffer.slice(0, 4).toString() === '%PDF') {
+    return 'PDF';
+  }
+  
+  // Check for XML files
+  const textContent = buffer.toString('utf8', 0, Math.min(buffer.length, 1000));
+  if (textContent.trim().startsWith('<?xml') || textContent.includes('<Invoice') || textContent.includes('<Factura')) {
+    return 'XML';
+  }
+  
+  // ... other file type checks
+}
+
+XML Content Processing
+
+When an XML file is detected, it's processed directly without OCR:
+
+// Helper function to process XML content
+async function processXMLContent(fileBuffer: Buffer, invoiceId: number): Promise<string> {
+  try {
+    const xmlContent = fileBuffer.toString('utf8');
+    console.log(`XML content extracted for invoice ${invoiceId}, length: ${xmlContent.length} characters`);
+    
+    // For XML files, we can directly use the content as structured text
+    // This is much more reliable than OCR since XML is already structured data
+    if (!xmlContent || xmlContent.trim().length < 10) {
+      throw new Error('XML file appears to be empty or corrupted');
+    }
+    
+    return xmlContent;
+  } catch (error) {
+    console.error(`XML processing failed for invoice ${invoiceId}:`, error);
+    throw new Error(`XML processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+Main OCR Processing Function
+
+The main processInvoiceOCR function handles XML files specially:
+
+export async function processInvoiceOCR(fileBuffer: Buffer, invoiceId: number): Promise<string> {
+  try {
+    const fileType = detectFileType(fileBuffer);
+    console.log(`File type detected for invoice ${invoiceId}: ${fileType}`);
+
+    let textContent = '';
+
+    if (fileType === 'PDF') {
+      // Process PDF with OCR
+      textContent = await processImageOCR(fileBuffer, invoiceId);
+    } else if (fileType === 'XML') {
+      // Process XML directly - extract text content
+      console.log(`Processing XML file for invoice ${invoiceId}`);
+      textContent = await processXMLContent(fileBuffer, invoiceId);
+    } else {
+      // For images, use OCR directly
+      textContent = await processImageOCR(fileBuffer, invoiceId);
+    }
+
+    return textContent;
+  } catch (error) {
+    console.error(`OCR processing failed for invoice ${invoiceId}:`, error);
+    throw new Error(`OCR processing failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+  }
+}
+
+OCR with Confidence for XML
+
+XML files get 100% confidence since they're structured data:
+
+export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promise<{
+  text: string;
+  confidence: number;
+}> {
+  try {
+    const fileType = detectFileType(fileBuffer);
+
+    if (fileType === 'XML') {
+      // XML files have 100% confidence since they're structured data
+      const xmlContent = fileBuffer.toString('utf8');
+      return {
+        text: xmlContent,
+        confidence: 1.0, // 100% confidence for XML files
+      };
+    }
+    // ... handle other file types
+  }
+}
+
+Key Features of XML Processing:
+
+    Direct Text Extraction: No OCR needed - XML content is extracted directly as UTF-8 text
+    High Confidence: XML files get 100% confidence since they're structured data
+    Error Handling: Validates XML content length and handles corrupted files
+    Performance: Much faster than OCR since no image processing is required
+    Detection: Looks for <?xml, <Invoice>, or <Factura> patterns to identify XML files
+
+The XML extraction is optimized for Latin American electronic invoices (facturas electrónicas) and provides much more reliable data extraction compared to OCR-based processing of scanned documents.
