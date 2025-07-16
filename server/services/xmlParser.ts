@@ -248,6 +248,13 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       if (amountResult.amount) {
         subtotal = amountResult.amount;
         currency = amountResult.currency || currency;
+      } else {
+        // Try TaxableAmount from TaxSubtotal
+        amountResult = extractAmountFromXMLTag(xmlContent, 'TaxableAmount');
+        if (amountResult.amount) {
+          subtotal = amountResult.amount;
+          currency = amountResult.currency || currency;
+        }
       }
     }
     
