@@ -222,7 +222,10 @@ async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
     while ((match = subtotalPattern.exec(xmlContent)) !== null) {
       currency = match[1];
       subtotal = validateAmount(match[2]);
-      if (subtotal) break;
+      if (subtotal) {
+        console.log('AI Service: Subtotal extracted from TaxExclusiveAmount:', subtotal);
+        break;
+      }
     }
 
     // If no subtotal found, try LineExtensionAmount
@@ -231,7 +234,33 @@ async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
       while ((match = lineExtensionPattern.exec(xmlContent)) !== null) {
         currency = match[1];
         subtotal = validateAmount(match[2]);
-        if (subtotal) break;
+        if (subtotal) {
+          console.log('AI Service: Subtotal extracted from LineExtensionAmount:', subtotal);
+          break;
+        }
+      }
+    }
+
+    // If still no subtotal, try additional patterns
+    if (!subtotal) {
+      const alternativePatterns = [
+        /<cbc:TaxableAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:TaxableAmount>/gi,
+        /<cbc:BaseAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:BaseAmount>/gi,
+        /<cbc:Amount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:Amount>/gi,
+        /<cbc:SubtotalAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:SubtotalAmount>/gi
+      ];
+      
+      for (const pattern of alternativePatterns) {
+        const patternMatch = pattern.exec(xmlContent);
+        if (patternMatch && patternMatch[2]) {
+          const candidateAmount = validateAmount(patternMatch[2]);
+          if (candidateAmount) {
+            currency = patternMatch[1];
+            subtotal = candidateAmount;
+            console.log('AI Service: Subtotal extracted from alternative pattern:', subtotal);
+            break;
+          }
+        }
       }
     }
 
@@ -365,7 +394,7 @@ ${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for len
 🎯 ENHANCED FIELD MAPPING (FOCUS ON AMOUNTS AND PROJECT EXTRACTION):
 - totalAmount: PRIORITY ORDER: <cbc:TaxInclusiveAmount> > <cbc:PayableAmount> > <cbc:TaxExclusiveAmount> > any <cbc:*Amount> with highest value
 - taxAmount: PRIORITY ORDER: <cbc:TaxAmount> > <cbc:TaxableAmount> > sum of all tax subtotals
-- subtotal: PRIORITY ORDER: <cbc:TaxExclusiveAmount> > <cbc:LineExtensionAmount> > <cbc:BaseAmount> > totalAmount minus taxAmount
+- subtotal: PRIORITY ORDER: <cbc:TaxExclusiveAmount> > <cbc:LineExtensionAmount> > <cbc:BaseAmount> > <cbc:TaxableAmount> > totalAmount minus taxAmount. CRITICAL: The subtotal is the amount before taxes - if totalAmount is 590.00 and taxAmount is 94.24, then subtotal should be 495.76 (calculated as 590.00 - 94.24)
 - currency: EXTRACT from currencyID attribute (COP, USD, EUR, etc.) - look in ALL amount fields
 - vendorName: <cbc:RegistrationName> in <cac:AccountingSupplierParty> OR <cac:Party> within supplier context
 - taxId: <cbc:CompanyID> in supplier's <cac:PartyTaxScheme> or <cac:PartyIdentification>

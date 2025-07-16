@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2" xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:ID>FE-001</cbc:ID>
+  <cbc:IssueDate>2025-01-15</cbc:IssueDate>
+  <cbc:DueDate>2025-02-15</cbc:DueDate>
+  <cbc:DocumentCurrencyCode>COP</cbc:DocumentCurrencyCode>
+  
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>Test Vendor Company</cbc:Name>
+      </cac:PartyName>
+      <cac:PartyTaxScheme>
+        <cbc:RegistrationName>Test Vendor Company S.A.S.</cbc:RegistrationName>
+        <cbc:CompanyID>900123456-7</cbc:CompanyID>
+      </cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cac:PartyName>
+        <cbc:Name>Test Customer Company</cbc:Name>
+      </cac:PartyName>
+      <cac:PartyTaxScheme>
+        <cbc:RegistrationName>Test Customer Company S.A.S.</cbc:RegistrationName>
+        <cbc:CompanyID>800987654-3</cbc:CompanyID>
+      </cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="COP">495.76</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="COP">495.76</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="COP">590.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="COP">590.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="COP">94.24</cbc:TaxAmount>
+  </cac:TaxTotal>
+  
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">1</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="COP">495.76</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Description>Test service item</cbc:Description>
+      <cbc:Name>Professional services</cbc:Name>
+    </cac:Item>
+    <cac:Price>
+      <cbc:PriceAmount currencyID="COP">495.76</cbc:PriceAmount>
+    </cac:Price>
+  </cac:InvoiceLine>
+</Invoice>
