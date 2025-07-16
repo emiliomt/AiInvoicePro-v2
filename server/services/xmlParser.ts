@@ -274,7 +274,7 @@ function extractLineItems(xmlContent: string): Array<{
   }> = [];
   
   // Extract all invoice lines
-  const linePattern = /<cac:InvoiceLine[^>]*>(.*?)<\/cac:InvoiceLine>/gis;
+  const linePattern = /<cac:InvoiceLine[^>]*>(.*?)<\/cac:InvoiceLine>/gi;
   let lineMatch;
   
   while ((lineMatch = linePattern.exec(xmlContent)) !== null) {
@@ -412,8 +412,8 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
           ];
           
           for (const pattern of alternativePatterns) {
-            const matches = [...xmlContent.matchAll(pattern)];
-            for (const match of matches) {
+            let match;
+            while ((match = pattern.exec(xmlContent)) !== null) {
               if (match && match[2]) {
                 const cleanedAmount = cleanAmount(match[2]);
                 if (cleanedAmount) {
@@ -503,7 +503,7 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     let projectCity = null;
     
     // Look for delivery address that might be project location
-    const deliveryPattern = /<cac:Delivery[^>]*>(.*?)<\/cac:Delivery>/gis;
+    const deliveryPattern = /<cac:Delivery[^>]*>(.*?)<\/cac:Delivery>/gi;
     const deliveryMatch = deliveryPattern.exec(xmlContent);
     
     if (deliveryMatch) {
