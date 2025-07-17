@@ -1197,7 +1197,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
               fileName: file.originalname,
               status: "processing",
               fileUrl: filePath,
+              companyId: user.companyId
+            });
 
+            uploadedInvoices.push(invoice);
+
+            // Process invoice asynchronously
+            processInvoiceAsync(invoice, file.buffer).catch(error => {
+              console.error(`Failed to process invoice ${invoice.id}:`, error);
+            });
+
+            return invoice;
+          } catch (error) {
+            console.error(`Error processing file ${file.originalname}:`, error);
+            throw error;
+          }
+        });
+
+        // Wait for all uploads to complete
+        const results = await Promise.allSettled(processPromises);
+        const successfulUploads = results.filter(result => result.status === 'fulfilled').length;
+        const failedUploads = results.filter(result => result.status === 'rejected').length;
+
+        console.log(`Upload complete: ${successfulUploads} successful, ${failedUploads} failed`);
+
+        res.json({
+          message: `Successfully uploaded ${successfulUploads} invoice(s)`,
+          uploadedCount: successfulUploads,
+          failedCount: failedUploads,
+          invoices: uploadedInvoices
+        });
+      } catch (error) {
+        console.error("Error in upload handler:", error);
+        res.status(500).json({ 
+          message: "Failed to upload invoices",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
+    });
+  });
 
   // Clear invoice files cache
   app.delete('/api/invoices/clear-cache', isAuthenticated, async (req: any, res) => {
@@ -1269,42 +1307,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         error: error.message 
       });
     }
-  });
-
-            });
-
-            // Start processing immediately using setImmediate to avoid blocking
-            setImmediate(async () => {
-              try {
-                await processInvoiceAsync(invoice, file.buffer);
-              } catch (error) {
-                console.error(`Failed to process invoice ${invoice.id}:`, error);
-              }
-            });
-
-            return invoice;
-          } catch (fileError) {
-            console.error(`Error processing file ${file.originalname}:`, fileError);
-            return null;
-          }
-        });
-
-        const results = await Promise.allSettled(processPromises);
-        results.forEach(result => {
-          if (result.status === 'fulfilled' && result.value) {
-            uploadedInvoices.push(result.value);
-          }
-        });
-
-        res.json({ 
-          message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
-          invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
-        });
-      } catch (error) {
-        console.error("Error uploading invoices:", error);
-        res.status(500).json({ message: "Failed to upload invoices" });
-      }
-    });
   });
 
   // Manual processing endpoints
