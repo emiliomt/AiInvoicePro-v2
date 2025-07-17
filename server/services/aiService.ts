@@ -165,8 +165,14 @@ Return JSON with these fields only (use null if not found):
   };
 }
 
-// Simple cache for repeated extractions
-const extractionCache = new Map<string, ExtractedInvoiceData>();
+// Cache for storing extraction results to avoid re-processing
+const extractionCache = new Map<string, any>();
+
+// Method to clear the extraction cache
+export function clearCache(): void {
+  extractionCache.clear();
+  console.log('AI extraction cache cleared');
+}
 
 // Direct XML parsing function for amount extraction
 async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
@@ -249,7 +255,7 @@ async function extractAmountsDirectlyFromXML(xmlContent: string): Promise<{
         /<cbc:Amount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:Amount>/gi,
         /<cbc:SubtotalAmount[^>]*currencyID="([^"]*)"[^>]*>([\d.,]+)<\/cbc:SubtotalAmount>/gi
       ];
-      
+
       for (const pattern of alternativePatterns) {
         const patternMatch = pattern.exec(xmlContent);
         if (patternMatch && patternMatch[2]) {
@@ -778,36 +784,36 @@ export async function findBestProjectMatch(extractedProjectName: string, allProj
   if (!extractedProjectName || !allProjects || allProjects.length === 0) {
     return null;
   }
-  
+
   // Simple string matching for now
   const normalizedProjectName = extractedProjectName.toLowerCase().trim();
-  
+
   for (const project of allProjects) {
     const projectName = project.name ? project.name.toLowerCase().trim() : '';
     if (projectName.includes(normalizedProjectName) || normalizedProjectName.includes(projectName)) {
       return project.id;
     }
   }
-  
+
   return null;
 }
 
 function calculateStringSimilarity(str1: string, str2: string): number {
   const len1 = str1.length;
   const len2 = str2.length;
-  
+
   if (len1 === 0) return len2;
   if (len2 === 0) return len1;
-  
+
   const matrix = [];
   for (let i = 0; i <= len2; i++) {
     matrix[i] = [i];
   }
-  
+
   for (let j = 0; j <= len1; j++) {
     matrix[0][j] = j;
   }
-  
+
   for (let i = 1; i <= len2; i++) {
     for (let j = 1; j <= len1; j++) {
       if (str2.charAt(i - 1) === str1.charAt(j - 1)) {
@@ -821,7 +827,7 @@ function calculateStringSimilarity(str1: string, str2: string): number {
       }
     }
   }
-  
+
   return 1 - (matrix[len2][len1] / Math.max(len1, len2));
 }
 
@@ -832,25 +838,23 @@ export async function validateInvoiceData(invoiceData: any): Promise<{
 }> {
   const errors: string[] = [];
   const warnings: string[] = [];
-  
+
   // Basic validation
   if (!invoiceData.vendorName) {
     errors.push('Vendor name is required');
   }
-  
+
   if (!invoiceData.totalAmount) {
     errors.push('Total amount is required');
   }
-  
+
   if (!invoiceData.invoiceNumber) {
     warnings.push('Invoice number is missing');
   }
-  
+
   return {
     isValid: errors.length === 0,
     errors,
     warnings
   };
 }
-
-

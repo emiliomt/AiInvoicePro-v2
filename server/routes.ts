@@ -1197,6 +1197,80 @@ export async function registerRoutes(app: Express): Promise<Server> {
               fileName: file.originalname,
               status: "processing",
               fileUrl: filePath,
+
+
+  // Clear invoice files cache
+  app.delete('/api/invoices/clear-cache', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      console.log(`User ${userId} requested to clear invoice files cache`);
+
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Clear uploads directory
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir);
+        let deletedCount = 0;
+        
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          const stats = fs.statSync(filePath);
+          
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+          }
+        }
+        
+        console.log(`Deleted ${deletedCount} files from uploads directory`);
+      }
+
+      // Clear AI service cache if it exists
+      const { aiService } = await import('./services/aiService');
+      if (aiService && typeof aiService.clearCache === 'function') {
+        aiService.clearCache();
+        console.log('AI service cache cleared');
+      }
+
+      // Clear any cached extraction results
+      const cacheDir = path.join(process.cwd(), '.cache');
+      if (fs.existsSync(cacheDir)) {
+        const files = fs.readdirSync(cacheDir);
+        let deletedCacheCount = 0;
+        
+        for (const file of files) {
+          const filePath = path.join(cacheDir, file);
+          const stats = fs.statSync(filePath);
+          
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            deletedCacheCount++;
+          }
+        }
+        
+        console.log(`Deleted ${deletedCacheCount} files from cache directory`);
+      }
+
+      res.json({ 
+        message: 'Invoice files cache cleared successfully',
+        details: {
+          uploadsCleared: true,
+          aiCacheCleared: true,
+          filesRemoved: 'All cached files removed'
+        }
+      });
+      
+    } catch (error: any) {
+      console.error('Error clearing cache:', error);
+      res.status(500).json({ 
+        message: 'Failed to clear cache', 
+        error: error.message 
+      });
+    }
+  });
+
             });
 
             // Start processing immediately using setImmediate to avoid blocking
