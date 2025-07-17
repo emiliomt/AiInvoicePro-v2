@@ -102,7 +102,7 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
   
   // Enhanced regex patterns for Spanish/Latin American invoices
   const rfcPattern = /(rfc[:\s]*)([a-zñ&]{3,4}\d{6}[a-z\d]{3})/g;
-  const nitPattern = /(nit[:\s#]*)(\d{5,15}-?\d?)/g;
+  const nitPattern = /(nit[:\s#]*)(\d{5,15}-\d)/g;
   const invoiceNumberPattern = /(n[oú]mero\s*de\s*factura[:\s#]*|factura\s*n[oú]mero[:\s#]*|invoice\s*number[:\s#]*|fe[:\s#]*)([\w\-]+)/g;
   const datePattern = /(fecha\s*(de)?\s*(emisi[oó]n|factura)?[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
   const dueDatePattern = /(fecha\s*de\s*vencimiento[:\s]*)(\d{2}\/\d{2}\/\d{4}|\d{4}-\d{2}-\d{2})/g;
@@ -295,9 +295,31 @@ function extractPartyInfo(xmlContent: string, partyType: 'supplier' | 'customer'
   const name = extractTextFromXMLTag(partyContent, 'RegistrationName') || 
                extractTextFromXMLTag(partyContent, 'Name');
   
-  // Extract tax ID
-  const taxId = extractTextFromXMLTag(partyContent, 'CompanyID') ||
-                extractTextFromXMLTag(partyContent, 'ID');
+  // Extract tax ID with enhanced patterns for Colombian NIT format
+  let taxId = extractTextFromXMLTag(partyContent, 'CompanyID') ||
+              extractTextFromXMLTag(partyContent, 'ID');
+  
+  // If taxId is found but doesn't include verification digit, try to find complete format
+  if (taxId && !taxId.includes('-')) {
+    // Look for complete NIT format in the broader content
+    const nitPatterns = [
+      new RegExp(`${taxId}-\\d`, 'g'),
+      new RegExp(`NIT[:\\s]*${taxId}-\\d`, 'gi'),
+      new RegExp(`${taxId}\\s*-\\s*\\d`, 'g')
+    ];
+    
+    for (const pattern of nitPatterns) {
+      const match = xmlContent.match(pattern);
+      if (match) {
+        // Extract just the NIT part (number-digit)
+        const fullNit = match[0].replace(/NIT[:\s]*/gi, '').trim();
+        if (fullNit.includes('-')) {
+          taxId = fullNit;
+          break;
+        }
+      }
+    }
+  }
   
   // Extract address components
   const streetName = extractTextFromXMLTag(partyContent, 'StreetName') || '';
