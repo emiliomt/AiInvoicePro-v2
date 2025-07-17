@@ -2027,15 +2027,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Apply general learning improvements
-      const { LearningTracker } = await import('./services/learningTracker');
-      await LearningTracker.recordFeedback(
-        invoiceId,
-        userId,
-        invoice.extractedData,
-        correctedData,
-        reason,
-        invoice.fileName
-      );
+      try {
+        const { LearningTracker } = await import('./services/learningTracker');
+        await LearningTracker.recordFeedback(
+          invoiceId,
+          userId,
+          invoice.extractedData,
+          correctedData,
+          reason,
+          invoice.fileName
+        );
+      } catch (error) {
+        console.error('Error calling LearningTracker.recordFeedback:', error);
+      }
 
       // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
       if (isColombianInvoice && invoice.ocrText) {
