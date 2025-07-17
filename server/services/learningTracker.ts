@@ -228,6 +228,42 @@ export class LearningTracker {
     };
   }
 
+  // Record feedback for learning improvements
+  static async recordFeedback(
+    invoiceId: number,
+    userId: string,
+    originalData: any,
+    correctedData: any,
+    reason: string,
+    fileName?: string
+  ): Promise<void> {
+    try {
+      console.log(`Recording feedback for invoice ${invoiceId} from user ${userId}: ${reason}`);
+      
+      // Apply learning from the feedback immediately
+      await this.applyLearningFromFeedback();
+      
+      // Store specific learning insights based on the corrections
+      if (correctedData) {
+        for (const [field, correctedValue] of Object.entries(correctedData)) {
+          if (correctedValue && correctedValue !== originalData?.[field]) {
+            await storage.storeLearningInsight({
+              field: field,
+              errorType: 'user_correction',
+              suggestedFix: `Correct value: ${correctedValue}`,
+              frequency: 1,
+              lastSeen: new Date()
+            });
+          }
+        }
+      }
+      
+      console.log(`Feedback processing completed for invoice ${invoiceId}`);
+    } catch (error) {
+      console.error('Error recording feedback:', error);
+    }
+  }
+
   // Record positive feedback for successful extractions
   static async recordPositiveFeedback(invoiceId: number, userId: string): Promise<void> {
     try {
