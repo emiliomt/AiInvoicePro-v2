@@ -2,8 +2,8 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp } from "lucide-react";
-import { useState, useCallback } from "react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload } from "lucide-react";
+import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -50,6 +50,8 @@ export default function Invoices() {
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [feedbackInvoice, setFeedbackInvoice] = useState<Invoice | null>(null);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -203,6 +205,55 @@ export default function Invoices() {
     positiveFeedbackMutation.mutate(invoiceId);
   };
 
+  const uploadMutation = useMutation({
+    mutationFn: async (files: FileList) => {
+      const formData = new FormData();
+      Array.from(files).forEach((file) => {
+        formData.append('invoice', file);
+      });
+      
+      const response = await apiRequest('POST', '/api/invoices/upload', formData);
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: `Successfully uploaded ${data.uploadedCount} invoice(s)`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      setIsUploading(false);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Upload Failed",
+        description: error.message,
+        variant: "destructive",
+      });
+      setIsUploading(false);
+    },
+  });
+
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    if (files && files.length > 0) {
+      setIsUploading(true);
+      uploadMutation.mutate(files);
+    }
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [uploadMutation]);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -235,36 +286,54 @@ export default function Invoices() {
                 onClick={() => refetch()}
               >
                 Refresh
-              </Button></div>
-            {invoices.length > 0 && (
-              <AlertDialog>
-                <AlertDialogTrigger asChild>
-                  <Button variant="destructive" size="sm">
-                    <Trash2 size={16} className="mr-2" />
-                    Delete All Invoices
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>Delete All Invoices</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      Are you sure you want to delete ALL invoices? This action cannot be undone.
-                      This will permanently delete all {invoices.length} invoice{invoices.length === 1 ? '' : 's'} and their associated data.
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>Cancel</AlertDialogCancel>
-                    <AlertDialogAction
-                      onClick={() => deleteAllMutation.mutate()}
-                      className="bg-red-600 hover:bg-red-700"
-                      disabled={deleteAllMutation.isPending}
-                    >
-                      {deleteAllMutation.isPending ? "Deleting..." : "Delete All"}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            )}
+              </Button>
+              <Button
+                variant="default"
+                size="sm"
+                onClick={handleUploadClick}
+                disabled={isUploading}
+              >
+                <Upload size={16} className="mr-2" />
+                {isUploading ? "Uploading..." : "Upload Invoice"}
+              </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.xml,.jpg,.jpeg,.png"
+                multiple
+                onChange={handleFileUpload}
+                className="hidden"
+              />
+              {invoices.length > 0 && (
+                <AlertDialog>
+                  <AlertDialogTrigger asChild>
+                    <Button variant="destructive" size="sm">
+                      <Trash2 size={16} className="mr-2" />
+                      Delete All Invoices
+                    </Button>
+                  </AlertDialogTrigger>
+                  <AlertDialogContent>
+                    <AlertDialogHeader>
+                      <AlertDialogTitle>Delete All Invoices</AlertDialogTitle>
+                      <AlertDialogDescription>
+                        Are you sure you want to delete ALL invoices? This action cannot be undone.
+                        This will permanently delete all {invoices.length} invoice{invoices.length === 1 ? '' : 's'} and their associated data.
+                      </AlertDialogDescription>
+                    </AlertDialogHeader>
+                    <AlertDialogFooter>
+                      <AlertDialogCancel>Cancel</AlertDialogCancel>
+                      <AlertDialogAction
+                        onClick={() => deleteAllMutation.mutate()}
+                        className="bg-red-600 hover:bg-red-700"
+                        disabled={deleteAllMutation.isPending}
+                      >
+                        {deleteAllMutation.isPending ? "Deleting..." : "Delete All"}
+                      </AlertDialogAction>
+                    </AlertDialogFooter>
+                  </AlertDialogContent>
+                </AlertDialog>
+              )}
+            </div>
           </div>
         </div>
 
