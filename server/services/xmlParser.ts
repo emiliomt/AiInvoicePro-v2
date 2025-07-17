@@ -41,31 +41,39 @@ function cleanAmount(value: string | null): string | null {
   
   let numericValue = numericMatch[0];
   
-  // Handle Colombian number format: 1.234.567,89 -> 1234567.89
+  // Enhanced Colombian number format handling
   if (numericValue.includes(',') && numericValue.includes('.')) {
     const lastComma = numericValue.lastIndexOf(',');
     const lastPeriod = numericValue.lastIndexOf('.');
     
     if (lastComma > lastPeriod) {
-      // Colombian format: 1.234.567,89
+      // Colombian format: 1.234.567,89 -> 1234567.89
       const parts = numericValue.split(',');
       if (parts.length === 2 && parts[1].length <= 2) {
         numericValue = parts[0].replace(/\./g, '') + '.' + parts[1];
       }
     } else {
-      // US format: 1,234,567.89
+      // US format: 1,234,567.89 -> 1234567.89
       numericValue = numericValue.replace(/,/g, '');
     }
   } else if (numericValue.includes(',')) {
-    // Only comma - could be decimal or thousands separator
+    // Only comma - check context to determine if decimal or thousands separator
     const parts = numericValue.split(',');
     if (parts.length === 2 && parts[1].length <= 2) {
-      // Decimal separator: 1234,89
+      // Likely decimal separator: 1234,89 -> 1234.89
       numericValue = parts[0] + '.' + parts[1];
     } else {
-      // Thousands separator: 1,234,567
+      // Thousands separator: 1,234,567 -> 1234567
       numericValue = numericValue.replace(/,/g, '');
     }
+  } else if (numericValue.includes('.')) {
+    // Only periods - could be thousands separators in European format
+    const parts = numericValue.split('.');
+    if (parts.length > 2 || (parts.length === 2 && parts[1].length > 2)) {
+      // Thousands separator: 1.234.567 -> 1234567
+      numericValue = numericValue.replace(/\./g, '');
+    }
+    // Otherwise keep as decimal: 1234.56
   }
   
   const num = parseFloat(numericValue);
@@ -305,8 +313,13 @@ function extractLineItems(xmlContent: string): Array<{
   return lineItems;
 }
 
-export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
-  console.log('Starting direct XML parsing...');
+export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false): ExtractedInvoiceData {
+  console.log('Starting enhanced XML parsing...');
+  
+  if (enableDebug) {
+    console.log('DEBUG MODE: Detailed parsing information will be logged');
+    console.log(`XML content length: ${xmlContent.length} characters`);
+  }
   
   try {
     // Extract supplier info
@@ -315,33 +328,80 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     // Extract customer info
     const customerInfo = extractPartyInfo(xmlContent, 'customer');
     
-    // Extract invoice number with priority for readable formats
+    // Enhanced invoice number extraction with priority for readable formats
     let invoiceNumber = null;
     
     // Try common invoice number fields in order of preference
-    const invoiceNumberFields = ['InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number', 'InvoiceID', 'ID'];
+    const invoiceNumberFields = [
+      'InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number', 
+      'InvoiceID', 'DocumentID', 'ID'
+    ];
+    
+    // Score and select the best invoice number
+    let bestScore = 0;
+    let bestNumber = null;
     
     for (const field of invoiceNumberFields) {
-      invoiceNumber = extractTextFromXMLTag(xmlContent, field);
-      if (invoiceNumber && invoiceNumber.length < 50 && !invoiceNumber.includes('-')) {
-        // Prefer shorter, more readable invoice numbers
-        break;
+      const candidate = extractTextFromXMLTag(xmlContent, field);
+      if (candidate) {
+        const score = scoreInvoiceNumber(candidate);
+        if (score > bestScore) {
+          bestScore = score;
+          bestNumber = candidate;
+        }
       }
     }
     
-    // If no readable number found, try UUID as last resort
-    if (!invoiceNumber) {
-      invoiceNumber = extractTextFromXMLTag(xmlContent, 'UUID');
-      
-      // If UUID is very long, try to extract a shorter meaningful part
-      if (invoiceNumber && invoiceNumber.length > 30) {
-        // Look for patterns like "FE-123" or similar in the content
-        const readablePattern = /(?:FE|INV|FACT)[-\s]*(\d+)/i;
-        const match = xmlContent.match(readablePattern);
-        if (match && match[1]) {
-          invoiceNumber = match[0];
+    invoiceNumber = bestNumber;
+    
+    // If no good number found, try UUID as last resort but clean it
+    if (!invoiceNumber || bestScore < 3) {
+      const uuid = extractTextFromXMLTag(xmlContent, 'UUID');
+      if (uuid) {
+        // Try to extract meaningful parts from UUID or look for readable patterns
+        const readablePatterns = [
+          /(?:FE|INV|FACT|DOC)[-\s]*(\d+)/i,
+          /(\d{4,})/,  // At least 4 consecutive digits
+          /(^[A-Z0-9]{3,15})/i // Alphanumeric string 3-15 chars at start
+        ];
+        
+        for (const pattern of readablePatterns) {
+          const match = uuid.match(pattern);
+          if (match) {
+            invoiceNumber = match[0];
+            break;
+          }
+        }
+        
+        // If still very long, take first meaningful part
+        if (!invoiceNumber && uuid.length > 30) {
+          invoiceNumber = uuid.substring(0, 20);
+        } else if (!invoiceNumber) {
+          invoiceNumber = uuid;
         }
       }
+    }
+    
+    function scoreInvoiceNumber(number: string): number {
+      let score = 0;
+      
+      // Prefer shorter numbers (more readable)
+      if (number.length <= 15) score += 3;
+      else if (number.length <= 25) score += 2;
+      else if (number.length <= 35) score += 1;
+      
+      // Prefer numbers without UUIDs characteristics
+      if (!number.includes('-') || number.split('-').length <= 2) score += 2;
+      
+      // Prefer numbers with digits
+      if (/\d/.test(number)) score += 2;
+      
+      // Prefer numbers that look like invoice patterns
+      if (/^(FE|INV|FACT|DOC)/i.test(number)) score += 3;
+      if (/^\d+$/.test(number)) score += 2; // Pure numeric
+      if (/^[A-Z]{1,3}\d+$/i.test(number)) score += 2; // Letter prefix + numbers
+      
+      return score;
     }
     
     // Use regex patterns as fallback for better Spanish/Latin American support
@@ -412,24 +472,38 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
     const concept = extractTextFromXMLTag(xmlContent, 'Note') ||
                    extractTextFromXMLTag(xmlContent, 'Description');
     
-    // Enhanced project name extraction
+    // Enhanced project name extraction with multiple sources
     let projectName = extractTextFromXMLTag(xmlContent, 'ProjectReference') ||
                      extractTextFromXMLTag(xmlContent, 'OrderReference') ||
-                     extractTextFromXMLTag(xmlContent, 'ContractDocumentReference');
+                     extractTextFromXMLTag(xmlContent, 'ContractDocumentReference') ||
+                     extractTextFromXMLTag(xmlContent, 'AdditionalDocumentReference');
     
-    // If no project reference found, search in notes and descriptions for project patterns
+    // If no direct project reference found, search in multiple content sources
     if (!projectName) {
-      const noteContent = concept || '';
-      const projectPatterns = [
-        /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,]+)/i,
-        /(?:PROYECTO|OBRA|PROJECT)\s+([A-Z0-9\-\s]+)/i,
-        /CONTRATO\s+NO\.?\s*([A-Z0-9\-]+)/i
+      const searchContent = [
+        concept || '',
+        extractTextFromXMLTag(xmlContent, 'Note') || '',
+        extractTextFromXMLTag(xmlContent, 'Description') || '',
+        // Also search in delivery location which might indicate project site
+        extractTextFromXMLTag(xmlContent, 'StreetName') || ''
+      ].join(' ');
+      
+      const enhancedProjectPatterns = [
+        /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,;]+)/i,
+        /(?:PROYECTO|OBRA|PROJECT)\s+([A-Z0-9\-\s]{3,30})/i,
+        /CONTRATO\s+(?:NO\.?|NUM\.?|#)?\s*([A-Z0-9\-]{3,20})/i,
+        /(?:CONSTRUCCIÓN|CONSTRUCTION)\s+(?:DE\s+)?([A-Z0-9\-\s]{5,40})/i,
+        /(?:EDIFICIO|BUILDING|TORRE|TOWER)\s+([A-Z0-9\-\s]{3,25})/i,
+        /(?:FASE|PHASE|ETAPA)\s+([A-Z0-9\-\s]{2,20})/i
       ];
       
-      for (const pattern of projectPatterns) {
-        const match = noteContent.match(pattern);
+      for (const pattern of enhancedProjectPatterns) {
+        const match = searchContent.match(pattern);
         if (match && match[1]) {
           projectName = match[1].trim();
+          // Remove common suffixes/prefixes that aren't part of project name
+          projectName = projectName.replace(/^(DE\s+|THE\s+|EL\s+|LA\s+)/i, '');
+          projectName = projectName.replace(/(\s+EN\s+|\s+IN\s+|\s+AT\s+).*$/i, '');
           break;
         }
       }
@@ -488,12 +562,32 @@ export function parseInvoiceXML(xmlContent: string): ExtractedInvoiceData {
       confidenceScore: '0.95' // High confidence for XML parsing
     };
     
+    if (enableDebug) {
+      console.log('DEBUG: Detailed extraction results:', {
+        vendorName: result.vendorName,
+        invoiceNumber: result.invoiceNumber,
+        invoiceDate: result.invoiceDate,
+        totalAmount: result.totalAmount,
+        taxAmount: result.taxAmount,
+        subtotal: result.subtotal,
+        currency: result.currency,
+        projectName: result.projectName,
+        lineItemsCount: result.lineItems.length,
+        supplierTaxId: result.taxId,
+        customerTaxId: result.buyerTaxId,
+        vendorAddress: result.vendorAddress ? 'Found' : 'Not found',
+        buyerAddress: result.buyerAddress ? 'Found' : 'Not found',
+        projectAddress: result.projectAddress ? 'Found' : 'Not found'
+      });
+    }
+    
     console.log('XML parsing completed successfully:', {
       vendorName: result.vendorName,
       invoiceNumber: result.invoiceNumber,
       totalAmount: result.totalAmount,
       currency: result.currency,
-      lineItemsCount: result.lineItems.length
+      lineItemsCount: result.lineItems.length,
+      projectName: result.projectName ? 'Found' : 'Not found'
     });
     
     return result;
