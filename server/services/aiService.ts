@@ -1,5 +1,7 @@
 import OpenAI from "openai";
 
+import { applyColombianRules, COLOMBIAN_LEARNING_INSIGHTS } from './colombianInvoiceExtractor';
+
 const openai = new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || ""
 });
@@ -310,11 +312,14 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
     }
 
     // Check cache first for performance
-    const cacheKey = ocrText.substring(0, 500); // Use first 500 chars as cache key
+    const cacheKey = ocrText.substring(0, 500);
     if (extractionCache.has(cacheKey)) {
       console.log('Using cached extraction result');
       return extractionCache.get(cacheKey)!;
     }
+
+    // 🇨🇴 NEW: Check if this is a Colombian invoice and apply specific rules
+    const colombianRules = applyColombianRules(ocrText);
 
     // Check if OpenAI API key is available
     if (!process.env.OPENAI_API_KEY && !process.env.OPENAI_API_KEY_ENV_VAR) {
@@ -322,341 +327,111 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
       throw new Error('AI service configuration error - API key missing');
     }
 
-    // Apply learning improvements if enabled
+    // Apply learning improvements
     let learningImprovements = "";
     if (applyLearning) {
       const { storage } = await import('../storage');
       const insights = await storage.getLearningInsights();
 
+      // 🇨🇴 NEW: Add Colombian-specific insights if this is a Colombian invoice
+      if (colombianRules.isColombianInvoice) {
+        const colombianInsights = COLOMBIAN_LEARNING_INSIGHTS.map(insight => 
+          `- ${insight.field}: ${insight.suggestedFix} (Colombian rule - ${insight.frequency} occurrences)`
+        ).join('\n');
+
+        learningImprovements = `\n\n🇨🇴 COLOMBIAN INVOICE DETECTED - MANDATORY RULES:\n${colombianInsights}\n`;
+      }
+
       if (insights.length > 0) {
-        learningImprovements = `\n\n🎯 LEARNING IMPROVEMENTS (Based on Previous Errors):
-${insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${insight.frequency} times)`).join('\n')}
-\nPay special attention to these fields and avoid these common mistakes.
-
-🔧 FIELD-SPECIFIC IMPROVEMENTS:
-- For vendorName: Look for company name immediately after "Emisor:" or "Proveedor:"
-- For totalAmount: Find the largest monetary amount, usually after "Total:" or "Total a Pagar:"
-- For taxId: Look for NIT/RFC patterns - numbers with dashes (e.g., 12-3456789-1)
-- For invoiceDate: Find date near invoice number, convert to YYYY-MM-DD format
-- For projectName: CRITICAL - Look for these patterns: "PROYECTO:", "OBRA:", "Project:", "CONTRACT:", "CONTRATO:", project codes, construction site names, building names, or any reference to specific work locations
-- For projectAddress: Look for delivery addresses, work site addresses, or addresses mentioned in project context that differ from company addresses
-- For projectCity: Extract city from project/delivery context, or look for city names mentioned with project information`;
+        learningImprovements += `\n\n🎯 LEARNING IMPROVEMENTS (Based on Previous Errors):\n`;
+        learningImprovements += insights.map(insight => `- ${insight.field}: ${insight.suggestedFix} (seen ${insight.frequency} times)`).join('\n');
+        learningImprovements += `\nPay special attention to these fields and avoid these common mistakes.`;
       }
     }
 
-    // Detect if this is XML content
-    const isXML = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<Factura') || ocrText.includes('<cbc:') || ocrText.includes('<cac:');
-    console.log(`Processing ${isXML ? 'XML' : 'OCR'} content for extraction`);
+    // 🇨🇴 NEW: Use Colombian-specific prompt if detected
+    const systemPrompt = colombianRules.isColombianInvoice && colombianRules.extractionPrompt
+      ? colombianRules.extractionPrompt
+      : getStandardExtractionPrompt(ocrText, learningImprovements);
 
-    let preliminaryData: any = {};
+    console.log('Sending request to OpenAI with', colombianRules.isColombianInvoice ? 'Colombian' : 'standard', 'rules...');
 
-    // Check if this is XML content and use specialized parsing
-    const isXMLContent = ocrText.trim().startsWith('<?xml') || ocrText.includes('<Invoice') || ocrText.includes('<cac:') || ocrText.includes('<cbc:');
-
-    let xmlContent = null;
-    if (isXMLContent) {
-      xmlContent = ocrText;
-      console.log('XML content detected, will use direct parsing for amounts');
-
-      // Try using the dedicated XML parser first
-      try {
-        const { parseInvoiceXML } = await import('./xmlParser');
-        const xmlParsedData = parseInvoiceXML(xmlContent);
-
-        if (xmlParsedData.totalAmount || xmlParsedData.taxAmount || xmlParsedData.subtotal) {
-          console.log('XML parser extracted amounts:', {
-            totalAmount: xmlParsedData.totalAmount,
-            taxAmount: xmlParsedData.taxAmount,
-            subtotal: xmlParsedData.subtotal,
-            currency: xmlParsedData.currency
-          });
-
-          // Use XML parser results as base and merge with AI results
-          preliminaryData = {
-            ...preliminaryData,
-            ...xmlParsedData
-          };
-        }
-      } catch (xmlParseError) {
-        console.error('XML parser failed, falling back to AI extraction:', xmlParseError);
-      }
-    }
-
-    const prompt = isXML ? 
-      `You are an expert XML invoice parser specialized in Latin American electronic invoices (UBL 2.1, DIAN Colombia format). Extract ALL possible structured data from this XML document:
-
-${learningImprovements}
-
-🔍 COMPREHENSIVE XML EXTRACTION RULES WITH PRIORITY ON AMOUNTS:
-1. AMOUNTS (HIGHEST PRIORITY): Search exhaustively for ALL monetary values in these patterns:
-   - <cbc:TaxInclusiveAmount currencyID="COP">VALUE</cbc:TaxInclusiveAmount>
-   - <cbc:PayableAmount currencyID="COP">VALUE</cbc:PayableAmount>
-   - <cbc:TaxExclusiveAmount currencyID="COP">VALUE</cbc:TaxExclusiveAmount>
-   - <cbc:TaxAmount currencyID="COP">VALUE</cbc:TaxAmount>
-   - <cbc:LineExtensionAmount currencyID="COP">VALUE</cbc:LineExtensionAmount>
-   - <cbc:Amount currencyID="COP">VALUE</cbc:Amount>
-   - <cbc:TaxableAmount currencyID="COP">VALUE</cbc:TaxableAmount>
-   - <cbc:BaseAmount currencyID="COP">VALUE</cbc:BaseAmount>
-   - ANY tag containing "Amount" with numeric content and currencyID
-
-2. VENDOR/SUPPLIER INFO: Look for <cac:AccountingSupplierParty>, <cac:SenderParty>, <cac:PartyTaxScheme>
-3. CUSTOMER/BUYER INFO: Look for <cac:AccountingCustomerParty>, <cac:ReceiverParty>
-4. TAX IDs: Find <cbc:CompanyID>, <cbc:IdentificationCode> - extract complete values including dashes
-5. DATES: Find <cbc:IssueDate>, <cbc:DueDate>, <cbc:Date> tags, convert to YYYY-MM-DD
-6. ADDRESSES: Extract from <cbc:StreetName>, <cbc:CityName>, <cbc:PostalZone>, <cbc:CountrySubentity>
-7. INVOICE DETAILS: Look for <cbc:ID>, <cbc:UUID>, <cbc:Description>, <cbc:Note>
-8. LINE ITEMS: Extract from <cac:InvoiceLine>, <cac:Item>, <cbc:InvoicedQuantity>, <cbc:Price>
-9. PROJECT INFORMATION: Look for project references in notes, descriptions, delivery addresses, and contract references
-
-FULL XML CONTENT TO ANALYZE:
-${ocrText.substring(0, 15000)} ${ocrText.length > 15000 ? '...[truncated for length]' : ''}
-
-🎯 ENHANCED FIELD MAPPING (FOCUS ON AMOUNTS AND PROJECT EXTRACTION):
-- totalAmount: PRIORITY ORDER: <cbc:TaxInclusiveAmount> > <cbc:PayableAmount> > <cbc:TaxExclusiveAmount> > any <cbc:*Amount> with highest value
-- taxAmount: PRIORITY ORDER: <cbc:TaxAmount> > <cbc:TaxableAmount> > sum of all tax subtotals
-- subtotal: PRIORITY ORDER: <cbc:TaxExclusiveAmount> > <cbc:LineExtensionAmount> > <cbc:BaseAmount> > <cbc:TaxableAmount> > totalAmount minus taxAmount. CRITICAL: The subtotal is the amount before taxes - if totalAmount is 590.00 and taxAmount is 94.24, then subtotal should be 495.76 (calculated as 590.00 - 94.24)
-- currency: EXTRACT from currencyID attribute (COP, USD, EUR, etc.) - look in ALL amount fields
-- vendorName: <cbc:RegistrationName> in <cac:AccountingSupplierParty> OR <cac:Party> within supplier context
-- taxId: <cbc:CompanyID> in supplier's <cac:PartyTaxScheme> or <cac:PartyIdentification>
-- vendorAddress: Complete address from supplier's <cac:PostalAddress>: <cbc:StreetName>, <cbc:CityName>, <cbc:CountrySubentity>
-- companyName: <cbc:RegistrationName> in <cac:AccountingCustomerParty> OR buyer party
-- buyerTaxId: <cbc:CompanyID> in customer's <cac:PartyTaxScheme>
-- buyerAddress: Complete address from customer's <cac:PostalAddress>
-- invoiceNumber: <cbc:ID> at document root level OR <cbc:UUID>
-- invoiceDate: <cbc:IssueDate> at document level
-- dueDate: <cbc:DueDate> if available
-- concept: <cbc:Note> OR <cbc:Description> at document level
-- notes: Any additional <cbc:Note> or <cbc:AdditionalInformation>
-- projectName: EXTRACT project names using these methods in order: 1) Search for text patterns like "Proyecto:", "Obra:", "Proyecto No:", "Project:", followed by project name, 2) Look in <cbc:Note> fields for project references, 3) Check <cac:ProjectReference><cbc:ID>, 4) Look in <cac:OrderReference> or <cac:ContractDocumentReference> tags, 5) Search line item descriptions for project mentions
-- projectAddress: EXTRACT from <cac:DeliveryAddress> OR look for address patterns in notes/descriptions that differ from vendor/buyer addresses
-- projectCity: <cbc:CityName> from <cac:DeliveryAddress> OR extract city from project address if different from vendor/buyer cities
-- descriptionSummary: Concatenate item descriptions from <cac:InvoiceLine>
-
-CRITICAL AMOUNT EXTRACTION LOGIC:
-1. EXHAUSTIVE SEARCH: Scan the ENTIRE XML for ANY tag containing "Amount" - don't miss any monetary values
-2. CURRENCY DETECTION: Extract currencyID="XXX" from amount tags - this is crucial for proper display
-3. NUMERIC VALIDATION: Extract only the numeric content from amount tags, preserve decimals
-4. FALLBACK STRATEGY: If standard UBL tags not found, look for similar patterns or Spanish equivalents
-5. MULTIPLE AMOUNTS: If multiple amounts found, prioritize the largest for totalAmount
-6. TAX CALCULATION: Try to calculate missing amounts (subtotal = total - tax) if some amounts missing
-7. PROJECT NAME EXTRACTION: Look for "Proyecto" text pattern in XML content and extract the phrase/text immediately following it
-
-ADVANCED PARSING INSTRUCTIONS FOR AMOUNTS:
-- Search case-insensitively for amount patterns
-- Handle both English and Spanish XML namespaces
-- Extract decimal amounts with proper precision (2 decimal places)
-- Look for amounts in nested structures like <cac:TaxTotal><cac:TaxSubtotal><cbc:TaxAmount>
-- Check for amounts in line items and aggregate if needed
-- Preserve currency information from currencyID attributes
-
-Return complete JSON with ALL extracted fields (extract amounts even if other fields fail):
-
-{
-  "vendorName": "extracted supplier company name",
-  "invoiceNumber": "document ID or UUID",
-  "invoiceDate": "YYYY-MM-DD format",
-  "dueDate": "YYYY-MM-DD or null",
-  "totalAmount": "final amount as decimal string",
-  "taxAmount": "tax total as decimal string",
-  "subtotal": "pre-tax amount as decimal string",
-  "currency": "currency code from XML",
-  "taxId": "supplier tax ID",
-  "companyName": "customer company name",
-  "concept": "document description or note",
-  "projectName": "project reference if any",
-  "vendorAddress": "complete supplier address",
-  "buyerTaxId": "customer tax ID",
-  "buyerAddress": "complete customer address",
-  "descriptionSummary": "summary of all line items",
-  "projectAddress": "delivery address if different",
-  "projectCity": "delivery city",
-  "notes": "additional notes or information",
-  "lineItems": [
-    {
-      "description": "item description",
-      "quantity": "quantity as string",
-      "unitPrice": "unit price as string",
-      "totalPrice": "line total as string",
-      "itemType": "item classification if available"
-    }
-  ],
-  "confidenceScore": "0.95"
-}` :
-      `You are an expert Latin American invoice extraction system. Extract data with maximum accuracy using these specific rules:
-
-${learningImprovements}
-
-🔍 EXTRACTION RULES:
-1. VENDOR INFO: Look for "Emisor", "Proveedor", "Razón Social" or company name at top
-2. TAX IDs: NIT, RFC, CUIT are always numeric with optional dashes/dots
-3. AMOUNTS: Always extract numbers only (no currency symbols, no commas)
-4. DATES: Convert to YYYY-MM-DD format, look for "Fecha", "Date"
-5. ADDRESSES: Extract complete address including street, city, state
-6. PROJECT: Look for "Obra", "Proyecto", "Project" or construction site references
-
-OCR TEXT TO ANALYZE:
-${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
-
-🎯 CRITICAL EXTRACTION GUIDELINES:
-- vendorName: First company name found, usually after "Emisor:" or at document top
-- taxId: Vendor's NIT/RFC - numeric string near vendor name
-- vendorAddress: Complete address of vendor including city/state
-- companyName: Buyer company, usually after "Adquiriente:" or "Cliente:"
-- buyerTaxId: Buyer's NIT/RFC - different from vendor's
-- invoiceNumber: After "Factura No:", "Invoice:", "Folio:"
-- invoiceDate: Date near invoice number, format as YYYY-MM-DD
-- totalAmount: Final amount, usually largest number, after "Total:"
-- taxAmount: IVA/Tax amount, after "IVA:", "Tax:"
-- subtotal: Base amount before tax
-- currency: Look for COP, USD, MXN, EUR symbols/text
-- projectName: ESSENTIAL - Search for these patterns: "PROYECTO:", "OBRA:", "PROJECT:", "CONTRATO:", construction project names, building names, contract references, work order numbers, or any specific location/project identifiers
-- projectAddress: Look for delivery addresses ("Dirección de entrega:", "Lugar de entrega:", "Site:", "Sitio:"), work site addresses, or any address different from vendor/buyer addresses
-- projectCity: Extract city from project/delivery context, or look for city names mentioned with project information
-
-Extract amounts as clean numbers: "1,234.56" → "1234.56"
-If field not found, return null (not empty string)
-
-Return valid JSON only:
-
-🧩 Extraction Logic:
-- Use consistent label recognition across LatAm formats (Colombia, Mexico, etc.)
-- Extract buyerTaxId from fields labeled as "NIT del Cliente", "RFC Cliente", or similar
-- Use spatial proximity to companyName to identify the correct field
-- For projectAddress: Look for specific project location addresses (street addresses like "CALLE 98 # 65 A 54")
-- For projectCity: If project city is not explicit, extract city/region from vendorAddress (e.g., "BARRANQUILLA, ATLANTICO, COLOMBIA")
-- Return null for any field that is not found in the document
-- Extract actual values from the text, don't invent data
-- Convert dates to YYYY-MM-DD format
-- Extract amounts as decimal strings without currency symbols
-- Handle both Spanish and English field labels
-- If no clear values found, return null rather than placeholder text`;
-
-    console.log('Sending request to OpenAI...');
     const response = await Promise.race([
       openai.chat.completions.create({
-        model: "gpt-4o-mini", // Faster and cheaper model for invoice extraction
+        model: "gpt-4o-mini",
         messages: [
           {
             role: "system",
-            content: isXML ? 
-              "You are an expert XML invoice parser. Extract structured data from XML content and respond only with valid JSON. Parse XML tags carefully and extract clean values. If XML tags are not found, return null for that field." :
-              "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON. Be fast and accurate. If you cannot find a field value, return null for that field."
+            content: colombianRules.isColombianInvoice 
+              ? "You are a Colombian electronic invoice extraction expert. Follow the Colombian DIAN format rules precisely. Return only valid JSON."
+              : "You are an expert invoice data extraction system. Extract structured data from OCR text and respond only with valid JSON."
           },
           {
             role: "user",
-            content: prompt
+            content: systemPrompt
           }
         ],
-        response_format: { type: "json_object" },
-        temperature: 0.0, // Set to 0 for faster, more deterministic responses
-        max_tokens: 1500, // Reduced for faster processing
+        temperature: 0.1,
+        max_tokens: 2000
       }),
-      new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('AI request timeout')), 15000)
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('timeout')), 30000)
       )
-    ]);
+    ]) as any;
 
-    console.log('Received response from OpenAI');
-    const responseContent = response.choices[0].message.content;
-
-    if (!responseContent) {
+    const content = response.choices[0].message.content?.trim();
+    if (!content) {
       throw new Error('Empty response from AI service');
     }
 
-    const extractedData = JSON.parse(responseContent);
-    console.log('Successfully parsed AI response:', Object.keys(extractedData));
-
-    // 🔥 CRITICAL FIX: Prioritize XML parser results over AI results
-    const finalData = {
-      // Start with AI results as base
-      ...extractedData,
-      // Override with XML parser results where available (XML parser is more accurate)
-      ...preliminaryData
-    };
-
-    console.log('Final merged data (XML priority):', {
-      totalAmount: finalData.totalAmount,
-      taxAmount: finalData.taxAmount,
-      subtotal: finalData.subtotal,
-      source: preliminaryData.subtotal ? 'XML Parser' : 'AI'
-    });
-
-    // Validate and clean the MERGED response (not just AI response)
-    const cleanedData = {
-      vendorName: validateString(finalData.vendorName),
-      invoiceNumber: validateString(finalData.invoiceNumber),
-      invoiceDate: validateDate(finalData.invoiceDate),
-      dueDate: validateDate(finalData.dueDate),
-      totalAmount: validateAmount(finalData.totalAmount),        // ✅ Now uses XML parser result if available
-      taxAmount: validateAmount(finalData.taxAmount),            // ✅ Now uses XML parser result if available  
-      subtotal: validateAmount(finalData.subtotal),              // ✅ This is the key fix!
-      currency: finalData.currency || "COP",
-      taxId: validateTaxId(finalData.taxId),
-      companyName: validateString(finalData.companyName),
-      concept: validateString(finalData.concept),
-      projectName: validateString(finalData.projectName),
-      vendorAddress: validateString(finalData.vendorAddress),
-      buyerTaxId: validateTaxId(finalData.buyerTaxId),
-      buyerAddress: validateString(finalData.buyerAddress),
-      descriptionSummary: validateString(finalData.descriptionSummary),
-      projectAddress: validateString(finalData.projectAddress),
-      projectCity: validateString(finalData.projectCity),
-      notes: validateString(finalData.notes),
-      lineItems: Array.isArray(finalData.lineItems) ?
-        finalData.lineItems.map((item: any) => ({
-          description: validateString(item.description),
-          quantity: validateString(item.quantity),
-          unitPrice: validateAmount(item.unitPrice),
-          totalPrice: validateAmount(item.totalPrice),
-          itemType: validateString(item.itemType)
-        })) : [],
-      confidenceScore: finalData.confidenceScore || "0.85"
-    };
-
-    // Log extraction quality metrics
-    const filledFields = Object.values(cleanedData).filter(v => v !== null && v !== "").length;
-    const totalFields = Object.keys(cleanedData).length - 1; // Exclude lineItems
-    const completeness = (filledFields / totalFields) * 100;
-
-    console.log(`Extraction completeness: ${completeness.toFixed(1)}% (${filledFields}/${totalFields} fields)`);
-
-    // If completeness is very low, try again with a simplified approach
-    if (completeness < 30) {
-      console.log('Low completeness detected, attempting simplified extraction...');
-      return await attemptSimplifiedExtraction(ocrText);
+    // Parse JSON response
+    let extractedData: ExtractedInvoiceData;
+    try {
+      const cleanedContent = content.replace(/```json\n?|\n?```/g, '').trim();
+      extractedData = JSON.parse(cleanedContent);
+    } catch (parseError) {
+      console.error('JSON parsing failed:', parseError);
+      throw new Error('Invalid JSON response from AI service');
     }
 
-    // Special handling for XML files with missing amounts
-    if (isXML && (!cleanedData.totalAmount || cleanedData.totalAmount === "0.00")) {
-      console.log('XML file detected with missing amounts, attempting direct XML parsing...');
-      const directAmounts = await extractAmountsDirectlyFromXML(ocrText);
-      if (directAmounts.totalAmount) {
-        cleanedData.totalAmount = directAmounts.totalAmount;
-        cleanedData.taxAmount = directAmounts.taxAmount || cleanedData.taxAmount;
-        cleanedData.subtotal = directAmounts.subtotal || cleanedData.subtotal;
-        cleanedData.currency = directAmounts.currency || cleanedData.currency;
-        console.log('Direct XML parsing found amounts:', directAmounts);
-      }
+    // 🇨🇴 NEW: Apply Colombian validation and corrections
+    if (colombianRules.isColombianInvoice && colombianRules.validator) {
+      console.log('Applying Colombian validation rules...');
+      extractedData = colombianRules.validator(extractedData);
     }
 
-    // Cache the result for performance
-    if (extractionCache.size > 100) {
-      // Clear old entries if cache gets too large
-      const firstKey = extractionCache.keys().next().value;
-      extractionCache.delete(firstKey);
+    // Validate required fields
+    if (!extractedData.vendorName && !extractedData.totalAmount) {
+      throw new Error('Failed to extract essential invoice data');
     }
-    extractionCache.set(cacheKey, cleanedData);
 
-    console.log('AI extraction completed successfully with cleaned data');
+    // Set confidence score
+    if (!extractedData.confidenceScore) {
+      extractedData.confidenceScore = calculateConfidenceScore(extractedData, colombianRules.isColombianInvoice);
+    }
 
-    return cleanedData;
+    // Cache the result
+    extractionCache.set(cacheKey, extractedData);
+
+    // 🇨🇴 NEW: Log Colombian-specific extraction results
+    if (colombianRules.isColombianInvoice) {
+      console.log('🇨🇴 Colombian invoice extraction completed:', {
+        vendorName: extractedData.vendorName,
+        vendorNIT: extractedData.taxId,
+        buyerNIT: extractedData.buyerTaxId,
+        dueDate: extractedData.dueDate,
+        projectCity: extractedData.projectCity,
+        totalAmount: extractedData.totalAmount,
+        currency: extractedData.currency
+      });
+    }
+
+    return extractedData;
+
   } catch (error: any) {
-    console.error("AI extraction failed:", error);
+    console.error('AI extraction failed:', error);
 
-    // Provide more specific error messages
-    if (error.message?.includes('API key')) {
-      throw new Error('AI service configuration error - please check API key');
-    } else if (error.message?.includes('timeout')) {
+    if (error.message?.includes('timeout')) {
       throw new Error('AI service timeout - please try again');
     } else if (error.message?.includes('quota')) {
       throw new Error('AI service quota exceeded - please try again later');
@@ -871,4 +646,68 @@ export async function validateInvoiceData(invoiceData: any): Promise<{
     errors,
     warnings
   };
+}
+
+// Helper function for standard (non-Colombian) extraction prompt
+function getStandardExtractionPrompt(ocrText: string, learningImprovements: string): string {
+  return `Extract data with maximum accuracy using these specific rules:
+
+${learningImprovements}
+
+🔍 EXTRACTION RULES:
+1. VENDOR INFO: Look for "Emisor", "Proveedor", "Razón Social" or company name at top
+2. TAX IDs: NIT, RFC, CUIT are always numeric with optional dashes/dots
+3. AMOUNTS: Always extract numbers only (no currency symbols, no commas)
+4. DATES: Convert to YYYY-MM-DD format, look for "Fecha", "Date"
+5. ADDRESSES: Extract complete address including street, city, state
+6. PROJECT: Look for "Obra", "Proyecto", "Project" or construction site references
+
+OCR TEXT TO ANALYZE:
+${ocrText.substring(0, 4000)} ${ocrText.length > 4000 ? '...[truncated]' : ''}
+
+Return valid JSON only with all available fields.`;
+}
+
+// Enhanced confidence scoring that considers Colombian invoice completeness
+function calculateConfidenceScore(extractedData: ExtractedInvoiceData, isColombianInvoice: boolean): string {
+  let score = 0;
+  let maxScore = 0;
+
+  // Standard fields
+  const standardFields = ['vendorName', 'totalAmount', 'invoiceNumber', 'invoiceDate'];
+  standardFields.forEach(field => {
+    maxScore += 1;
+    if (extractedData[field as keyof ExtractedInvoiceData]) score += 1;
+  });
+
+  // Colombian-specific field requirements
+  if (isColombianInvoice) {
+    const colombianFields = ['taxId', 'buyerTaxId', 'dueDate', 'currency'];
+    colombianFields.forEach(field => {
+      maxScore += 1;
+      const value = extractedData[field as keyof ExtractedInvoiceData];
+      if (value) {
+        // Bonus points for proper Colombian NIT format
+        if ((field === 'taxId' || field === 'buyerTaxId') && typeof value === 'string' && value.includes('-')) {
+          score += 1.2; // Bonus for proper NIT format
+        } else if (field === 'currency' && value === 'COP') {
+          score += 1.1; // Bonus for correct currency
+        } else {
+          score += 1;
+        }
+      }
+    });
+  }
+
+  const confidence = Math.min(Math.round((score / maxScore) * 100) / 100, 0.99);
+  return confidence.toFixed(2);
+}
+
+// Update cache clearing function
+export function clearColombianInvoiceCache(ocrText: string): void {
+  const cacheKey = ocrText.substring(0, 500);
+  if (extractionCache.has(cacheKey)) {
+    console.log('🇨🇴 Clearing Colombian invoice cache to apply learning updates');
+    extractionCache.delete(cacheKey);
+  }
 }

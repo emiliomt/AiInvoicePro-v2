@@ -16,6 +16,7 @@ import { projectMatcher } from "./projectMatcher.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
 import { invoiceImporterService } from "./services/invoiceImporterService.js";
+import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
 
 // Configure multer for file uploads
 const upload = multer({
@@ -1769,12 +1770,226 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // 🇨🇴 Colombian-specific learning updates
+  async function applyColombianLearningUpdates(
+    invoice: any, 
+    correctedData: any, 
+    feedbackId: number
+  ): Promise<void> {
+    const { storage } = await import('./storage');
+
+    console.log('🇨🇴 Applying Colombian learning updates...');
+
+    // Specific patterns from ASOMA invoice corrections
+    const corrections = [
+      {
+        field: 'taxId',
+        originalPattern: 'Extract vendor NIT without check digit',
+        correctedPattern: 'Always include Colombian NIT check digit: XXXXXXXX-X format',
+        example: '900478552 → 900478552-0'
+      },
+      {
+        field: 'buyerTaxId', 
+        originalPattern: 'Extract buyer NIT without check digit',
+        correctedPattern: 'Always include Colombian buyer NIT check digit: XXXXXXXX-X format',
+        example: '860527800 → 860527800-9'
+      },
+      {
+        field: 'dueDate',
+        originalPattern: 'Missing due date extraction',
+        correctedPattern: 'Extract "FECHA VENCIMIENTO" and convert DD/MM/YYYY to YYYY-MM-DD',
+        example: 'FECHA VENCIMIENTO: 09/07/2025 → 2025-07-09'
+      },
+      {
+        field: 'projectCity',
+        originalPattern: 'Missing project city from delivery context', 
+        correctedPattern: 'Extract city from project delivery address, not vendor address',
+        example: 'From "Urbanización Parque Heredia... - Cartagena" → "Cartagena"'
+      },
+      {
+        field: 'vendorAddress',
+        originalPattern: 'Incorrectly assigning addresses',
+        correctedPattern: 'Colombian service invoices often have no vendor address - return null',
+        example: 'If no vendor address specified, return null (not project address)'
+      },
+      {
+        field: 'buyerAddress',
+        originalPattern: 'Not extracting buyer business address',
+        correctedPattern: 'Extract buyer business address near company name',
+        example: 'CONSTRUCCIONES OBYCON SAS address: "CL 93B 13 92 OF 303, Bogota D.C."'
+      },
+      {
+        field: 'vendorName',
+        originalPattern: 'Incomplete vendor name extraction',
+        correctedPattern: 'Extract complete vendor name including business type and description',
+        example: 'Full name: "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD"'
+      }
+    ];
+
+    // Store each correction as a learning insight
+    for (const correction of corrections) {
+      if (correctedData[correction.field] !== undefined) {
+        await storage.storeLearningInsight({
+          field: correction.field,
+          errorType: 'colombian_format_error',
+          suggestedFix: correction.correctedPattern,
+          frequency: 5, // Higher frequency to prioritize Colombian rules
+          lastSeen: new Date()
+        });
+
+        console.log(`🇨🇴 Stored Colombian learning insight for ${correction.field}:`, correction.correctedPattern);
+      }
+    }
+
+    // Create specific ASOMA vendor learning pattern
+    if (correctedData.vendorName?.includes('ASOMA')) {
+      await storage.storeLearningInsight({
+        field: 'vendor_pattern',
+        errorType: 'asoma_vendor_recognition',
+        suggestedFix: 'ASOMA invoices: Extract full company name including S.A. and business description',
+        frequency: 3,
+        lastSeen: new Date()
+      });
+    }
+
+    // Create CONSTRUCCIONES buyer pattern learning
+    if (correctedData.companyName?.includes('CONSTRUCCIONES')) {
+      await storage.storeLearningInsight({
+        field: 'buyer_pattern',
+        errorType: 'construcciones_buyer_recognition', 
+        suggestedFix: 'CONSTRUCCIONES companies are typically buyers in Colombian construction invoices',
+        frequency: 3,
+        lastSeen: new Date()
+      });
+    }
+  }
+
+  // 🇨🇴 Store Colombian-specific insights
+  async function storeColombianSpecificInsights(
+    originalData: any, 
+    correctedData: any
+  ): Promise<void> {
+    const { storage } = await import('./storage');
+
+    const insights = [
+      {
+        key: 'colombian_nit_format',
+        value: JSON.stringify({
+          pattern: 'Colombian NITs must include check digit: XXXXXXXX-X',
+          examples: ['900478552-0', '860527800-9'],
+          rule: 'Never truncate the verification digit',
+          frequency: 10
+        })
+      },
+      {
+        key: 'colombian_date_format',
+        value: JSON.stringify({
+          pattern: 'Colombian dates are DD/MM/YYYY format, convert to YYYY-MM-DD',
+          fields: ['invoiceDate', 'dueDate'],
+          labels: ['FECHA FACTURA', 'FECHA VENCIMIENTO'],
+          rule: 'Always convert: 09/07/2025 → 2025-07-09',
+          frequency: 8
+        })
+      },
+      {
+        key: 'colombian_project_extraction',
+        value: JSON.stringify({
+          pattern: 'Extract project city from delivery address context',
+          rule: 'Look for city names in project delivery addresses, not vendor addresses',
+          example: 'From "...Lote 02 - Cartagena" extract "Cartagena"',
+          frequency: 6
+        })
+      },
+      {
+        key: 'colombian_service_invoice_addresses',
+        value: JSON.stringify({
+          pattern: 'Colombian service invoices often omit vendor addresses',
+          rule: 'If vendor address not specified, return null (do not use project address)',
+          vendorAddress: 'null if not specified',
+          buyerAddress: 'extract from buyer company context',
+          projectAddress: 'extract from delivery context',
+          frequency: 5
+        })
+      },
+      {
+        key: 'colombian_amount_format',
+        value: JSON.stringify({
+          pattern: 'Colombian amounts use periods as thousand separators',
+          examples: ['107.100 = 107,100 COP', '17.100 = 17,100 COP'],
+          rule: 'Convert periods to commas for thousands, preserve decimals',
+          frequency: 7
+        })
+      }
+    ];
+
+    // Store each insight
+    for (const insight of insights) {
+      await storage.updateSetting(insight.key, insight.value);
+      console.log(`🇨🇴 Stored Colombian insight: ${insight.key}`);
+    }
+  }
+
+  // 🇨🇴 Enhanced training data with Colombian context
+  async function writeEnhancedTrainingData(
+    invoice: any,
+    correctedData: any, 
+    isColombianInvoice: boolean,
+    feedbackId: number
+  ): Promise<void> {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const trainingDataPath = path.join(process.cwd(), 
+      isColombianInvoice ? 'colombian_training_feedback.jsonl' : 'training_feedback.jsonl'
+    );
+
+    const trainingEntry = {
+      invoiceId: invoice.id,
+      feedbackId,
+      fileName: invoice.fileName,
+      isColombianInvoice,
+      originalText: invoice.ocrText,
+      extractedData: invoice.extractedData,
+      correctedData,
+      feedbackType: 'correction',
+      timestamp: new Date().toISOString(),
+      // Colombian-specific training context
+      ...(isColombianInvoice && {
+        colombianContext: {
+          nitFormats: {
+            vendor: correctedData.taxId,
+            buyer: correctedData.buyerTaxId,
+            rule: 'Always include check digit'
+          },
+          dateFormats: {
+            invoiceDate: correctedData.invoiceDate,
+            dueDate: correctedData.dueDate,
+            rule: 'Convert DD/MM/YYYY to YYYY-MM-DD'
+          },
+          addresses: {
+            vendorAddress: correctedData.vendorAddress,
+            buyerAddress: correctedData.buyerAddress,
+            projectAddress: correctedData.projectAddress,
+            projectCity: correctedData.projectCity,
+            rule: 'Distinguish vendor, buyer, and project addresses'
+          },
+          currency: 'COP',
+          amountFormat: 'periods_as_thousands'
+        }
+      })
+    };
+
+    fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
+    console.log(`🇨🇴 Enhanced training data written to ${trainingDataPath}`);
+  }
+  
   // Report extraction error feedback
+  // Enhanced feedback submission route for Colombian invoices
   app.post('/api/invoices/:id/feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
+      const { correctedData, reason } = req.body;
       const userId = (req.user as any).claims.sub;
-      const { originalText, extractedData, correctedData, reason } = req.body;
 
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
@@ -1785,65 +2000,69 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(403).json({ message: "Access denied" });
       }
 
-      // Create feedback log
+      // 🇨🇴 NEW: Detect if this is a Colombian invoice
+      const isColombianInvoice = invoice.ocrText ? 
+        applyColombianRules(invoice.ocrText).isColombianInvoice : false;
+
+      console.log(`Processing feedback for invoice ${invoiceId}`, {
+        isColombianInvoice,
+        fileName: invoice.fileName,
+        corrections: Object.keys(correctedData || {})
+      });
+
+      // Create detailed feedback log
       const feedbackLog = await storage.createFeedbackLog({
         invoiceId,
         userId,
-        originalText: originalText || invoice.ocrText,
-        extractedData: extractedData || invoice.extractedData,
+        originalText: invoice.ocrText || '',
+        extractedData: invoice.extractedData,
         correctedData,
-        reason,
+        reason: reason || 'USER_CORRECTION',
         fileName: invoice.fileName,
       });
 
-      // Log for potential model training
-      console.log(`Extraction feedback received for invoice ${invoiceId}:`,{
-        fileName: invoice.fileName,
-        reason,
-        hasCorrections: !!correctedData,
-        userId,
-        timestamp: new Date().toISOString(),
-      });
+      // 🇨🇴 NEW: Apply Colombian-specific learning updates
+      if (isColombianInvoice && correctedData) {
+        await applyColombianLearningUpdates(invoice, correctedData, feedbackLog.id);
+      }
 
-      // Optional: Write to training data file for future model fine-tuning
-      const fs = await import('fs');
-      const path = await import('path');
-      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
-
-      const trainingEntry = {
-        invoiceId,
-        fileName: invoice.fileName,
-        originalText: originalText || invoice.ocrText,
-        extractedData: extractedData || invoice.extractedData,
-        correctedData,
-        reason,
-        timestamp: new Date().toISOString(),
-      };
-
-      // Append to JSONL file for potential OpenAI fine-tuning
-      fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
-
-      // Apply learning from feedback asynchronously
+      // Apply general learning improvements
       const { LearningTracker } = await import('./services/learningTracker');
-      setImmediate(async () => {
-        try {
-          await LearningTracker.applyLearningFromFeedback();
-          console.log('Learning applied from latest feedback');
-        } catch (error) {
-          console.error('Error applying learning from feedback:', error);
-        }
-      });
+      await LearningTracker.recordFeedback(
+        invoiceId,
+        userId,
+        invoice.extractedData,
+        correctedData,
+        reason,
+        invoice.fileName
+      );
+
+      // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
+      if (isColombianInvoice && invoice.ocrText) {
+        clearColombianInvoiceCache(invoice.ocrText);
+      }
+
+      // Store Colombian-specific insights for future extractions
+      if (isColombianInvoice) {
+        await storeColombianSpecificInsights(invoice.extractedData, correctedData);
+      }
+
+      // Write enhanced training data
+      await writeEnhancedTrainingData(invoice, correctedData, isColombianInvoice, feedbackLog.id);
 
       res.json({ 
-        message: "Feedback submitted successfully. The AI is learning from your corrections!",
-        feedbackId: feedbackLog.id 
+        message: isColombianInvoice 
+          ? "🇨🇴 Colombian invoice corrections applied! The AI is learning Colombian format patterns."
+          : "The AI is learning from your corrections!",
+        feedbackId: feedbackLog.id,
+        colombianInvoice: isColombianInvoice
       });
+
     } catch (error) {
       console.error("Error submitting feedback:", error);
       res.status(500).json({ message: "Failed to submit feedback" });
     }
   });
-
   // Submit positive feedback for AI extraction
   app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
     try {
@@ -3492,5 +3711,112 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     res.status(status).json({ message });
     // Don't re-throw the error to prevent unhandled rejection
   });
+
+  // 🇨🇴 Endpoint to get Colombian learning insights
+  app.get('/api/ai/colombian-insights', isAuthenticated, async (req, res) => {
+  try {
+    const { storage } = await import('./storage');
+
+    const colombianInsights = await storage.getLearningInsights('colombian');
+    const generalInsights = await storage.getLearningInsights();
+
+    // Get Colombian-specific settings
+    const colombianSettings = await Promise.all([
+      storage.getSetting('colombian_nit_format'),
+      storage.getSetting('colombian_date_format'), 
+      storage.getSetting('colombian_project_extraction'),
+      storage.getSetting('colombian_service_invoice_addresses'),
+      storage.getSetting('colombian_amount_format')
+    ]);
+
+    const parsedSettings = colombianSettings
+      .filter(setting => setting)
+      .map(setting => {
+        try {
+          return JSON.parse(setting);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    res.json({
+      colombianInsights,
+      generalInsights: generalInsights.filter(insight => 
+        insight.field && ['taxId', 'buyerTaxId', 'dueDate', 'projectCity', 'vendorAddress'].includes(insight.field)
+      ),
+      colombianSettings: parsedSettings,
+      summary: {
+        totalColombianFeedback: colombianInsights.length,
+        isActiveLearning: colombianInsights.length > 0,
+        keyPatterns: ['NIT format', 'Date conversion', 'Project extraction', 'Address distinction']
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching Colombian insights:", error);
+    res.status(500).json({ message: "Failed to fetch Colombian insights" });
+  }
+});
+
+// 🇨🇴 Force re-extraction with Colombian rules
+app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: any, res) => {
+  try {
+    const invoiceId = parseInt(req.params.id);
+    const userId = (req.user as any).claims.sub;
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    if (invoice.userId !== userId) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    if (!invoice.ocrText) {
+      return res.status(400).json({ message: "No OCR text available for re-extraction" });
+    }
+
+    // Clear cache and force Colombian re-extraction
+    clearColombianInvoiceCache(invoice.ocrText);
+
+    console.log(`🇨🇴 Force re-extracting Colombian invoice ${invoiceId}`);
+
+    // Re-extract with Colombian rules
+    const { extractInvoiceData } = await import('./services/aiService');
+    const newExtractedData = await extractInvoiceData(invoice.ocrText, true);
+
+    // Update the invoice with new extraction
+    await storage.updateInvoice(invoiceId, {
+      extractedData: newExtractedData,
+      totalAmount: newExtractedData.totalAmount,
+      taxAmount: newExtractedData.taxAmount,
+      invoiceDate: newExtractedData.invoiceDate ? new Date(newExtractedData.invoiceDate) : null,
+      dueDate: newExtractedData.dueDate ? new Date(newExtractedData.dueDate) : null,
+      vendorName: newExtractedData.vendorName,
+      projectName: newExtractedData.projectName,
+      currency: newExtractedData.currency || 'COP',
+      confidenceScore: parseFloat(newExtractedData.confidenceScore || '0.8')
+    });
+
+    res.json({
+      message: "🇨🇴 Colombian invoice re-extracted successfully with enhanced rules",
+      extractedData: newExtractedData,
+      improvements: [
+        "Applied Colombian NIT format rules",
+        "Enhanced date format conversion", 
+        "Improved project city extraction",
+        "Better address distinction",
+        "Colombian amount format handling"
+      ]
+    });
+
+  } catch (error) {
+    console.error("Error re-extracting Colombian invoice:", error);
+    res.status(500).json({ message: "Failed to re-extract invoice" });
+  }
+});
+
   return httpServer;
 }
