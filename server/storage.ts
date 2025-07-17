@@ -95,6 +95,7 @@ export interface IStorage {
   updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<Invoice>;
   deleteInvoice(id: number): Promise<void>;
   deleteAllUserInvoices(userId: string): Promise<number>;
+  getAllInvoices(): Promise<Invoice[]>;
 
   // Line item operations
   createLineItems(items: InsertLineItem[]): Promise<LineItem[]>;
@@ -1223,7 +1224,7 @@ export class DatabaseStorage implements IStorage {
         matchDetails: invoicePoMatches.matchDetails,
         matchedAt: invoicePoMatches.matchedAt,
         approvedAt: invoicePoMatches.approvedAt,
-        rejectedAt: invoicePoMatches.rejectedAt,
+        rejectedAt: invoicePoMatches.rejectedBy,
         rejectedBy: invoicePoMatches.rejectedBy,
         approvedBy: invoicePoMatches.approvedBy,
         statusChangedAt: invoicePoMatches.statusChangedAt,
@@ -1725,8 +1726,7 @@ export class DatabaseStorage implements IStorage {
   async getFeedbackLogs(limit?: number) {
     const query = db
       .select({
-        id: feedbackLogs.id,
-        invoiceId: feedbackLogs.invoiceId,
+        id: feedbackLogs.id,        invoiceId: feedbackLogs.invoiceId,
         userId: feedbackLogs.userId,
         fileName: feedbackLogs.fileName,
         reason: feedbackLogs.reason,
@@ -2323,6 +2323,10 @@ export class DatabaseStorage implements IStorage {
       .where(eq(importedInvoices.id, id))
       .returning();
     return updated;
+  }
+
+  async getAllInvoices(): Promise<Invoice[]> {
+    return db.select().from(invoices).orderBy(desc(invoices.createdAt));
   }
 }
 

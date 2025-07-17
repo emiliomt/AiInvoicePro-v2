@@ -6,8 +6,57 @@ import ThresholdConfig from "@/components/ThresholdConfig";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useQuery } from "@tanstack/react-query";
-import { DollarSign, Clock, CheckCircle, XCircle } from "lucide-react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { DollarSign, Clock, CheckCircle, XCircle, RefreshCw } from "lucide-react";
+import { useToast } from "@/hooks/use-toast";
+
+// Recalculate Button Component
+function RecalculateButton() {
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+
+  const recalculateMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/petty-cash/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to recalculate petty cash');
+      }
+      
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Success",
+        description: data.message,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+  return (
+    <Button
+      onClick={() => recalculateMutation.mutate()}
+      disabled={recalculateMutation.isPending}
+      variant="outline"
+      size="sm"
+      className="flex items-center space-x-2"
+    >
+      <RefreshCw className={`h-4 w-4 ${recalculateMutation.isPending ? 'animate-spin' : ''}`} />
+      <span>Recalculate</span>
+    </Button>
+  );
+}
 
 export default function PettyCash() {
   const { user } = useAuth();
@@ -159,7 +208,10 @@ export default function PettyCash() {
         {/* Threshold Configuration */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Petty Cash Configuration</CardTitle>
+            <CardTitle className="flex items-center justify-between">
+              <span className="text-lg">Petty Cash Configuration</span>
+              <RecalculateButton />
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <ThresholdConfig />
