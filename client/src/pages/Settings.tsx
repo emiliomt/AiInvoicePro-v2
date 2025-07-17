@@ -69,7 +69,12 @@ interface UserSettings {
                       variant="outline"
                       onClick={async () => {
                         try {
-                          const response = await apiRequest('DELETE', '/api/invoices/clear-cache');
+                          const response = await fetch('/api/invoices/clear-cache', {
+                            method: 'DELETE',
+                            headers: {
+                              'Content-Type': 'application/json',
+                            },
+                          });
                           if (response.ok) {
                             toast({
                               title: "Cache Cleared",
