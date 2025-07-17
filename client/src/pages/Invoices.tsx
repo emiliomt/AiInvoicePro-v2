@@ -144,8 +144,11 @@ export default function Invoices() {
   };
 
   const formatAmount = (amount: string | null, currency: string) => {
-    if (!amount) return "N/A";
+    if (!amount || amount === "null" || amount === "undefined") return "N/A";
+
     const numericAmount = parseFloat(amount);
+    if (isNaN(numericAmount)) return "N/A";
+
     const formattedNumber = numericAmount.toLocaleString('en-US', {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2
@@ -609,7 +612,10 @@ export default function Invoices() {
                     <div>
                       <label className="text-sm font-medium text-gray-700">Subtotal</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount((selectedInvoice as any).subtotal, selectedInvoice.currency)}
+                        {(() => {
+                          const subtotal = selectedInvoice.subtotal || selectedInvoice.extractedData?.subtotal;
+                          return formatAmount(subtotal, selectedInvoice.currency);
+                        })()}
                       </p>
                     </div>
                     <div>

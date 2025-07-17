@@ -1141,102 +1141,121 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice upload and processing
-  app.post('/api/invoices/upload', isAuthenticated, (req: any, res) => {
-    upload.any()(req, res, async (err) => {
-      if (err) {
-        console.error("Multer error:", err);
-        return res.status(400).json({ message: err.message });
-      }
+  app.post('/api/invoices/upload', isAuthenticated, upload.array('invoice', 10), async (req: any, res) => {
+    console.log('=== INVOICE UPLOAD DEBUG ===');
+    const files = req.files as Express.Multer.File[];
 
-      try {
-        const userId = (req.user as any).claims.sub;
-        const files = req.files as Express.Multer.File[];
+    // 🔥 FIX: Get userId from authenticated request properly
+    const userId = (req.user as any).claims.sub;
 
-        console.log("Upload request received:", { 
-          hasFiles: !!files && files.length > 0, 
-          fileCount: files?.length || 0,
-          files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
-          body: req.body
-        });
-
-        if (!files || files.length === 0) {
-          return res.status(400).json({ message: "No files uploaded" });
-        }
-
-        // Filter only invoice files
-        const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
-        if (invoiceFiles.length === 0) {
-          return res.status(400).json({ message: "No invoice files found" });
-        }
-
-        const fs = await import('fs');
-        const path = await import('path');
-        const uploadsDir = path.join(process.cwd(), 'uploads');
-
-        // Ensure uploads directory exists
-        if (!fs.existsSync(uploadsDir)) {
-          fs.mkdirSync(uploadsDir, { recursive: true });
-        }
-
-        const uploadedInvoices: any[] = [];
-
-        // Process invoice files in parallel for better performance
-        const processPromises = invoiceFiles.map(async (file) => {
-          try {
-            // Generate unique filename
-            const fileExt = path.extname(file.originalname);
-            const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
-            const filePath = path.join(uploadsDir, uniqueFileName);
-
-            // Write file to disk
-            fs.writeFileSync(filePath, file.buffer);
-
-            // Create initial invoice record with file path
-            const invoice = await storage.createInvoice({
-              userId,
-              fileName: file.originalname,
-              status: "processing",
-              fileUrl: filePath,
-              companyId: user.companyId
-            });
-
-            uploadedInvoices.push(invoice);
-
-            // Process invoice asynchronously
-            processInvoiceAsync(invoice, file.buffer).catch(error => {
-              console.error(`Failed to process invoice ${invoice.id}:`, error);
-            });
-
-            return invoice;
-          } catch (error) {
-            console.error(`Error processing file ${file.originalname}:`, error);
-            throw error;
-          }
-        });
-
-        // Wait for all uploads to complete
-        const results = await Promise.allSettled(processPromises);
-        const successfulUploads = results.filter(result => result.status === 'fulfilled').length;
-        const failedUploads = results.filter(result => result.status === 'rejected').length;
-
-        console.log(`Upload complete: ${successfulUploads} successful, ${failedUploads} failed`);
-
-        res.json({
-          message: `Successfully uploaded ${successfulUploads} invoice(s)`,
-          uploadedCount: successfulUploads,
-          failedCount: failedUploads,
-          invoices: uploadedInvoices
-        });
-      } catch (error) {
-        console.error("Error in upload handler:", error);
-        res.status(500).json({ 
-          message: "Failed to upload invoices",
-          error: error instanceof Error ? error.message : "Unknown error"
-        });
-      }
+    console.log('Upload request details:', {
+      authenticated: !!req.user,
+      userId: userId,  // ✅ Now properly defined
+      hasFiles: !!(files && files.length > 0),
+      fileCount: files?.length || 0,
+      files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
+      body: req.body
     });
-  });
 
+    // Validate authentication
+    if (!userId) {
+      console.error('No userId found in authenticated request');
+      return res.status(401).json({ message: "Authentication required" });
+    }
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    // Filter only invoice files
+    const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
+    if (invoiceFiles.length === 0) {
+      return res.status(400).json({ message: "No invoice files found" });
+    }
+
+    const fs = await import('fs');
+    const path = await import('path');
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const uploadedInvoices: any[] = [];
+
+    try {
+      // Process invoice files in parallel for better performance
+      const processPromises = invoiceFiles.map(async (file) => {
+        try {
+          // Generate unique filename
+          const fileExt = path.extname(file.originalname);
+          const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+          const filePath = path.join(uploadsDir, uniqueFileName);
+
+          // Write file to disk
+          fs.writeFileSync(filePath, file.buffer);
+
+          // Create initial invoice record with file path
+          const invoice = await storage.createInvoice({
+            userId,  // ✅ Now properly defined
+            fileName: file.originalname,
+            status: "processing",
+            fileUrl: filePath,
+          });
+
+          console.log(`Created invoice record ${invoice.id} for file ${file.originalname}`);
+
+          // Start processing immediately using setImmediate to avoid blocking
+          setImmediate(async () => {
+            try {
+              console.log(`Starting background processing for invoice ${invoice.id}`);
+              await processInvoiceAsync(invoice, file.buffer);
+              console.log(`Completed background processing for invoice ${invoice.id}`);
+            } catch (error) {
+              console.error(`Failed to process invoice ${invoice.id}:`, error);
+
+              // Update invoice with error status
+              try {
+                await storage.updateInvoice(invoice.id, {
+                  status: "rejected",
+                  extractedData: { 
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: new Date().toISOString(),
+                    processStep: 'background_processing'
+                  }
+                });
+              } catch (updateError) {
+                console.error(`Failed to update invoice ${invoice.id} with error:`, updateError);
+              }
+            }
+          });
+
+          return invoice;
+        } catch (fileError) {
+          console.error(`Error processing file ${file.originalname}:`, fileError);
+          return null;
+        }
+      });
+
+      const results = await Promise.allSettled(processPromises);
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          uploadedInvoices.push(result.value);
+        }
+      });
+
+      console.log(`Successfully created ${uploadedInvoices.length} invoice records`);
+
+      res.json({ 
+        message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
+        invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
+      });
+    } catch (error) {
+      console.error("Error uploading invoices:", error);
+      res.status(500).json({ message: "Failed to upload invoices" });
+    }
+  });
   // Clear invoice files cache
   app.delete('/api/invoices/clear-cache', isAuthenticated, async (req: any, res) => {
     try {

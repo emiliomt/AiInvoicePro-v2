@@ -350,7 +350,14 @@ export default function ExtractedData() {
               </Label>
               <Input
                 id="subtotal"
-                value={`${(invoice as any).extractedData?.subtotal || ""} ${invoice.currency || "USD"}`}
+                value={(() => {
+                  const subtotal = invoice.subtotal || invoice.extractedData?.subtotal;
+                  const currency = invoice.currency || "USD";
+                  return subtotal ? `${currency} ${parseFloat(subtotal).toLocaleString('en-US', {
+                    minimumFractionDigits: 2,
+                    maximumFractionDigits: 2
+                  })}` : "";
+                })()}
                 className="mt-2"
                 readOnly
               />
