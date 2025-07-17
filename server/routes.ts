@@ -253,6 +253,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const key = req.params.key;
       const { value } = req.body;
+
+      if (!value) {
+        return res.status(400).json({ message: "Value is required" });
+      }
+
       const setting = await storage.updateSetting(key, value);
 
       // If updating petty cash threshold, recalculate all invoices
@@ -262,10 +267,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log('Petty cash threshold updated to:', value);
       }
 
-      res.json(setting);
+      // Ensure we always return valid JSON
+      res.status(200).json(setting || { key, value, message: "Setting updated successfully" });
     } catch (error) {
       console.error("Error updating setting:", error);
-      res.status(500).json({ message: "Failed to update setting" });
+      res.status(500).json({ message: "Failed to update setting", error: error instanceof Error ? error.message : "Unknown error" });
     }
   });
 

@@ -53,10 +53,23 @@ export default function ThresholdConfig() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ value }),
       });
+      
       if (!response.ok) {
-        throw new Error('Failed to update threshold');
+        const errorText = await response.text();
+        throw new Error(`Failed to update threshold: ${response.status} ${errorText}`);
       }
-      return response.json();
+      
+      const text = await response.text();
+      if (!text) {
+        throw new Error('Empty response from server');
+      }
+      
+      try {
+        return JSON.parse(text);
+      } catch (e) {
+        console.error('Invalid JSON response:', text);
+        throw new Error('Invalid response format from server');
+      }
     },
     onSuccess: (data) => {
       toast({
