@@ -689,6 +689,55 @@ export default function Settings() {
                 )}
               </CardContent>
             </Card>
+
+            {/* Cache Management Section */}
+            <Card>
+              <CardHeader>
+                <CardTitle>Cache Management</CardTitle>
+                <CardDescription>
+                  Clear cached invoice files and AI extraction results
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="font-medium">Invoice Files Cache</h4>
+                    <p className="text-sm text-gray-600">
+                      Clear uploaded invoice files and cached extraction results
+                    </p>
+                  </div>
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      try {
+                        const response = await fetch('/api/invoices/clear-cache', {
+                          method: 'DELETE',
+                          headers: {
+                            'Content-Type': 'application/json',
+                          },
+                        });
+                        if (response.ok) {
+                          toast({
+                            title: "Cache Cleared",
+                            description: "Invoice files cache has been cleared successfully",
+                          });
+                        } else {
+                          throw new Error('Failed to clear cache');
+                        }
+                      } catch (error: any) {
+                        toast({
+                          title: "Error",
+                          description: error.message || "Failed to clear cache",
+                          variant: "destructive",
+                        });
+                      }
+                    }}
+                  >
+                    Clear Cache
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </TabsContent>
 
           {/* Help Tab */}
