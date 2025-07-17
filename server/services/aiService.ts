@@ -546,29 +546,51 @@ Return valid JSON only:
     const extractedData = JSON.parse(responseContent);
     console.log('Successfully parsed AI response:', Object.keys(extractedData));
 
-    // Validate and clean the response with better data processing
+    // 🔥 CRITICAL FIX: Prioritize XML parser results over AI results
+    const finalData = {
+      // Start with AI results as base
+      ...extractedData,
+      // Override with XML parser results where available (XML parser is more accurate)
+      ...preliminaryData
+    };
+
+    console.log('Final merged data (XML priority):', {
+      totalAmount: finalData.totalAmount,
+      taxAmount: finalData.taxAmount,
+      subtotal: finalData.subtotal,
+      source: preliminaryData.subtotal ? 'XML Parser' : 'AI'
+    });
+
+    // Validate and clean the MERGED response (not just AI response)
     const cleanedData = {
-      vendorName: validateString(extractedData.vendorName),
-      invoiceNumber: validateString(extractedData.invoiceNumber),
-      invoiceDate: validateDate(extractedData.invoiceDate),
-      dueDate: validateDate(extractedData.dueDate),
-      totalAmount: validateAmount(extractedData.totalAmount),
-      taxAmount: validateAmount(extractedData.taxAmount),
-      subtotal: validateAmount(extractedData.subtotal),
-      currency: extractedData.currency || "COP", // Default to COP for Latin American invoices
-      taxId: validateTaxId(extractedData.taxId),
-      companyName: validateString(extractedData.companyName),
-      concept: validateString(extractedData.concept),
-      projectName: validateString(extractedData.projectName),
-      vendorAddress: validateString(extractedData.vendorAddress),
-      buyerTaxId: validateTaxId(extractedData.buyerTaxId),
-      buyerAddress: validateString(extractedData.buyerAddress),
-      descriptionSummary: validateString(extractedData.descriptionSummary),
-      projectAddress: validateString(extractedData.projectAddress),
-      projectCity: validateString(extractedData.projectCity),
-      notes: validateString(extractedData.notes),
-      lineItems: Array.isArray(extractedData.lineItems) ? extractedData.lineItems : [],
-      confidenceScore: extractedData.confidenceScore || "0.75",
+      vendorName: validateString(finalData.vendorName),
+      invoiceNumber: validateString(finalData.invoiceNumber),
+      invoiceDate: validateDate(finalData.invoiceDate),
+      dueDate: validateDate(finalData.dueDate),
+      totalAmount: validateAmount(finalData.totalAmount),        // ✅ Now uses XML parser result if available
+      taxAmount: validateAmount(finalData.taxAmount),            // ✅ Now uses XML parser result if available  
+      subtotal: validateAmount(finalData.subtotal),              // ✅ This is the key fix!
+      currency: finalData.currency || "COP",
+      taxId: validateTaxId(finalData.taxId),
+      companyName: validateString(finalData.companyName),
+      concept: validateString(finalData.concept),
+      projectName: validateString(finalData.projectName),
+      vendorAddress: validateString(finalData.vendorAddress),
+      buyerTaxId: validateTaxId(finalData.buyerTaxId),
+      buyerAddress: validateString(finalData.buyerAddress),
+      descriptionSummary: validateString(finalData.descriptionSummary),
+      projectAddress: validateString(finalData.projectAddress),
+      projectCity: validateString(finalData.projectCity),
+      notes: validateString(finalData.notes),
+      lineItems: Array.isArray(finalData.lineItems) ?
+        finalData.lineItems.map((item: any) => ({
+          description: validateString(item.description),
+          quantity: validateString(item.quantity),
+          unitPrice: validateAmount(item.unitPrice),
+          totalPrice: validateAmount(item.totalPrice),
+          itemType: validateString(item.itemType)
+        })) : [],
+      confidenceScore: finalData.confidenceScore || "0.85"
     };
 
     // Log extraction quality metrics

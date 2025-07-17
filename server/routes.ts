@@ -3182,7 +3182,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       console.log(`Found log in database for ${logId} with status: ${log.status}`);
 
       // Parse steps from logs if available
-      let steps = [];
+      let steps: Array<{
+        id: string;
+        title: string;
+        status: string;
+        timestamp: string;
+        details: string;
+      }> = [];
       try {
         if (log.logs) {
           const logLines = log.logs.split('\n').filter(line => line.trim());
@@ -3323,7 +3329,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       // Parse steps from logs if available
-      let steps = [];
+      let steps: Array<{
+        id: string;
+        title: string;
+        status: string;
+        timestamp: string;
+        details: string;
+      }> = [];
       try {
         if (latestLog.logs) {
           const logLines = latestLog.logs.split('\n');

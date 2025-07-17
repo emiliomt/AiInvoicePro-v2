@@ -211,27 +211,66 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
 }
 
 function extractAmountFromXMLTag(xmlContent: string, tagName: string): { amount: string | null, currency: string } {
+  console.log(`🔍 Searching for amount tag: ${tagName}`);
+
   // Enhanced patterns for better Colombian XML support
   const patterns = [
-    // Pattern for amounts within LegalMonetaryTotal context
+    // PRIMARY: Patterns for amounts within LegalMonetaryTotal context (with currency)
     new RegExp(`<cac:LegalMonetaryTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:LegalMonetaryTotal>`, 'gis'),
-    // Pattern for amounts within TaxTotal context
+
+    // CRITICAL ADDITION: LegalMonetaryTotal without currencyID attribute
+    new RegExp(`<cac:LegalMonetaryTotal[^>]*>.*?<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:LegalMonetaryTotal>`, 'gis'),
+
+    // Patterns for amounts within TaxTotal context (with currency)
     new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
-    // Standard patterns (fallback)
-    new RegExp(`<${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
+
+    // TaxTotal without currencyID
+    new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
+
+    // Standard patterns with currency
     new RegExp(`<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>`, 'gi'),
+    new RegExp(`<${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
+
+    // CRITICAL ADDITION: Standard patterns without currencyID
+    new RegExp(`<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>`, 'gi'),
+    new RegExp(`<${tagName}[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
   ];
-  
-  for (const pattern of patterns) {
+
+  for (let i = 0; i < patterns.length; i++) {
+    const pattern = patterns[i];
+    // Reset regex state
+    pattern.lastIndex = 0;
     const match = pattern.exec(xmlContent);
-    if (match && match[2]) {
-      return {
-        amount: cleanAmount(match[2]),
-        currency: match[1] || 'COP'
-      };
+
+    if (match) {
+      console.log(`✓ Found match for ${tagName} using pattern ${i + 1}:`, match);
+
+      // Determine currency and amount based on capture groups
+      let currency = 'COP';
+      let amount = null;
+
+      // Check if this is a pattern with currency (3 groups) or without (2 groups)
+      if (match.length === 3 && match[2]) {
+        // Pattern with currency: (currency, amount)
+        currency = match[1] || 'COP';
+        amount = match[2];
+      } else if (match.length === 2 && match[1]) {
+        // Pattern without currency: (amount)
+        amount = match[1];
+        currency = 'COP'; // Default to COP for Colombian invoices
+      }
+
+      if (amount && amount.trim()) {
+        const cleanedAmount = cleanAmount(amount);
+        if (cleanedAmount && !isNaN(parseFloat(cleanedAmount))) {
+          console.log(`✅ ${tagName} extracted: ${cleanedAmount} ${currency}`);
+          return { amount: cleanedAmount, currency };
+        }
+      }
     }
   }
-  
+
+  console.log(`❌ No valid amount found for ${tagName}`);
   return { amount: null, currency: 'COP' };
 }
 
