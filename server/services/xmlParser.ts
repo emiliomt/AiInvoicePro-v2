@@ -211,7 +211,13 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
 }
 
 function extractAmountFromXMLTag(xmlContent: string, tagName: string): { amount: string | null, currency: string } {
+  // Enhanced patterns for better Colombian XML support
   const patterns = [
+    // Pattern for amounts within LegalMonetaryTotal context
+    new RegExp(`<cac:LegalMonetaryTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:LegalMonetaryTotal>`, 'gis'),
+    // Pattern for amounts within TaxTotal context
+    new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
+    // Standard patterns (fallback)
     new RegExp(`<${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
     new RegExp(`<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>`, 'gi'),
   ];
@@ -411,38 +417,17 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     const invoiceDate = extractTextFromXMLTag(xmlContent, 'IssueDate');
     const dueDate = extractTextFromXMLTag(xmlContent, 'DueDate');
     
-    // Extract amounts with priority order
+    // Extract amounts with priority order and enhanced patterns
     let totalAmount = null;
     let taxAmount = null;
     let subtotal = null;
     let currency = 'COP';
     
-    // Try to get total amount (TaxInclusiveAmount has priority)
-    let amountResult = extractAmountFromXMLTag(xmlContent, 'TaxInclusiveAmount');
-    if (amountResult.amount) {
-      totalAmount = amountResult.amount;
-      currency = amountResult.currency;
-    } else {
-      // Fallback to PayableAmount
-      amountResult = extractAmountFromXMLTag(xmlContent, 'PayableAmount');
-      if (amountResult.amount) {
-        totalAmount = amountResult.amount;
-        currency = amountResult.currency;
-      }
-    }
-    
-    // Get tax amount
-    amountResult = extractAmountFromXMLTag(xmlContent, 'TaxAmount');
-    if (amountResult.amount) {
-      taxAmount = amountResult.amount;
-      currency = amountResult.currency || currency;
-    }
-    
-    // Get subtotal - try standard XML patterns in order
-    amountResult = extractAmountFromXMLTag(xmlContent, 'TaxExclusiveAmount');
+    // Enhanced subtotal extraction (TaxExclusiveAmount) - THIS FIXES THE N/A ISSUE
+    let amountResult = extractAmountFromXMLTag(xmlContent, 'TaxExclusiveAmount');
     if (amountResult.amount) {
       subtotal = amountResult.amount;
-      currency = amountResult.currency || currency;
+      currency = amountResult.currency;
     } else {
       // Fallback to LineExtensionAmount
       amountResult = extractAmountFromXMLTag(xmlContent, 'LineExtensionAmount');
@@ -457,6 +442,27 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
           currency = amountResult.currency || currency;
         }
       }
+    }
+    
+    // Get total amount (TaxInclusiveAmount has priority)
+    amountResult = extractAmountFromXMLTag(xmlContent, 'TaxInclusiveAmount');
+    if (amountResult.amount) {
+      totalAmount = amountResult.amount;
+      currency = amountResult.currency || currency;
+    } else {
+      // Fallback to PayableAmount
+      amountResult = extractAmountFromXMLTag(xmlContent, 'PayableAmount');
+      if (amountResult.amount) {
+        totalAmount = amountResult.amount;
+        currency = amountResult.currency || currency;
+      }
+    }
+    
+    // Get tax amount
+    amountResult = extractAmountFromXMLTag(xmlContent, 'TaxAmount');
+    if (amountResult.amount) {
+      taxAmount = amountResult.amount;
+      currency = amountResult.currency || currency;
     }
     
     // Calculate subtotal if we have total and tax but no subtotal
@@ -587,7 +593,8 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
       totalAmount: result.totalAmount,
       currency: result.currency,
       lineItemsCount: result.lineItems.length,
-      projectName: result.projectName ? 'Found' : 'Not found'
+      projectName: result.projectName ? 'Found' : 'Not found',
+      subtotal: result.subtotal ? 'Found' : 'Not found'
     });
     
     return result;
