@@ -63,7 +63,13 @@ export default function InvoiceImporter() {
     executionsPerDay: 3,
     spacingValue: 120,
     spacingUnit: 'minutes',
-    startTime: '09:00'
+    startTime: '09:00',
+    // Python RPA specific fields
+    erpUrl: '',
+    erpUsername: '',
+    erpPassword: '',
+    downloadPath: '',
+    xmlPath: ''
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
@@ -199,6 +205,12 @@ export default function InvoiceImporter() {
         connectionId: parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.schedule,
+        // Python RPA fields
+        erpUrl: newConfig.erpUrl,
+        erpUsername: newConfig.erpUsername,
+        erpPassword: newConfig.erpPassword,
+        downloadPath: newConfig.downloadPath,
+        xmlPath: newConfig.xmlPath,
         ...(newConfig.schedule === 'multiple_daily' && {
           scheduleConfig: {
             executionsPerDay: newConfig.executionsPerDay,
@@ -231,7 +243,13 @@ export default function InvoiceImporter() {
           executionsPerDay: 3,
           spacingValue: 120,
           spacingUnit: 'minutes',
-          startTime: '09:00'
+          startTime: '09:00',
+          // Reset Python RPA fields
+          erpUrl: '',
+          erpUsername: '',
+          erpPassword: '',
+          downloadPath: '',
+          xmlPath: ''
         });
         fetchConfigs();
       } else {
@@ -540,6 +558,63 @@ export default function InvoiceImporter() {
                   </div>
                 </div>
               )}
+
+              {/* Python RPA Configuration */}
+              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
+                <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
+                
+                <div>
+                  <Label htmlFor="erp-url">ERP URL</Label>
+                  <Input
+                    id="erp-url"
+                    value={newConfig.erpUrl}
+                    onChange={(e) => setNewConfig({ ...newConfig, erpUrl: e.target.value })}
+                    placeholder="https://your-erp-system.com"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="erp-username">ERP Username</Label>
+                  <Input
+                    id="erp-username"
+                    value={newConfig.erpUsername}
+                    onChange={(e) => setNewConfig({ ...newConfig, erpUsername: e.target.value })}
+                    placeholder="Enter ERP username"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="erp-password">ERP Password</Label>
+                  <Input
+                    id="erp-password"
+                    type="password"
+                    value={newConfig.erpPassword}
+                    onChange={(e) => setNewConfig({ ...newConfig, erpPassword: e.target.value })}
+                    placeholder="Enter ERP password"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="download-path">Download Path</Label>
+                  <Input
+                    id="download-path"
+                    value={newConfig.downloadPath}
+                    onChange={(e) => setNewConfig({ ...newConfig, downloadPath: e.target.value })}
+                    placeholder="/home/user/Downloads"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="xml-path">XML Storage Path</Label>
+                  <Input
+                    id="xml-path"
+                    value={newConfig.xmlPath}
+                    onChange={(e) => setNewConfig({ ...newConfig, xmlPath: e.target.value })}
+                    placeholder="/home/user/xml_files"
+                  />
+                </div>
+              </div>
+
               <div className="flex justify-end space-x-2">
                 <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
                   Cancel

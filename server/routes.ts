@@ -3409,14 +3409,14 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       console.log(`Starting import process for config ${configId}, log ID: ${log.id}`);
 
       // Start the import process asynchronously but don't wait for it
-      setImmediate(() => {
-        invoiceImporterService.executeImportTask(configId)
-          .then(() => {
-            console.log(`Import task ${configId} completed successfully`);
-          })
-          .catch((error) => {
-            console.error(`Import task ${configId} failed:`, error);
-          });
+      setImmediate(async () => {
+        try {
+          const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+          await pythonInvoiceImporter.executeImportTask(configId);
+          console.log(`Python RPA import task ${configId} completed successfully`);
+        } catch (error) {
+          console.error(`Python RPA import task ${configId} failed:`, error);
+        }
       });
 
       res.json({ 
@@ -3597,18 +3597,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
-  // Helper function for executing import tasks asynchronously
+  // Helper function for executing import tasks asynchronously using Python RPA
   async function executeImportAsync(configId: number) {
     try {
-      await invoiceImporterService.executeImportTask(configId);
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      await pythonInvoiceImporter.executeImportTask(configId);
     } catch (error) {
-      console.error(`Import task ${configId} failed:`, error);
+      console.error(`Python RPA import task ${configId} failed:`, error);
     }
   }
 
   const httpServer = createServer(app);
 
-  // Progress tracking endpoint for invoice importer
+  // Progress tracking endpoint for invoice importer (Python RPA)
   app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;
@@ -3629,73 +3630,63 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
-      // Get the latest log for this configuration
-      const logs = await storage.getInvoiceImporterLogs(configId);
-      const latestLog = logs[0]; // Most recent log
+      // Check for active Python RPA progress first
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      const activeProgress = pythonInvoiceImporter.getProgress(configId);
 
-      if (!latestLog) {
-        return res.json({
-          id: 0,
-          configId,
-          status: 'pending',
-          totalInvoices: 0,
-          processedInvoices: 0,
-          successfulImports: 0,
-          failedImports: 0,
-          steps: [],
-          logs: '',
-          screenshots: [],
-          errorMessage: null,
-          startedAt: null,
-          completedAt: null,
-          executionTime: null
-        });
+      if (activeProgress) {
+        // Return live progress from Python RPA
+        const response = {
+          id: activeProgress.logId,
+          configId: activeProgress.configId,
+          status: activeProgress.isComplete ? (activeProgress.error ? 'failed' : 'completed') : 'running',
+          totalInvoices: activeProgress.totalInvoices,
+          processedInvoices: activeProgress.processedInvoices,
+          successfulImports: activeProgress.successfulImports,
+          failedImports: activeProgress.failedImports,
+          currentStep: activeProgress.currentStep,
+          progress: activeProgress.progress,
+          errorMessage: activeProgress.error,
+          startedAt: new Date().toISOString(),
+          completedAt: activeProgress.isComplete ? new Date().toISOString() : null,
+          steps: [{
+            id: '1',
+            title: activeProgress.currentStep,
+            status: activeProgress.isComplete ? (activeProgress.error ? 'failed' : 'completed') : 'running',
+            timestamp: new Date().toISOString(),
+            details: activeProgress.error || ''
+          }]
+        };
+        return res.json(response);
       }
 
-      // Parse steps from logs if available
-      let steps: Array<{
-        id: string;
-        title: string;
-        status: string;
-        timestamp: string;
-        details: string;
-      }> = [];
-      try {
-        if (latestLog.logs) {
-          const logLines = latestLog.logs.split('\n');
-          steps = logLines
-            .filter(line => line.includes('[STEP]'))
-            .map((line, index) => {
-              const stepMatch = line.match(/\[STEP\]\s*(.+)/);
-              const statusMatch = line.match(/\[(COMPLETED|RUNNING|FAILED|PENDING)\]/);
-              return {
-                id: `step-${index}`,
-                title: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
-                status: statusMatch ? statusMatch[1].toLowerCase() : 'pending',
-                timestamp: new Date().toISOString(),
-                details: ''
-              };
-            });
-        }
-      } catch (error) {
-        console.error('Error parsing steps from logs:', error);
+      // Get the latest log for this configuration from database
+      const latestLog = await storage.getLatestInvoiceImporterLog(configId);
+      if (!latestLog) {
+        return res.status(404).json({ error: 'No import logs found for this configuration' });
       }
 
       const response = {
         id: latestLog.id,
         configId: latestLog.configId,
         status: latestLog.status,
-        totalInvoices: latestLog.totalInvoices,
-        processedInvoices: latestLog.processedInvoices,
-        successfulImports: latestLog.successfulImports,
-        failedImports: latestLog.failedImports,
-        steps,
-        logs: latestLog.logs || '',
-        screenshots: latestLog.screenshots || [],
+        totalInvoices: latestLog.totalInvoices || 0,
+        processedInvoices: latestLog.processedInvoices || 0,
+        successfulImports: latestLog.successfulImports || 0,
+        failedImports: latestLog.failedImports || 0,
+        currentStep: latestLog.status === 'completed' ? 'Import completed' : latestLog.status === 'failed' ? 'Import failed' : 'Processing',
+        progress: latestLog.status === 'completed' ? 100 : latestLog.status === 'failed' ? 0 : 50,
         errorMessage: latestLog.errorMessage,
         startedAt: latestLog.startedAt,
         completedAt: latestLog.completedAt,
-        executionTime: latestLog.executionTime
+        executionTime: latestLog.executionTime,
+        steps: [{
+          id: '1',
+          title: latestLog.status === 'completed' ? 'Import completed successfully' : latestLog.status === 'failed' ? 'Import failed' : 'Processing invoices',
+          status: latestLog.status === 'completed' ? 'completed' : latestLog.status === 'failed' ? 'failed' : 'running',
+          timestamp: latestLog.startedAt || new Date().toISOString(),
+          details: latestLog.errorMessage || ''
+        }]
       };
 
       res.json(response);

@@ -378,6 +378,8 @@ export const erpConnections = pgTable("erp_connections", {
   username: varchar("username", { length: 255 }).notNull(),
   password: text("password").notNull(), // Encrypted
   description: text("description"),
+  downloadPath: varchar("download_path", { length: 500 }), // For Python RPA downloads
+  xmlPath: varchar("xml_path", { length: 500 }), // For Python RPA XML storage
   isActive: boolean("is_active").default(true),
   lastUsed: timestamp("last_used"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -461,6 +463,12 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   scheduleType: scheduleTypeEnum("schedule_type").default("once"),
   scheduleTime: varchar("schedule_time", { length: 50 }), // "14:30" for daily, "monday-14:30" for weekly, "4" for hourly, "3" for multiple daily
   scheduleDay: varchar("schedule_day", { length: 20 }), // for weekly scheduling
+  // Python RPA specific fields
+  erpUrl: varchar("erp_url", { length: 500 }),
+  erpUsername: varchar("erp_username", { length: 255 }),
+  erpPassword: text("erp_password"), // Encrypted
+  downloadPath: varchar("download_path", { length: 500 }),
+  xmlPath: varchar("xml_path", { length: 500 }),
   isActive: boolean("is_active").default(true),
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
