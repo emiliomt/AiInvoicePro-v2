@@ -892,6 +892,11 @@ export class DatabaseStorage implements IStorage {
       .set({ value, updatedAt: new Date() })
       .where(eq(settings.key, key))
       .returning();
+    
+    if (!updatedSetting) {
+      throw new Error(`Setting with key ${key} not found`);
+    }
+    
     return updatedSetting;
   }
 

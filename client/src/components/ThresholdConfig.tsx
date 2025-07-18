@@ -20,10 +20,10 @@ export default function ThresholdConfig() {
     queryFn: async () => {
       const [userSettingsRes, thresholdRes] = await Promise.all([
         fetch('/api/settings/user_preferences').then(res => 
-          res.ok ? res.json() : { value: JSON.stringify({ defaultCurrency: 'USD' }) }
+          res.ok ? res.json() : { key: 'user_preferences', value: JSON.stringify({ defaultCurrency: 'USD' }) }
         ),
         fetch('/api/settings/petty_cash_threshold').then(res => 
-          res.ok ? res.json() : { value: "100" }
+          res.ok ? res.json() : { key: 'petty_cash_threshold', value: "100" }
         )
       ]);
 
@@ -34,8 +34,9 @@ export default function ThresholdConfig() {
         threshold: thresholdRes
       };
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 30 * 1000, // 30 seconds for more frequent updates
+    gcTime: 5 * 60 * 1000, // 5 minutes (gcTime replaces cacheTime in newer versions)
+    refetchOnWindowFocus: true, // Refetch when user returns to page
   });
 
   // Update threshold value when data is loaded
@@ -59,19 +60,8 @@ export default function ThresholdConfig() {
         throw new Error(`Failed to update threshold: ${response.status} ${errorText}`);
       }
       
-      const text = await response.text();
-      if (!text || text.trim() === '') {
-        // Return a default response for empty responses
-        return { key: 'petty_cash_threshold', value, updatedAt: new Date().toISOString() };
-      }
-      
-      try {
-        return JSON.parse(text);
-      } catch (e) {
-        console.error('Invalid JSON response:', text);
-        // If parsing fails, still return a valid object to prevent errors
-        return { key: 'petty_cash_threshold', value, updatedAt: new Date().toISOString() };
-      }
+      const result = await response.json();
+      return result;
     },
     onSuccess: (data) => {
       toast({
@@ -80,16 +70,27 @@ export default function ThresholdConfig() {
       });
       setIsEditing(false);
       
-      // Optimistically update cache
+      // Update the local threshold value
+      setThresholdValue(data.value);
+      
+      // Optimistically update cache with the correct structure
       queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
         ...oldData,
         threshold: data
       }));
       
-      // Only invalidate petty cash data, not the threshold config
+      // Also invalidate and refetch to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
       queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
+      
+      // Force a refetch after a short delay to ensure data is up-to-date
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ['thresholdConfig'] });
+      }, 100);
     },
     onError: (error: Error) => {
+      // Reset to original value on error
+      setThresholdValue(configData?.threshold?.value || "100");
       toast({
         title: "Error",
         description: error.message,
