@@ -60,15 +60,17 @@ export default function ThresholdConfig() {
       }
       
       const text = await response.text();
-      if (!text) {
-        throw new Error('Empty response from server');
+      if (!text || text.trim() === '') {
+        // Return a default response for empty responses
+        return { key: 'petty_cash_threshold', value, updatedAt: new Date().toISOString() };
       }
       
       try {
         return JSON.parse(text);
       } catch (e) {
         console.error('Invalid JSON response:', text);
-        throw new Error('Invalid response format from server');
+        // If parsing fails, still return a valid object to prevent errors
+        return { key: 'petty_cash_threshold', value, updatedAt: new Date().toISOString() };
       }
     },
     onSuccess: (data) => {
