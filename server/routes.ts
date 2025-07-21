@@ -259,17 +259,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Value is required" });
       }
 
-      const setting = await storage.updateSetting(key, value);
+      // Use setSetting instead of updateSetting to handle both create and update
+      const setting = await storage.setSetting({
+        key,
+        value,
+        description: key === 'petty_cash_threshold' ? 'Threshold amount for petty cash invoices' : `Setting for ${key}`
+      });
 
       // If updating petty cash threshold, recalculate all invoices
       if (key === 'petty_cash_threshold') {
-        // TODO: Implement recalculatePettyCashInvoices method
-        // await storage.recalculatePettyCashInvoices(parseFloat(value));
         console.log('Petty cash threshold updated to:', value);
       }
 
-      // Ensure we always return valid JSON
-      res.status(200).json(setting || { key, value, message: "Setting updated successfully" });
+      res.status(200).json(setting);
     } catch (error) {
       console.error("Error updating setting:", error);
       res.status(500).json({ message: "Failed to update setting", error: error instanceof Error ? error.message : "Unknown error" });

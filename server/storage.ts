@@ -887,17 +887,12 @@ export class DatabaseStorage implements IStorage {
   }
 
   async updateSetting(key: string, value: string): Promise<Setting> {
-    const [updatedSetting] = await db
-      .update(settings)
-      .set({ value, updatedAt: new Date() })
-      .where(eq(settings.key, key))
-      .returning();
-    
-    if (!updatedSetting) {
-      throw new Error(`Setting with key ${key} not found`);
-    }
-    
-    return updatedSetting;
+    // Use setSetting for upsert behavior instead of throwing an error
+    return await this.setSetting({
+      key,
+      value,
+      description: `Setting for ${key}`
+    });
   }
 
   // Petty cash operations

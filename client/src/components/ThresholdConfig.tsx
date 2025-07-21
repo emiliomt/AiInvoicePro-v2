@@ -18,24 +18,42 @@ export default function ThresholdConfig() {
   const { data: configData, isLoading } = useQuery({
     queryKey: ['thresholdConfig'],
     queryFn: async () => {
-      const [userSettingsRes, thresholdRes] = await Promise.all([
-        fetch('/api/settings/user_preferences').then(res => 
-          res.ok ? res.json() : { key: 'user_preferences', value: JSON.stringify({ defaultCurrency: 'USD' }) }
-        ),
-        fetch('/api/settings/petty_cash_threshold').then(res => 
-          res.ok ? res.json() : { key: 'petty_cash_threshold', value: "100" }
-        )
-      ]);
+      try {
+        const [userSettingsRes, thresholdRes] = await Promise.all([
+          fetch('/api/settings/user_preferences').then(res => 
+            res.ok ? res.json() : { key: 'user_preferences', value: JSON.stringify({ defaultCurrency: 'USD' }) }
+          ),
+          fetch('/api/settings/petty_cash_threshold').then(async res => {
+            if (res.ok) {
+              return res.json();
+            } else {
+              // If threshold doesn't exist, create it with default value
+              const createResponse = await fetch('/api/settings/petty_cash_threshold', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: "100" }),
+              });
+              return createResponse.ok ? createResponse.json() : { key: 'petty_cash_threshold', value: "100" };
+            }
+          })
+        ]);
 
-      const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
-      
-      return {
-        userSettings,
-        threshold: thresholdRes
-      };
+        const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
+        
+        return {
+          userSettings,
+          threshold: thresholdRes
+        };
+      } catch (error) {
+        console.error('Error loading threshold config:', error);
+        return {
+          userSettings: { defaultCurrency: 'USD' },
+          threshold: { key: 'petty_cash_threshold', value: "100" }
+        };
+      }
     },
     staleTime: 30 * 1000, // 30 seconds for more frequent updates
-    gcTime: 5 * 60 * 1000, // 5 minutes (gcTime replaces cacheTime in newer versions)
+    gcTime: 5 * 60 * 1000, // 5 minutes
     refetchOnWindowFocus: true, // Refetch when user returns to page
   });
 
@@ -56,8 +74,8 @@ export default function ThresholdConfig() {
       });
       
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Failed to update threshold: ${response.status} ${errorText}`);
+        const errorData = await response.json().catch(() => ({ message: 'Unknown error' }));
+        throw new Error(errorData.message || `Failed to update threshold (${response.status})`);
       }
       
       const result = await response.json();
@@ -79,21 +97,17 @@ export default function ThresholdConfig() {
         threshold: data
       }));
       
-      // Also invalidate and refetch to ensure consistency
+      // Invalidate related queries
       queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
       queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
-      
-      // Force a refetch after a short delay to ensure data is up-to-date
-      setTimeout(() => {
-        queryClient.refetchQueries({ queryKey: ['thresholdConfig'] });
-      }, 100);
     },
     onError: (error: Error) => {
+      console.error('Threshold update error:', error);
       // Reset to original value on error
       setThresholdValue(configData?.threshold?.value || "100");
       toast({
-        title: "Error",
-        description: error.message,
+        title: "Error", 
+        description: `Failed to update threshold: ${error.message}`,
         variant: "destructive",
       });
     },
