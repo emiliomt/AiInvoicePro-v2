@@ -42,7 +42,7 @@ class PythonInvoiceImporter {
    */
   async executeImportTask(configId: number): Promise<void> {
     console.log(`Starting Python RPA import task for config ${configId}`);
-    
+
     try {
       // Get configuration
       const config = await storage.getInvoiceImporterConfig(configId);
@@ -138,7 +138,7 @@ class PythonInvoiceImporter {
 
     } catch (error) {
       console.error(`Python RPA import task ${configId} error:`, error);
-      
+
       // Update progress with error
       const progress = this.activeImports.get(configId);
       if (progress) {
@@ -215,24 +215,39 @@ class PythonInvoiceImporter {
         }
       });
 
-      // Handle stderr
+      // Handle stderr (errors)
       pythonProcess.stderr.on('data', (data) => {
-        const errorOutput = data.toString();
-        stderr += errorOutput;
-        console.error('Python RPA stderr:', errorOutput);
+        const error = data.toString();
+        stderr += error;
+        console.error('Python RPA stderr:', error);
+
+        // Check for specific error types
+        if (error.includes('selenium')) {
+          progress.currentStep = 'Error: Selenium not installed - run: pip3 install selenium';
+        } else if (error.includes('chrome') || error.includes('chromium')) {
+          progress.currentStep = 'Error: Chrome/Chromium not found - install browser';
+        } else if (error.includes('Permission denied')) {
+          progress.currentStep = 'Error: Permission denied - check file permissions';
+        } else if (error.includes('Connection refused')) {
+          progress.currentStep = 'Error: Cannot connect to ERP system';
+        } else {
+          progress.currentStep = `Error: ${error.substring(0, 100)}...`;
+        }
+
+        progress.error = error;
       });
 
       // Handle process completion
       pythonProcess.on('close', (code) => {
         console.log(`Python RPA process exited with code ${code}`);
-        
+
         if (code === 0 && result) {
           // Update progress with final stats
           progress.totalInvoices = result.stats.total_invoices;
           progress.processedInvoices = result.stats.processed_invoices;
           progress.successfulImports = result.stats.successful_imports;
           progress.failedImports = result.stats.failed_imports;
-          
+
           resolve(result);
         } else {
           const error = stderr || 'Python process failed with no output';
