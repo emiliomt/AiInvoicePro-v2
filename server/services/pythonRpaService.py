@@ -628,7 +628,7 @@ def main():
     
     # Fallback hardcoded config for easier local debugging
     fallback_config = {
-        "erpUrl": "https://www3.sincoerp.com/SincoObycon_Nueva/V3/Marco/Login.aspx",
+        "erpUrl": "https://www.sincoerp.com/SincoObycon_Nueva/V3/Marco/Login.aspx",
         "erpUsername": "eceronr", 
         "erpPassword": "C@maro5136",
         "downloadPath": "/tmp/invoice_downloads",
