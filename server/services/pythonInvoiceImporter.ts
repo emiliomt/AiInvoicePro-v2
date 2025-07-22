@@ -186,22 +186,22 @@ class PythonInvoiceImporter {
   private async saveImportedInvoicesToDatabase(logId: number, pythonConfig: any): Promise<void> {
     const fs = await import('fs/promises');
     const sqlite3 = await import('sqlite3');
-    
+
     try {
       // Connect to Python RPA SQLite databases (matching Python service paths)
       const downloadDbPath = '/tmp/invoice_downloads/invoices.db';
       const xmlDbPath = '/tmp/xml_invoices/invoices_xml.db';
-      
+
       // Process downloaded files (PDFs/ZIPs)
       if (await this.fileExists(downloadDbPath)) {
-        await this.processDownloadedFiles(logId, downloadDbPath);
+        await this.processDownloadedFiles(logId);
       }
-      
+
       // Process XML files
       if (await this.fileExists(xmlDbPath)) {
-        await this.processXmlFiles(logId, xmlDbPath);
+        await this.processXmlFiles(logId);
       }
-      
+
     } catch (error) {
       console.error('Error saving imported invoices to database:', error);
       throw error;
@@ -224,40 +224,46 @@ class PythonInvoiceImporter {
   /**
    * Process downloaded files from SQLite and save to PostgreSQL
    */
-  private async processDownloadedFiles(logId: number, dbPath: string): Promise<void> {
+  private async processDownloadedFiles(logId: number): Promise<void> {
+    const fs = await import('fs');
+    const sqlite3 = await import('sqlite3');
+    const dbPath = '/tmp/invoice_downloads/invoices.db';
+
     return new Promise((resolve, reject) => {
-      const sqlite3 = require('sqlite3').verbose();
-      const db = new sqlite3.Database(dbPath);
-      
-      db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
+      const db = new sqlite3.Database(dbPath, (err: any) => {
         if (err) {
+          console.error('Failed to connect to SQLite database:', err);
           reject(err);
           return;
         }
-        
-        try {
-          for (const row of rows) {
-            await storage.createImportedInvoice({
-              logId,
-              originalFileName: row.filename,
-              fileType: 'PDF',
-              filePath: `/tmp/invoice_downloads/${row.filename}`,
-              erpDocumentId: row.numero_documento,
-              downloadedAt: new Date(row.downloaded_at),
-              metadata: {
-                emisor: row.emisor,
-                valorTotal: row.valor_total,
-                sourceType: 'python_rpa'
-              }
-            });
+
+        db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
+          if (err) {
+            console.error('Failed to execute query:', err);
+            reject(err);
+            db.close();
+            return;
           }
-          console.log(`Saved ${rows.length} downloaded files to database`);
-          resolve();
-        } catch (error) {
-          reject(error);
-        } finally {
-          db.close();
-        }
+
+          try {
+            await this.storeImportedInvoicesFast(logId, {
+              configId: 0,
+              logId: 0,
+              totalInvoices: 0,
+              processedInvoices: 0,
+              successfulImports: 0,
+              failedImports: 0,
+              currentStep: '',
+              progress: 0,
+              isComplete: false,
+            });
+            resolve();
+          } catch (error) {
+            reject(error);
+          } finally {
+            db.close();
+          }
+        });
       });
     });
   }
@@ -265,41 +271,46 @@ class PythonInvoiceImporter {
   /**
    * Process XML files from SQLite and save to PostgreSQL
    */
-  private async processXmlFiles(logId: number, dbPath: string): Promise<void> {
+  private async processXmlFiles(logId: number): Promise<void> {
+    const fs = await import('fs');
+    const sqlite3 = await import('sqlite3');
+    const dbPath = '/tmp/xml_invoices/invoices_xml.db';
+
     return new Promise((resolve, reject) => {
-      const sqlite3 = require('sqlite3').verbose();
-      const db = new sqlite3.Database(dbPath);
-      
-      db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
+      const db = new sqlite3.Database(dbPath, (err: any) => {
         if (err) {
+          console.error('Failed to connect to SQLite database:', err);
           reject(err);
           return;
         }
-        
-        try {
-          for (const row of rows) {
-            await storage.createImportedInvoice({
-              logId,
-              originalFileName: `${row.numero_documento}_${row.emisor}.xml`,
-              fileType: 'XML',
-              filePath: `/tmp/xml_invoices/${row.numero_documento}_${row.emisor}.xml`,
-              erpDocumentId: row.numero_documento,
-              downloadedAt: new Date(row.downloaded_at),
-              metadata: {
-                emisor: row.emisor,
-                valorTotal: row.valor_total,
-                xmlContent: row.xml_content,
-                sourceType: 'python_rpa'
-              }
-            });
+
+        db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
+          if (err) {
+            console.error('Failed to execute query:', err);
+            reject(err);
+            db.close();
+            return;
           }
-          console.log(`Saved ${rows.length} XML files to database`);
-          resolve();
-        } catch (error) {
-          reject(error);
-        } finally {
-          db.close();
-        }
+
+          try {
+            await this.storeImportedInvoicesFast(logId, {
+              configId: 0,
+              logId: 0,
+              totalInvoices: 0,
+              processedInvoices: 0,
+              successfulImports: 0,
+              failedImports: 0,
+              currentStep: '',
+              progress: 0,
+              isComplete: false,
+            });
+            resolve();
+          } catch (error) {
+            reject(error);
+          } finally {
+            db.close();
+          }
+        });
       });
     });
   }
@@ -517,6 +528,97 @@ class PythonInvoiceImporter {
     // Remove from active imports
     this.activeImports.delete(configId);
     return true;
+  }
+
+  /**
+   * Simulate delay
+   */
+  private async simulateDelay(ms: number): Promise<void> {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  /**
+   * Store imported invoices and trigger AI processing
+   */
+  private async storeImportedInvoicesFast(logId: number, progress: ImportProgress): Promise<void> {
+    // Convert imported invoices to regular invoice records efficiently
+    const importedInvoices = await storage.getImportedInvoicesByLog(logId);
+
+    if (importedInvoices.length === 0) {
+      return;
+    }
+
+    // Get the user ID from the log
+    const log = await storage.getInvoiceImporterLog(logId);
+    if (!log) return;
+
+    const config = await storage.getInvoiceImporterConfig(log.configId);
+    if (!config) return;
+
+    const batchSize = 5;
+    for (let i = 0; i < importedInvoices.length; i += batchSize) {
+      const batch = importedInvoices.slice(i, i + batchSize);
+
+      await Promise.all(batch.map(async (importedInvoice) => {
+        try {
+          // Create main invoice record from imported invoice
+          const mainInvoice = await storage.createInvoice({
+            userId: config.userId,
+            fileName: importedInvoice.originalFileName,
+            status: "processing",
+            fileUrl: importedInvoice.filePath,
+            uploadedAt: importedInvoice.downloadedAt,
+            metadata: {
+              ...importedInvoice.metadata,
+              importSource: 'python_rpa',
+              importLogId: logId,
+              erpDocumentId: importedInvoice.erpDocumentId
+            }
+          });
+
+          // Trigger AI processing for the main invoice (if file exists)
+          const fs = require('fs');
+          if (fs.existsSync(importedInvoice.filePath)) {
+            // Import the processing function
+            const { processInvoiceAsync } = await import('../routes');
+
+            // Read file and process
+            const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+
+            // Start AI processing in background
+            setImmediate(async () => {
+              try {
+                await processInvoiceAsync(mainInvoice, fileBuffer);
+                console.log(`AI processing completed for imported invoice: ${importedInvoice.originalFileName}`);
+              } catch (error) {
+                console.error(`AI processing failed for imported invoice ${importedInvoice.originalFileName}:`, error);
+                await storage.updateInvoice(mainInvoice.id, { 
+                  status: "failed",
+                  errorMessage: error instanceof Error ? error.message : 'AI processing failed'
+                });
+              }
+            });
+          }
+
+          // Mark imported invoice as processed
+          await storage.updateImportedInvoice(importedInvoice.id, {
+            processedAt: new Date(),
+            metadata: {
+              ...importedInvoice.metadata,
+              mainInvoiceId: mainInvoice.id,
+              processedToMainSystem: true
+            }
+          });
+
+          console.log(`Converted imported invoice to main system: ${importedInvoice.originalFileName} -> Invoice ID ${mainInvoice.id}`);
+        } catch (error) {
+          console.error(`Failed to process imported invoice ${importedInvoice.originalFileName}:`, error);
+        }
+      }));
+
+      // Minimal delay between batches
+      await this.simulateDelay(100);
+    }
   }
 }
 
