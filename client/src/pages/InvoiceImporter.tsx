@@ -396,8 +396,8 @@ export default function InvoiceImporter() {
   };
 
   // Status helper functions
-  const getStatusIcon = (status: string) => {
-    switch (status) {
+  const getStatusIcon = (status: string | undefined) => {
+    switch (status || 'idle') {
       case 'running': return <Loader2 className="w-4 h-4 animate-spin text-blue-600" />;
       case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
       case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
@@ -406,8 +406,8 @@ export default function InvoiceImporter() {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
+  const getStatusColor = (status: string | undefined) => {
+    switch (status || 'idle') {
       case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
       case 'completed': return 'bg-green-100 text-green-800 border-green-200';
       case 'failed': return 'bg-red-100 text-red-800 border-red-200';
@@ -679,8 +679,8 @@ export default function InvoiceImporter() {
                             {getStatusIcon(config.status)}
                             <CardTitle className="text-lg">{config.taskName}</CardTitle>
                           </div>
-                          <Badge className={`border ${getStatusColor(config.status)}`}>
-                            {config.status.charAt(0).toUpperCase() + config.status.slice(1)}
+                          <Badge className={`border ${getStatusColor(config.status || 'idle')}`}>
+                            {(config.status || 'idle').charAt(0).toUpperCase() + (config.status || 'idle').slice(1)}
                           </Badge>
                         </div>
                         <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
@@ -1090,8 +1090,8 @@ export default function InvoiceImporter() {
                     </DialogTitle>
                   </div>
                   {consoleConfig && (
-                    <Badge className={`border ${getStatusColor(consoleConfig.status)}`}>
-                      {consoleConfig.status.charAt(0).toUpperCase() + consoleConfig.status.slice(1)}
+                    <Badge className={`border ${getStatusColor(consoleConfig.status || 'idle')}`}>
+                      {(consoleConfig.status || 'idle').charAt(0).toUpperCase() + (consoleConfig.status || 'idle').slice(1)}
                     </Badge>
                   )}
                 </div>
