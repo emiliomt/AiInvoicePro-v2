@@ -3485,8 +3485,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
-      // Check if user has access to this configuration (same company)
-      if (!currentUser?.companyId || config.companyId !== currentUser.companyId) {
+      // Check if user has access to this configuration (owner or same company)
+      if (config.userId !== (user as any).claims.sub && 
+          (!currentUser?.companyId || config.companyId !== currentUser.companyId)) {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
@@ -3516,8 +3517,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
-      // Check if user has access to this configuration (same company)
-      if (!currentUser?.companyId || config.companyId !== currentUser.companyId) {
+      // Check if user has access to this configuration (owner or same company)
+      if (config.userId !== (user as any).claims.sub && 
+          (!currentUser?.companyId || config.companyId !== currentUser.companyId)) {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
