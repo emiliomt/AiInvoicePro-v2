@@ -91,8 +91,8 @@ class ProgressTracker {
   }
 
   private removeConnection(ws: WebSocket) {
-    for (const [userId, connections] of this.connections.entries()) {
-      const index = connections.findIndex(conn => conn.ws === ws);
+    for (const [userId, connections] of this.connections) {
+      const index = connections.findIndex((conn: UserConnection) => conn.ws === ws);
       if (index !== -1) {
         connections.splice(index, 1);
         if (connections.length === 0) {

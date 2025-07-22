@@ -7,20 +7,8 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { storage } from '../storage';
+import { progressTracker } from './progressTracker.js';
 import type { InvoiceImporterConfig } from '../../shared/schema';
-
-// Create a simple progress tracker implementation
-const progressTracker = {
-  startTask: (taskId: number, type: string, data: any) => {
-    console.log(`Progress: Starting task ${taskId} of type ${type}`);
-  },
-  updateTask: (taskId: number, data: any) => {
-    console.log(`Progress: Updating task ${taskId}`);
-  },
-  completeTask: (taskId: number, data: any) => {
-    console.log(`Progress: Completing task ${taskId} - Success: ${data.success}`);
-  }
-};
 
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
@@ -96,13 +84,14 @@ class PythonInvoiceImporter {
       this.activeImports.set(configId, progress);
 
       // Start progress tracking via WebSocket
-      progressTracker.startTask(log.id, 'invoice-import', {
-        configId,
-        logId: log.id,
-        title: `Import: ${config.name}`,
-        description: 'Starting invoice import process...',
+      progressTracker.sendProgress(config.userId, {
+        taskId: log.id,
+        step: 1,
         totalSteps: 100,
-        currentStep: 'Initializing...'
+        status: 'processing',
+        message: `Starting import: ${config.taskName}`,
+        timestamp: new Date(),
+        data: { configId, logId: log.id }
       });
 
       // Prepare Python RPA configuration
@@ -155,15 +144,12 @@ class PythonInvoiceImporter {
         progress.currentStep = 'Import completed successfully';
 
         // Complete progress tracking
-        progressTracker.completeTask(log.id, {
-          success: true,
-          message: 'Import completed successfully',
-          data: {
+        progressTracker.sendTaskComplete(config.userId, log.id, true, 
+          'Import completed successfully', {
             totalInvoices: progress.totalInvoices,
             successfulImports: progress.successfulImports,
             failedImports: progress.failedImports
-          }
-        });
+          });
 
         console.log(`Python RPA import task ${configId} completed successfully`);
       } else {
@@ -183,16 +169,13 @@ class PythonInvoiceImporter {
         progress.currentStep = 'Import failed';
 
         // Complete progress tracking with error
-        progressTracker.completeTask(log.id, {
-          success: false,
-          message: result.error || 'Import failed',
-          data: {
+        progressTracker.sendTaskComplete(config.userId, log.id, false, 
+          result.error || 'Import failed', {
             totalInvoices: progress.totalInvoices,
             successfulImports: progress.successfulImports,
             failedImports: progress.failedImports,
             error: result.error
-          }
-        });
+          });
 
         console.error(`Python RPA import task ${configId} failed:`, result.error);
       }
@@ -208,14 +191,14 @@ class PythonInvoiceImporter {
         progress.currentStep = 'Import failed';
 
         // Complete progress tracking with error
-        progressTracker.completeTask(progress.logId, {
-          success: false,
-          message: progress.error,
-          data: {
-            configId: progress.configId,
-            error: progress.error
-          }
-        });
+        const config = await storage.getInvoiceImporterConfig(progress.configId);
+        if (config) {
+          progressTracker.sendTaskComplete(config.userId, progress.logId, false, 
+            progress.error, {
+              configId: progress.configId,
+              error: progress.error
+            });
+        }
 
         // Update log with error
         try {
@@ -550,21 +533,30 @@ class PythonInvoiceImporter {
   private sendProgressUpdate(progress: ImportProgress, logOutput: string): void {
     try {
       // Send progress update via WebSocket using progressTracker
-      progressTracker.updateTask(progress.logId, {
-        progress: progress.progress,
-        totalSteps: progress.totalInvoices,
-        currentStep: progress.currentStep,
-        data: {
-          configId: progress.configId,
-          logId: progress.logId,
-          totalInvoices: progress.totalInvoices,
-          processedInvoices: progress.processedInvoices,
-          successfulImports: progress.successfulImports,
-          failedImports: progress.failedImports,
-          isComplete: progress.isComplete,
-          logs: logOutput,
-          timestamp: new Date().toISOString()
+      // We need to get the config to find the userId
+      storage.getInvoiceImporterConfig(progress.configId).then(config => {
+        if (config) {
+          progressTracker.sendProgress(config.userId, {
+            taskId: progress.logId,
+            step: progress.progress,
+            totalSteps: 100,
+            status: 'processing',
+            message: progress.currentStep,
+            timestamp: new Date(),
+            data: {
+              configId: progress.configId,
+              logId: progress.logId,
+              totalInvoices: progress.totalInvoices,
+              processedInvoices: progress.processedInvoices,
+              successfulImports: progress.successfulImports,
+              failedImports: progress.failedImports,
+              isComplete: progress.isComplete,
+              logs: logOutput
+            }
+          });
         }
+      }).catch(error => {
+        console.error('Failed to get config for progress update:', error);
       });
     } catch (error) {
       console.error('Failed to send WebSocket progress update:', error);
@@ -716,38 +708,20 @@ class PythonInvoiceImporter {
             fileName: importedInvoice.originalFileName,
             status: "processing",
             fileUrl: importedInvoice.filePath,
-            uploadedAt: importedInvoice.downloadedAt,
             metadata: {
               ...importedInvoice.metadata,
               importSource: 'python_rpa',
               importLogId: logId,
-              erpDocumentId: importedInvoice.erpDocumentId
+              erpDocumentId: importedInvoice.erpDocumentId,
+              downloadedAt: importedInvoice.downloadedAt
             }
           });
 
-          // Trigger AI processing for the main invoice (if file exists)
-          const fs = require('fs');
-          if (fs.existsSync(importedInvoice.filePath)) {
-            // Import the processing function
-            const { processInvoiceAsync } = await import('../routes');
-
-            // Read file and process
-            const fileBuffer = fs.readFileSync(importedInvoice.filePath);
-
-            // Start AI processing in background
-            setImmediate(async () => {
-              try {
-                await processInvoiceAsync(mainInvoice, fileBuffer);
-                console.log(`AI processing completed for imported invoice: ${importedInvoice.originalFileName}`);
-              } catch (error) {
-                console.error(`AI processing failed for imported invoice ${importedInvoice.originalFileName}:`, error);
-                await storage.updateInvoice(mainInvoice.id, { 
-                  status: "failed",
-                  errorMessage: error instanceof Error ? error.message : 'AI processing failed'
-                });
-              }
-            });
-          }
+          // Mark as extracted for now - AI processing will be handled separately
+          await storage.updateInvoice(mainInvoice.id, { 
+            status: "extracted"
+          });
+          console.log(`Imported invoice ready for processing: ${importedInvoice.originalFileName}`);
 
           // Mark imported invoice as processed
           await storage.updateImportedInvoice(importedInvoice.id, {
