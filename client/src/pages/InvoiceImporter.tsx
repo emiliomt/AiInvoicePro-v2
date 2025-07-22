@@ -70,8 +70,6 @@ export default function InvoiceImporter() {
     spacingUnit: 'minutes',
     startTime: '09:00',
     // Python RPA specific fields (ERP credentials auto-populated from connection)
-    downloadPath: '',
-    xmlPath: '',
     // Manual configuration fields
     manualConfig: false,
     manualErpUrl: '',
@@ -253,8 +251,6 @@ export default function InvoiceImporter() {
         erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection?.baseUrl,
         erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection?.username,
         erpPassword: newConfig.manualConfig ? newConfig.manualErpPassword : '', // Password will be retrieved from connection on server side if not manual
-        downloadPath: newConfig.downloadPath,
-        xmlPath: newConfig.xmlPath,
         isManualConfig: newConfig.manualConfig,
         headless: newConfig.headless,
         ...(newConfig.schedule === 'multiple_daily' && {
@@ -291,8 +287,6 @@ export default function InvoiceImporter() {
           spacingUnit: 'minutes',
           startTime: '09:00',
           // Reset Python RPA fields (ERP credentials auto-populated from connection)
-          downloadPath: '',
-          xmlPath: '',
           // Reset manual configuration fields
           manualConfig: false,
           manualErpUrl: '',
@@ -688,31 +682,7 @@ export default function InvoiceImporter() {
                   </div>
                 )}
 
-                <div>
-                  <Label htmlFor="download-path">Download Path</Label>
-                  <Input
-                    id="download-path"
-                    value={newConfig.downloadPath}
-                    onChange={(e) => setNewConfig({ ...newConfig, downloadPath: e.target.value })}
-                    placeholder="/home/user/Downloads"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Local path where invoice files will be downloaded
-                  </p>
-                </div>
-
-                <div>
-                  <Label htmlFor="xml-path">XML Storage Path</Label>
-                  <Input
-                    id="xml-path"
-                    value={newConfig.xmlPath}
-                    onChange={(e) => setNewConfig({ ...newConfig, xmlPath: e.target.value })}
-                    placeholder="/home/user/xml_files"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Local path where XML files will be stored and processed
-                  </p>
-                </div>
+                
               </div>
 
               {/* Browser Configuration */}
