@@ -313,22 +313,61 @@ export class RPAService {
       }
       
       const data = await response.json();
-      const documents: ERPDocument[] = data.documents?.map((doc: any) => ({
-        id: doc.id,
-        type: documentType as 'invoice' | 'purchase_order',
-        data: doc,
-        metadata: {
-          lastModified: doc.lastModified,
-          fileSize: doc.size,
-          format: doc.format
+      
+      // Enhanced XML invoice processing
+      const documents: ERPDocument[] = [];
+      const xmlDocuments = data.documents || [];
+      
+      for (const doc of xmlDocuments) {
+        try {
+          // Process XML content if available
+          if (doc.content && (doc.format === 'xml' || doc.content.includes('<?xml'))) {
+            const { parseInvoiceXML } = await import('./xmlParser.js');
+            const extractedData = parseInvoiceXML(doc.content, true);
+            
+            documents.push({
+              id: doc.id || `xml_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+              type: documentType as 'invoice' | 'purchase_order',
+              data: {
+                ...doc,
+                extractedInvoiceData: extractedData,
+                isXMLProcessed: true
+              },
+              metadata: {
+                lastModified: doc.lastModified,
+                fileSize: doc.size || doc.content?.length,
+                format: 'xml',
+                xmlExtracted: true,
+                vendorName: extractedData.vendorName,
+                invoiceNumber: extractedData.invoiceNumber,
+                totalAmount: extractedData.totalAmount,
+                currency: extractedData.currency
+              }
+            });
+          } else {
+            // Standard document processing
+            documents.push({
+              id: doc.id,
+              type: documentType as 'invoice' | 'purchase_order',
+              data: doc,
+              metadata: {
+                lastModified: doc.lastModified,
+                fileSize: doc.size,
+                format: doc.format
+              }
+            });
+          }
+        } catch (docError: any) {
+          console.error(`Error processing document ${doc.id}:`, docError);
+          // Continue with other documents
         }
-      })) || [];
+      }
       
       return {
-        documentsFound: documents.length,
+        documentsFound: xmlDocuments.length,
         documentsProcessed: documents.length,
-        documentsSkipped: 0,
-        errorCount: 0,
+        documentsSkipped: xmlDocuments.length - documents.length,
+        errorCount: xmlDocuments.length - documents.length,
         extractedDocuments: documents,
         errors: []
       };
@@ -446,26 +485,38 @@ export class RPAService {
     userId: string
   ): Promise<void> {
     try {
-      // Extract text content from document
+      let extractedData: any;
       let ocrText = '';
       
-      if (document.data.content) {
-        // If document has text content directly
+      // Enhanced XML processing
+      if (document.data.extractedInvoiceData && document.data.isXMLProcessed) {
+        // Use pre-processed XML data
+        extractedData = document.data.extractedInvoiceData;
+        ocrText = document.data.content || '';
+        console.log(`Using pre-processed XML data for document ${document.id}`);
+      } else if (document.data.content && (document.metadata?.format === 'xml' || document.data.content.includes('<?xml'))) {
+        // Process XML content directly
+        const { parseInvoiceXML } = await import('./xmlParser.js');
+        extractedData = parseInvoiceXML(document.data.content, true);
         ocrText = document.data.content;
-      } else if (document.data.fileUrl) {
-        // If document is a file, perform OCR
-        const buffer = await this.downloadFile(document.data.fileUrl);
-        ocrText = await ocrService.extractText(buffer, 'application/pdf');
-      } else if (document.data.base64Content) {
-        // If document is base64 encoded
-        const buffer = Buffer.from(document.data.base64Content, 'base64');
-        ocrText = await ocrService.extractText(buffer, document.metadata?.format || 'application/pdf');
+        console.log(`Processed XML content for document ${document.id}`);
+      } else {
+        // Standard OCR processing
+        if (document.data.content) {
+          ocrText = document.data.content;
+        } else if (document.data.fileUrl) {
+          const buffer = await this.downloadFile(document.data.fileUrl);
+          ocrText = await ocrService.extractText(buffer, 'application/pdf');
+        } else if (document.data.base64Content) {
+          const buffer = Buffer.from(document.data.base64Content, 'base64');
+          ocrText = await ocrService.extractText(buffer, document.metadata?.format || 'application/pdf');
+        }
+        
+        // Use AI to extract structured data
+        extractedData = await extractInvoiceData(ocrText);
       }
       
-      // Use AI to extract structured data
-      const extractedData = await extractInvoiceData(ocrText);
-      
-      // Create invoice record
+      // Create enhanced invoice record
       const invoiceData = {
         userId,
         fileName: document.data.fileName || `invoice_${document.id}`,
@@ -478,15 +529,122 @@ export class RPAService {
         totalAmount: extractedData.totalAmount,
         taxAmount: extractedData.taxAmount,
         subtotal: extractedData.subtotal,
-        currency: extractedData.currency,
+        currency: extractedData.currency || 'COP',
         ocrText,
         extractedData,
         projectName: extractedData.projectName,
-        confidenceScore: extractedData.confidenceScore,
+        confidenceScore: extractedData.confidenceScore || '0.95',
+        // Additional XML-specific fields
+        ...(document.data.isXMLProcessed && {
+          xmlProcessed: true,
+          lineItems: extractedData.lineItems || [],
+          buyerTaxId: extractedData.buyerTaxId,
+          vendorAddress: extractedData.vendorAddress,
+          buyerAddress: extractedData.buyerAddress,
+          projectAddress: extractedData.projectAddress,
+          projectCity: extractedData.projectCity
+        })
       };
       
-      // Note: In a real implementation, you'd save this to the database
-      console.log('Processed invoice:', invoiceData);
+      // Note: Save to database using storage service
+
+
+  /**
+   * Batch process XML invoices from multiple sources
+   */
+  async batchProcessXMLInvoices(
+    xmlSources: Array<{
+      id: string;
+      content: string;
+      fileName?: string;
+      sourceType: 'file' | 'api' | 'ftp';
+      metadata?: any;
+    }>,
+    userId: string,
+    jobExecutionId?: number
+  ): Promise<{
+    totalProcessed: number;
+    successful: number;
+    failed: number;
+    results: Array<{ id: string; success: boolean; error?: string; invoiceId?: number }>;
+  }> {
+    const results = [];
+    let successful = 0;
+    let failed = 0;
+
+    console.log(`Starting batch processing of ${xmlSources.length} XML invoices`);
+
+    for (const source of xmlSources) {
+      try {
+        // Parse XML content
+        const { parseInvoiceXML } = await import('./xmlParser.js');
+        const extractedData = parseInvoiceXML(source.content, true);
+
+        // Create invoice record
+        const invoiceData = {
+          userId,
+          fileName: source.fileName || `xml_invoice_${source.id}`,
+          fileUrl: null,
+          status: 'extracted' as const,
+          vendorName: extractedData.vendorName,
+          invoiceNumber: extractedData.invoiceNumber,
+          invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+          dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+          totalAmount: extractedData.totalAmount,
+          taxAmount: extractedData.taxAmount,
+          subtotal: extractedData.subtotal,
+          currency: extractedData.currency || 'COP',
+          ocrText: source.content,
+          extractedData,
+          projectName: extractedData.projectName,
+          confidenceScore: extractedData.confidenceScore || '0.95',
+          xmlProcessed: true,
+          lineItems: extractedData.lineItems || [],
+          buyerTaxId: extractedData.buyerTaxId,
+          vendorAddress: extractedData.vendorAddress,
+          buyerAddress: extractedData.buyerAddress,
+          projectAddress: extractedData.projectAddress,
+          projectCity: extractedData.projectCity
+        };
+
+        // Save to database
+        const { storage } = await import('../storage.js');
+        const savedInvoice = await storage.createInvoice(invoiceData);
+
+        results.push({
+          id: source.id,
+          success: true,
+          invoiceId: savedInvoice.id
+        });
+        successful++;
+
+        console.log(`Successfully processed XML invoice ${source.id} -> Invoice ID ${savedInvoice.id}`);
+
+      } catch (error: any) {
+        console.error(`Failed to process XML invoice ${source.id}:`, error);
+        results.push({
+          id: source.id,
+          success: false,
+          error: error.message
+        });
+        failed++;
+      }
+    }
+
+    console.log(`Batch processing completed: ${successful} successful, ${failed} failed`);
+
+    return {
+      totalProcessed: xmlSources.length,
+      successful,
+      failed,
+      results
+    };
+  }
+
+      const { storage } = await import('../storage.js');
+      const savedInvoice = await storage.createInvoice(invoiceData);
+      
+      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
       
     } catch (error: any) {
       console.error(`Failed to process invoice document ${document.id}:`, error);
