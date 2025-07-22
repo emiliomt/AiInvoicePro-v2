@@ -3303,6 +3303,23 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       console.log('Incoming request body:', JSON.stringify(req.body, null, 2));
       const data = insertInvoiceImporterConfigSchema.parse(req.body);
       console.log('Parsed data:', JSON.stringify(data, null, 2));
+      
+      // Validate that the ERP connection exists and belongs to the user
+      const connection = await storage.getErpConnection(data.connectionId);
+      if (!connection || connection.userId !== (user as any).claims.sub) {
+        return res.status(400).json({ 
+          error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account.' 
+        });
+      }
+
+      if (!connection.isActive) {
+        return res.status(400).json({ 
+          error: 'Selected ERP connection is inactive. Please activate the connection before creating an import configuration.' 
+        });
+      }
+
+      console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
+      
       const config = await storage.createInvoiceImporterConfig(data, (user as any).claims.sub);
       res.json(config);
     } catch (error) {

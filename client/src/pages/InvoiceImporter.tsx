@@ -28,6 +28,8 @@ interface ImportConfig {
     name: string;
     baseUrl: string;
     isActive: boolean;
+    username: string; // Added username
+    lastUsed: string | null; // Added lastUsed
   };
 }
 
@@ -46,6 +48,8 @@ interface ERPConnection {
   name: string;
   baseUrl: string;
   isActive: boolean;
+  username: string;
+  lastUsed: string | null;
 }
 
 export default function InvoiceImporter() {
@@ -562,7 +566,7 @@ export default function InvoiceImporter() {
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
                 <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
-                
+
                 <div>
                   <Label htmlFor="erp-url">ERP URL</Label>
                   <Input
