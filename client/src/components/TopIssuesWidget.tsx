@@ -26,6 +26,7 @@ const getSeverityColor = (severity: string) => {
 };
 
 const getTrendIcon = (trend: string) => {
+  if (!trend) return <Minus className="h-3 w-3 text-gray-500" />;
   if (trend.startsWith("+")) {
     return <TrendingUp className="h-3 w-3 text-red-500" />;
   } else if (trend.startsWith("-")) {
@@ -35,6 +36,7 @@ const getTrendIcon = (trend: string) => {
 };
 
 const getTrendColor = (trend: string) => {
+  if (!trend) return "text-gray-600";
   if (trend.startsWith("+")) {
     return "text-red-600";
   } else if (trend.startsWith("-")) {
