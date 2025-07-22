@@ -12,6 +12,7 @@ import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface ImportConfig {
   id: number;
@@ -712,6 +713,25 @@ export default function InvoiceImporter() {
                     Local path where XML files will be stored and processed
                   </p>
                 </div>
+              </div>
+
+              {/* Browser Configuration */}
+              <div className="space-y-4">
+                <h4 className="text-sm font-medium text-gray-700">Browser Configuration</h4>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="headless"
+                    checked={newConfig.headless}
+                    onCheckedChange={(checked) => setNewConfig(prev => ({ ...prev, headless: checked === true }))}
+                  />
+                  <Label htmlFor="headless" className="text-sm">
+                    Run Chrome in headless mode (recommended for server environments)
+                  </Label>
+                </div>
+                <p className="text-xs text-gray-500">
+                  Headless mode runs the browser without a visible interface, which is more stable for automated tasks. 
+                  Disable only for debugging purposes.
+                </p>
               </div>
 
               <div className="flex justify-end space-x-2">

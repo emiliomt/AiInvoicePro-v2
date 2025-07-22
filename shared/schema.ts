@@ -768,6 +768,7 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
   matchedKeyword: varchar("matched_keyword", { length: 25 }).notNull(),
+```text
   isManualOverride: boolean("is_manual_override").default(false),
   confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
   classifiedAt: timestamp("classified_at").defaultNow(),
@@ -943,14 +944,7 @@ export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImpor
   lastRun: true,
   nextRun: true,
 }).extend({
-  connectionId: z.number().nullable().optional(),
-  erpUrl: z.string().optional().nullable(),
-  erpUsername: z.string().optional().nullable(), 
-  erpPassword: z.string().optional().nullable(),
-  downloadPath: z.string().optional().nullable(),
-  xmlPath: z.string().optional().nullable(),
-  isManualConfig: z.boolean().optional().default(false),
-  headless: z.boolean().optional().default(true)
+  headless: z.boolean().optional().default(true),
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
