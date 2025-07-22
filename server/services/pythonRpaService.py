@@ -242,7 +242,7 @@ class InvoiceRPAService:
     def debug_capture(self, label: str):
         """
         Enhanced debug capture function for visual debugging in Replit
-        Creates timestamped screenshots and HTML files in the project root for easy access
+        Creates timestamped screenshots and HTML files in organized folder structure
         """
         try:
             if not self.driver:
@@ -251,27 +251,33 @@ class InvoiceRPAService:
             
             # Create timestamp in format: YYYYMMDDTHHMMSS
             timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+            date_folder = datetime.now().strftime("%Y-%m-%d")
             
-            # Save files to project root so they appear in Replit sidebar
+            # Create organized folder structure for debug captures
             project_root = "/home/runner/workspace"
+            debug_base_dir = os.path.join(project_root, "rpa_debug_captures")
+            debug_date_dir = os.path.join(debug_base_dir, date_folder)
+            
+            # Ensure directories exist
+            os.makedirs(debug_date_dir, exist_ok=True)
             
             # Clean label for filename (remove special characters)
             clean_label = re.sub(r'[^a-zA-Z0-9_-]', '_', label)
             
             # Screenshot
             screenshot_filename = f"{timestamp}_{clean_label}.png"
-            screenshot_path = os.path.join(project_root, screenshot_filename)
+            screenshot_path = os.path.join(debug_date_dir, screenshot_filename)
             self.driver.save_screenshot(screenshot_path)
             
             # HTML source
             html_filename = f"{timestamp}_{clean_label}.html"
-            html_path = os.path.join(project_root, html_filename)
+            html_path = os.path.join(debug_date_dir, html_filename)
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(self.driver.page_source)
             
             # Page info
             info_filename = f"{timestamp}_{clean_label}_info.txt"
-            info_path = os.path.join(project_root, info_filename)
+            info_path = os.path.join(debug_date_dir, info_filename)
             with open(info_path, 'w', encoding='utf-8') as f:
                 f.write(f"Debug Capture: {label}\n")
                 f.write(f"Timestamp: {timestamp}\n")
@@ -289,7 +295,9 @@ class InvoiceRPAService:
                 else:
                     f.write("No error messages found\n")
             
-            self.log(f"🔍 Debug capture saved: {screenshot_filename}, {html_filename}, {info_filename}")
+            # Create relative path for cleaner logging
+            relative_path = os.path.join("rpa_debug_captures", date_folder)
+            self.log(f"🔍 Debug capture saved to {relative_path}/: {screenshot_filename}, {html_filename}, {info_filename}")
             
         except Exception as e:
             self.log(f"Failed to create debug capture: {e}", "ERROR")
