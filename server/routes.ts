@@ -3301,8 +3301,24 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       console.log('Incoming request body:', JSON.stringify(req.body, null, 2));
-      const data = insertInvoiceImporterConfigSchema.parse(req.body);
-      console.log('Parsed data:', JSON.stringify(data, null, 2));
+      
+      // Validate required fields first
+      if (!req.body.taskName || req.body.taskName.trim() === '') {
+        return res.status(400).json({ error: 'Task name is required' });
+      }
+
+      // Parse and validate with better error handling
+      let data;
+      try {
+        data = insertInvoiceImporterConfigSchema.parse(req.body);
+        console.log('Parsed data:', JSON.stringify(data, null, 2));
+      } catch (validationError: any) {
+        console.error('Schema validation error:', validationError);
+        return res.status(400).json({ 
+          error: 'Invalid configuration data',
+          details: validationError.errors || validationError.message 
+        });
+      }
       
       // Validate ERP connection only if not using manual configuration
       let connection = null;
@@ -3325,6 +3341,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.log('Creating import config with manual ERP configuration');
         // Set connectionId to null for manual configurations
         data.connectionId = null;
+        
+        // Validate manual configuration fields
+        if (!data.erpUrl || !data.erpUsername || !data.erpPassword) {
+          return res.status(400).json({ 
+            error: 'Manual configuration requires ERP URL, username, and password.' 
+          });
+        }
       } else {
         return res.status(400).json({ 
           error: 'Either select an ERP connection or enable manual configuration.' 

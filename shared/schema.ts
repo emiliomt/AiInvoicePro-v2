@@ -943,7 +943,14 @@ export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImpor
   lastRun: true,
   nextRun: true,
 }).extend({
-  connectionId: z.number().nullable().optional()
+  connectionId: z.number().nullable().optional(),
+  erpUrl: z.string().optional().nullable(),
+  erpUsername: z.string().optional().nullable(), 
+  erpPassword: z.string().optional().nullable(),
+  downloadPath: z.string().optional().nullable(),
+  xmlPath: z.string().optional().nullable(),
+  isManualConfig: z.boolean().optional().default(false),
+  headless: z.boolean().optional().default(true)
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
