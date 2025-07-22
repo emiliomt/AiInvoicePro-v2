@@ -2800,7 +2800,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       const connection = await storage.updateErpConnection(connectionId, data);
-      const { password, ...safeConnection } = connection;
+      // Safely destructure password (might be undefined)
+      const { password: _, ...safeConnection } = connection || {};
       res.json(safeConnection);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';

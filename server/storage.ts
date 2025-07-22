@@ -470,11 +470,18 @@ class PostgresStorage implements IStorage {
     return await db.select().from(erpConnections).orderBy(desc(erpConnections.createdAt));
   }
 
-  async updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<void> {
+  async updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<ErpConnection> {
     await db.update(erpConnections).set({
       ...updates,
       updatedAt: new Date()
     }).where(eq(erpConnections.id, id));
+    
+    // Return the updated connection
+    const [result] = await db.select().from(erpConnections).where(eq(erpConnections.id, id));
+    if (!result) {
+      throw new Error('Connection not found after update');
+    }
+    return result;
   }
 
   async deleteErpConnection(id: number): Promise<void> {
@@ -564,10 +571,7 @@ class PostgresStorage implements IStorage {
   }
 
   async updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<void> {
-    await db.update(invoiceImporterLogs).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoiceImporterLogs.id, id));
+    await db.update(invoiceImporterLogs).set(updates).where(eq(invoiceImporterLogs.id, id));
   }
 
   async deleteInvoiceImporterLog(id: number): Promise<void> {
@@ -987,10 +991,7 @@ class PostgresStorage implements IStorage {
     // Placeholder implementation
   }
 
-  async getInvoiceImporterLog(id: number): Promise<any> {
-    const [result] = await db.select().from(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
-    return result || null;
-  }
+
 
 
 
