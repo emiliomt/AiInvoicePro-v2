@@ -46,20 +46,7 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: async ({ queryKey }) => {
-        const url = Array.isArray(queryKey) ? queryKey[0] : queryKey;
-        if (typeof url !== 'string') {
-          throw new Error('Invalid query key');
-        }
-
-        const response = await apiRequest('GET', url);
-        if (!response.ok) {
-          const error = new Error('Network response was not ok');
-          (error as any).status = response.status;
-          throw error;
-        }
-        return response.json();
-      },
+      queryFn: getQueryFn({ on401: "throw" }),
       staleTime: 1000 * 60 * 5, // 5 minutes
       retry: (failureCount, error: any) => {
         // Don't retry on 404s or auth errors
