@@ -68,10 +68,7 @@ export default function InvoiceImporter() {
     spacingValue: 120,
     spacingUnit: 'minutes',
     startTime: '09:00',
-    // Python RPA specific fields
-    erpUrl: '',
-    erpUsername: '',
-    erpPassword: '',
+    // Python RPA specific fields (ERP credentials auto-populated from connection)
     downloadPath: '',
     xmlPath: ''
   });
@@ -203,16 +200,27 @@ export default function InvoiceImporter() {
       return;
     }
 
+    // Get the selected ERP connection to auto-populate credentials
+    const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
+    if (!selectedConnection) {
+      toast({
+        title: "Invalid Connection",
+        description: "Selected ERP connection not found",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       const configData = {
         taskName: newConfig.name,
         connectionId: parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.schedule,
-        // Python RPA fields
-        erpUrl: newConfig.erpUrl,
-        erpUsername: newConfig.erpUsername,
-        erpPassword: newConfig.erpPassword,
+        // Python RPA fields - credentials auto-populated from ERP connection
+        erpUrl: selectedConnection.baseUrl,
+        erpUsername: selectedConnection.username,
+        erpPassword: '', // Password will be retrieved from connection on server side
         downloadPath: newConfig.downloadPath,
         xmlPath: newConfig.xmlPath,
         ...(newConfig.schedule === 'multiple_daily' && {
@@ -248,10 +256,7 @@ export default function InvoiceImporter() {
           spacingValue: 120,
           spacingUnit: 'minutes',
           startTime: '09:00',
-          // Reset Python RPA fields
-          erpUrl: '',
-          erpUsername: '',
-          erpPassword: '',
+          // Reset Python RPA fields (ERP credentials auto-populated from connection)
           downloadPath: '',
           xmlPath: ''
         });
@@ -566,37 +571,17 @@ export default function InvoiceImporter() {
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
                 <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
-
-                <div>
-                  <Label htmlFor="erp-url">ERP URL</Label>
-                  <Input
-                    id="erp-url"
-                    value={newConfig.erpUrl}
-                    onChange={(e) => setNewConfig({ ...newConfig, erpUrl: e.target.value })}
-                    placeholder="https://your-erp-system.com"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="erp-username">ERP Username</Label>
-                  <Input
-                    id="erp-username"
-                    value={newConfig.erpUsername}
-                    onChange={(e) => setNewConfig({ ...newConfig, erpUsername: e.target.value })}
-                    placeholder="Enter ERP username"
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="erp-password">ERP Password</Label>
-                  <Input
-                    id="erp-password"
-                    type="password"
-                    value={newConfig.erpPassword}
-                    onChange={(e) => setNewConfig({ ...newConfig, erpPassword: e.target.value })}
-                    placeholder="Enter ERP password"
-                  />
-                </div>
+                
+                {newConfig.connectionId && (
+                  <div className="p-3 bg-white rounded border-l-4 border-blue-400">
+                    <p className="text-sm text-gray-600">
+                      <strong>ERP Connection:</strong> {erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId))?.name}
+                    </p>
+                    <p className="text-sm text-gray-500">
+                      ERP URL, Username, and Password will be automatically imported from the selected connection.
+                    </p>
+                  </div>
+                )}
 
                 <div>
                   <Label htmlFor="download-path">Download Path</Label>
@@ -606,6 +591,9 @@ export default function InvoiceImporter() {
                     onChange={(e) => setNewConfig({ ...newConfig, downloadPath: e.target.value })}
                     placeholder="/home/user/Downloads"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Local path where invoice files will be downloaded
+                  </p>
                 </div>
 
                 <div>
@@ -616,6 +604,9 @@ export default function InvoiceImporter() {
                     onChange={(e) => setNewConfig({ ...newConfig, xmlPath: e.target.value })}
                     placeholder="/home/user/xml_files"
                   />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Local path where XML files will be stored and processed
+                  </p>
                 </div>
               </div>
 

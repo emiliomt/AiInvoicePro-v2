@@ -3320,7 +3320,15 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
       
-      const config = await storage.createInvoiceImporterConfig(data, (user as any).claims.sub);
+      // Auto-populate ERP credentials from the selected connection
+      const configDataWithCredentials = {
+        ...data,
+        erpUrl: connection.baseUrl,
+        erpUsername: connection.username,
+        erpPassword: connection.password, // This is already encrypted in storage
+      };
+      
+      const config = await storage.createInvoiceImporterConfig(configDataWithCredentials, (user as any).claims.sub);
       res.json(config);
     } catch (error) {
       console.error('Error in invoice importer config creation:', error);
