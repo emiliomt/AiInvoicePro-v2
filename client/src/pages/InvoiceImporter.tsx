@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -103,6 +103,7 @@ export default function InvoiceImporter() {
   // WebSocket state for real-time updates
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const wsRef = useRef<WebSocket | null>(null);
   
   const { toast } = useToast();
 
@@ -113,6 +114,11 @@ export default function InvoiceImporter() {
     initializeWebSocket();
     
     return () => {
+      // Clean up WebSocket connection
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
       if (ws) {
         ws.close();
       }
@@ -121,12 +127,24 @@ export default function InvoiceImporter() {
 
   // Initialize WebSocket connection for real-time updates
   const initializeWebSocket = () => {
+    // Prevent multiple connections
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected, skipping initialization');
+      return;
+    }
+
+    // Close any existing connection
+    if (wsRef.current) {
+      wsRef.current.close();
+    }
+
     try {
       setConnectionStatus('connecting');
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws`;
 
       const websocket = new WebSocket(wsUrl);
+      wsRef.current = websocket;
 
       websocket.onopen = () => {
         console.log('WebSocket connected for Invoice Importer');
@@ -160,16 +178,20 @@ export default function InvoiceImporter() {
         console.log('WebSocket disconnected');
         setConnectionStatus('disconnected');
         setWs(null);
+        wsRef.current = null;
 
-        // Retry connection after 3 seconds
-        setTimeout(() => {
-          initializeWebSocket();
-        }, 3000);
+        // Only retry if not manually closed
+        if (websocket.readyState !== WebSocket.CLOSED) {
+          setTimeout(() => {
+            initializeWebSocket();
+          }, 5000); // Increased timeout to reduce rapid reconnection attempts
+        }
       };
 
       websocket.onerror = (error) => {
         console.error('WebSocket error:', error);
         setConnectionStatus('error');
+        wsRef.current = null;
       };
 
     } catch (error) {

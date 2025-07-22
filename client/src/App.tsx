@@ -117,6 +117,9 @@ const AppContent = React.memo(() => {
         <Route path="/invoice-importer">
           {user ? <InvoiceImporter /> : <Landing />}
         </Route>
+        <Route path="/rpa">
+          {user ? <InvoiceImporter /> : <Landing />}
+        </Route>
         <Route>
           <NotFound />
         </Route>
