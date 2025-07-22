@@ -623,79 +623,54 @@ class InvoiceRPAService:
         finally:
             self.cleanup()
 
-def setup_browser(headless=True):
-    """Setup Chrome browser with appropriate options for Replit environment"""
-    chrome_options = webdriver.ChromeOptions()
 
-    # Essential options for Replit/cloud environments
-    if headless:
-        chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-    chrome_options.add_argument("--disable-gpu")
-    chrome_options.add_argument("--disable-web-security")
-    chrome_options.add_argument("--disable-features=VizDisplayCompositor")
-
-    # Performance optimizations
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--disable-plugins")
-    chrome_options.add_argument("--disable-images")
-
-    # Don't disable JavaScript as it might be needed for ERP systems
-    # chrome_options.add_argument("--disable-javascript")
-
-    try:
-        driver = webdriver.Chrome(options=chrome_options)
-        driver.set_page_load_timeout(30)
-        return driver
-    except Exception as e:
-        print(f"Error setting up browser: {e}")
-        return None
 
 def main():
     """Main function for Python RPA invoice importer"""
     if len(sys.argv) != 2:
-        print("Usage: python3 pythonRpaService.py '<config_json>'")
+        error_result = {
+            'success': False,
+            'error': 'Usage: python3 pythonRpaService.py \'<config_json>\'',
+            'stats': {
+                'total_invoices': 0,
+                'processed_invoices': 0,
+                'successful_imports': 0,
+                'failed_imports': 0,
+                'current_step': 'Failed',
+                'progress': 0
+            }
+        }
+        print(f"RESULT:{json.dumps(error_result)}")
         sys.exit(1)
 
     try:
         config = json.loads(sys.argv[1])
-        print(f"Starting Python RPA with config: {config}")
+        
+        # Create and run the RPA service
+        rpa_service = InvoiceRPAService(config)
+        result = rpa_service.run_import_process()
+        
+        # Always output valid JSON
+        print(f"RESULT:{json.dumps(result)}")
+        
+        if not result['success']:
+            sys.exit(1)
 
-        # Extract configuration
-        erp_url = config.get('erpUrl')
-        erp_username = config.get('erpUsername') 
-        erp_password = config.get('erpPassword')
-        download_path = config.get('downloadPath', '/tmp/invoice_downloads')
-        xml_path = config.get('xmlPath', '/tmp/xml_invoices')
-        headless = config.get('headless', True)  # Default to True for Replit
-
-        if not all([erp_url, erp_username, erp_password]):
-            raise ValueError("Missing required ERP configuration")
-
-        # Ensure directories exist
-        os.makedirs(download_path, exist_ok=True)
-        os.makedirs(xml_path, exist_ok=True)
-
-        print(f"Progress: 10% - Setting up browser (headless: {headless})")
-        driver = setup_browser(headless=headless)
-        if not driver:
-            raise Exception("Failed to setup browser")
-
-        try:
-            print("Progress: 20% - Navigating to ERP system")
-            result = navigate_to_erp(driver, erp_url, erp_username, erp_password)
-
-            if result['success']:
-                print("Progress: 100% - Import completed successfully")
-                print(f"RESULT:{json.dumps(result)}")
-            else:
-                print(f"Progress: 0% - Import failed: {result['error']}")
-                print(f"RESULT:{json.dumps(error_result)}")
-
-        finally:
-            driver.quit()
-
+    except json.JSONDecodeError as e:
+        error_result = {
+            'success': False,
+            'error': f'Invalid JSON configuration: {str(e)}',
+            'stats': {
+                'total_invoices': 0,
+                'processed_invoices': 0,
+                'successful_imports': 0,
+                'failed_imports': 0,
+                'current_step': 'Failed',
+                'progress': 0
+            }
+        }
+        print(f"RESULT:{json.dumps(error_result)}")
+        sys.exit(1)
     except Exception as e:
         error_result = {
             'success': False,
