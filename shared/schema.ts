@@ -456,7 +456,7 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   id: serial("id").primaryKey(),
   userId: varchar("user_id").notNull(),
   companyId: integer("company_id").references(() => companies.id),
-  connectionId: integer("connection_id").references(() => erpConnections.id).notNull(),
+  connectionId: integer("connection_id").references(() => erpConnections.id),
   taskName: varchar("task_name", { length: 255 }).notNull(),
   description: text("description"),
   fileTypes: fileTypeEnum("file_types").default("both"),
@@ -767,8 +767,7 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
   matchedKeyword: varchar("matched_keyword", { length: 255 }),
-  isManualOverride: boolean("is_manual_override").default(false),
-  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
+  isManualOverride: boolean("is_manual_override").default(false),confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
 });
@@ -941,8 +940,8 @@ export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImpor
   updatedAt: true,
   lastRun: true,
   nextRun: true,
-}).partial({
-  connectionId: true, // Make connectionId optional for manual configurations
+}).extend({
+  connectionId: z.number().optional().nullable(),
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({

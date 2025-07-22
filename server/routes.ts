@@ -3323,6 +3323,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
       } else if (data.isManualConfig) {
         console.log('Creating import config with manual ERP configuration');
+        // Set connectionId to null for manual configs
+        data.connectionId = null;
       } else {
         return res.status(400).json({ 
           error: 'Either select an ERP connection or enable manual configuration.' 
