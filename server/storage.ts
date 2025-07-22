@@ -129,6 +129,11 @@ export interface IStorage {
   getInvoicePoMatchesWithDetails(): Promise<any[]>;
   moveApprovedToVerified(id: number): Promise<void>;
   getInvoiceImporterLog(id: number): Promise<any>;
+  getLatestInvoiceImporterLog(configId: number): Promise<any>;
+  updateInvoiceImporterLog(id: number, updates: any): Promise<void>;
+  getImportedInvoicesByLog(logId: number): Promise<any[]>;
+  updateImportedInvoice(id: number, updates: any): Promise<void>;
+  getInvoiceImporterLogs(configId?: number): Promise<any[]>;
 
   // Users  
   upsertUser(user: UpsertUser): Promise<User>;
@@ -188,9 +193,11 @@ export interface IStorage {
   // Invoice Importer
   createInvoiceImporterConfig(config: InsertInvoiceImporterConfig): Promise<InvoiceImporterConfig>;
   getInvoiceImporterConfigs(): Promise<InvoiceImporterConfig[]>;
+  getInvoiceImporterConfigsByUser(userId: string): Promise<InvoiceImporterConfig[]>;
   getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null>;
   updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void>;
   deleteInvoiceImporterConfig(id: number): Promise<void>;
+  deleteInvoiceImporterConfigCascade(id: number): Promise<void>;
 
   createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
   getInvoiceImporterLogs(): Promise<InvoiceImporterLog[]>;
@@ -468,6 +475,12 @@ class PostgresStorage implements IStorage {
     return await db.select().from(invoiceImporterConfigs).orderBy(desc(invoiceImporterConfigs.createdAt));
   }
 
+  async getInvoiceImporterConfigsByUser(userId: string): Promise<InvoiceImporterConfig[]> {
+    return await db.select().from(invoiceImporterConfigs)
+      .where(eq(invoiceImporterConfigs.userId, userId))
+      .orderBy(desc(invoiceImporterConfigs.createdAt));
+  }
+
   async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
     const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
     return result || null;
@@ -482,6 +495,28 @@ class PostgresStorage implements IStorage {
 
   async deleteInvoiceImporterConfig(id: number): Promise<void> {
     await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+  }
+
+  async deleteInvoiceImporterConfigCascade(configId: number): Promise<void> {
+    try {
+      // First delete all imported invoices for logs related to this config
+      const logs = await db.select({ id: invoiceImporterLogs.id })
+        .from(invoiceImporterLogs)
+        .where(eq(invoiceImporterLogs.configId, configId));
+
+      for (const log of logs) {
+        await db.delete(importedInvoices).where(eq(importedInvoices.logId, log.id));
+      }
+
+      // Then delete all logs for this config
+      await db.delete(invoiceImporterLogs).where(eq(invoiceImporterLogs.configId, configId));
+
+      // Finally delete the config itself
+      await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, configId));
+    } catch (error) {
+      console.error('Error in cascading delete:', error);
+      throw error;
+    }
   }
 
   async createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog> {
@@ -909,6 +944,44 @@ class PostgresStorage implements IStorage {
   async getInvoiceImporterLog(id: number): Promise<any> {
     const [result] = await db.select().from(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
     return result || null;
+  }
+
+  async getLatestInvoiceImporterLog(configId: number): Promise<any> {
+    const [result] = await db.select().from(invoiceImporterLogs)
+      .where(eq(invoiceImporterLogs.configId, configId))
+      .orderBy(desc(invoiceImporterLogs.createdAt))
+      .limit(1);
+    return result || null;
+  }
+
+  async updateInvoiceImporterLog(id: number, updates: any): Promise<void> {
+    await db.update(invoiceImporterLogs).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(invoiceImporterLogs.id, id));
+  }
+
+  async getImportedInvoicesByLog(logId: number): Promise<any[]> {
+    return await db.select().from(importedInvoices)
+      .where(eq(importedInvoices.logId, logId))
+      .orderBy(desc(importedInvoices.createdAt));
+  }
+
+  async updateImportedInvoice(id: number, updates: any): Promise<void> {
+    await db.update(importedInvoices).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(importedInvoices.id, id));
+  }
+
+  async getInvoiceImporterLogs(configId?: number): Promise<any[]> {
+    if (configId) {
+      return await db.select().from(invoiceImporterLogs)
+        .where(eq(invoiceImporterLogs.configId, configId))
+        .orderBy(desc(invoiceImporterLogs.createdAt));
+    }
+    return await db.select().from(invoiceImporterLogs)
+      .orderBy(desc(invoiceImporterLogs.createdAt));
   }
 }
 

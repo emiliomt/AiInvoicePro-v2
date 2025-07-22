@@ -3380,7 +3380,12 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.log('Using ERP connection credentials');
       }
       
-      const config = await storage.createInvoiceImporterConfig(configDataWithCredentials, (user as any).claims.sub);
+      const configWithUserId = {
+        ...configDataWithCredentials,
+        userId: (user as any).claims.sub
+      };
+      
+      const config = await storage.createInvoiceImporterConfig(configWithUserId);
       res.json(config);
     } catch (error) {
       console.error('Error in invoice importer config creation:', error);
@@ -3396,7 +3401,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
+      const configs = await storage.getInvoiceImporterConfigsByUser((user as any).claims.sub);
       res.json(configs);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -3441,21 +3446,18 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const config = await storage.getInvoiceImporterConfig(configId);
-      const currentUser = await storage.getUser((user as any).claims.sub);
 
       if (!config) {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
-      // Check if user has access to this configuration (same user or same company)
-      const hasAccess = config.userId === (user as any).claims.sub || 
-                       (currentUser?.companyId && config.companyId === currentUser.companyId);
-
-      if (!hasAccess) {
+      // Check if user has access to this configuration
+      if (config.userId !== (user as any).claims.sub) {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
-      await storage.deleteInvoiceImporterConfig(configId);
+      // Delete related records first to avoid foreign key constraint issues
+      await storage.deleteInvoiceImporterConfigCascade(configId);
       res.json({ message: 'Import configuration deleted successfully' });
     } catch (error) {
       console.error('Error deleting invoice importer config:', error);
