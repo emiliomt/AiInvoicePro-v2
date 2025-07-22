@@ -32,6 +32,18 @@ class InvoiceRPAService:
         self.password = config.get('erpPassword', '')
         self.download_dir = config.get('downloadPath', '/tmp/invoice_downloads')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
+        
+        # Get headless mode from config (default to False for easier debugging)
+        self.headless_mode = config.get('headless', False)
+        
+        # Validate required config values early
+        if not self.erp_url:
+            raise ValueError("Missing required config: 'erpUrl' must be provided")
+        if not self.username:
+            raise ValueError("Missing required config: 'erpUsername' must be provided")
+        if not self.password:
+            raise ValueError("Missing required config: 'erpPassword' must be provided")
+        
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
         
@@ -98,7 +110,14 @@ class InvoiceRPAService:
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
-            #chrome_options.add_argument("--headless")  # Run headless for server environment
+            
+            # Configure headless mode based on config
+            if self.headless_mode:
+                chrome_options.add_argument("--headless")
+                self.log("Running in headless mode")
+            else:
+                self.log("Running in visible mode for debugging")
+                
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--disable-web-security")
@@ -162,7 +181,7 @@ class InvoiceRPAService:
         conn.commit()
         return conn
     
-    def wait_for_new_zip(self, timeout: int = 60, before_files: set = None) -> str:
+    def wait_for_new_zip(self, timeout: int = 60, before_files: Optional[set] = None) -> str:
         """Wait for a new ZIP file to be downloaded"""
         deadline = time.time() + timeout
         if before_files is None:
@@ -204,64 +223,88 @@ class InvoiceRPAService:
     
     def login_to_erp(self) -> bool:
         """Login to ERP system"""
+        if not self.driver:
+            self.log("Driver not initialized", "ERROR")
+            return False
+            
         try:
             self.update_progress("Logging into ERP system", 10)
+            self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
             
             # Enter credentials
+            self.log("Entering username...")
             username_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtUsuario")))
             username_field.send_keys(self.username)
             
+            self.log("Entering password...")
             password_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtContrasena")))
             password_field.send_keys(self.password)
             
             # Click login buttons
+            self.log("Clicking 'Siguiente' button...")
             self.driver.find_element(By.ID, "btnSiguiente").click()
+            
+            self.log("Clicking 'Ingresar' button...")
             self.wait.until(EC.element_to_be_clickable((By.ID, "btnIngresar"))).click()
             
-            self.log("Login successful")
+            self.log("✅ Login successful")
             return True
         except Exception as e:
-            self.log(f"Login failed: {e}", "ERROR")
+            self.log(f"❌ Login failed: {e}", "ERROR")
             return False
     
     def navigate_to_invoices(self) -> bool:
         """Navigate to the invoices section"""
+        if not self.driver:
+            self.log("Driver not initialized", "ERROR")
+            return False
+            
         try:
             self.update_progress("Navigating to invoice section", 20)
             
             # Click FE module
+            self.log("Looking for 'mod-FE' button...")
             fe_button = self.long_wait.until(EC.element_to_be_clickable((By.ID, "mod-FE")))
             self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", fe_button)
             self.driver.execute_script("arguments[0].click();", fe_button)
-            self.log("Clicked 'mod-FE' successfully")
+            self.log("✅ Clicked 'mod-FE' successfully")
             
             # Click Recepción if available
             try:
+                self.log("Looking for 'Recepción' button...")
                 self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Recepción')]"))).click()
-                self.log("Clicked 'Recepción'")
+                self.log("✅ Clicked 'Recepción'")
             except Exception:
-                self.log("Skipping 'Recepción' button")
+                self.log("⏭️ Skipping 'Recepción' button (not found or not needed)")
             
             # Click Documentos recibidos
+            self.log("Looking for 'Documentos recibidos' button...")
             self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[text()='Documentos recibidos']"))).click()
-            self.log("Navigated to 'Documentos recibidos'")
+            self.log("✅ Navigated to 'Documentos recibidos'")
             
+            self.log("✅ Navigation to invoice section successful")
             return True
         except Exception as e:
-            self.log(f"Navigation failed: {e}", "ERROR")
+            self.log(f"❌ Navigation failed: {e}", "ERROR")
             return False
     
     def process_invoice_rows(self) -> bool:
         """Process invoice rows and download files"""
+        if not self.driver:
+            self.log("Driver not initialized", "ERROR")
+            return False
+            
         try:
             self.update_progress("Processing invoice rows", 30)
             
-            # Switch to iframe
-            iframe = self.driver.find_element(By.ID, "pagina1")
-            self.driver.switch_to.frame(iframe)
+            # Wait for iframe to be available and switch to it
+            self.log("Waiting for iframe 'pagina1' to be available...")
+            WebDriverWait(self.driver, 15).until(EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
+            self.log("✅ Successfully switched to iframe 'pagina1'")
             
             # Wait for rows to load
+            self.log("⏳ Waiting for invoice rows to populate...")
             start = time.time()
             max_wait = 20
             
@@ -269,10 +312,11 @@ class InvoiceRPAService:
                 rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
                 data_rows = [r for r in rows if r.text.strip()]
                 if data_rows:
-                    self.log(f"Found {len(data_rows)} rows with content")
+                    self.log(f"✅ Found {len(data_rows)} rows with content")
                     break
                 time.sleep(1)
             else:
+                self.log(f"❌ No populated rows found after {max_wait} seconds", "ERROR")
                 raise Exception(f"No populated rows found after {max_wait} seconds")
             
             # Initialize database
@@ -281,7 +325,12 @@ class InvoiceRPAService:
             
             while True:
                 rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
-                self.log(f"Processing page {page_count + 1} with {len(rows)} rows")
+                data_rows = [r for r in rows if r.text.strip()]
+                
+                if len(data_rows) == 0:
+                    self.log(f"⚠️ Page {page_count + 1} has no data rows, moving to next page")
+                else:
+                    self.log(f"📄 Processing page {page_count + 1} with {len(data_rows)} data rows (total elements: {len(rows)})")
                 
                 for i, row in enumerate(rows):
                     try:
@@ -302,22 +351,24 @@ class InvoiceRPAService:
                         """, (numero_documento, safe_emisor, valor_total))
                         
                         if cursor.fetchone():
-                            self.log(f"Skipping duplicate: {numero_documento} - {safe_emisor}")
+                            self.log(f"⏭️ Skipping duplicate: {numero_documento} - {safe_emisor}")
                             continue
                         
-                        self.log(f"Processing: {numero_documento} - {emisor} - {valor_total}")
+                        self.log(f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}")
                         self.stats['total_invoices'] += 1
                         
                         # Download invoice
                         if self.download_invoice(row, numero_documento, safe_emisor, valor_total, db_conn):
                             self.stats['successful_imports'] += 1
+                            self.log(f"✅ Successfully processed invoice: {numero_documento}")
                         else:
                             self.stats['failed_imports'] += 1
+                            self.log(f"❌ Failed to process invoice: {numero_documento}")
                         
                         self.stats['processed_invoices'] += 1
                         
                     except Exception as e:
-                        self.log(f"Error processing row {i}: {e}", "ERROR")
+                        self.log(f"❌ Error processing row {i}: {e}", "ERROR")
                         self.stats['failed_imports'] += 1
                         continue
                 
@@ -325,11 +376,11 @@ class InvoiceRPAService:
                 try:
                     next_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Siguiente') and not(@disabled)]")
                     ActionChains(self.driver).move_to_element(next_btn).click().perform()
-                    self.log("Moving to next page")
+                    self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
                 except:
-                    self.log("Finished processing all pages")
+                    self.log("✅ Finished processing all pages")
                     break
             
             db_conn.close()
@@ -341,6 +392,10 @@ class InvoiceRPAService:
     
     def download_invoice(self, row, numero_documento: str, safe_emisor: str, valor_total: str, db_conn) -> bool:
         """Download individual invoice"""
+        if not self.driver:
+            self.log("Driver not initialized", "ERROR")
+            return False
+            
         try:
             # Scroll to row and click download button
             self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", row)
@@ -360,7 +415,9 @@ class InvoiceRPAService:
             # Click download action button
             ActionChains(self.driver).move_to_element(buttons[3]).click().perform()
             
-            # Click actual download button
+            # Click actual download button  
+            if not self.short_wait:
+                return False
             download_button = self.short_wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
             ActionChains(self.driver).move_to_element(download_button).click().perform()
             
@@ -382,6 +439,8 @@ class InvoiceRPAService:
             db_conn.commit()
             
             # Close download dialog
+            if not self.short_wait:
+                return False
             close_button = self.short_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn.btn-light.pull-right")))
             ActionChains(self.driver).move_to_element(close_button).click().perform()
             
@@ -566,12 +625,29 @@ class InvoiceRPAService:
 
 def main():
     """Main entry point for command line execution"""
-    if len(sys.argv) < 2:
-        print("Usage: python pythonRpaService.py <config_json>")
-        sys.exit(1)
+    
+    # Fallback hardcoded config for easier local debugging
+    fallback_config = {
+        "erpUrl": "https://www3.sincoerp.com/SincoObycon_Nueva/V3/Marco/Login.aspx",
+        "erpUsername": "eceronr", 
+        "erpPassword": "C@maro5136",
+        "downloadPath": "/tmp/invoice_downloads",
+        "xmlPath": "/tmp/xml_invoices",
+        "headless": False  # Default to False for easier debugging
+    }
     
     try:
-        config = json.loads(sys.argv[1])
+        if len(sys.argv) >= 2:
+            # Use command-line argument if provided
+            config = json.loads(sys.argv[1])
+            print("Using config from command line argument")
+        else:
+            # Use fallback config for easier local debugging
+            config = fallback_config
+            print("No command line argument provided, using fallback config for local debugging")
+            print("Usage: python pythonRpaService.py <config_json>")
+            print("Continuing with fallback configuration...")
+        
         service = InvoiceRPAService(config)
         result = service.run_import_process()
         
