@@ -7,8 +7,20 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { storage } from '../storage';
-import { progressTracker } from './progressTracker';
 import type { InvoiceImporterConfig } from '../../shared/schema';
+
+// Create a simple progress tracker implementation
+const progressTracker = {
+  startTask: (taskId: number, type: string, data: any) => {
+    console.log(`Progress: Starting task ${taskId} of type ${type}`);
+  },
+  updateTask: (taskId: number, data: any) => {
+    console.log(`Progress: Updating task ${taskId}`);
+  },
+  completeTask: (taskId: number, data: any) => {
+    console.log(`Progress: Completing task ${taskId} - Success: ${data.success}`);
+  }
+};
 
 // Fix for __dirname in ES modules
 const __filename = fileURLToPath(import.meta.url);
