@@ -188,9 +188,9 @@ class PythonInvoiceImporter {
     const sqlite3 = await import('sqlite3');
     
     try {
-      // Connect to Python RPA SQLite databases
-      const downloadDbPath = '/tmp/rpa_downloads.db';
-      const xmlDbPath = '/tmp/rpa_xml.db';
+      // Connect to Python RPA SQLite databases (matching Python service paths)
+      const downloadDbPath = '/tmp/invoice_downloads/invoices.db';
+      const xmlDbPath = '/tmp/xml_invoices/invoices_xml.db';
       
       // Process downloaded files (PDFs/ZIPs)
       if (await this.fileExists(downloadDbPath)) {
