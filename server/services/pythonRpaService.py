@@ -12,6 +12,7 @@ import zipfile
 import sqlite3
 import sys
 import json
+import base64
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -29,7 +30,21 @@ class InvoiceRPAService:
         self.config = config
         self.erp_url = config.get('erpUrl', '')
         self.username = config.get('erpUsername', '')
-        self.password = config.get('erpPassword', '')
+        
+        # Decode Base64 password if it appears to be encoded
+        raw_password = config.get('erpPassword', '')
+        try:
+            # Check if password is Base64 encoded and decode it
+            if raw_password and len(raw_password) % 4 == 0:
+                decoded_password = base64.b64decode(raw_password).decode('utf-8')
+                self.password = decoded_password
+                self.log(f"Password decoded successfully")
+            else:
+                self.password = raw_password
+        except Exception as e:
+            # If decoding fails, use the raw password
+            self.password = raw_password
+            self.log(f"Using raw password (decode failed: {e})")
         self.download_dir = config.get('downloadPath', '/tmp/invoice_downloads')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
 
