@@ -16,6 +16,7 @@ import { projectMatcher } from "./projectMatcher.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
 import { invoiceImporterService } from "./services/invoiceImporterService.js";
+import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
 
 // Configure multer for file uploads
@@ -3534,7 +3535,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       // Start the import process asynchronously but don't wait for it
       setImmediate(() => {
-        invoiceImporterService.executeImportTask(configId)
+        pythonInvoiceImporter.executeImportTask(configId)
           .then(() => {
             console.log(`Import task ${configId} completed successfully`);
           })
@@ -3724,7 +3725,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   // Helper function for executing import tasks asynchronously
   async function executeImportAsync(configId: number) {
     try {
-      await invoiceImporterService.executeImportTask(configId);
+      await pythonInvoiceImporter.executeImportTask(configId);
     } catch (error) {
       console.error(`Import task ${configId} failed:`, error);
     }
