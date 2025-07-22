@@ -3571,11 +3571,34 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
-      const logs = await storage.getInvoiceImporterLogs(configId);
+      const logs = await storage.getInvoiceImporterLogsByConfig(configId);
       res.json(logs);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Get imported invoices by log ID
+  app.get('/api/invoice-importer/logs/:logId/invoices', isAuthenticated, async (req, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      const invoices = await storage.getImportedInvoicesByLog(logId);
+      res.json(invoices);
+    } catch (error) {
+      console.error('Error fetching imported invoices:', error);
+      res.status(500).json({ error: 'Failed to fetch imported invoices' });
+    }
+  });
+
+  // Get all imported invoices
+  app.get('/api/imported-invoices', isAuthenticated, async (req, res) => {
+    try {
+      const invoices = await storage.getImportedInvoices();
+      res.json(invoices);
+    } catch (error) {
+      console.error('Error fetching imported invoices:', error);
+      res.status(500).json({ error: 'Failed to fetch imported invoices' });
     }
   });
 

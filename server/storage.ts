@@ -587,6 +587,12 @@ class PostgresStorage implements IStorage {
     return await db.select().from(importedInvoices).orderBy(desc(importedInvoices.createdAt));
   }
 
+  async getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]> {
+    return await db.select().from(importedInvoices)
+      .where(eq(importedInvoices.logId, logId))
+      .orderBy(desc(importedInvoices.createdAt));
+  }
+
   // ERP Tasks
   async createErpTask(task: InsertErpTask): Promise<ErpTask> {
     const [result] = await db.insert(erpTasks).values(task).returning();
