@@ -3338,11 +3338,32 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
+      // Delete related logs first to avoid foreign key constraint violations
+      console.log(`Deleting related logs for config ${configId}`);
+      await storage.deleteInvoiceImporterLogsByConfigId(configId);
+      
+      // Delete related imported invoices if any
+      console.log(`Deleting related imported invoices for config ${configId}`);
+      await storage.deleteImportedInvoicesByConfigId(configId);
+      
+      // Now delete the configuration
+      console.log(`Deleting invoice importer config ${configId}`);
       await storage.deleteInvoiceImporterConfig(configId);
-      res.json({ message: 'Import configuration deleted successfully' });
+      
+      res.json({ message: 'Import configuration and related data deleted successfully' });
     } catch (error) {
       console.error('Error deleting invoice importer config:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Provide more specific error messages
+      if (errorMessage.includes('foreign key constraint') || errorMessage.includes('violates foreign key')) {
+        return res.status(400).json({ 
+          error: 'Cannot delete configuration because it has related import logs or data.',
+          message: 'Please delete all associated import logs first, then try again.',
+          suggestion: 'You can view and delete import logs in the Import Logs section.'
+        });
+      }
+      
       res.status(500).json({ 
         error: errorMessage,
         message: 'Failed to delete import configuration'

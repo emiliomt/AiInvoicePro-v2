@@ -79,7 +79,7 @@ import {
   type InsertImportedInvoice,
 } from "@shared/schema";
 import { db } from "./db";
-import { eq, desc, and, or, like, sql, isNull, isNotNull, inArray, ne, count, sum, gte, lte } from "drizzle-orm";
+import { eq, desc, and, or, like, sql, isNull, count, sum, avg, gte, lte, ne, asc, inArray } from "drizzle-orm";
 
 // Interface for storage operations
 export interface IStorage {
@@ -263,6 +263,10 @@ export interface IStorage {
   getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]>;
   getImportedInvoice(id: number): Promise<ImportedInvoice | undefined>;
   updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice>;
+
+  // Helper methods for Invoice Importer config deletion
+  deleteInvoiceImporterLogsByConfigId(configId: number): Promise<void>;
+  deleteImportedInvoicesByLogId(logId: number): Promise<void>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -828,8 +832,7 @@ export class DatabaseStorage implements IStorage {
     // Pending approvals
     const [pendingResult] = await db
       .select({ count: count() })
-      .from(approvals)
-      .innerJoin(invoices, eq(approvals.invoiceId, invoices.id))
+      .from(approvals)      .innerJoin(invoices, eq(approvals.invoiceId, invoices.id))
       .where(
         and(
           eq(approvals.status, "pending"),
@@ -1719,7 +1722,7 @@ export class DatabaseStorage implements IStorage {
     const [feedbackLog] = await db
       .insert(feedbackLogs)
       .values(feedbackData)
-      .returning();
+      .returning();Adding helper methods to properly delete invoice importer configurations.```text
     return feedbackLog;
   }
 
@@ -2248,8 +2251,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async deleteInvoiceImporterConfig(id: number): Promise<void> {
-    await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
-  }
+    try {
+        // First get the config
+        const config = await this.getInvoiceImporterConfig(id);
+        if (!config) {
+            throw new Error(`Invoice Importer Config with id ${id} not found.`);
+        }
+
+        // Get all logs associated with this config
+        const logs = await this.getInvoiceImporterLogs(id);
+        
+        // Delete all imported invoices associated with each log
+        for (const log of logs) {
+            await this.deleteImportedInvoicesByLogId(log.id);
+        }
+        
+        // Delete all logs associated with this config
+        await this.deleteInvoiceImporterLogsByConfigId(id);
+
+        // Finally, delete the config
+        await db.delete(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+
+    } catch (error) {
+        console.error("Error deleting invoice importer config:", error);
+        throw error;
+    }
+}
 
   async createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog> {
     const [created] = await db.insert(invoiceImporterLogs).values(log).returning();
@@ -2327,6 +2354,15 @@ export class DatabaseStorage implements IStorage {
 
   async getAllInvoices(): Promise<Invoice[]> {
     return db.select().from(invoices).orderBy(desc(invoices.createdAt));
+  }
+
+  // Helper methods for Invoice Importer config deletion
+  async deleteInvoiceImporterLogsByConfigId(configId: number): Promise<void> {
+    await db.delete(invoiceImporterLogs).where(eq(invoiceImporterLogs.configId, configId));
+  }
+
+  async deleteImportedInvoicesByLogId(logId: number): Promise<void> {
+    await db.delete(importedInvoices).where(eq(importedInvoices.logId, logId));
   }
 }
 
