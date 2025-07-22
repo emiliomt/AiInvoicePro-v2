@@ -151,10 +151,10 @@ export default function InvoiceImporter() {
         setConnectionStatus('connected');
         setWs(websocket);
 
-        // Subscribe to progress updates
+        // Subscribe to progress updates with actual user ID
         websocket.send(JSON.stringify({
           type: 'subscribe',
-          userId: 'current-user', // This should be actual user ID
+          userId: user?.id || 'current-user',
         }));
       };
 
@@ -202,30 +202,59 @@ export default function InvoiceImporter() {
 
   // Handle real-time progress updates
   const handleRealTimeProgressUpdate = (data: any) => {
+    const configId = data.data?.configId || data.taskId;
+    const currentStep = data.data?.currentStep || data.message;
+    const progress = data.data?.progress || data.step || 0;
+    
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
-        if (config.id === data.configId) {
+        if (config.id === configId) {
           return {
             ...config,
-            status: data.status || config.status,
-            currentStep: data.currentStep || data.message,
-            progress: data.progress,
-            stats: data.stats || config.stats
+            status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
+            currentStep: currentStep || config.currentStep,
+            progress: progress,
+            stats: { ...config.stats, ...data.data }
           };
         }
         return config;
       })
     );
 
-    // If console view is open for this config, update it
-    if (consoleConfig && consoleConfig.id === data.configId) {
+    // If console view is open for this config, update it with real-time logs
+    if (consoleConfig && consoleConfig.id === configId) {
       setConsoleConfig(prev => prev ? {
         ...prev,
-        status: data.status || prev.status,
-        currentStep: data.currentStep || data.message,
-        progress: data.progress,
-        stats: data.stats || prev.stats
+        status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
+        currentStep: currentStep || prev.currentStep,
+        progress: progress,
+        stats: { ...prev.stats, ...data.data }
       } : null);
+      
+      // Handle real-time log streaming
+      if (data.data?.currentLogLine) {
+        // Add individual log line in real-time
+        const timestamp = new Date().toLocaleTimeString();
+        const cleanLine = data.data.currentLogLine.replace('Python RPA: ', '').trim();
+        const formattedLogLine = `[${timestamp}] ${cleanLine}`;
+        
+        setConsoleLogs(prev => {
+          const newLogs = [...prev, formattedLogLine];
+          // Keep only last 15 lines for performance and readability
+          return newLogs.slice(-15);
+        });
+        
+        // Auto-scroll if enabled
+        if (autoScroll) {
+          setTimeout(() => {
+            const consoleElement = document.getElementById('console-logs');
+            if (consoleElement?.querySelector('.overflow-auto')) {
+              const scrollArea = consoleElement.querySelector('.overflow-auto') as HTMLElement;
+              scrollArea.scrollTop = scrollArea.scrollHeight;
+            }
+          }, 50); // Faster scroll for real-time feel
+        }
+      }
     }
   };
 
@@ -240,27 +269,21 @@ export default function InvoiceImporter() {
         logMessage = logMessage.replace('Python RPA:', '').trim();
       }
       
-      // Add color coding for different log types
-      let logClass = 'text-green-400';
-      if (logMessage.toLowerCase().includes('error') || logMessage.toLowerCase().includes('failed')) {
-        logClass = 'text-red-400';
-      } else if (logMessage.toLowerCase().includes('warning') || logMessage.toLowerCase().includes('warn')) {
-        logClass = 'text-yellow-400';
-      } else if (logMessage.toLowerCase().includes('success') || logMessage.toLowerCase().includes('completed')) {
-        logClass = 'text-green-300';
-      } else if (logMessage.toLowerCase().includes('progress') || logMessage.toLowerCase().includes('processing')) {
-        logClass = 'text-blue-400';
-      }
-      
       const formattedLog = `[${timestamp}] ${logMessage}`;
-      setConsoleLogs(prev => [...prev, formattedLog]);
+      
+      // Keep only last 15 lines for performance
+      setConsoleLogs(prev => {
+        const newLogs = [...prev, formattedLog];
+        return newLogs.slice(-15); // Always maintain 15-line limit
+      });
       
       // Auto-scroll to bottom if enabled
       if (autoScroll) {
         setTimeout(() => {
-          const consoleElement = document.querySelector('#console-logs .overflow-auto');
-          if (consoleElement) {
-            consoleElement.scrollTop = consoleElement.scrollHeight;
+          const consoleElement = document.getElementById('console-logs');
+          if (consoleElement?.querySelector('.overflow-auto')) {
+            const scrollArea = consoleElement.querySelector('.overflow-auto') as HTMLElement;
+            scrollArea.scrollTop = scrollArea.scrollHeight;
           }
         }, 100);
       }

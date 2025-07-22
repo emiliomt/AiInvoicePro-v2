@@ -382,31 +382,44 @@ class PythonInvoiceImporter {
 
         // Update progress with live logs
         if (progress) {
-          const oldStep = progress.currentStep;
-          progress.currentStep = this.extractCurrentStep(output) || progress.currentStep;
+          // Process each line individually for real-time streaming
+          const lines = output.split('\n').filter(line => line.trim());
+          
+          for (const line of lines) {
+            const trimmedLine = line.trim();
+            if (!trimmedLine) continue;
 
-          // Append new logs to existing logs
-          if (!progress.logs) progress.logs = '';
-          progress.logs += '\nPython RPA: ' + output.trim();
+            // Update current step from log content
+            if (trimmedLine.includes('INFO:')) {
+              const stepMatch = trimmedLine.match(/INFO:\s*(.+)/);
+              if (stepMatch) {
+                progress.currentStep = stepMatch[1];
+              }
+            }
 
-          // Extract progress percentage and stats from output
-          const statsUpdate = this.extractStatsFromOutput(output);
-          if (statsUpdate) {
-            progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
-            progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
-            progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
-            progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
-            progress.progress = statsUpdate.progress || progress.progress;
+            // Extract progress percentage and stats from output
+            const statsUpdate = this.extractStatsFromOutput(trimmedLine);
+            if (statsUpdate) {
+              progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
+              progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
+              progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
+              progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
+              progress.progress = statsUpdate.progress || progress.progress;
+            }
+
+            // Send real-time log line via WebSocket immediately
+            this.sendRealTimeLogLine(progress, trimmedLine);
           }
+
+          // Append to accumulated logs for database storage
+          if (!progress.logs) progress.logs = '';
+          progress.logs += '\n' + output.trim();
 
           // Update progress in memory for real-time display
           this.activeImports.set(progress.configId, progress);
 
-          // Send WebSocket progress updates for real-time UI updates
-          this.sendProgressUpdate(progress, output.trim());
-
-          // Update database periodically with logs
-          if (output.includes('INFO:') && Math.random() < 0.3) { // 30% chance to update DB
+          // Update database periodically with accumulated logs
+          if (output.includes('INFO:') && Math.random() < 0.2) { // 20% chance to update DB
             storage.updateInvoiceImporterLog(progress.logId, {
               logs: progress.logs,
               currentStep: progress.currentStep,
@@ -528,14 +541,13 @@ class PythonInvoiceImporter {
   }
 
   /**
-   * Send WebSocket progress update for real-time UI
+   * Send real-time individual log line via WebSocket
    */
-  private sendProgressUpdate(progress: ImportProgress, logOutput: string): void {
+  private sendRealTimeLogLine(progress: ImportProgress, logLine: string): void {
     try {
-      // Send progress update via WebSocket using progressTracker
-      // We need to get the config to find the userId
       storage.getInvoiceImporterConfig(progress.configId).then(config => {
         if (config) {
+          // Send individual log line for real-time streaming
           progressTracker.sendProgress(config.userId, {
             taskId: progress.logId,
             step: progress.progress,
@@ -546,20 +558,23 @@ class PythonInvoiceImporter {
             data: {
               configId: progress.configId,
               logId: progress.logId,
+              currentStep: progress.currentStep,
+              progress: progress.progress,
               totalInvoices: progress.totalInvoices,
               processedInvoices: progress.processedInvoices,
               successfulImports: progress.successfulImports,
               failedImports: progress.failedImports,
               isComplete: progress.isComplete,
-              logs: logOutput
+              logs: progress.logs, // Send accumulated logs for full history
+              currentLogLine: logLine // Send current line for immediate display
             }
           });
         }
       }).catch(error => {
-        console.error('Failed to get config for progress update:', error);
+        console.error('Failed to get config for real-time log update:', error);
       });
     } catch (error) {
-      console.error('Failed to send WebSocket progress update:', error);
+      console.error('Failed to send real-time log update:', error);
     }
   }
 
