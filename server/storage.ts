@@ -1227,7 +1227,7 @@ export class DatabaseStorage implements IStorage {
         matchDetails: invoicePoMatches.matchDetails,
         matchedAt: invoicePoMatches.matchedAt,
         approvedAt: invoicePoMatches.approvedAt,
-        rejectedAt: invoicePoMatches.rejectedBy,
+        rejectedAt: invoicePoMatches.rejectedAt,
         rejectedBy: invoicePoMatches.rejectedBy,
         approvedBy: invoicePoMatches.approvedBy,
         statusChangedAt: invoicePoMatches.statusChangedAt,
@@ -1722,7 +1722,7 @@ export class DatabaseStorage implements IStorage {
     const [feedbackLog] = await db
       .insert(feedbackLogs)
       .values(feedbackData)
-      .returning();Adding helper methods to properly delete invoice importer configurations.```text
+      .returning();
     return feedbackLog;
   }
 
@@ -2293,16 +2293,6 @@ export class DatabaseStorage implements IStorage {
 
   async getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | undefined> {
     const [log] = await db.select().from(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
-    return log;
-  }
-
-  async getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | undefined> {
-    const [log] = await db
-      .select()
-      .from(invoiceImporterLogs)
-      .where(eq(invoiceImporterLogs.configId, configId))
-      .orderBy(desc(invoiceImporterLogs.createdAt))
-      .limit(1);
     return log;
   }
 
