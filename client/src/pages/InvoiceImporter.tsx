@@ -117,7 +117,7 @@ export default function InvoiceImporter() {
         ws.close();
       }
     };
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Initialize WebSocket connection for real-time updates
   const initializeWebSocket = () => {
