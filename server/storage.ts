@@ -102,6 +102,22 @@ export interface IStorage {
   validateInvoiceData(invoiceData: any): Promise<any>;
   validateAllApprovedInvoices(): Promise<any>;
 
+  // Invoice Importer methods
+  createInvoiceImporterConfig(config: InsertInvoiceImporterConfig): Promise<InvoiceImporterConfig>;
+  getInvoiceImporterConfigs(): Promise<InvoiceImporterConfig[]>;
+  getInvoiceImporterConfigsByUser(userId: string): Promise<InvoiceImporterConfig[]>;
+  getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null>;
+  updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void>;
+  deleteInvoiceImporterConfig(id: number): Promise<void>;
+  deleteInvoiceImporterConfigCascade(configId: number): Promise<void>;
+  createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
+  getInvoiceImporterLogs(): Promise<InvoiceImporterLog[]>;
+  getInvoiceImporterLogsByConfig(configId: number): Promise<InvoiceImporterLog[]>;
+  getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | null>;
+  getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | null>;
+  updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<void>;
+  deleteInvoiceImporterLog(id: number): Promise<void>;
+
   // Missing methods from routes
   deleteAllProjects(): Promise<void>;
   getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | null>;
@@ -528,6 +544,36 @@ class PostgresStorage implements IStorage {
     return await db.select().from(invoiceImporterLogs).orderBy(desc(invoiceImporterLogs.createdAt));
   }
 
+  async getInvoiceImporterLogsByConfig(configId: number): Promise<InvoiceImporterLog[]> {
+    return await db.select().from(invoiceImporterLogs)
+      .where(eq(invoiceImporterLogs.configId, configId))
+      .orderBy(desc(invoiceImporterLogs.createdAt));
+  }
+
+  async getInvoiceImporterLog(id: number): Promise<InvoiceImporterLog | null> {
+    const [result] = await db.select().from(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
+    return result || null;
+  }
+
+  async getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | null> {
+    const [result] = await db.select().from(invoiceImporterLogs)
+      .where(eq(invoiceImporterLogs.configId, configId))
+      .orderBy(desc(invoiceImporterLogs.createdAt))
+      .limit(1);
+    return result || null;
+  }
+
+  async updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<void> {
+    await db.update(invoiceImporterLogs).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(invoiceImporterLogs.id, id));
+  }
+
+  async deleteInvoiceImporterLog(id: number): Promise<void> {
+    await db.delete(invoiceImporterLogs).where(eq(invoiceImporterLogs.id, id));
+  }
+
   async createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice> {
     const [result] = await db.insert(importedInvoices).values(invoice).returning();
     return result;
@@ -946,20 +992,7 @@ class PostgresStorage implements IStorage {
     return result || null;
   }
 
-  async getLatestInvoiceImporterLog(configId: number): Promise<any> {
-    const [result] = await db.select().from(invoiceImporterLogs)
-      .where(eq(invoiceImporterLogs.configId, configId))
-      .orderBy(desc(invoiceImporterLogs.createdAt))
-      .limit(1);
-    return result || null;
-  }
 
-  async updateInvoiceImporterLog(id: number, updates: any): Promise<void> {
-    await db.update(invoiceImporterLogs).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoiceImporterLogs.id, id));
-  }
 
   async getImportedInvoicesByLog(logId: number): Promise<any[]> {
     return await db.select().from(importedInvoices)
@@ -974,15 +1007,7 @@ class PostgresStorage implements IStorage {
     }).where(eq(importedInvoices.id, id));
   }
 
-  async getInvoiceImporterLogs(configId?: number): Promise<any[]> {
-    if (configId) {
-      return await db.select().from(invoiceImporterLogs)
-        .where(eq(invoiceImporterLogs.configId, configId))
-        .orderBy(desc(invoiceImporterLogs.createdAt));
-    }
-    return await db.select().from(invoiceImporterLogs)
-      .orderBy(desc(invoiceImporterLogs.createdAt));
-  }
+
 }
 
 export const storage: IStorage = new PostgresStorage();

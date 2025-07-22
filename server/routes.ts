@@ -3382,7 +3382,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       
       const configWithUserId = {
         ...configDataWithCredentials,
-        userId: (user as any).claims.sub
+        userId: (user as any).claims.sub,
+        companyId: (user as any).companyId || null
       };
       
       const config = await storage.createInvoiceImporterConfig(configWithUserId);
