@@ -3706,7 +3706,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         successfulImports: log.successfulImports || 0,
         failedImports: log.failedImports || 0,
         steps: steps,
-        logs: log.logs || '',
+        logs: log.logs || '', // This now includes Python RPA logs
         screenshots: log.screenshots || [],
         errorMessage: log.errorMessage,
         executionTime: log.executionTime

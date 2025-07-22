@@ -24,6 +24,7 @@ interface ImportProgress {
   progress: number;
   isComplete: boolean;
   error?: string;
+  logs?: string;
 }
 
 interface PythonRPAResult {
@@ -192,31 +193,41 @@ class PythonInvoiceImporter {
       let stderr = '';
       let result: PythonRPAResult | null = null;
 
-      // Handle stdout (logs and result)
-      pythonProcess.stdout.on('data', (data) => {
+      // Handle stdout (Python script output)
+      pythonProcess.stdout?.on('data', (data) => {
         const output = data.toString();
-        stdout += output;
+        console.log('Python RPA:', output.trim());
 
-        // Check for result output
-        const lines = output.split('\n');
-        for (const line of lines) {
-          if (line.startsWith('RESULT:')) {
-            try {
-              const resultJson = line.substring(7).trim();
-              result = JSON.parse(resultJson);
-            } catch (e) {
-              console.error('Failed to parse Python result:', e);
+        // Update progress with live logs
+        if (progress) {
+          progress.currentStep = this.extractCurrentStep(output) || progress.currentStep;
+
+          // Append new logs to existing logs
+          if (!progress.logs) progress.logs = '';
+          progress.logs += '\nPython RPA: ' + output.trim();
+
+          // Update progress in memory for real-time display
+          this.activeImports.set(configId, progress);
+
+          // Update database periodically with logs
+          if (output.includes('INFO:') && Math.random() < 0.3) { // 30% chance to update DB
+            storage.updateInvoiceImporterLog(log.id, {
+              logs: progress.logs,
+              currentStep: progress.currentStep,
+              processedInvoices: progress.processedInvoices,
+            }).catch(console.error);
+          }
+        }
+
+        // Store logs for database
+        if (output.includes('RESULT:')) {
+          try {
+            const resultLine = output.split('RESULT:')[1];
+            if (resultLine) {
+              result = JSON.parse(resultLine.trim());
             }
-          } else if (line.includes('Progress:')) {
-            // Parse progress updates
-            const progressMatch = line.match(/Progress: (\d+)% - (.+)/);
-            if (progressMatch) {
-              progress.progress = parseInt(progressMatch[1]);
-              progress.currentStep = progressMatch[2];
-              console.log(`Progress update: ${progress.progress}% - ${progress.currentStep}`);
-            }
-          } else if (line.trim()) {
-            console.log('Python RPA:', line.trim());
+          } catch (parseError) {
+            console.error('Failed to parse Python result:', parseError);
           }
         }
       });
@@ -313,8 +324,30 @@ class PythonInvoiceImporter {
   /**
    * Get progress for a specific configuration
    */
-  getProgress(configId: number): ImportProgress | null {
-    return this.activeImports.get(configId) || null;
+  getProgress(configId: number): ImportProgress | undefined {
+    return this.activeImports.get(configId);
+  }
+
+  /**
+   * Extract current step from Python log output
+   */
+  private extractCurrentStep(output: string): string | null {
+    // Extract meaningful steps from Python logs
+    if (output.includes('Setting up Chrome WebDriver')) return 'Setting up browser';
+    if (output.includes('Navigating to ERP URL')) return 'Connecting to ERP system';
+    if (output.includes('Entering username')) return 'Logging into ERP';
+    if (output.includes('Login successful')) return 'Login completed';
+    if (output.includes('Navigating to invoice section')) return 'Accessing invoices section';
+    if (output.includes('Found') && output.includes('rows')) return 'Loading invoice list';
+    if (output.includes('Processing:')) return 'Processing invoices';
+    if (output.includes('Downloaded:')) return 'Downloading invoice files';
+    if (output.includes('Successfully processed invoice')) return 'Processing invoice data';
+    if (output.includes('Moving to next page')) return 'Loading next page';
+    if (output.includes('Extracting XML files')) return 'Extracting XML files';
+    if (output.includes('Importing XML to database')) return 'Importing to database';
+    if (output.includes('Import process completed')) return 'Import completed';
+
+    return null;
   }
 
   /**
