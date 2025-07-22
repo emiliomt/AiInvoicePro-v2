@@ -3304,21 +3304,30 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const data = insertInvoiceImporterConfigSchema.parse(req.body);
       console.log('Parsed data:', JSON.stringify(data, null, 2));
       
-      // Validate that the ERP connection exists and belongs to the user
-      const connection = await storage.getErpConnection(data.connectionId);
-      if (!connection || connection.userId !== (user as any).claims.sub) {
+      // Validate ERP connection only if not using manual configuration
+      let connection = null;
+      if (!data.isManualConfig && data.connectionId) {
+        connection = await storage.getErpConnection(data.connectionId);
+        if (!connection || connection.userId !== (user as any).claims.sub) {
+          return res.status(400).json({ 
+            error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account.' 
+          });
+        }
+
+        if (!connection.isActive) {
+          return res.status(400).json({ 
+            error: 'Selected ERP connection is inactive. Please activate the connection before creating an import configuration.' 
+          });
+        }
+
+        console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
+      } else if (data.isManualConfig) {
+        console.log('Creating import config with manual ERP configuration');
+      } else {
         return res.status(400).json({ 
-          error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account.' 
+          error: 'Either select an ERP connection or enable manual configuration.' 
         });
       }
-
-      if (!connection.isActive) {
-        return res.status(400).json({ 
-          error: 'Selected ERP connection is inactive. Please activate the connection before creating an import configuration.' 
-        });
-      }
-
-      console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
       
       // Handle manual configuration or auto-populate from ERP connection
       let configDataWithCredentials;

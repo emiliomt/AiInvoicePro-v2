@@ -192,39 +192,64 @@ export default function InvoiceImporter() {
   };
 
   const handleCreateConfig = async () => {
-    if (!newConfig.name || !newConfig.connectionId) {
+    if (!newConfig.name) {
       toast({
         title: "Missing Information",
-        description: "Please fill in all required fields",
+        description: "Please enter a configuration name",
         variant: "destructive"
       });
       return;
+    }
+
+    // Only require ERP connection if not using manual config
+    if (!newConfig.manualConfig && !newConfig.connectionId) {
+      toast({
+        title: "Missing Information",
+        description: "Please select an ERP connection or enable manual configuration",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate manual config fields if manual config is enabled
+    if (newConfig.manualConfig) {
+      if (!newConfig.manualErpUrl || !newConfig.manualErpUsername || !newConfig.manualErpPassword) {
+        toast({
+          title: "Missing Manual Configuration",
+          description: "Please fill in all manual ERP configuration fields",
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     if (!validateMultipleDailySchedule()) {
       return;
     }
 
-    // Get the selected ERP connection to auto-populate credentials
-    const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
-    if (!selectedConnection) {
-      toast({
-        title: "Invalid Connection",
-        description: "Selected ERP connection not found",
-        variant: "destructive"
-      });
-      return;
+    // Get the selected ERP connection to auto-populate credentials (only if not manual)
+    let selectedConnection = null;
+    if (!newConfig.manualConfig) {
+      selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
+      if (!selectedConnection) {
+        toast({
+          title: "Invalid Connection",
+          description: "Selected ERP connection not found",
+          variant: "destructive"
+        });
+        return;
+      }
     }
 
     try {
       const configData = {
         taskName: newConfig.name,
-        connectionId: parseInt(newConfig.connectionId),
+        connectionId: newConfig.manualConfig ? null : parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.schedule,
         // Python RPA fields - use manual config or auto-populate from ERP connection
-        erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection.baseUrl,
-        erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection.username,
+        erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection?.baseUrl,
+        erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection?.username,
         erpPassword: newConfig.manualConfig ? newConfig.manualErpPassword : '', // Password will be retrieved from connection on server side if not manual
         downloadPath: newConfig.downloadPath,
         xmlPath: newConfig.xmlPath,
@@ -455,24 +480,26 @@ export default function InvoiceImporter() {
                   placeholder="Enter configuration name"
                 />
               </div>
-              <div>
-                <Label htmlFor="erp-connection">ERP Connection</Label>
-                <Select
-                  value={newConfig.connectionId}
-                  onValueChange={(value) => setNewConfig({ ...newConfig, connectionId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select ERP connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {erpConnections.map((connection) => (
-                      <SelectItem key={connection.id} value={connection.id.toString()}>
-                        {connection.name} ({connection.baseUrl})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              {!newConfig.manualConfig && (
+                <div>
+                  <Label htmlFor="erp-connection">ERP Connection</Label>
+                  <Select
+                    value={newConfig.connectionId}
+                    onValueChange={(value) => setNewConfig({ ...newConfig, connectionId: value })}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select ERP connection" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {erpConnections.map((connection) => (
+                        <SelectItem key={connection.id} value={connection.id.toString()}>
+                          {connection.name} ({connection.baseUrl})
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div>
                 <Label htmlFor="file-types">File Types</Label>
                 <Select
@@ -596,13 +623,21 @@ export default function InvoiceImporter() {
                   </Button>
                 </div>
                 
-                {newConfig.connectionId && !newConfig.manualConfig && (
+                {!newConfig.manualConfig && newConfig.connectionId && (
                   <div className="p-3 bg-white rounded border-l-4 border-blue-400">
                     <p className="text-sm text-gray-600">
                       <strong>ERP Connection:</strong> {erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId))?.name}
                     </p>
                     <p className="text-sm text-gray-500">
                       ERP URL, Username, and Password will be automatically imported from the selected connection.
+                    </p>
+                  </div>
+                )}
+
+                {!newConfig.manualConfig && !newConfig.connectionId && (
+                  <div className="p-3 bg-yellow-50 rounded border-l-4 border-yellow-400">
+                    <p className="text-sm text-yellow-700">
+                      Please select an ERP connection above, or enable manual configuration to enter credentials directly.
                     </p>
                   </div>
                 )}

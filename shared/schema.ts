@@ -941,6 +941,8 @@ export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImpor
   updatedAt: true,
   lastRun: true,
   nextRun: true,
+}).partial({
+  connectionId: true, // Make connectionId optional for manual configurations
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
