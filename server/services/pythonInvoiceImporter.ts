@@ -5,8 +5,13 @@
 
 import { spawn } from 'child_process';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import { storage } from '../storage';
 import type { InvoiceImporterConfig } from '../../shared/schema';
+
+// Fix for __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 interface ImportProgress {
   configId: number;
