@@ -47,9 +47,19 @@ class InvoiceRPAService:
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
 
-        # Ensure directories exist
+        # Ensure directories exist (convert Windows paths to Linux paths in Replit)
+        if os.name == 'posix':  # Linux/Unix (Replit environment)
+            # Convert Windows paths to temp directories
+            if self.download_dir.startswith('C:\\'):
+                self.download_dir = '/tmp/invoice_downloads'
+            if self.xml_dir.startswith('C:\\'):
+                self.xml_dir = '/tmp/xml_invoices'
+        
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
+        
+        self.log(f"Download directory: {self.download_dir}")
+        self.log(f"XML directory: {self.xml_dir}")
 
         # Initialize driver
         self.driver = None
@@ -228,6 +238,18 @@ class InvoiceRPAService:
                     return new_name
                 counter += 1
 
+    def take_screenshot(self, name: str = "debug"):
+        """Take a screenshot for debugging"""
+        try:
+            if self.driver:
+                screenshot_path = os.path.join(self.download_dir, f"{name}_{int(time.time())}.png")
+                self.driver.save_screenshot(screenshot_path)
+                self.log(f"📸 Screenshot saved: {screenshot_path}")
+                return screenshot_path
+        except Exception as e:
+            self.log(f"Failed to take screenshot: {e}", "ERROR")
+        return None
+
     def login_to_erp(self) -> bool:
         """Login to ERP system"""
         if not self.driver or not self.wait:
@@ -238,26 +260,79 @@ class InvoiceRPAService:
             self.update_progress("Logging into ERP system", 10)
             self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
+            
+            # Take screenshot after page load
+            self.take_screenshot("01_page_loaded")
+            time.sleep(2)  # Allow page to fully load
 
             # Enter credentials
             self.log("Entering username...")
             username_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtUsuario")))
+            username_field.clear()
             username_field.send_keys(self.username)
-
+            
             self.log("Entering password...")
             password_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtContrasena")))
+            password_field.clear()
             password_field.send_keys(self.password)
+            
+            # Take screenshot after entering credentials
+            self.take_screenshot("02_credentials_entered")
 
-            # Click login buttons
+            # Click login buttons with better timing
             self.log("Clicking 'Siguiente' button...")
-            self.driver.find_element(By.ID, "btnSiguiente").click()
+            siguiente_btn = self.driver.find_element(By.ID, "btnSiguiente")
+            self.driver.execute_script("arguments[0].click();", siguiente_btn)
+            time.sleep(2)
+            
+            # Take screenshot after first button
+            self.take_screenshot("03_after_siguiente")
 
-            self.log("Clicking 'Ingresar' button...")
-            self.wait.until(EC.element_to_be_clickable((By.ID, "btnIngresar"))).click()
-
-            self.log("✅ Login successful")
-            return True
+            self.log("Waiting for 'Ingresar' button...")
+            ingresar_btn = self.wait.until(EC.element_to_be_clickable((By.ID, "btnIngresar")))
+            self.driver.execute_script("arguments[0].click();", ingresar_btn)
+            
+            # Take screenshot after login attempt
+            self.take_screenshot("04_after_ingresar")
+            
+            # Wait for successful login - look for dashboard elements
+            self.log("Waiting for login success indicators...")
+            try:
+                # Wait for login to complete - check for typical post-login elements
+                WebDriverWait(self.driver, 10).until(
+                    lambda driver: "login" not in driver.current_url.lower() or 
+                                 driver.find_elements(By.ID, "mod-FE") or
+                                 driver.find_elements(By.CLASS_NAME, "dashboard") or
+                                 "dashboard" in driver.current_url.lower()
+                )
+                self.take_screenshot("05_login_success")
+                self.log("✅ Login successful")
+                return True
+            except TimeoutException:
+                self.take_screenshot("06_login_timeout")
+                self.log("⏰ Login timeout - checking page state...")
+                
+                # Check current URL and page content for debugging
+                current_url = self.driver.current_url
+                page_title = self.driver.title
+                self.log(f"Current URL: {current_url}")
+                self.log(f"Page title: {page_title}")
+                
+                # Check for error messages
+                error_elements = self.driver.find_elements(By.CLASS_NAME, "alert-danger")
+                if error_elements:
+                    self.log(f"❌ Login error: {error_elements[0].text}")
+                    return False
+                
+                # If URL changed or we see expected elements, consider it success
+                if "login" not in current_url.lower() or self.driver.find_elements(By.ID, "mod-FE"):
+                    self.log("✅ Login appears successful based on URL/elements")
+                    return True
+                    
+                return False
+                
         except Exception as e:
+            self.take_screenshot("07_login_error")
             self.log(f"❌ Login failed: {e}", "ERROR")
             return False
 
