@@ -70,7 +70,12 @@ export default function InvoiceImporter() {
     startTime: '09:00',
     // Python RPA specific fields (ERP credentials auto-populated from connection)
     downloadPath: '',
-    xmlPath: ''
+    xmlPath: '',
+    // Manual configuration fields
+    manualConfig: false,
+    manualErpUrl: '',
+    manualErpUsername: '',
+    manualErpPassword: ''
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
@@ -217,12 +222,13 @@ export default function InvoiceImporter() {
         connectionId: parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.schedule,
-        // Python RPA fields - credentials auto-populated from ERP connection
-        erpUrl: selectedConnection.baseUrl,
-        erpUsername: selectedConnection.username,
-        erpPassword: '', // Password will be retrieved from connection on server side
+        // Python RPA fields - use manual config or auto-populate from ERP connection
+        erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection.baseUrl,
+        erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection.username,
+        erpPassword: newConfig.manualConfig ? newConfig.manualErpPassword : '', // Password will be retrieved from connection on server side if not manual
         downloadPath: newConfig.downloadPath,
         xmlPath: newConfig.xmlPath,
+        isManualConfig: newConfig.manualConfig,
         ...(newConfig.schedule === 'multiple_daily' && {
           scheduleConfig: {
             executionsPerDay: newConfig.executionsPerDay,
@@ -258,7 +264,12 @@ export default function InvoiceImporter() {
           startTime: '09:00',
           // Reset Python RPA fields (ERP credentials auto-populated from connection)
           downloadPath: '',
-          xmlPath: ''
+          xmlPath: '',
+          // Reset manual configuration fields
+          manualConfig: false,
+          manualErpUrl: '',
+          manualErpUsername: '',
+          manualErpPassword: ''
         });
         fetchConfigs();
       } else {
@@ -570,15 +581,70 @@ export default function InvoiceImporter() {
 
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
-                <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
+                <div className="flex items-center justify-between">
+                  <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setNewConfig({ 
+                      ...newConfig, 
+                      manualConfig: !newConfig.manualConfig 
+                    })}
+                  >
+                    {newConfig.manualConfig ? 'Use Connection' : 'Manual Config'}
+                  </Button>
+                </div>
                 
-                {newConfig.connectionId && (
+                {newConfig.connectionId && !newConfig.manualConfig && (
                   <div className="p-3 bg-white rounded border-l-4 border-blue-400">
                     <p className="text-sm text-gray-600">
                       <strong>ERP Connection:</strong> {erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId))?.name}
                     </p>
                     <p className="text-sm text-gray-500">
                       ERP URL, Username, and Password will be automatically imported from the selected connection.
+                    </p>
+                  </div>
+                )}
+
+                {newConfig.manualConfig && (
+                  <div className="space-y-4 p-3 bg-white rounded border">
+                    <h5 className="font-medium text-sm text-gray-700">Manual ERP Credentials</h5>
+                    
+                    <div>
+                      <Label htmlFor="manual-erp-url">ERP URL</Label>
+                      <Input
+                        id="manual-erp-url"
+                        value={newConfig.manualErpUrl || ''}
+                        onChange={(e) => setNewConfig({ ...newConfig, manualErpUrl: e.target.value })}
+                        placeholder="https://your-erp-system.com"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <Label htmlFor="manual-erp-username">ERP Username</Label>
+                        <Input
+                          id="manual-erp-username"
+                          value={newConfig.manualErpUsername || ''}
+                          onChange={(e) => setNewConfig({ ...newConfig, manualErpUsername: e.target.value })}
+                          placeholder="username"
+                        />
+                      </div>
+                      <div>
+                        <Label htmlFor="manual-erp-password">ERP Password</Label>
+                        <Input
+                          id="manual-erp-password"
+                          type="password"
+                          value={newConfig.manualErpPassword || ''}
+                          onChange={(e) => setNewConfig({ ...newConfig, manualErpPassword: e.target.value })}
+                          placeholder="••••••••"
+                        />
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-500">
+                      Manual configuration will override the selected ERP connection credentials
                     </p>
                   </div>
                 )}

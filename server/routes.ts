@@ -3320,13 +3320,30 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
       
-      // Auto-populate ERP credentials from the selected connection
-      const configDataWithCredentials = {
-        ...data,
-        erpUrl: connection.baseUrl,
-        erpUsername: connection.username,
-        erpPassword: connection.password, // This is already encrypted in storage
-      };
+      // Handle manual configuration or auto-populate from ERP connection
+      let configDataWithCredentials;
+      
+      if (data.isManualConfig) {
+        // Use manual configuration - encrypt the password if provided
+        const encryptedPassword = data.erpPassword ? Buffer.from(data.erpPassword).toString('base64') : '';
+        
+        configDataWithCredentials = {
+          ...data,
+          erpPassword: encryptedPassword,
+        };
+        
+        console.log('Using manual ERP configuration');
+      } else {
+        // Auto-populate ERP credentials from the selected connection
+        configDataWithCredentials = {
+          ...data,
+          erpUrl: connection.baseUrl,
+          erpUsername: connection.username,
+          erpPassword: connection.password, // This is already encrypted in storage
+        };
+        
+        console.log('Using ERP connection credentials');
+      }
       
       const config = await storage.createInvoiceImporterConfig(configDataWithCredentials, (user as any).claims.sub);
       res.json(config);

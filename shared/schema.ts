@@ -469,6 +469,7 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   erpPassword: text("erp_password"), // Encrypted
   downloadPath: varchar("download_path", { length: 500 }),
   xmlPath: varchar("xml_path", { length: 500 }),
+  isManualConfig: boolean("is_manual_config").default(false), // Flag for manual vs connection-based config
   isActive: boolean("is_active").default(true),
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
