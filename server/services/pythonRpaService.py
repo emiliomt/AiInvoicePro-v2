@@ -98,7 +98,7 @@ class InvoiceRPAService:
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
-            chrome_options.add_argument("--headless")  # Run headless for server environment
+            #chrome_options.add_argument("--headless")  # Run headless for server environment
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--disable-web-security")
@@ -107,6 +107,7 @@ class InvoiceRPAService:
             chrome_options.add_argument("--ignore-ssl-errors")
             
             self.log("Initializing ChromeDriver...")
+            
             self.driver = webdriver.Chrome(options=chrome_options)
             self.driver.set_window_size(1920, 1080)  # Set size instead of maximize for headless
             
