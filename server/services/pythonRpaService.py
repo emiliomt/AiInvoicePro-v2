@@ -626,27 +626,19 @@ class InvoiceRPAService:
 def main():
     """Main entry point for command line execution"""
     
-    # Fallback hardcoded config for easier local debugging
-    fallback_config = {
-        "erpUrl": "https://www.sincoerp.com/SincoObycon_Nueva/V3/Marco/Login.aspx",
-        "erpUsername": "eceronr", 
-        "erpPassword": "C@maro5136",
-        "downloadPath": "/tmp/invoice_downloads",
-        "xmlPath": "/tmp/xml_invoices",
-        "headless": False  # Default to False for easier debugging
-    }
-    
     try:
-        if len(sys.argv) >= 2:
-            # Use command-line argument if provided
-            config = json.loads(sys.argv[1])
-            print("Using config from command line argument")
-        else:
-            # Use fallback config for easier local debugging
-            config = fallback_config
-            print("No command line argument provided, using fallback config for local debugging")
-            print("Usage: python pythonRpaService.py <config_json>")
-            print("Continuing with fallback configuration...")
+        if len(sys.argv) < 2:
+            error_result = {
+                'success': False,
+                'error': 'Configuration required. Usage: python pythonRpaService.py <config_json>',
+                'stats': {'total_invoices': 0, 'processed_invoices': 0, 'successful_imports': 0, 'failed_imports': 0}
+            }
+            print("RESULT:", json.dumps(error_result))
+            sys.exit(1)
+        
+        # Parse configuration from command line argument
+        config = json.loads(sys.argv[1])
+        print("Using config from command line argument")
         
         service = InvoiceRPAService(config)
         result = service.run_import_process()
@@ -654,6 +646,14 @@ def main():
         # Output result as JSON
         print("RESULT:", json.dumps(result))
         
+    except json.JSONDecodeError as e:
+        error_result = {
+            'success': False,
+            'error': f'Invalid JSON configuration: {str(e)}',
+            'stats': {'total_invoices': 0, 'processed_invoices': 0, 'successful_imports': 0, 'failed_imports': 0}
+        }
+        print("RESULT:", json.dumps(error_result))
+        sys.exit(1)
     except Exception as e:
         error_result = {
             'success': False,
