@@ -3306,7 +3306,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       
       // Validate ERP connection only if not using manual configuration
       let connection = null;
-      if (!data.isManualConfig && data.connectionId !== null && data.connectionId !== undefined) {
+      if (!data.isManualConfig && data.connectionId) {
         connection = await storage.getErpConnection(data.connectionId);
         if (!connection || connection.userId !== (user as any).claims.sub) {
           return res.status(400).json({ 
@@ -3323,6 +3323,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
       } else if (data.isManualConfig) {
         console.log('Creating import config with manual ERP configuration');
+        // Set connectionId to null for manual configurations
+        data.connectionId = null;
       } else {
         return res.status(400).json({ 
           error: 'Either select an ERP connection or enable manual configuration.' 
@@ -3338,6 +3340,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         
         configDataWithCredentials = {
           ...data,
+          connectionId: null, // Explicitly set to null for manual configs
           erpPassword: encryptedPassword,
         };
         

@@ -942,6 +942,8 @@ export const insertInvoiceImporterConfigSchema = createInsertSchema(invoiceImpor
   updatedAt: true,
   lastRun: true,
   nextRun: true,
+}).extend({
+  connectionId: z.number().nullable().optional()
 });
 
 export const insertInvoiceImporterLogSchema = createInsertSchema(invoiceImporterLogs).omit({
