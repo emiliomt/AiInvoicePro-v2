@@ -75,7 +75,8 @@ export default function InvoiceImporter() {
     manualConfig: false,
     manualErpUrl: '',
     manualErpUsername: '',
-    manualErpPassword: ''
+    manualErpPassword: '',
+    headless: true // Default to true for Replit environment
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
@@ -254,6 +255,7 @@ export default function InvoiceImporter() {
         downloadPath: newConfig.downloadPath,
         xmlPath: newConfig.xmlPath,
         isManualConfig: newConfig.manualConfig,
+        headless: newConfig.headless,
         ...(newConfig.schedule === 'multiple_daily' && {
           scheduleConfig: {
             executionsPerDay: newConfig.executionsPerDay,
@@ -294,7 +296,8 @@ export default function InvoiceImporter() {
           manualConfig: false,
           manualErpUrl: '',
           manualErpUsername: '',
-          manualErpPassword: ''
+          manualErpPassword: '',
+          headless: true
         });
         fetchConfigs();
       } else {
@@ -622,7 +625,7 @@ export default function InvoiceImporter() {
                     {newConfig.manualConfig ? 'Use Connection' : 'Manual Config'}
                   </Button>
                 </div>
-                
+
                 {!newConfig.manualConfig && newConfig.connectionId && (
                   <div className="p-3 bg-white rounded border-l-4 border-blue-400">
                     <p className="text-sm text-gray-600">
@@ -645,7 +648,7 @@ export default function InvoiceImporter() {
                 {newConfig.manualConfig && (
                   <div className="space-y-4 p-3 bg-white rounded border">
                     <h5 className="font-medium text-sm text-gray-700">Manual ERP Credentials</h5>
-                    
+
                     <div>
                       <Label htmlFor="manual-erp-url">ERP URL</Label>
                       <Input

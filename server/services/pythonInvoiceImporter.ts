@@ -83,6 +83,7 @@ class PythonInvoiceImporter {
         erpPassword: config.erpPassword,
         downloadPath: config.downloadPath || '/tmp/invoice_downloads',
         xmlPath: config.xmlPath || '/tmp/xml_invoices',
+        headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
       };
 
       // Validate required fields

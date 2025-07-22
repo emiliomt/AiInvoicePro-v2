@@ -469,7 +469,8 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   erpPassword: text("erp_password"), // Encrypted
   downloadPath: varchar("download_path", { length: 500 }),
   xmlPath: varchar("xml_path", { length: 500 }),
-  isManualConfig: boolean("is_manual_config").default(false), // Flag for manual vs connection-based config
+  isManualConfig: boolean("is_manual_config").default(false),
+  headless: boolean('headless').default(true),
   isActive: boolean("is_active").default(true),
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
@@ -766,7 +767,7 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   id: serial("id").primaryKey(),
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
-  matchedKeyword: varchar("matched_keyword", { length: 255 }),
+  matchedKeyword: varchar("matched_keyword", { length: 25 }).notNull(),
   isManualOverride: boolean("is_manual_override").default(false),
   confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
   classifiedAt: timestamp("classified_at").defaultNow(),
