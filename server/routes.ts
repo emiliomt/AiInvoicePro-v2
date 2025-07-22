@@ -3579,6 +3579,29 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Alternative endpoint for getting logs by config (for console view)
+  app.get('/api/invoice-importer/logs/config/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.configId);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      const logs = await storage.getInvoiceImporterLogsByConfig(configId);
+      res.json(logs);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // Get imported invoices by log ID
   app.get('/api/invoice-importer/logs/:logId/invoices', isAuthenticated, async (req, res) => {
     try {

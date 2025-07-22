@@ -43,6 +43,12 @@ The system uses PostgreSQL with the following key entities:
 4. **Discrepancy Detection**: Automated flagging of potential issues
 5. **Predictive Analytics**: ML-based issue prediction and alerts
 
+### RPA Invoice Importer (Enhanced)
+6. **Python RPA Service**: Automated invoice downloading from ERP systems
+7. **Real-time Console View**: Live log streaming with WebSocket integration
+8. **Progress Tracking**: Real-time status indicators and import statistics
+9. **Configuration Management**: Click-to-expand console with visual status updates
+
 ### Authentication & Security
 - Replit Auth integration with OpenID Connect
 - Session-based authentication with PostgreSQL session store

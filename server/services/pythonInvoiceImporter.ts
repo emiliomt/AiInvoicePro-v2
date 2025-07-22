@@ -7,6 +7,7 @@ import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { storage } from '../storage';
+import { progressTracker } from './progressTracker';
 import type { InvoiceImporterConfig } from '../../shared/schema';
 
 // Fix for __dirname in ES modules
@@ -82,6 +83,16 @@ class PythonInvoiceImporter {
 
       this.activeImports.set(configId, progress);
 
+      // Start progress tracking via WebSocket
+      progressTracker.startTask(log.id, 'invoice-import', {
+        configId,
+        logId: log.id,
+        title: `Import: ${config.name}`,
+        description: 'Starting invoice import process...',
+        totalSteps: 100,
+        currentStep: 'Initializing...'
+      });
+
       // Prepare Python RPA configuration
       const pythonConfig = {
         erpUrl: config.erpUrl,
@@ -131,6 +142,17 @@ class PythonInvoiceImporter {
         progress.progress = 100;
         progress.currentStep = 'Import completed successfully';
 
+        // Complete progress tracking
+        progressTracker.completeTask(log.id, {
+          success: true,
+          message: 'Import completed successfully',
+          data: {
+            totalInvoices: progress.totalInvoices,
+            successfulImports: progress.successfulImports,
+            failedImports: progress.failedImports
+          }
+        });
+
         console.log(`Python RPA import task ${configId} completed successfully`);
       } else {
         await storage.updateInvoiceImporterLog(log.id, {
@@ -148,6 +170,18 @@ class PythonInvoiceImporter {
         progress.error = result.error;
         progress.currentStep = 'Import failed';
 
+        // Complete progress tracking with error
+        progressTracker.completeTask(log.id, {
+          success: false,
+          message: result.error || 'Import failed',
+          data: {
+            totalInvoices: progress.totalInvoices,
+            successfulImports: progress.successfulImports,
+            failedImports: progress.failedImports,
+            error: result.error
+          }
+        });
+
         console.error(`Python RPA import task ${configId} failed:`, result.error);
       }
 
@@ -160,6 +194,16 @@ class PythonInvoiceImporter {
         progress.isComplete = true;
         progress.error = error instanceof Error ? error.message : 'Unknown error';
         progress.currentStep = 'Import failed';
+
+        // Complete progress tracking with error
+        progressTracker.completeTask(progress.logId, {
+          success: false,
+          message: progress.error,
+          data: {
+            configId: progress.configId,
+            error: progress.error
+          }
+        });
 
         // Update log with error
         try {
@@ -343,14 +387,28 @@ class PythonInvoiceImporter {
 
         // Update progress with live logs
         if (progress) {
+          const oldStep = progress.currentStep;
           progress.currentStep = this.extractCurrentStep(output) || progress.currentStep;
 
           // Append new logs to existing logs
           if (!progress.logs) progress.logs = '';
           progress.logs += '\nPython RPA: ' + output.trim();
 
+          // Extract progress percentage and stats from output
+          const statsUpdate = this.extractStatsFromOutput(output);
+          if (statsUpdate) {
+            progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
+            progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
+            progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
+            progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
+            progress.progress = statsUpdate.progress || progress.progress;
+          }
+
           // Update progress in memory for real-time display
           this.activeImports.set(progress.configId, progress);
+
+          // Send WebSocket progress updates for real-time UI updates
+          this.sendProgressUpdate(progress, output.trim());
 
           // Update database periodically with logs
           if (output.includes('INFO:') && Math.random() < 0.3) { // 30% chance to update DB
@@ -358,6 +416,9 @@ class PythonInvoiceImporter {
               logs: progress.logs,
               currentStep: progress.currentStep,
               processedInvoices: progress.processedInvoices,
+              totalInvoices: progress.totalInvoices,
+              successfulImports: progress.successfulImports,
+              failedImports: progress.failedImports,
             }).catch(console.error);
           }
         }
@@ -469,6 +530,82 @@ class PythonInvoiceImporter {
    */
   getProgress(configId: number): ImportProgress | undefined {
     return this.activeImports.get(configId);
+  }
+
+  /**
+   * Send WebSocket progress update for real-time UI
+   */
+  private sendProgressUpdate(progress: ImportProgress, logOutput: string): void {
+    try {
+      // Send progress update via WebSocket using progressTracker
+      progressTracker.updateTask(progress.logId, {
+        progress: progress.progress,
+        totalSteps: progress.totalInvoices,
+        currentStep: progress.currentStep,
+        data: {
+          configId: progress.configId,
+          logId: progress.logId,
+          totalInvoices: progress.totalInvoices,
+          processedInvoices: progress.processedInvoices,
+          successfulImports: progress.successfulImports,
+          failedImports: progress.failedImports,
+          isComplete: progress.isComplete,
+          logs: logOutput,
+          timestamp: new Date().toISOString()
+        }
+      });
+    } catch (error) {
+      console.error('Failed to send WebSocket progress update:', error);
+    }
+  }
+
+  /**
+   * Extract stats from Python output (parsing STATS:{...} and PROGRESS:{...} tags)
+   */
+  private extractStatsFromOutput(output: string): Partial<{
+    total_invoices: number;
+    processed_invoices: number;
+    successful_imports: number;
+    failed_imports: number;
+    progress: number;
+  }> | null {
+    try {
+      // Look for STATS: or PROGRESS: tags in output
+      if (output.includes('STATS:')) {
+        const statsLine = output.split('STATS:')[1]?.split('\n')[0];
+        if (statsLine) {
+          return JSON.parse(statsLine.trim());
+        }
+      }
+      
+      if (output.includes('PROGRESS:')) {
+        const progressLine = output.split('PROGRESS:')[1]?.split('\n')[0];
+        if (progressLine) {
+          const progressData = JSON.parse(progressLine.trim());
+          return {
+            progress: progressData.progress || 0,
+            processed_invoices: progressData.processed || 0,
+            total_invoices: progressData.total || 0
+          };
+        }
+      }
+
+      // Look for step indicators in output
+      const stepMatch = output.match(/Processing\s+(\d+)\s*\/\s*(\d+)/i);
+      if (stepMatch) {
+        const processed = parseInt(stepMatch[1]);
+        const total = parseInt(stepMatch[2]);
+        return {
+          processed_invoices: processed,
+          total_invoices: total,
+          progress: total > 0 ? Math.round((processed / total) * 100) : 0
+        };
+      }
+
+      return null;
+    } catch (error) {
+      return null;
+    }
   }
 
   /**

@@ -7,12 +7,14 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2 } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox"
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from '../components/ui/progress';
+import { ScrollArea } from '../components/ui/scroll-area';
 
 interface ImportConfig {
   id: number;
@@ -23,14 +25,24 @@ interface ImportConfig {
   lastRun: string | null;
   nextRun: string | null;
   isActive: boolean;
-  status: string;
+  status: 'idle' | 'running' | 'completed' | 'failed' | 'paused';
+  currentStep?: string;
+  progress?: number;
+  stats?: {
+    total_invoices: number;
+    processed_invoices: number;
+    successful_imports: number;
+    failed_imports: number;
+    current_step: string;
+    progress: number;
+  };
   connection?: {
     id: number;
     name: string;
     baseUrl: string;
     isActive: boolean;
-    username: string; // Added username
-    lastUsed: string | null; // Added lastUsed
+    username: string;
+    lastUsed: string | null;
   };
 }
 
@@ -80,13 +92,222 @@ export default function InvoiceImporter() {
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
   const [runningConfigName, setRunningConfigName] = useState<string>('');
+  
+  // Console view state
+  const [showConsoleView, setShowConsoleView] = useState(false);
+  const [consoleConfig, setConsoleConfig] = useState<ImportConfig | null>(null);
+  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [clearOnComplete, setClearOnComplete] = useState(false);
+  
+  // WebSocket state for real-time updates
+  const [ws, setWs] = useState<WebSocket | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  
   const { toast } = useToast();
 
   useEffect(() => {
     fetchConfigs();
     fetchLogs();
     fetchERPConnections();
+    initializeWebSocket();
+    
+    return () => {
+      if (ws) {
+        ws.close();
+      }
+    };
   }, []);
+
+  // Initialize WebSocket connection for real-time updates
+  const initializeWebSocket = () => {
+    try {
+      setConnectionStatus('connecting');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+
+      const websocket = new WebSocket(wsUrl);
+
+      websocket.onopen = () => {
+        console.log('WebSocket connected for Invoice Importer');
+        setConnectionStatus('connected');
+        setWs(websocket);
+
+        // Subscribe to progress updates
+        websocket.send(JSON.stringify({
+          type: 'subscribe',
+          userId: 'current-user', // This should be actual user ID
+        }));
+      };
+
+      websocket.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'progress') {
+            handleRealTimeProgressUpdate(data);
+          } else if (data.type === 'task_complete') {
+            handleTaskComplete(data);
+          } else if (data.type === 'logs') {
+            handleRealTimeLogs(data);
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      websocket.onclose = () => {
+        console.log('WebSocket disconnected');
+        setConnectionStatus('disconnected');
+        setWs(null);
+
+        // Retry connection after 3 seconds
+        setTimeout(() => {
+          initializeWebSocket();
+        }, 3000);
+      };
+
+      websocket.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+      };
+
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      setConnectionStatus('error');
+    }
+  };
+
+  // Handle real-time progress updates
+  const handleRealTimeProgressUpdate = (data: any) => {
+    setConfigs(prevConfigs => 
+      prevConfigs.map(config => {
+        if (config.id === data.configId) {
+          return {
+            ...config,
+            status: data.status || config.status,
+            currentStep: data.currentStep || data.message,
+            progress: data.progress,
+            stats: data.stats || config.stats
+          };
+        }
+        return config;
+      })
+    );
+
+    // If console view is open for this config, update it
+    if (consoleConfig && consoleConfig.id === data.configId) {
+      setConsoleConfig(prev => prev ? {
+        ...prev,
+        status: data.status || prev.status,
+        currentStep: data.currentStep || data.message,
+        progress: data.progress,
+        stats: data.stats || prev.stats
+      } : null);
+    }
+  };
+
+  // Handle real-time log updates
+  const handleRealTimeLogs = (data: any) => {
+    if (consoleConfig && data.data && data.data.configId === consoleConfig.id) {
+      const timestamp = new Date(data.data.timestamp || new Date()).toLocaleTimeString();
+      let logMessage = data.data.logs || data.message || 'Unknown message';
+      
+      // Format Python RPA logs better
+      if (logMessage.includes('Python RPA:')) {
+        logMessage = logMessage.replace('Python RPA:', '').trim();
+      }
+      
+      // Add color coding for different log types
+      let logClass = 'text-green-400';
+      if (logMessage.toLowerCase().includes('error') || logMessage.toLowerCase().includes('failed')) {
+        logClass = 'text-red-400';
+      } else if (logMessage.toLowerCase().includes('warning') || logMessage.toLowerCase().includes('warn')) {
+        logClass = 'text-yellow-400';
+      } else if (logMessage.toLowerCase().includes('success') || logMessage.toLowerCase().includes('completed')) {
+        logClass = 'text-green-300';
+      } else if (logMessage.toLowerCase().includes('progress') || logMessage.toLowerCase().includes('processing')) {
+        logClass = 'text-blue-400';
+      }
+      
+      const formattedLog = `[${timestamp}] ${logMessage}`;
+      setConsoleLogs(prev => [...prev, formattedLog]);
+      
+      // Auto-scroll to bottom if enabled
+      if (autoScroll) {
+        setTimeout(() => {
+          const consoleElement = document.querySelector('#console-logs .overflow-auto');
+          if (consoleElement) {
+            consoleElement.scrollTop = consoleElement.scrollHeight;
+          }
+        }, 100);
+      }
+    }
+  };
+
+  // Handle task completion
+  const handleTaskComplete = (data: any) => {
+    const configId = data.data?.configId || data.configId;
+    
+    setConfigs(prevConfigs => 
+      prevConfigs.map(config => {
+        if (config.id === configId) {
+          return {
+            ...config,
+            status: data.success ? 'completed' : 'failed',
+            lastRun: new Date().toISOString(),
+            progress: 100,
+            stats: data.data ? {
+              total_invoices: data.data.totalInvoices || 0,
+              processed_invoices: data.data.totalInvoices || 0,
+              successful_imports: data.data.successfulImports || 0,
+              failed_imports: data.data.failedImports || 0,
+              current_step: 'Completed',
+              progress: 100
+            } : config.stats
+          };
+        }
+        return config;
+      })
+    );
+
+    if (consoleConfig && consoleConfig.id === configId) {
+      setConsoleConfig(prev => prev ? {
+        ...prev,
+        status: data.success ? 'completed' : 'failed',
+        lastRun: new Date().toISOString(),
+        progress: 100,
+        stats: data.data ? {
+          total_invoices: data.data.totalInvoices || 0,
+          processed_invoices: data.data.totalInvoices || 0,
+          successful_imports: data.data.successfulImports || 0,
+          failed_imports: data.data.failedImports || 0,
+          current_step: 'Completed',
+          progress: 100
+        } : prev.stats
+      } : null);
+
+      // Add completion message to logs
+      const timestamp = new Date().toLocaleTimeString();
+      const completionLog = `[${timestamp}] === Import ${data.success ? 'completed successfully' : 'failed'} ===`;
+      setConsoleLogs(prev => [...prev, completionLog]);
+
+      // Clear logs if option is enabled (after a delay to show completion)
+      if (clearOnComplete) {
+        setTimeout(() => {
+          setConsoleLogs([]);
+        }, 3000);
+      }
+    }
+
+    setRunningConfigId(null);
+    
+    toast({
+      title: data.success ? "Import Completed" : "Import Failed",
+      description: data.message || (data.success ? "Invoice import completed successfully" : "Invoice import failed"),
+      variant: data.success ? "default" : "destructive"
+    });
+  };
 
   const fetchConfigs = async () => {
     try {
@@ -126,20 +347,71 @@ export default function InvoiceImporter() {
 
 
 
+  // Open console view for a specific configuration
+  const openConsoleView = (config: ImportConfig) => {
+    setConsoleConfig(config);
+    setConsoleLogs([]); // Clear previous logs
+    setShowConsoleView(true);
+    
+    // Start fetching existing logs for this config
+    fetchConfigLogs(config.id);
+  };
+
+  // Fetch logs for a specific config
+  const fetchConfigLogs = async (configId: number) => {
+    try {
+      const response = await fetch(`/api/invoice-importer/logs/config/${configId}`);
+      if (response.ok) {
+        const logs = await response.json();
+        const formattedLogs = logs.map((log: any) => 
+          `[${new Date(log.createdAt).toLocaleTimeString()}] ${log.logs || log.message || 'No details'}`
+        );
+        setConsoleLogs(formattedLogs);
+      }
+    } catch (error) {
+      console.error('Error fetching config logs:', error);
+    }
+  };
+
+  // Status helper functions
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'running': return <Loader2 className="w-4 h-4 animate-spin text-blue-600" />;
+      case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
+      case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
+      case 'paused': return <Pause className="w-4 h-4 text-yellow-600" />;
+      default: return <Clock className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'active': return 'bg-green-100 text-green-800';
-      case 'paused': return 'bg-yellow-100 text-yellow-800';
-      case 'error': return 'bg-red-100 text-red-800';
-      case 'success': return 'bg-green-100 text-green-800';
-      case 'warning': return 'bg-yellow-100 text-yellow-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
+      case 'failed': return 'bg-red-100 text-red-800 border-red-200';
+      case 'paused': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      case 'idle': return 'bg-gray-100 text-gray-800 border-gray-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
     }
+  };
+
+  const formatLastRun = (lastRun: string | null) => {
+    if (!lastRun) return 'Never';
+    const date = new Date(lastRun);
+    return date.toLocaleString();
   };
 
   const handleRunNow = async (configId: number) => {
     const config = configs.find(c => c.id === configId);
     if (!config) return;
+
+    setRunningConfigId(configId);
+    setRunningConfigName(config.taskName);
+    
+    // Update config status to running immediately
+    setConfigs(prev => prev.map(c => 
+      c.id === configId ? { ...c, status: 'running', progress: 0 } : c
+    ));
 
     try {
       const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
@@ -152,17 +424,17 @@ export default function InvoiceImporter() {
           description: "Invoice import process has been initiated"
         });
 
-        // Show progress tracker
-        setRunningConfigId(configId);
-        setRunningConfigName(config.taskName);
-        setShowProgressTracker(true);
-
         fetchLogs();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to start import');
       }
     } catch (error) {
+      setRunningConfigId(null);
+      // Reset status on error
+      setConfigs(prev => prev.map(c => 
+        c.id === configId ? { ...c, status: 'idle' } : c
+      ));
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to start import process",
@@ -373,47 +645,114 @@ export default function InvoiceImporter() {
             ) : (
               <div className="grid gap-4">
                 {configs.map((config) => (
-                  <Card key={config.id}>
+                  <Card 
+                    key={config.id} 
+                    className="cursor-pointer hover:shadow-md transition-shadow duration-200"
+                    onClick={() => openConsoleView(config)}
+                  >
                     <CardHeader>
                       <div className="flex justify-between items-center">
-                        <CardTitle>{config.taskName}</CardTitle>
-                        <div className="flex items-center space-x-2">
-                          <Button variant="outline" size="sm" onClick={() => handleRunNow(config.id)}>
-                            <Play className="w-4 h-4 mr-2" />
-                            Run Now
+                        <div className="flex items-center space-x-3">
+                          <div className="flex items-center space-x-2">
+                            {getStatusIcon(config.status)}
+                            <CardTitle className="text-lg">{config.taskName}</CardTitle>
+                          </div>
+                          <Badge className={`border ${getStatusColor(config.status)}`}>
+                            {config.status.charAt(0).toUpperCase() + config.status.slice(1)}
+                          </Badge>
+                        </div>
+                        <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => handleRunNow(config.id)}
+                            disabled={config.status === 'running'}
+                          >
+                            {config.status === 'running' ? (
+                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                            ) : (
+                              <Play className="w-4 h-4 mr-2" />
+                            )}
+                            {config.status === 'running' ? 'Running...' : 'Run Now'}
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={() => openConsoleView(config)}
+                          >
+                            <Terminal className="w-4 h-4 mr-2" />
+                            Console
                           </Button>
                           <AlertDialog>
-                                <AlertDialogTrigger asChild>
-                                    <Button variant="destructive" size="sm">
-                                        <Trash2 className="w-4 h-4 mr-2" />
-                                        Delete
-                                    </Button>
-                                </AlertDialogTrigger>
-                                <AlertDialogContent>
-                                    <AlertDialogHeader>
-                                        <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                        <AlertDialogDescription>
-                                            This action cannot be undone. This will permanently delete the configuration.
-                                        </AlertDialogDescription>
-                                    </AlertDialogHeader>
-                                    <AlertDialogFooter>
-                                        <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                        <AlertDialogAction onClick={() => handleDeleteConfig(config.id)}>Delete</AlertDialogAction>
-                                    </AlertDialogFooter>
-                                </AlertDialogContent>
-                            </AlertDialog>
+                            <AlertDialogTrigger asChild>
+                              <Button variant="destructive" size="sm">
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </Button>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                              <AlertDialogHeader>
+                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                                <AlertDialogDescription>
+                                  This action cannot be undone. This will permanently delete the configuration.
+                                </AlertDialogDescription>
+                              </AlertDialogHeader>
+                              <AlertDialogFooter>
+                                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                <AlertDialogAction onClick={() => handleDeleteConfig(config.id)}>Delete</AlertDialogAction>
+                              </AlertDialogFooter>
+                            </AlertDialogContent>
+                          </AlertDialog>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent>
-                      <p>ERP Connection: {config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
-                      <p>File Types: {config.fileTypes}</p>
-                      <p>Schedule: {config.scheduleType}</p>
-                      <div className="flex justify-between mt-4">
-                        <p>Last Run: {config.lastRun || 'Never'}</p>
-                        <p>Next Run: {config.nextRun || 'Not Scheduled'}</p>
+                      <div className="grid grid-cols-2 gap-4 mb-4">
+                        <div>
+                          <p className="text-sm text-gray-600">ERP Connection</p>
+                          <p className="font-medium">{config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">File Types</p>
+                          <p className="font-medium">{config.fileTypes}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Schedule</p>
+                          <p className="font-medium">{config.scheduleType}</p>
+                        </div>
+                        <div>
+                          <p className="text-sm text-gray-600">Last Run</p>
+                          <p className="font-medium">{formatLastRun(config.lastRun)}</p>
+                        </div>
                       </div>
-                      <Badge className={getStatusColor(config.status)}>{config.status}</Badge>
+                      
+                      {/* Progress bar for running tasks */}
+                      {config.status === 'running' && (
+                        <div className="space-y-2">
+                          <div className="flex justify-between items-center">
+                            <p className="text-sm text-gray-600">
+                              {config.currentStep || 'Processing...'}
+                            </p>
+                            <p className="text-sm text-gray-600">
+                              {config.progress ? `${Math.round(config.progress)}%` : '0%'}
+                            </p>
+                          </div>
+                          <Progress value={config.progress || 0} className="w-full" />
+                          {config.stats && (
+                            <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
+                              <span>Total: {config.stats.total_invoices}</span>
+                              <span>Processed: {config.stats.processed_invoices}</span>
+                              <span>Success: {config.stats.successful_imports}</span>
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      
+                      {/* Click hint */}
+                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
+                        <p className="text-sm text-gray-500">Click to view detailed console logs</p>
+                        <Eye className="w-4 h-4 text-gray-400" />
+                      </div>
                     </CardContent>
                   </Card>
                 ))}
@@ -711,6 +1050,171 @@ export default function InvoiceImporter() {
                 <Button onClick={handleCreateConfig}>
                   Create Configuration
                 </Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Console View Dialog */}
+        <Dialog open={showConsoleView} onOpenChange={setShowConsoleView}>
+          <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-3">
+                  <div className="flex items-center space-x-2">
+                    {consoleConfig && getStatusIcon(consoleConfig.status)}
+                    <DialogTitle>
+                      {consoleConfig?.taskName} - Console
+                    </DialogTitle>
+                  </div>
+                  {consoleConfig && (
+                    <Badge className={`border ${getStatusColor(consoleConfig.status)}`}>
+                      {consoleConfig.status.charAt(0).toUpperCase() + consoleConfig.status.slice(1)}
+                    </Badge>
+                  )}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className={`w-2 h-2 rounded-full ${
+                    connectionStatus === 'connected' ? 'bg-green-500' : 
+                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
+                  }`} />
+                  <span className="text-xs text-gray-500">
+                    {connectionStatus === 'connected' ? 'Live' : 
+                     connectionStatus === 'connecting' ? 'Connecting' : 'Offline'}
+                  </span>
+                </div>
+              </div>
+            </DialogHeader>
+            
+            <div className="flex-1 flex flex-col min-h-0">
+              {/* Stats Summary */}
+              {consoleConfig?.stats && (
+                <div className="grid grid-cols-4 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-blue-600">{consoleConfig.stats.total_invoices}</p>
+                    <p className="text-sm text-gray-600">Total Invoices</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-orange-600">{consoleConfig.stats.processed_invoices}</p>
+                    <p className="text-sm text-gray-600">Processed</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-green-600">{consoleConfig.stats.successful_imports}</p>
+                    <p className="text-sm text-gray-600">Successful</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-2xl font-bold text-red-600">{consoleConfig.stats.failed_imports}</p>
+                    <p className="text-sm text-gray-600">Failed</p>
+                  </div>
+                </div>
+              )}
+
+              {/* Current Step and Progress */}
+              {consoleConfig?.status === 'running' && (
+                <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                  <div className="flex justify-between items-center mb-2">
+                    <p className="text-sm font-medium text-blue-800">
+                      Current Step: {consoleConfig.currentStep || consoleConfig.stats?.current_step || 'Processing...'}
+                    </p>
+                    <p className="text-sm text-blue-700">
+                      {consoleConfig.progress || consoleConfig.stats?.progress || 0}%
+                    </p>
+                  </div>
+                  <Progress 
+                    value={consoleConfig.progress || consoleConfig.stats?.progress || 0} 
+                    className="w-full bg-blue-100" 
+                  />
+                </div>
+              )}
+
+              {/* Console Controls */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center space-x-4">
+                  <h4 className="font-medium text-gray-700">Console Logs</h4>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="auto-scroll"
+                      checked={autoScroll}
+                      onChange={(e) => setAutoScroll(e.target.checked)}
+                      className="rounded"
+                    />
+                    <label htmlFor="auto-scroll" className="text-sm text-gray-600">Auto-scroll</label>
+                  </div>
+                  <div className="flex items-center space-x-2">
+                    <input
+                      type="checkbox"
+                      id="clear-on-complete"
+                      checked={clearOnComplete}
+                      onChange={(e) => setClearOnComplete(e.target.checked)}
+                      className="rounded"
+                    />
+                    <label htmlFor="clear-on-complete" className="text-sm text-gray-600">Clear on complete</label>
+                  </div>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setConsoleLogs([])}
+                  >
+                    Clear Logs
+                  </Button>
+                  {consoleConfig && consoleConfig.status !== 'running' && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleRunNow(consoleConfig.id)}
+                    >
+                      <Play className="w-4 h-4 mr-2" />
+                      Run Again
+                    </Button>
+                  )}
+                </div>
+              </div>
+
+              {/* Console Output */}
+              <div className="flex-1 min-h-0">
+                <ScrollArea 
+                  id="console-logs"
+                  className="h-full w-full border rounded-lg p-4 bg-black text-green-400 font-mono text-sm"
+                >
+                  {consoleLogs.length === 0 ? (
+                    <div className="text-gray-500 italic">
+                      No logs available. Run the import process to see real-time logs here.
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      {consoleLogs.map((log, index) => {
+                        // Determine log color based on content
+                        let colorClass = 'text-green-400';
+                        if (log.toLowerCase().includes('error') || log.toLowerCase().includes('failed')) {
+                          colorClass = 'text-red-400';
+                        } else if (log.toLowerCase().includes('warning') || log.toLowerCase().includes('warn')) {
+                          colorClass = 'text-yellow-400';
+                        } else if (log.toLowerCase().includes('success') || log.toLowerCase().includes('completed')) {
+                          colorClass = 'text-green-300';
+                        } else if (log.toLowerCase().includes('progress') || log.toLowerCase().includes('processing')) {
+                          colorClass = 'text-blue-400';
+                        } else if (log.toLowerCase().includes('info') || log.toLowerCase().includes('starting')) {
+                          colorClass = 'text-cyan-400';
+                        }
+                        
+                        return (
+                          <div key={index} className={`whitespace-pre-wrap ${colorClass}`}>
+                            {log}
+                          </div>
+                        );
+                      })}
+                      {consoleConfig?.status === 'running' && (
+                        <div className="flex items-center space-x-2 text-yellow-400 mt-2 pt-2 border-t border-gray-700">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          <span>Process running... Real-time logs will appear above</span>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </ScrollArea>
               </div>
             </div>
           </DialogContent>
