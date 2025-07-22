@@ -128,24 +128,25 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
 
-            # Configure headless mode based on config
-            if self.headless_mode:
-                chrome_options.add_argument("--headless")
-                self.log("Running in headless mode")
-            else:
-                self.log("Running in visible mode for debugging")
-
+            # Force headless mode for Replit environment with enhanced flags
+            chrome_options.add_argument("--headless=new")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--allow-running-insecure-content")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--ignore-ssl-errors")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-renderer-backgrounding")
+            chrome_options.add_argument("--disable-features=TranslateUI")
+            chrome_options.add_argument("--disable-ipc-flooding-protection")
 
-            self.log("Initializing ChromeDriver...")
+            self.log("Initializing ChromeDriver in headless mode with debug capture...")
 
             self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.set_window_size(1920, 1080)  # Set size instead of maximize for headless
+            self.driver.set_window_size(1920, 1080)  # Set size for consistent screenshots
 
             # Set up wait objects
             self.wait = WebDriverWait(self.driver, 15)
@@ -238,17 +239,60 @@ class InvoiceRPAService:
                     return new_name
                 counter += 1
 
-    def take_screenshot(self, name: str = "debug"):
-        """Take a screenshot for debugging"""
+    def debug_capture(self, label: str):
+        """
+        Enhanced debug capture function for visual debugging in Replit
+        Creates timestamped screenshots and HTML files in the project root for easy access
+        """
         try:
-            if self.driver:
-                screenshot_path = os.path.join(self.download_dir, f"{name}_{int(time.time())}.png")
-                self.driver.save_screenshot(screenshot_path)
-                self.log(f"📸 Screenshot saved: {screenshot_path}")
-                return screenshot_path
+            if not self.driver:
+                self.log("Driver not available for debug capture", "ERROR")
+                return
+            
+            # Create timestamp in format: YYYYMMDDTHHMMSS
+            timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
+            
+            # Save files to project root so they appear in Replit sidebar
+            project_root = "/home/runner/workspace"
+            
+            # Clean label for filename (remove special characters)
+            clean_label = re.sub(r'[^a-zA-Z0-9_-]', '_', label)
+            
+            # Screenshot
+            screenshot_filename = f"{timestamp}_{clean_label}.png"
+            screenshot_path = os.path.join(project_root, screenshot_filename)
+            self.driver.save_screenshot(screenshot_path)
+            
+            # HTML source
+            html_filename = f"{timestamp}_{clean_label}.html"
+            html_path = os.path.join(project_root, html_filename)
+            with open(html_path, 'w', encoding='utf-8') as f:
+                f.write(self.driver.page_source)
+            
+            # Page info
+            info_filename = f"{timestamp}_{clean_label}_info.txt"
+            info_path = os.path.join(project_root, info_filename)
+            with open(info_path, 'w', encoding='utf-8') as f:
+                f.write(f"Debug Capture: {label}\n")
+                f.write(f"Timestamp: {timestamp}\n")
+                f.write(f"Current URL: {self.driver.current_url}\n")
+                f.write(f"Page Title: {self.driver.title}\n")
+                f.write(f"Window Size: {self.driver.get_window_size()}\n")
+                f.write(f"Page Load State: {self.driver.execute_script('return document.readyState')}\n")
+                
+                # Check for common error indicators
+                error_elements = self.driver.find_elements(By.CLASS_NAME, "alert-danger")
+                if error_elements:
+                    f.write(f"Error Messages Found: {len(error_elements)}\n")
+                    for i, elem in enumerate(error_elements):
+                        f.write(f"  Error {i+1}: {elem.text}\n")
+                else:
+                    f.write("No error messages found\n")
+            
+            self.log(f"🔍 Debug capture saved: {screenshot_filename}, {html_filename}, {info_filename}")
+            
         except Exception as e:
-            self.log(f"Failed to take screenshot: {e}", "ERROR")
-        return None
+            self.log(f"Failed to create debug capture: {e}", "ERROR")
 
     def login_to_erp(self) -> bool:
         """Login to ERP system"""
@@ -261,8 +305,8 @@ class InvoiceRPAService:
             self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
             
-            # Take screenshot after page load
-            self.take_screenshot("01_page_loaded")
+            # Debug capture after page load
+            self.debug_capture("01_login_page_loaded")
             time.sleep(2)  # Allow page to fully load
 
             # Enter credentials
@@ -276,8 +320,8 @@ class InvoiceRPAService:
             password_field.clear()
             password_field.send_keys(self.password)
             
-            # Take screenshot after entering credentials
-            self.take_screenshot("02_credentials_entered")
+            # Debug capture after entering credentials
+            self.debug_capture("02_credentials_entered")
 
             # Click login buttons with better timing
             self.log("Clicking 'Siguiente' button...")
@@ -285,31 +329,31 @@ class InvoiceRPAService:
             self.driver.execute_script("arguments[0].click();", siguiente_btn)
             time.sleep(2)
             
-            # Take screenshot after first button
-            self.take_screenshot("03_after_siguiente")
+            # Debug capture after first button
+            self.debug_capture("03_after_siguiente_click")
 
             self.log("Waiting for 'Ingresar' button...")
             ingresar_btn = self.wait.until(EC.element_to_be_clickable((By.ID, "btnIngresar")))
             self.driver.execute_script("arguments[0].click();", ingresar_btn)
             
-            # Take screenshot after login attempt
-            self.take_screenshot("04_after_ingresar")
+            # Debug capture after login attempt
+            self.debug_capture("04_after_ingresar_click")
             
             # Wait for successful login - look for dashboard elements
             self.log("Waiting for login success indicators...")
             try:
                 # Wait for login to complete - check for typical post-login elements
-                WebDriverWait(self.driver, 10).until(
+                WebDriverWait(self.driver, 15).until(
                     lambda driver: "login" not in driver.current_url.lower() or 
                                  driver.find_elements(By.ID, "mod-FE") or
                                  driver.find_elements(By.CLASS_NAME, "dashboard") or
                                  "dashboard" in driver.current_url.lower()
                 )
-                self.take_screenshot("05_login_success")
+                self.debug_capture("05_login_success")
                 self.log("✅ Login successful")
                 return True
             except TimeoutException:
-                self.take_screenshot("06_login_timeout")
+                self.debug_capture("06_login_timeout_error")
                 self.log("⏰ Login timeout - checking page state...")
                 
                 # Check current URL and page content for debugging
@@ -327,12 +371,13 @@ class InvoiceRPAService:
                 # If URL changed or we see expected elements, consider it success
                 if "login" not in current_url.lower() or self.driver.find_elements(By.ID, "mod-FE"):
                     self.log("✅ Login appears successful based on URL/elements")
+                    self.debug_capture("07_login_success_fallback")
                     return True
                     
                 return False
                 
         except Exception as e:
-            self.take_screenshot("07_login_error")
+            self.debug_capture("08_login_exception_error")
             self.log(f"❌ Login failed: {e}", "ERROR")
             return False
 
@@ -344,6 +389,9 @@ class InvoiceRPAService:
 
         try:
             self.update_progress("Navigating to invoice section", 20)
+            
+            # Debug capture before navigation
+            self.debug_capture("09_before_navigation")
 
             # Click FE module
             self.log("Looking for 'mod-FE' button...")
@@ -351,12 +399,17 @@ class InvoiceRPAService:
             self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", fe_button)
             self.driver.execute_script("arguments[0].click();", fe_button)
             self.log("✅ Clicked 'mod-FE' successfully")
+            
+            # Debug capture after FE click
+            self.debug_capture("10_after_mod_FE_click")
+            time.sleep(2)
 
             # Click Recepción if available
             try:
                 self.log("Looking for 'Recepción' button...")
                 self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Recepción')]"))).click()
                 self.log("✅ Clicked 'Recepción'")
+                self.debug_capture("11_after_recepcion_click")
             except Exception:
                 self.log("⏭️ Skipping 'Recepción' button (not found or not needed)")
 
@@ -364,10 +417,14 @@ class InvoiceRPAService:
             self.log("Looking for 'Documentos recibidos' button...")
             self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[text()='Documentos recibidos']"))).click()
             self.log("✅ Navigated to 'Documentos recibidos'")
+            
+            # Debug capture after reaching documents section
+            self.debug_capture("12_documentos_recibidos_loaded")
 
             self.log("✅ Navigation to invoice section successful")
             return True
         except Exception as e:
+            self.debug_capture("13_navigation_error")
             self.log(f"❌ Navigation failed: {e}", "ERROR")
             return False
 
@@ -380,10 +437,16 @@ class InvoiceRPAService:
         try:
             self.update_progress("Processing invoice rows", 30)
 
+            # Debug capture before iframe switch
+            self.debug_capture("14_before_iframe_switch")
+            
             # Wait for iframe to be available and switch to it
             self.log("Waiting for iframe 'pagina1' to be available...")
             WebDriverWait(self.driver, 15).until(EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
             self.log("✅ Successfully switched to iframe 'pagina1'")
+            
+            # Debug capture after iframe switch
+            self.debug_capture("15_after_iframe_switch")
 
             # Wait for rows to load
             self.log("⏳ Waiting for invoice rows to populate...")
@@ -395,6 +458,8 @@ class InvoiceRPAService:
                 data_rows = [r for r in rows if r.text.strip()]
                 if data_rows:
                     self.log(f"✅ Found {len(data_rows)} rows with content")
+                    # Debug capture when we find the invoice rows
+                    self.debug_capture("16_invoice_rows_found")
                     break
                 time.sleep(1)
             else:
