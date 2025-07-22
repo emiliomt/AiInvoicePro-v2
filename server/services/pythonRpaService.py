@@ -67,6 +67,13 @@ class InvoiceRPAService:
             'progress': 0
         }
 
+    def is_driver_ready(self) -> bool:
+        """Check if driver and wait objects are properly initialized"""
+        return (self.driver is not None and 
+                self.wait is not None and 
+                self.short_wait is not None and 
+                self.long_wait is not None)
+
     def log(self, message: str, level: str = 'INFO'):
         """Log message with timestamp"""
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -223,8 +230,8 @@ class InvoiceRPAService:
 
     def login_to_erp(self) -> bool:
         """Login to ERP system"""
-        if not self.driver:
-            self.log("Driver not initialized", "ERROR")
+        if not self.driver or not self.wait:
+            self.log("Driver or wait object not initialized", "ERROR")
             return False
 
         try:
@@ -256,8 +263,8 @@ class InvoiceRPAService:
 
     def navigate_to_invoices(self) -> bool:
         """Navigate to the invoices section"""
-        if not self.driver:
-            self.log("Driver not initialized", "ERROR")
+        if not self.driver or not self.wait or not self.long_wait:
+            self.log("Driver or wait objects not initialized", "ERROR")
             return False
 
         try:
@@ -417,6 +424,7 @@ class InvoiceRPAService:
 
             # Click actual download button  
             if not self.short_wait:
+                self.log("Short wait object not initialized", "ERROR")
                 return False
             download_button = self.short_wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
             ActionChains(self.driver).move_to_element(download_button).click().perform()
@@ -440,6 +448,7 @@ class InvoiceRPAService:
 
             # Close download dialog
             if not self.short_wait:
+                self.log("Short wait object not initialized", "ERROR")
                 return False
             close_button = self.short_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn.btn-light.pull-right")))
             ActionChains(self.driver).move_to_element(close_button).click().perform()
