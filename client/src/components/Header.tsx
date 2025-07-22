@@ -112,11 +112,9 @@ export default function Header() {
         <div className="flex justify-between items-center h-16">
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
-              <img 
-                src="/attached_assets/GwbZgPCXgAAk4ah_1753226638567.jpeg" 
-                alt="AnzuDynamics Logo" 
-                className="w-8 h-8 rounded-lg object-contain"
-              />
+              <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
+                <FileText className="text-white" size={20} />
+              </div>
               <h1 className="text-xl font-bold text-gray-900">AnzuDynamics</h1>
             </div>
           </div>
