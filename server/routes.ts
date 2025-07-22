@@ -280,7 +280,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/projects', isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      const projects = await storage.getProjects(userId);
+      const projects = await storage.getProjects();
       res.json(projects);
     } catch (error) {
       console.error("Error fetching projects:", error);
@@ -291,7 +291,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/projects/:projectId', isAuthenticated, async (req, res) => {
     try {
       const projectId = req.params.projectId;
-      const project = await storage.getProject(projectId);
+      const project = await storage.getProject(parseInt(projectId));
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
@@ -306,7 +306,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req.user as any).claims.sub;
       const projectData = req.body;
-      const project = await storage.createProject(projectData, userId);
+      const project = await storage.createProject(projectData);
       res.json(project);
     } catch (error) {
       console.error("Error creating project:", error);
@@ -318,7 +318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const projectId = req.params.projectId;
       const updates = req.body;
-      const project = await storage.updateProject(projectId, updates);
+      const project = await storage.updateProject(parseInt(projectId), updates);
       res.json(project);
     } catch (error) {
       console.error("Error updating project:", error);
@@ -329,7 +329,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.delete('/api/projects/:projectId', isAuthenticated, async (req, res) => {
     try {
       const projectId = req.params.projectId;
-      await storage.deleteProject(projectId);
+      await storage.deleteProject(parseInt(projectId));
       res.json({ message: "Project deleted successfully" });
     } catch (error) {
       console.error("Error deleting project:", error);
