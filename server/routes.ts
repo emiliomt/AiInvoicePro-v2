@@ -4086,5 +4086,85 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   }
 });
 
+  // Download invoice file endpoint
+  app.get('/api/invoices/:id/download', isAuthenticated, async (req: any, res: any) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: 'Invalid invoice ID' });
+      }
+
+      const userId = (req.user as any).claims.sub;
+      console.log(`Download request for invoice ${invoiceId} by user ${userId}`);
+
+      // Get the invoice to verify access and get filename
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        console.log(`Invoice ${invoiceId} not found`);
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      console.log(`Found invoice: ${invoice.fileName}, owner: ${invoice.userId}, company: ${invoice.companyId}`);
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        console.log(`Access denied for user ${userId} to invoice ${invoiceId}`);
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Import fs and path modules
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Construct file path - check uploads directory
+      const filePath = path.join('uploads', invoice.fileName);
+      console.log(`Looking for file at: ${filePath}`);
+      
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.log(`File not found: ${filePath}`);
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      // Determine MIME type based on file extension
+      let mimeType = 'application/octet-stream';
+      const ext = path.extname(invoice.fileName).toLowerCase();
+      switch (ext) {
+        case '.pdf':
+          mimeType = 'application/pdf';
+          break;
+        case '.xml':
+          mimeType = 'application/xml';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case '.png':
+          mimeType = 'image/png';
+          break;
+      }
+
+      console.log(`Serving file: ${invoice.fileName} (${mimeType})`);
+
+      // Set headers for file download
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${invoice.fileName}"`);
+      res.setHeader('Content-Length', fs.statSync(filePath).size);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+
+    } catch (error) {
+      console.error('Error downloading invoice file:', error);
+      res.status(500).json({ error: 'Failed to download file' });
+    }
+  });
+
   return httpServer;
 }
