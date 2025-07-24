@@ -108,6 +108,58 @@ export default function InvoiceImporter() {
 
   const { toast } = useToast();
 
+  // Move useQuery declarations here to avoid temporal dead zone
+  const { data: configs = [], refetch: refetchConfigs } = useQuery({
+    queryKey: ['invoice-importer-configs'],
+    queryFn: async () => {
+      if (!user) {
+        console.log('User not authenticated, skipping config fetch');
+        return [];
+      }
+
+      try {
+        const response = await fetch('/api/invoice-importer/configs', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!response.ok) {
+          console.error('Failed to fetch configs:', response.status, response.statusText);
+          throw new Error('Failed to fetch configs');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Error fetching configs:', error);
+        throw error;
+      }
+    },
+    enabled: !!user,
+  });
+
+  const { data: logs = [], refetch: refetchLogs } = useQuery({
+    queryKey: ['invoice-importer-logs'],
+    queryFn: async () => {
+      if (!user) {
+        console.log('User not authenticated, skipping log fetch');
+        return [];
+      }
+
+      try {
+        const response = await fetch('/api/invoice-importer/logs', {
+          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+        });
+        if (!response.ok) {
+          console.error('Failed to fetch logs:', response.status, response.statusText);
+          throw new Error('Failed to fetch logs');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Error fetching logs:', error);
+        throw error;
+      }
+    },
+    refetchInterval: user ? 5000 : false,
+    enabled: !!user,
+  });
+
   useEffect(() => {
     fetchERPConnections();
     initializeWebSocket();
@@ -693,55 +745,7 @@ export default function InvoiceImporter() {
     }
   };
 
-  const { data: configs = [], refetch: refetchConfigs } = useQuery({
-    queryKey: ['invoice-importer-configs'],
-    queryFn: async () => {
-      if (!user) {
-        console.log('User not authenticated, skipping config fetch');
-        return [];
-      }
-
-      try {
-        const response = await fetch('/api/invoice-importer/configs', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (!response.ok) {
-          console.error('Failed to fetch configs:', response.status, response.statusText);
-          throw new Error('Failed to fetch configs');
-        }
-        return response.json();
-      } catch (error) {
-        console.error('Error fetching configs:', error);
-        throw error;
-      }
-    },
-    enabled: !!user,
-  });
-  const { data: logs = [], refetch: refetchLogs } = useQuery({
-    queryKey: ['invoice-importer-logs'],
-    queryFn: async () => {
-      if (!user) {
-        console.log('User not authenticated, skipping log fetch');
-        return [];
-      }
-
-      try {
-        const response = await fetch('/api/invoice-importer/logs', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (!response.ok) {
-          console.error('Failed to fetch logs:', response.status, response.statusText);
-          throw new Error('Failed to fetch logs');
-        }
-        return response.json();
-      } catch (error) {
-        console.error('Error fetching logs:', error);
-        throw error;
-      }
-    },
-    refetchInterval: user ? 5000 : false,
-    enabled: !!user,
-  });
+  // useQuery declarations moved above to avoid temporal dead zone
   useEffect(() => {
     // Only connect WebSocket if user is authenticated
     if (!user) {
