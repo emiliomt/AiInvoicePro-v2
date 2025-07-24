@@ -924,6 +924,95 @@ class InvoiceRPAService:
             except Exception as e:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
 
+    def process_xml_through_manual_pipeline(self) -> bool:
+        """Process extracted XML files directly through manual upload pipeline"""
+        try:
+            self.update_progress("Processing XML files through manual upload pipeline", 90)
+            
+            # Ensure uploads directory exists
+            uploads_dir = 'uploads'
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            processed_count = 0
+            
+            for filename in os.listdir(self.xml_dir):
+                if filename.lower().endswith(".xml"):
+                    try:
+                        # Parse filename to get document info
+                        base_name = os.path.splitext(filename)[0]
+                        parts = base_name.split("_", 2)
+                        if len(parts) < 3:
+                            self.log(f"Skipping invalid filename: {filename}")
+                            continue
+
+                        numero, emisor, valor = parts
+                        xml_file_path = os.path.join(self.xml_dir, filename)
+
+                        # Create standardized filename for manual pipeline
+                        safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
+                        upload_filename = f"{numero}_{safe_emisor}.xml"
+                        upload_path = os.path.join(uploads_dir, upload_filename)
+                        
+                        # Copy XML file to uploads directory
+                        with open(xml_file_path, 'r', encoding='utf-8') as src:
+                            xml_content = src.read()
+                        
+                        with open(upload_path, 'w', encoding='utf-8') as dst:
+                            dst.write(xml_content)
+                        
+                        # Call Node.js endpoint to process the file through manual pipeline
+                        self.trigger_manual_processing(upload_filename, numero, emisor, valor)
+                        
+                        # Clean up temp XML file
+                        os.remove(xml_file_path)
+                        processed_count += 1
+                        
+                        self.log(f"Processed through manual pipeline: {upload_filename}")
+                        
+                    except Exception as e:
+                        self.log(f"Failed to process {filename}: {e}", "ERROR")
+
+            self.log(f"Processed {processed_count} XML files through manual pipeline")
+            return True
+
+        except Exception as e:
+            self.log(f"Error processing XML through manual pipeline: {e}", "ERROR")
+            return False
+
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str):
+        """Trigger the manual upload processing pipeline via HTTP request"""
+        try:
+            import requests
+            
+            # Create the invoice record first (simulating manual upload)
+            file_path = f"uploads/{filename}"
+            file_size = os.path.getsize(file_path)
+            
+            # Call the RPA integration endpoint instead of duplicating logic
+            payload = {
+                'filename': filename,
+                'fileSize': file_size,
+                'documentNumber': numero,
+                'emisor': emisor,
+                'totalValue': valor,
+                'source': 'python_rpa'
+            }
+            
+            # Make request to Node.js server to process through manual pipeline
+            response = requests.post(
+                'http://localhost:5000/api/rpa/process-xml',
+                json=payload,
+                timeout=30
+            )
+            
+            if response.status_code == 200:
+                self.log(f"Successfully triggered manual processing for {filename}")
+            else:
+                self.log(f"Failed to trigger manual processing for {filename}: {response.status_code}")
+                
+        except Exception as e:
+            self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
+
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
         try:
@@ -969,19 +1058,11 @@ class InvoiceRPAService:
                     'stats': self.stats
                 }
 
-            # Import to database
-            if not self.import_xml_to_database():
+            # NEW: Process XML files through manual upload pipeline (replaces old database steps)
+            if not self.process_xml_through_manual_pipeline():
                 return {
                     'success': False,
-                    'error': 'Failed to import XML to database',
-                    'stats': self.stats
-                }
-
-            # Transfer to PostgreSQL (NEW STEP for integration)
-            if not self.transfer_to_postgresql():
-                return {
-                    'success': False,
-                    'error': 'Failed to transfer invoices to PostgreSQL',
+                    'error': 'Failed to process XML files through manual pipeline',
                     'stats': self.stats
                 }
 
