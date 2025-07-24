@@ -53,11 +53,11 @@ def clear_postgresql_tables():
         conn = psycopg2.connect(database_url)
         cursor = conn.cursor()
         
-        # Clear RPA tables in correct order (due to foreign keys)
+        # Clear RPA operational data tables (preserve user configurations)
         tables_to_clear = [
             'imported_invoices',           # Child table first
             'invoice_importer_logs',       # Parent of imported_invoices
-            'invoice_importer_configs'     # Root table
+            # NOTE: invoice_importer_configs is preserved to keep user RPA settings
         ]
         
         for table in tables_to_clear:
@@ -80,12 +80,12 @@ def clear_postgresql_tables():
             except Exception as e:
                 print(f"⚠️  Could not clear table {table}: {e}")
         
-        # Reset sequences to start from 1
+        # Reset sequences to start from 1 (preserve configs sequence)
         try:
-            cursor.execute("SELECT setval('invoice_importer_configs_id_seq', 1, false)")
+            # NOTE: invoice_importer_configs_id_seq is preserved to maintain user settings
             cursor.execute("SELECT setval('invoice_importer_logs_id_seq', 1, false)")
             cursor.execute("SELECT setval('imported_invoices_id_seq', 1, false)")
-            print("✅ Reset PostgreSQL sequences")
+            print("✅ Reset PostgreSQL sequences (preserved configs)")
         except Exception as e:
             print(f"⚠️  Could not reset sequences: {e}")
         
@@ -198,13 +198,16 @@ def main():
     
     print("\n✅ RPA database and file reset complete - ready for fresh debugging!")
     print("\n🔧 What was cleared:")
-    print("   • PostgreSQL tables: imported_invoices, invoice_importer_logs, invoice_importer_configs")
+    print("   • PostgreSQL tables: imported_invoices, invoice_importer_logs")
     print("   • SQLite databases: /tmp/invoice_downloads/invoices.db, /tmp/xml_invoices/invoices_xml.db") 
     print("   • Downloaded files: ZIP, XML, and PDF files from RPA downloads")
     print("   • Uploaded files: Manual invoice uploads")
     print("   • Debug captures: RPA screenshots and HTML snapshots")
     print("   • Temporary files: All temp processing files")
-    print("   • Database sequences: Reset to start from 1")
+    print("   • Database sequences: Reset operational sequences only")
+    print("\n✅ What was preserved:")
+    print("   • RPA configurations: invoice_importer_configs table (user settings intact)")
+    print("   • ERP connections: All connection settings maintained")
     print("\n🔄 The RPA system will now re-process invoices that were previously skipped as duplicates")
 
 if __name__ == "__main__":
