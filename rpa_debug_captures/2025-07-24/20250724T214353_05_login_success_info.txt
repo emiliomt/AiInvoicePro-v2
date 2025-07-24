@@ -1,0 +1,7 @@
+Debug Capture: 05_login_success
+Timestamp: 20250724T214353
+Current URL: https://www3.sincoerp.com/SincoObycon_Nueva/V3/Marco/Seleccion_iv.aspx
+Page Title: SINCO ERP - Selección empresa y sucursal
+Window Size: {'width': 1920, 'height': 1080}
+Page Load State: complete
+No error messages found

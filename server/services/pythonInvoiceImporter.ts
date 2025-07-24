@@ -694,13 +694,14 @@ class PythonInvoiceImporter {
   }
 
   /**
-   * Store imported invoices and run full processing pipeline (OCR + AI extraction)
+   * Store imported invoices using the EXACT same logic as manual uploads
    */
   private async storeImportedInvoicesFast(logId: number, progress: ImportProgress): Promise<void> {
-    // Convert imported invoices to regular invoice records with full processing
+    // Get imported invoices from SQLite database
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
 
     if (importedInvoices.length === 0) {
+      console.log('No imported invoices found for log ID:', logId);
       return;
     }
 
@@ -711,73 +712,103 @@ class PythonInvoiceImporter {
     const config = await storage.getInvoiceImporterConfig(log.configId);
     if (!config) return;
 
-    console.log(`Starting full processing pipeline for ${importedInvoices.length} RPA-imported invoices`);
+    console.log(`🔄 Starting MANUAL UPLOAD REPLICATION for ${importedInvoices.length} RPA-imported invoices`);
 
-    const batchSize = 3; // Smaller batches for full processing
-    for (let i = 0; i < importedInvoices.length; i += batchSize) {
-      const batch = importedInvoices.slice(i, i + batchSize);
+    // REPLICATE EXACT MANUAL UPLOAD LOGIC
+    const fs = await import('fs');
+    const path = await import('path');
+    const uploadsDir = path.join(process.cwd(), 'uploads');
 
-      await Promise.all(batch.map(async (importedInvoice) => {
-        try {
-          // Create main invoice record from imported invoice
-          const mainInvoice = await storage.createInvoice({
-            userId: config.userId,
-            fileName: importedInvoice.originalFileName,
-            status: "processing", // Keep as processing until OCR/AI completes
-            fileUrl: importedInvoice.filePath,
-            metadata: {
-              ...importedInvoice.metadata,
-              importSource: 'python_rpa',
-              importLogId: logId,
-              erpDocumentId: importedInvoice.erpDocumentId,
-              downloadedAt: importedInvoice.downloadedAt
-            }
-          });
-
-          console.log(`Created main invoice ${mainInvoice.id} for RPA import: ${importedInvoice.originalFileName}`);
-
-          // Start async processing using the same pipeline as manual uploads
-          setImmediate(async () => {
-            await this.processRpaInvoiceWithFullPipeline(mainInvoice, importedInvoice);
-          });
-
-          // Mark imported invoice as processed immediately (main invoice created)
-          await storage.updateImportedInvoice(importedInvoice.id, {
-            processedAt: new Date(),
-            metadata: {
-              ...importedInvoice.metadata,
-              mainInvoiceId: mainInvoice.id,
-              processedToMainSystem: true
-            }
-          });
-
-        } catch (error) {
-          console.error(`Failed to create main invoice for ${importedInvoice.originalFileName}:`, error);
-        }
-      }));
-
-      // Delay between batches to prevent overwhelming the system
-      await this.simulateDelay(500);
+    // Ensure uploads directory exists (same as manual upload)
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
     }
+
+    const uploadedInvoices: any[] = [];
+
+    for (const importedInvoice of importedInvoices) {
+      try {
+        console.log(`📁 Processing RPA invoice: ${importedInvoice.originalFileName}`);
+
+        // Check if source file exists
+        if (!fs.existsSync(importedInvoice.filePath)) {
+          console.error(`❌ Source file not found: ${importedInvoice.filePath}`);
+          continue;
+        }
+
+        // Read the source file
+        const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+        console.log(`📖 Read file buffer: ${fileBuffer.length} bytes`);
+
+        // REPLICATE EXACT MANUAL UPLOAD FILE HANDLING
+        // Generate unique filename using SAME logic as manual upload
+        const fileExt = path.extname(importedInvoice.originalFileName);
+        const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+        const filePath = path.join(uploadsDir, uniqueFileName);
+
+        // Write file to uploads/ directory (SAME as manual upload)
+        fs.writeFileSync(filePath, fileBuffer);
+        console.log(`💾 Saved to uploads directory: ${filePath}`);
+
+        // Create invoice record using SAME logic as manual upload
+        const invoice = await storage.createInvoice({
+          userId: config.userId,
+          fileName: importedInvoice.originalFileName,
+          status: "pending", // Start with pending, same as manual upload
+          fileUrl: filePath, // Use uploads/ path, same as manual upload
+          metadata: {
+            source: 'rpa', // Mark as RPA source
+            originalPath: importedInvoice.filePath,
+            importLogId: logId,
+            erpDocumentId: importedInvoice.erpDocumentId,
+            downloadedAt: importedInvoice.downloadedAt
+          }
+        });
+
+        console.log(`✅ Created invoice ${invoice.id} in main system: ${invoice.fileName}`);
+
+        // Start async processing using SAME function as manual upload
+        setImmediate(async () => {
+          try {
+            console.log(`🤖 Starting processInvoiceAsync for RPA invoice ${invoice.id}`);
+            await this.processInvoiceWithManualUploadLogic(invoice, fileBuffer);
+          } catch (error) {
+            console.error(`❌ Processing failed for RPA invoice ${invoice.id}:`, error);
+          }
+        });
+
+        uploadedInvoices.push(invoice);
+
+        // Mark imported invoice as processed
+        await storage.updateImportedInvoice(importedInvoice.id, {
+          processedAt: new Date(),
+          metadata: {
+            ...importedInvoice.metadata,
+            mainInvoiceId: invoice.id,
+            processedToMainSystem: true,
+            uploadsPath: filePath
+          }
+        });
+
+      } catch (error) {
+        console.error(`❌ Failed to process imported invoice ${importedInvoice.originalFileName}:`, error);
+      }
+    }
+
+    console.log(`🎉 Successfully processed ${uploadedInvoices.length}/${importedInvoices.length} RPA invoices through manual upload pipeline`);
   }
 
   /**
-   * Process RPA invoice through the same pipeline as manual uploads
+   * Process invoice using EXACT same logic as manual upload processInvoiceAsync function
    */
-  private async processRpaInvoiceWithFullPipeline(invoice: any, importedInvoice: any): Promise<void> {
+  private async processInvoiceWithManualUploadLogic(invoice: any, fileBuffer: Buffer): Promise<void> {
     try {
-      const fs = await import('fs');
-      
-      // Check if file exists
-      if (!fs.existsSync(importedInvoice.filePath)) {
-        throw new Error(`Invoice file not found: ${importedInvoice.filePath}`);
-      }
+      console.log(`🔄 Starting processInvoiceAsync logic for RPA invoice ${invoice.id} (${invoice.fileName})`);
 
-      // Read file buffer
-      const fileBuffer = fs.readFileSync(importedInvoice.filePath);
-      console.log(`Starting OCR processing for RPA invoice ${invoice.id} (${invoice.fileName})`);
+      // Update status to processing (SAME as manual upload)
+      await storage.updateInvoice(invoice.id, { status: "processing" });
 
-      // Run OCR processing (same as manual import)
+      // Add timeout for OCR processing (SAME as manual upload)
       const { processInvoiceOCR } = await import('./ocrService');
       const ocrPromise = processInvoiceOCR(fileBuffer, invoice.id);
       const timeoutPromise = new Promise((_, reject) => 
@@ -785,29 +816,29 @@ class PythonInvoiceImporter {
       );
 
       const ocrText = await Promise.race([ocrPromise, timeoutPromise]) as string;
-      console.log(`OCR completed for RPA invoice ${invoice.id}, text length: ${ocrText.length}`);
+      console.log(`📖 OCR completed for RPA invoice ${invoice.id}, text length: ${ocrText.length}`);
 
       if (!ocrText || ocrText.trim().length < 10) {
         throw new Error("OCR did not extract sufficient text from the document");
       }
 
-      // Run AI extraction (same as manual import)
-      console.log(`Starting AI extraction for RPA invoice ${invoice.id}`);
+      // Extract structured data using AI with timeout (SAME as manual upload)
+      console.log(`🤖 Starting AI extraction for RPA invoice ${invoice.id}`);
       const { extractInvoiceData } = await import('./aiService');
-      
+
       const aiPromise = extractInvoiceData(ocrText);
       const aiTimeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
       );
 
       const extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
-      console.log(`AI extraction completed for RPA invoice ${invoice.id}:`, {
+      console.log(`🎯 AI extraction completed for RPA invoice ${invoice.id}:`, {
         vendor: extractedData.vendorName,
         amount: extractedData.totalAmount,
         invoiceNumber: extractedData.invoiceNumber
       });
 
-      // Validate and clean extracted data (same as manual import)
+      // Validate extracted data (SAME as manual upload)
       const cleanedData = {
         vendorName: extractedData.vendorName || null,
         invoiceNumber: extractedData.invoiceNumber || null,
@@ -818,30 +849,33 @@ class PythonInvoiceImporter {
         currency: extractedData.currency || 'USD',
       };
 
-      // Update invoice with extracted data (same as manual import)
+      // Update invoice with extracted data (SAME as manual upload)
       await storage.updateInvoice(invoice.id, {
-        status: "extracted", // Now properly extracted with data
+        status: "extracted",
         ocrText,
         extractedData,
         ...cleanedData
       });
 
-      console.log(`RPA invoice ${invoice.id} processing completed successfully - now matches manual import format`);
+      console.log(`✅ RPA invoice ${invoice.id} processing completed successfully - IDENTICAL to manual upload flow`);
 
     } catch (error) {
-      console.error(`Error processing RPA invoice ${invoice.id}:`, error);
+      console.error(`❌ Error processing RPA invoice ${invoice.id}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-      // Update invoice with error status (same as manual import)
-      await storage.updateInvoice(invoice.id, {
-        status: "rejected",
-        extractedData: { 
-          error: errorMessage,
-          errorType: "RpaProcessingError",
-          timestamp: new Date().toISOString(),
-          step: "rpa_processing"
-        },
-      });
+      // Handle error exactly like manual upload
+      try {
+        await storage.updateInvoice(invoice.id, { 
+          status: "rejected",
+          extractedData: { 
+            error: errorMessage,
+            timestamp: new Date().toISOString(),
+            processStep: 'extraction'
+          }
+        });
+      } catch (updateError) {
+        console.error(`Failed to update RPA invoice ${invoice.id} with error status:`, updateError);
+      }
     }
   }
 }
