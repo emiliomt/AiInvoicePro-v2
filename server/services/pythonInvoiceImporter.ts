@@ -389,15 +389,7 @@ class PythonInvoiceImporter {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
 
-            // Update current step from log content
-            if (trimmedLine.includes('INFO:')) {
-              const stepMatch = trimmedLine.match(/INFO:\s*(.+)/);
-              if (stepMatch) {
-                progress.currentStep = stepMatch[1];
-              }
-            }
-
-            // Extract progress percentage and stats from output
+            // Extract progress percentage and stats from PROGRESS tags (higher priority)
             const statsUpdate = this.extractStatsFromOutput(trimmedLine);
             if (statsUpdate) {
               progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
@@ -405,6 +397,19 @@ class PythonInvoiceImporter {
               progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
               progress.progress = statsUpdate.progress || progress.progress;
+              
+              // Update current step from PROGRESS data if available
+              if ((statsUpdate as any).current_step) {
+                progress.currentStep = (statsUpdate as any).current_step;
+              }
+            } else {
+              // Fallback: Update current step from log content if no PROGRESS tag
+              if (trimmedLine.includes('INFO:')) {
+                const stepMatch = trimmedLine.match(/INFO:\s*(.+)/);
+                if (stepMatch) {
+                  progress.currentStep = stepMatch[1];
+                }
+              }
             }
 
             // Send real-time log line via WebSocket immediately
@@ -587,6 +592,7 @@ class PythonInvoiceImporter {
     successful_imports: number;
     failed_imports: number;
     progress: number;
+    current_step: string;
   }> | null {
     try {
       // Look for STATS: or PROGRESS: tags in output
@@ -603,8 +609,11 @@ class PythonInvoiceImporter {
           const progressData = JSON.parse(progressLine.trim());
           return {
             progress: progressData.progress || 0,
-            processed_invoices: progressData.processed || 0,
-            total_invoices: progressData.total || 0
+            processed_invoices: progressData.processed_invoices || 0,
+            total_invoices: progressData.total_invoices || 0,
+            successful_imports: progressData.successful_imports || 0,
+            failed_imports: progressData.failed_imports || 0,
+            current_step: progressData.current_step || null
           };
         }
       }
