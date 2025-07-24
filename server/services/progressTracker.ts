@@ -112,7 +112,7 @@ class ProgressTracker {
     const connections = this.connections.get(userId);
     console.log(`Checking connections for user ${userId}: ${connections ? connections.length : 0} connections found`);
     console.log(`All tracked users:`, Array.from(this.connections.keys()));
-    
+
     if (!connections || connections.length === 0) {
       console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
       return;
