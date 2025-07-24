@@ -694,10 +694,10 @@ class PythonInvoiceImporter {
   }
 
   /**
-   * Store imported invoices and trigger AI processing
+   * Store imported invoices and run full processing pipeline (OCR + AI extraction)
    */
   private async storeImportedInvoicesFast(logId: number, progress: ImportProgress): Promise<void> {
-    // Convert imported invoices to regular invoice records efficiently
+    // Convert imported invoices to regular invoice records with full processing
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
 
     if (importedInvoices.length === 0) {
@@ -711,7 +711,9 @@ class PythonInvoiceImporter {
     const config = await storage.getInvoiceImporterConfig(log.configId);
     if (!config) return;
 
-    const batchSize = 5;
+    console.log(`Starting full processing pipeline for ${importedInvoices.length} RPA-imported invoices`);
+
+    const batchSize = 3; // Smaller batches for full processing
     for (let i = 0; i < importedInvoices.length; i += batchSize) {
       const batch = importedInvoices.slice(i, i + batchSize);
 
@@ -721,7 +723,7 @@ class PythonInvoiceImporter {
           const mainInvoice = await storage.createInvoice({
             userId: config.userId,
             fileName: importedInvoice.originalFileName,
-            status: "processing",
+            status: "processing", // Keep as processing until OCR/AI completes
             fileUrl: importedInvoice.filePath,
             metadata: {
               ...importedInvoice.metadata,
@@ -732,13 +734,14 @@ class PythonInvoiceImporter {
             }
           });
 
-          // Mark as extracted for now - AI processing will be handled separately
-          await storage.updateInvoice(mainInvoice.id, { 
-            status: "extracted"
-          });
-          console.log(`Imported invoice ready for processing: ${importedInvoice.originalFileName}`);
+          console.log(`Created main invoice ${mainInvoice.id} for RPA import: ${importedInvoice.originalFileName}`);
 
-          // Mark imported invoice as processed
+          // Start async processing using the same pipeline as manual uploads
+          setImmediate(async () => {
+            await this.processRpaInvoiceWithFullPipeline(mainInvoice, importedInvoice);
+          });
+
+          // Mark imported invoice as processed immediately (main invoice created)
           await storage.updateImportedInvoice(importedInvoice.id, {
             processedAt: new Date(),
             metadata: {
@@ -748,14 +751,97 @@ class PythonInvoiceImporter {
             }
           });
 
-          console.log(`Converted imported invoice to main system: ${importedInvoice.originalFileName} -> Invoice ID ${mainInvoice.id}`);
         } catch (error) {
-          console.error(`Failed to process imported invoice ${importedInvoice.originalFileName}:`, error);
+          console.error(`Failed to create main invoice for ${importedInvoice.originalFileName}:`, error);
         }
       }));
 
-      // Minimal delay between batches
-      await this.simulateDelay(100);
+      // Delay between batches to prevent overwhelming the system
+      await this.simulateDelay(500);
+    }
+  }
+
+  /**
+   * Process RPA invoice through the same pipeline as manual uploads
+   */
+  private async processRpaInvoiceWithFullPipeline(invoice: any, importedInvoice: any): Promise<void> {
+    try {
+      const fs = await import('fs');
+      
+      // Check if file exists
+      if (!fs.existsSync(importedInvoice.filePath)) {
+        throw new Error(`Invoice file not found: ${importedInvoice.filePath}`);
+      }
+
+      // Read file buffer
+      const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+      console.log(`Starting OCR processing for RPA invoice ${invoice.id} (${invoice.fileName})`);
+
+      // Run OCR processing (same as manual import)
+      const { processInvoiceOCR } = await import('./ocrService');
+      const ocrPromise = processInvoiceOCR(fileBuffer, invoice.id);
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('OCR processing timeout')), 60000)
+      );
+
+      const ocrText = await Promise.race([ocrPromise, timeoutPromise]) as string;
+      console.log(`OCR completed for RPA invoice ${invoice.id}, text length: ${ocrText.length}`);
+
+      if (!ocrText || ocrText.trim().length < 10) {
+        throw new Error("OCR did not extract sufficient text from the document");
+      }
+
+      // Run AI extraction (same as manual import)
+      console.log(`Starting AI extraction for RPA invoice ${invoice.id}`);
+      const { extractInvoiceData } = await import('./aiService');
+      
+      const aiPromise = extractInvoiceData(ocrText);
+      const aiTimeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+      );
+
+      const extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
+      console.log(`AI extraction completed for RPA invoice ${invoice.id}:`, {
+        vendor: extractedData.vendorName,
+        amount: extractedData.totalAmount,
+        invoiceNumber: extractedData.invoiceNumber
+      });
+
+      // Validate and clean extracted data (same as manual import)
+      const cleanedData = {
+        vendorName: extractedData.vendorName || null,
+        invoiceNumber: extractedData.invoiceNumber || null,
+        invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+        dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+        totalAmount: extractedData.totalAmount || null,
+        taxAmount: extractedData.taxAmount || null,
+        currency: extractedData.currency || 'USD',
+      };
+
+      // Update invoice with extracted data (same as manual import)
+      await storage.updateInvoice(invoice.id, {
+        status: "extracted", // Now properly extracted with data
+        ocrText,
+        extractedData,
+        ...cleanedData
+      });
+
+      console.log(`RPA invoice ${invoice.id} processing completed successfully - now matches manual import format`);
+
+    } catch (error) {
+      console.error(`Error processing RPA invoice ${invoice.id}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Update invoice with error status (same as manual import)
+      await storage.updateInvoice(invoice.id, {
+        status: "rejected",
+        extractedData: { 
+          error: errorMessage,
+          errorType: "RpaProcessingError",
+          timestamp: new Date().toISOString(),
+          step: "rpa_processing"
+        },
+      });
     }
   }
 }
