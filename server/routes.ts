@@ -3476,29 +3476,37 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const user = req.user;
       if (!user) {
+        console.log('Execute endpoint: User not authenticated');
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
       const configId = parseInt(req.params.id);
+      console.log(`Execute endpoint: Starting execution for config ${configId}`);
+      
       const config = await storage.getInvoiceImporterConfig(configId);
       const currentUser = await storage.getUser((user as any).claims.sub);
 
       if (!config) {
+        console.log(`Execute endpoint: Config ${configId} not found`);
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
       // Check if user has access to this configuration (owner or same company)
       if (config.userId !== (user as any).claims.sub && 
           (!currentUser?.companyId || config.companyId !== currentUser.companyId)) {
+        console.log(`Execute endpoint: Access denied for user ${(user as any).claims.sub} to config ${configId}`);
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
+      console.log(`Execute endpoint: Starting async execution for config ${configId}`);
       // Start the import process asynchronously
       executeImportAsync(configId);
 
+      console.log(`Execute endpoint: Responding with success for config ${configId}`);
       res.json({ message: 'Invoice import started successfully', configId });
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Execute endpoint error:`, error);
       res.status(500).json({ error: errorMessage });
     }
   });

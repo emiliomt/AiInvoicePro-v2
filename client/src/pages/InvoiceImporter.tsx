@@ -545,6 +545,8 @@ export default function InvoiceImporter() {
     const config = configs.find(c => c.id === configId);
     if (!config) return;
 
+    console.log(`Starting import for config ${configId}: ${config.taskName}`);
+    
     setRunningConfigId(configId);
     setRunningConfigName(config.taskName);
 
@@ -554,19 +556,27 @@ export default function InvoiceImporter() {
     ));
 
     try {
+      console.log(`Making API call to /api/invoice-importer/configs/${configId}/execute`);
       const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
-        method: 'POST'
+        method: 'POST',
+        credentials: 'include'
       });
 
+      console.log(`API response status: ${response.status}`);
+      
       if (response.ok) {
+        const responseData = await response.json();
+        console.log('Import started successfully:', responseData);
+        
         toast({
           title: "Import Started",
           description: "Invoice import process has been initiated"
         });
 
-        fetchLogs();
+        refetchLogs();
       } else {
         const errorData = await response.json();
+        console.error('API error response:', errorData);
         throw new Error(errorData.error || 'Failed to start import');
       }
     } catch (error) {
