@@ -24,6 +24,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import TimeoutException, WebDriverException
 
+
 class InvoiceRPAService:
     """Automated invoice importing service using Selenium"""
 
@@ -31,13 +32,14 @@ class InvoiceRPAService:
         self.config = config
         self.erp_url = config.get('erpUrl', '')
         self.username = config.get('erpUsername', '')
-        
+
         # Decode Base64 password if it appears to be encoded
         raw_password = config.get('erpPassword', '')
         try:
             # Check if password is Base64 encoded and decode it
             if raw_password and len(raw_password) % 4 == 0:
-                decoded_password = base64.b64decode(raw_password).decode('utf-8')
+                decoded_password = base64.b64decode(raw_password).decode(
+                    'utf-8')
                 self.password = decoded_password
                 self.log(f"Password decoded successfully")
             else:
@@ -46,7 +48,8 @@ class InvoiceRPAService:
             # If decoding fails, use the raw password
             self.password = raw_password
             self.log(f"Using raw password (decode failed: {e})")
-        self.download_dir = config.get('downloadPath', '/tmp/invoice_downloads')
+        self.download_dir = config.get('downloadPath',
+                                       '/tmp/invoice_downloads')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
 
         # Get headless mode from config (default to False for easier debugging)
@@ -54,15 +57,18 @@ class InvoiceRPAService:
 
         # Validate required config values early
         if not self.erp_url:
-            raise ValueError("Missing required config: 'erpUrl' must be provided")
+            raise ValueError(
+                "Missing required config: 'erpUrl' must be provided")
         if not self.username:
-            raise ValueError("Missing required config: 'erpUsername' must be provided")
+            raise ValueError(
+                "Missing required config: 'erpUsername' must be provided")
         if not self.password:
-            raise ValueError("Missing required config: 'erpPassword' must be provided")
+            raise ValueError(
+                "Missing required config: 'erpPassword' must be provided")
 
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
-        
+
         # Store log_id for PostgreSQL transfer
         self.log_id = config.get('logId')
 
@@ -73,10 +79,10 @@ class InvoiceRPAService:
                 self.download_dir = '/tmp/invoice_downloads'
             if self.xml_dir.startswith('C:\\'):
                 self.xml_dir = '/tmp/xml_invoices'
-        
+
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
-        
+
         self.log(f"Download directory: {self.download_dir}")
         self.log(f"XML directory: {self.xml_dir}")
 
@@ -98,10 +104,8 @@ class InvoiceRPAService:
 
     def is_driver_ready(self) -> bool:
         """Check if driver and wait objects are properly initialized"""
-        return (self.driver is not None and 
-                self.wait is not None and 
-                self.short_wait is not None and 
-                self.long_wait is not None)
+        return (self.driver is not None and self.wait is not None
+                and self.short_wait is not None and self.long_wait is not None)
 
     def log(self, message: str, level: str = 'INFO'):
         """Log message with timestamp"""
@@ -122,9 +126,12 @@ class InvoiceRPAService:
         try:
             # Check if Chrome/Chromium is available
             import shutil
-            chrome_path = shutil.which('google-chrome') or shutil.which('chromium-browser') or shutil.which('chromium')
+            chrome_path = shutil.which('google-chrome') or shutil.which(
+                'chromium-browser') or shutil.which('chromium')
             if not chrome_path:
-                raise Exception("Chrome/Chromium browser not found. Please install google-chrome or chromium-browser.")
+                raise Exception(
+                    "Chrome/Chromium browser not found. Please install google-chrome or chromium-browser."
+                )
 
             self.log(f"Found browser at: {chrome_path}")
 
@@ -155,17 +162,23 @@ class InvoiceRPAService:
             chrome_options.add_argument("--allow-running-insecure-content")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--ignore-ssl-errors")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_argument("--disable-background-timer-throttling")
-            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument(
+                "--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument(
+                "--disable-background-timer-throttling")
+            chrome_options.add_argument(
+                "--disable-backgrounding-occluded-windows")
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--disable-features=TranslateUI")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
 
-            self.log("Initializing ChromeDriver in headless mode with debug capture...")
+            self.log(
+                "Initializing ChromeDriver in headless mode with debug capture..."
+            )
 
             self.driver = webdriver.Chrome(options=chrome_options)
-            self.driver.set_window_size(1920, 1080)  # Set size for consistent screenshots
+            self.driver.set_window_size(
+                1920, 1080)  # Set size for consistent screenshots
 
             # Set up wait objects
             self.wait = WebDriverWait(self.driver, 15)
@@ -182,12 +195,16 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"Failed to setup Chrome WebDriver: {e}", "ERROR")
             self.log("Common solutions:", "ERROR")
-            self.log("1. Install Chrome/Chromium: sudo apt-get install chromium-browser", "ERROR")
+            self.log(
+                "1. Install Chrome/Chromium: sudo apt-get install chromium-browser",
+                "ERROR")
             self.log("2. Install Selenium: pip3 install selenium", "ERROR")
             self.log("3. Check if ports are blocked by firewall", "ERROR")
             return False
 
-    def init_database(self, db_path: str, table_type: str = 'downloads') -> sqlite3.Connection:
+    def init_database(self,
+                      db_path: str,
+                      table_type: str = 'downloads') -> sqlite3.Connection:
         """Initialize SQLite database for tracking"""
         conn = sqlite3.connect(db_path)
         cursor = conn.cursor()
@@ -218,7 +235,9 @@ class InvoiceRPAService:
         conn.commit()
         return conn
 
-    def wait_for_new_zip(self, timeout: int = 60, before_files: Optional[set] = None) -> str:
+    def wait_for_new_zip(self,
+                         timeout: int = 60,
+                         before_files: Optional[set] = None) -> str:
         """Wait for a new ZIP file to be downloaded"""
         deadline = time.time() + timeout
         if before_files is None:
@@ -230,7 +249,10 @@ class InvoiceRPAService:
 
         while time.time() < deadline:
             # Check for Chrome download files
-            crdownloads = [f for f in os.listdir(self.download_dir) if f.endswith(".crdownload")]
+            crdownloads = [
+                f for f in os.listdir(self.download_dir)
+                if f.endswith(".crdownload")
+            ]
             current_files = {
                 os.path.join(self.download_dir, f)
                 for f in os.listdir(self.download_dir)
@@ -241,7 +263,8 @@ class InvoiceRPAService:
                 return max(new_files, key=os.path.getctime)
             time.sleep(1)
 
-        raise TimeoutError(f"No new .zip file downloaded within {timeout} seconds.")
+        raise TimeoutError(
+            f"No new .zip file downloaded within {timeout} seconds.")
 
     def safe_rename(self, src: str, dest: str) -> str:
         """Safely rename file with conflict resolution"""
@@ -267,33 +290,33 @@ class InvoiceRPAService:
             if not self.driver:
                 self.log("Driver not available for debug capture", "ERROR")
                 return
-            
+
             # Create timestamp in format: YYYYMMDDTHHMMSS
             timestamp = datetime.now().strftime("%Y%m%dT%H%M%S")
             date_folder = datetime.now().strftime("%Y-%m-%d")
-            
+
             # Create organized folder structure for debug captures
             project_root = "/home/runner/workspace"
             debug_base_dir = os.path.join(project_root, "rpa_debug_captures")
             debug_date_dir = os.path.join(debug_base_dir, date_folder)
-            
+
             # Ensure directories exist
             os.makedirs(debug_date_dir, exist_ok=True)
-            
+
             # Clean label for filename (remove special characters)
             clean_label = re.sub(r'[^a-zA-Z0-9_-]', '_', label)
-            
+
             # Screenshot
             screenshot_filename = f"{timestamp}_{clean_label}.png"
             screenshot_path = os.path.join(debug_date_dir, screenshot_filename)
             self.driver.save_screenshot(screenshot_path)
-            
+
             # HTML source
             html_filename = f"{timestamp}_{clean_label}.html"
             html_path = os.path.join(debug_date_dir, html_filename)
             with open(html_path, 'w', encoding='utf-8') as f:
                 f.write(self.driver.page_source)
-            
+
             # Page info
             info_filename = f"{timestamp}_{clean_label}_info.txt"
             info_path = os.path.join(debug_date_dir, info_filename)
@@ -303,21 +326,26 @@ class InvoiceRPAService:
                 f.write(f"Current URL: {self.driver.current_url}\n")
                 f.write(f"Page Title: {self.driver.title}\n")
                 f.write(f"Window Size: {self.driver.get_window_size()}\n")
-                f.write(f"Page Load State: {self.driver.execute_script('return document.readyState')}\n")
-                
+                f.write(
+                    f"Page Load State: {self.driver.execute_script('return document.readyState')}\n"
+                )
+
                 # Check for common error indicators
-                error_elements = self.driver.find_elements(By.CLASS_NAME, "alert-danger")
+                error_elements = self.driver.find_elements(
+                    By.CLASS_NAME, "alert-danger")
                 if error_elements:
                     f.write(f"Error Messages Found: {len(error_elements)}\n")
                     for i, elem in enumerate(error_elements):
                         f.write(f"  Error {i+1}: {elem.text}\n")
                 else:
                     f.write("No error messages found\n")
-            
+
             # Create relative path for cleaner logging
             relative_path = os.path.join("rpa_debug_captures", date_folder)
-            self.log(f"🔍 Debug capture saved to {relative_path}/: {screenshot_filename}, {html_filename}, {info_filename}")
-            
+            self.log(
+                f"🔍 Debug capture saved to {relative_path}/: {screenshot_filename}, {html_filename}, {info_filename}"
+            )
+
         except Exception as e:
             self.log(f"Failed to create debug capture: {e}", "ERROR")
 
@@ -331,22 +359,24 @@ class InvoiceRPAService:
             self.update_progress("Logging into ERP system", 10)
             self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
-            
+
             # Debug capture after page load
             self.debug_capture("01_login_page_loaded")
             time.sleep(2)  # Allow page to fully load
 
             # Enter credentials
             self.log("Entering username...")
-            username_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtUsuario")))
+            username_field = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "txtUsuario")))
             username_field.clear()
             username_field.send_keys(self.username)
-            
+
             self.log("Entering password...")
-            password_field = self.wait.until(EC.element_to_be_clickable((By.ID, "txtContrasena")))
+            password_field = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "txtContrasena")))
             password_field.clear()
             password_field.send_keys(self.password)
-            
+
             # Debug capture after entering credentials
             self.debug_capture("02_credentials_entered")
 
@@ -355,54 +385,57 @@ class InvoiceRPAService:
             siguiente_btn = self.driver.find_element(By.ID, "btnSiguiente")
             self.driver.execute_script("arguments[0].click();", siguiente_btn)
             time.sleep(2)
-            
+
             # Debug capture after first button
             self.debug_capture("03_after_siguiente_click")
 
             self.log("Waiting for 'Ingresar' button...")
-            ingresar_btn = self.wait.until(EC.element_to_be_clickable((By.ID, "btnIngresar")))
+            ingresar_btn = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btnIngresar")))
             self.driver.execute_script("arguments[0].click();", ingresar_btn)
-            
+
             # Debug capture after login attempt
             self.debug_capture("04_after_ingresar_click")
-            
+
             # Wait for successful login - look for dashboard elements
             self.log("Waiting for login success indicators...")
             try:
                 # Wait for login to complete - check for typical post-login elements
                 WebDriverWait(self.driver, 15).until(
-                    lambda driver: "login" not in driver.current_url.lower() or 
-                                 driver.find_elements(By.ID, "mod-FE") or
-                                 driver.find_elements(By.CLASS_NAME, "dashboard") or
-                                 "dashboard" in driver.current_url.lower()
-                )
+                    lambda driver: "login" not in driver.current_url.lower(
+                    ) or driver.find_elements(By.ID, "mod-FE") or driver.
+                    find_elements(By.CLASS_NAME, "dashboard") or "dashboard" in
+                    driver.current_url.lower())
                 self.debug_capture("05_login_success")
                 self.log("✅ Login successful")
                 return True
             except TimeoutException:
                 self.debug_capture("06_login_timeout_error")
                 self.log("⏰ Login timeout - checking page state...")
-                
+
                 # Check current URL and page content for debugging
                 current_url = self.driver.current_url
                 page_title = self.driver.title
                 self.log(f"Current URL: {current_url}")
                 self.log(f"Page title: {page_title}")
-                
+
                 # Check for error messages
-                error_elements = self.driver.find_elements(By.CLASS_NAME, "alert-danger")
+                error_elements = self.driver.find_elements(
+                    By.CLASS_NAME, "alert-danger")
                 if error_elements:
                     self.log(f"❌ Login error: {error_elements[0].text}")
                     return False
-                
+
                 # If URL changed or we see expected elements, consider it success
-                if "login" not in current_url.lower() or self.driver.find_elements(By.ID, "mod-FE"):
-                    self.log("✅ Login appears successful based on URL/elements")
+                if "login" not in current_url.lower(
+                ) or self.driver.find_elements(By.ID, "mod-FE"):
+                    self.log(
+                        "✅ Login appears successful based on URL/elements")
                     self.debug_capture("07_login_success_fallback")
                     return True
-                    
+
                 return False
-                
+
         except Exception as e:
             self.debug_capture("08_login_exception_error")
             self.log(f"❌ Login failed: {e}", "ERROR")
@@ -416,17 +449,20 @@ class InvoiceRPAService:
 
         try:
             self.update_progress("Navigating to invoice section", 20)
-            
+
             # Debug capture before navigation
             self.debug_capture("09_before_navigation")
 
             # Click FE module
             self.log("Looking for 'mod-FE' button...")
-            fe_button = self.long_wait.until(EC.element_to_be_clickable((By.ID, "mod-FE")))
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", fe_button)
+            fe_button = self.long_wait.until(
+                EC.element_to_be_clickable((By.ID, "mod-FE")))
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                fe_button)
             self.driver.execute_script("arguments[0].click();", fe_button)
             self.log("✅ Clicked 'mod-FE' successfully")
-            
+
             # Debug capture after FE click
             self.debug_capture("10_after_mod_FE_click")
             time.sleep(2)
@@ -434,17 +470,24 @@ class InvoiceRPAService:
             # Click Recepción if available
             try:
                 self.log("Looking for 'Recepción' button...")
-                self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[contains(text(), 'Recepción')]"))).click()
+                self.wait.until(
+                    EC.element_to_be_clickable(
+                        (By.XPATH,
+                         "//button[contains(text(), 'Recepción')]"))).click()
                 self.log("✅ Clicked 'Recepción'")
                 self.debug_capture("11_after_recepcion_click")
             except Exception:
-                self.log("⏭️ Skipping 'Recepción' button (not found or not needed)")
+                self.log(
+                    "⏭️ Skipping 'Recepción' button (not found or not needed)")
 
             # Click Documentos recibidos
             self.log("Looking for 'Documentos recibidos' button...")
-            self.wait.until(EC.element_to_be_clickable((By.XPATH, "//button[text()='Documentos recibidos']"))).click()
+            self.wait.until(
+                EC.element_to_be_clickable(
+                    (By.XPATH,
+                     "//button[text()='Documentos recibidos']"))).click()
             self.log("✅ Navigated to 'Documentos recibidos'")
-            
+
             # Debug capture after reaching documents section
             self.debug_capture("12_documentos_recibidos_loaded")
 
@@ -466,12 +509,13 @@ class InvoiceRPAService:
 
             # Debug capture before iframe switch
             self.debug_capture("14_before_iframe_switch")
-            
+
             # Wait for iframe to be available and switch to it
             self.log("Waiting for iframe 'pagina1' to be available...")
-            WebDriverWait(self.driver, 15).until(EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
+            WebDriverWait(self.driver, 15).until(
+                EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
             self.log("✅ Successfully switched to iframe 'pagina1'")
-            
+
             # Debug capture after iframe switch
             self.debug_capture("15_after_iframe_switch")
 
@@ -481,7 +525,8 @@ class InvoiceRPAService:
             max_wait = 20
 
             while time.time() - start < max_wait:
-                rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
+                rows = self.driver.find_elements(By.CSS_SELECTOR,
+                                                 "div.rt-tr-group")
                 data_rows = [r for r in rows if r.text.strip()]
                 if data_rows:
                     self.log(f"✅ Found {len(data_rows)} rows with content")
@@ -490,54 +535,76 @@ class InvoiceRPAService:
                     break
                 time.sleep(1)
             else:
-                self.log(f"❌ No populated rows found after {max_wait} seconds", "ERROR")
-                raise Exception(f"No populated rows found after {max_wait} seconds")
+                self.log(f"❌ No populated rows found after {max_wait} seconds",
+                         "ERROR")
+                raise Exception(
+                    f"No populated rows found after {max_wait} seconds")
 
             # Initialize database
             db_conn = self.init_database(self.db_path, 'downloads')
             page_count = 0
 
             while True:
-                rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
+                rows = self.driver.find_elements(By.CSS_SELECTOR,
+                                                 "div.rt-tr-group")
                 data_rows = [r for r in rows if r.text.strip()]
 
                 if len(data_rows) == 0:
-                    self.log(f"⚠️ Page {page_count + 1} has no data rows, moving to next page")
+                    self.log(
+                        f"⚠️ Page {page_count + 1} has no data rows, moving to next page"
+                    )
                 else:
-                    self.log(f"📄 Processing page {page_count + 1} with {len(data_rows)} data rows (total elements: {len(rows)})")
+                    self.log(
+                        f"📄 Processing page {page_count + 1} with {len(data_rows)} data rows (total elements: {len(rows)})"
+                    )
 
                 for i, row in enumerate(rows):
                     try:
-                        columns = row.find_elements(By.CSS_SELECTOR, "div.rt-td")
+                        columns = row.find_elements(By.CSS_SELECTOR,
+                                                    "div.rt-td")
                         if len(columns) < 8:
                             continue
 
                         numero_documento = columns[1].text.strip()
-                        emisor = columns[2].text.strip().replace(" ", "_").replace(".", "")
+                        emisor = columns[2].text.strip().replace(" ",
+                                                                 "_").replace(
+                                                                     ".", "")
                         safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor)
-                        valor_total = columns[8].text.strip().replace(",", "").replace(".", "").split(" ")[0]
+                        valor_total = columns[8].text.strip().replace(
+                            ",", "").replace(".", "").split(" ")[0]
 
                         # Check if already downloaded
                         cursor = db_conn.cursor()
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             SELECT 1 FROM downloaded_invoices 
                             WHERE numero_documento = ? AND emisor = ? AND valor_total = ?
                         """, (numero_documento, safe_emisor, valor_total))
 
                         if cursor.fetchone():
-                            self.log(f"⏭️ Skipping duplicate: {numero_documento} - {safe_emisor}")
+                            self.log(
+                                f"⏭️ Skipping duplicate: {numero_documento} - {safe_emisor}"
+                            )
                             continue
 
-                        self.log(f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}")
+                        self.log(
+                            f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
+                        )
                         self.stats['total_invoices'] += 1
 
                         # Download invoice
-                        if self.download_invoice(row, numero_documento, safe_emisor, valor_total, db_conn):
+                        if self.download_invoice(row, numero_documento,
+                                                 safe_emisor, valor_total,
+                                                 db_conn):
                             self.stats['successful_imports'] += 1
-                            self.log(f"✅ Successfully processed invoice: {numero_documento}")
+                            self.log(
+                                f"✅ Successfully processed invoice: {numero_documento}"
+                            )
                         else:
                             self.stats['failed_imports'] += 1
-                            self.log(f"❌ Failed to process invoice: {numero_documento}")
+                            self.log(
+                                f"❌ Failed to process invoice: {numero_documento}"
+                            )
 
                         self.stats['processed_invoices'] += 1
 
@@ -548,12 +615,16 @@ class InvoiceRPAService:
 
                 # Try to go to next page
                 try:
-                    next_btn = self.driver.find_element(By.XPATH, "//button[contains(text(), 'Siguiente') and not(@disabled)]")
-                    ActionChains(self.driver).move_to_element(next_btn).click().perform()
+                    next_btn = self.driver.find_element(
+                        By.XPATH,
+                        "//button[contains(text(), 'Siguiente') and not(@disabled)]"
+                    )
+                    ActionChains(self.driver).move_to_element(
+                        next_btn).click().perform()
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    break # Exit loop after processing one page for now
+                    break  # Exit loop after processing one page for now
                 except:
                     self.log("✅ Finished processing all pages")
                     break
@@ -565,7 +636,8 @@ class InvoiceRPAService:
             self.log(f"Error processing invoice rows: {e}", "ERROR")
             return False
 
-    def download_invoice(self, row, numero_documento: str, safe_emisor: str, valor_total: str, db_conn) -> bool:
+    def download_invoice(self, row, numero_documento: str, safe_emisor: str,
+                         valor_total: str, db_conn) -> bool:
         """Download individual invoice"""
         if not self.driver:
             self.log("Driver not initialized", "ERROR")
@@ -573,7 +645,9 @@ class InvoiceRPAService:
 
         try:
             # Scroll to row and click download button
-            self.driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", row)
+            self.driver.execute_script(
+                "arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});",
+                row)
             time.sleep(0.5)
 
             buttons = row.find_elements(By.TAG_NAME, "button")
@@ -588,38 +662,48 @@ class InvoiceRPAService:
             }
 
             # Click download action button
-            ActionChains(self.driver).move_to_element(buttons[3]).click().perform()
+            ActionChains(self.driver).move_to_element(
+                buttons[3]).click().perform()
 
-            # Click actual download button  
+            # Click actual download button
             if not self.short_wait:
                 self.log("Short wait object not initialized", "ERROR")
                 return False
-            download_button = self.short_wait.until(EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
-            ActionChains(self.driver).move_to_element(download_button).click().perform()
+            download_button = self.short_wait.until(
+                EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
+            ActionChains(self.driver).move_to_element(
+                download_button).click().perform()
 
             # Wait for download to complete
-            downloaded_zip = self.wait_for_new_zip(timeout=60, before_files=existing_zips)
+            downloaded_zip = self.wait_for_new_zip(timeout=60,
+                                                   before_files=existing_zips)
             self.log(f"Downloaded: {downloaded_zip}")
 
             # Rename file
-            new_name = os.path.join(self.download_dir, f"{numero_documento}_{safe_emisor}.zip")
+            new_name = os.path.join(self.download_dir,
+                                    f"{numero_documento}_{safe_emisor}.zip")
             final_path = self.safe_rename(downloaded_zip, new_name)
 
             # Record in database
             cursor = db_conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 INSERT OR IGNORE INTO downloaded_invoices 
                 (numero_documento, emisor, valor_total, filename)
                 VALUES (?, ?, ?, ?)
-            """, (numero_documento, safe_emisor, valor_total, os.path.basename(final_path)))
+            """, (numero_documento, safe_emisor, valor_total,
+                  os.path.basename(final_path)))
             db_conn.commit()
 
             # Close download dialog
             if not self.short_wait:
                 self.log("Short wait object not initialized", "ERROR")
                 return False
-            close_button = self.short_wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button.btn.btn-light.pull-right")))
-            ActionChains(self.driver).move_to_element(close_button).click().perform()
+            close_button = self.short_wait.until(
+                EC.element_to_be_clickable(
+                    (By.CSS_SELECTOR, "button.btn.btn-light.pull-right")))
+            ActionChains(
+                self.driver).move_to_element(close_button).click().perform()
 
             return True
 
@@ -640,7 +724,8 @@ class InvoiceRPAService:
 
                     try:
                         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                            temp_dir = os.path.join(self.download_dir, "__temp_extract__")
+                            temp_dir = os.path.join(self.download_dir,
+                                                    "__temp_extract__")
                             os.makedirs(temp_dir, exist_ok=True)
                             zip_ref.extractall(temp_dir)
 
@@ -698,7 +783,8 @@ class InvoiceRPAService:
                             xml_content = f.read()
 
                         cursor = xml_conn.cursor()
-                        cursor.execute("""
+                        cursor.execute(
+                            """
                             INSERT OR IGNORE INTO downloaded_invoices
                             (numero_documento, emisor, valor_total, xml_content)
                             VALUES (?, ?, ?, ?)
@@ -724,27 +810,28 @@ class InvoiceRPAService:
         """Transfer imported invoices from SQLite to PostgreSQL imported_invoices table"""
         try:
             self.update_progress("Transferring invoices to main database", 95)
-            
+
             # Get database URL from environment
             database_url = os.environ.get('DATABASE_URL')
             if not database_url:
-                self.log("DATABASE_URL environment variable not found", "ERROR")
+                self.log("DATABASE_URL environment variable not found",
+                         "ERROR")
                 return False
 
             # Connect to PostgreSQL
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
-            
+
             # Connect to local XML SQLite database
             xml_conn = sqlite3.connect(self.xml_db_path)
             xml_cursor = xml_conn.cursor()
-            
+
             # Get log_id from config (passed from Node.js)
             log_id = self.log_id
             if not log_id:
                 self.log("No log_id provided for PostgreSQL transfer", "ERROR")
                 return False
-            
+
             # Query all imported invoices from SQLite
             xml_cursor.execute("""
                 SELECT numero_documento, emisor, valor_total, xml_content 
@@ -752,65 +839,78 @@ class InvoiceRPAService:
                 WHERE xml_content IS NOT NULL
             """)
             sqlite_invoices = xml_cursor.fetchall()
-            
+
             transferred_count = 0
             for invoice in sqlite_invoices:
                 numero_documento, emisor, valor_total, xml_content = invoice
-                
+
                 try:
                     # Create filename same as RPA processing logic
                     safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
                     original_filename = f"{numero_documento}_{safe_emisor}.xml"
-                    
+
                     # Store XML file in the uploads directory to match manual upload pipeline
                     uploads_dir = 'uploads'
                     os.makedirs(uploads_dir, exist_ok=True)
                     xml_file_path = os.path.join(uploads_dir, original_filename)
                     with open(xml_file_path, 'w', encoding='utf-8') as f:
                         f.write(xml_content)
-                    
+
                     # Calculate file size
                     file_size = len(xml_content.encode('utf-8'))
-                    
-                    # Insert into PostgreSQL imported_invoices table
+
+                    # Check if record already exists to prevent duplicates
                     pg_cursor.execute("""
-                        INSERT INTO imported_invoices 
-                        (log_id, original_file_name, file_type, file_size, file_path, 
-                         erp_document_id, downloaded_at, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        ON CONFLICT (log_id, original_file_name) DO NOTHING
-                    """, (
-                        log_id,
-                        original_filename,
-                        'xml',
-                        file_size,
-                        xml_file_path,
-                        numero_documento,
-                        datetime.now(),
-                        json.dumps({
-                            'emisor': emisor,
-                            'valor_total': valor_total,
-                            'source': 'python_rpa',
-                            'processing_status': 'ready_for_upload_pipeline'
-                        })
-                    ))
+                        SELECT id FROM imported_invoices 
+                        WHERE log_id = %s AND original_file_name = %s
+                    """, (log_id, original_filename))
                     
-                    transferred_count += 1
-                    self.log(f"Transferred to PostgreSQL: {original_filename}")
+                    existing_record = pg_cursor.fetchone()
                     
+                    if not existing_record:
+                        # Insert into PostgreSQL imported_invoices table
+                        pg_cursor.execute("""
+                            INSERT INTO imported_invoices 
+                            (log_id, original_file_name, file_type, file_size, file_path, 
+                             erp_document_id, downloaded_at, metadata)
+                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        """, (
+                            log_id,
+                            original_filename,
+                            'xml',
+                            file_size,
+                            xml_file_path,
+                            numero_documento,
+                            datetime.now(),
+                            json.dumps({
+                                'emisor': emisor,
+                                'valor_total': valor_total,
+                                'source': 'python_rpa',
+                                'processing_status': 'ready_for_upload_pipeline'
+                            })
+                        ))
+                        
+                        transferred_count += 1
+                        self.log(f"Transferred to PostgreSQL: {original_filename}")
+                    else:
+                        self.log(f"Record already exists, skipping: {original_filename}")
+
                 except Exception as e:
                     self.log(f"Failed to transfer {numero_documento}: {e}", "ERROR")
-            
+                    # Continue with next invoice instead of failing the whole batch
+
             # Commit PostgreSQL changes
             pg_conn.commit()
-            
+
             # Close connections
             xml_conn.close()
             pg_conn.close()
-            
-            self.log(f"Successfully transferred {transferred_count} invoices to PostgreSQL")
+
+            self.log(
+                f"Successfully transferred {transferred_count} invoices to PostgreSQL"
+            )
             return True
-            
+
         except Exception as e:
             self.log(f"Error transferring to PostgreSQL: {e}", "ERROR")
             return False
@@ -888,21 +988,13 @@ class InvoiceRPAService:
             self.update_progress("Import process completed successfully", 100)
             self.log("Python RPA import process completed successfully")
 
-            return {
-                'success': True,
-                'stats': self.stats
-            }
+            return {'success': True, 'stats': self.stats}
 
         except Exception as e:
             self.log(f"Import process failed: {e}", "ERROR")
-            return {
-                'success': False,
-                'error': str(e),
-                'stats': self.stats
-            }
+            return {'success': False, 'error': str(e), 'stats': self.stats}
         finally:
             self.cleanup()
-
 
 
 def main():
@@ -925,14 +1017,14 @@ def main():
 
     try:
         config = json.loads(sys.argv[1])
-        
+
         # Create and run the RPA service
         rpa_service = InvoiceRPAService(config)
         result = rpa_service.run_import_process()
-        
+
         # Always output valid JSON
         print(f"RESULT:{json.dumps(result)}")
-        
+
         if not result['success']:
             sys.exit(1)
 
@@ -966,6 +1058,7 @@ def main():
         }
         print(f"RESULT:{json.dumps(error_result)}")
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()

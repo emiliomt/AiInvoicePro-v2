@@ -3614,6 +3614,43 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Process imported invoices through manual upload pipeline (for testing)
+  app.post('/api/invoice-importer/logs/:logId/process', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      if (isNaN(logId)) {
+        return res.status(400).json({ error: 'Invalid log ID' });
+      }
+
+      console.log(`🔄 Manually processing imported invoices for log ${logId}`);
+      
+      // Create a dummy progress object for storeImportedInvoicesFast
+      const progress = {
+        configId: 0,
+        logId: logId,
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        currentStep: 'Manual processing',
+        progress: 0,
+        isComplete: false,
+        logs: ''
+      };
+
+      // Call the storeImportedInvoicesFast function to process through manual upload pipeline
+      await pythonInvoiceImporter.storeImportedInvoicesFast(logId, progress);
+      
+      res.json({ 
+        success: true, 
+        message: `Imported invoices processed for log ${logId}` 
+      });
+    } catch (error) {
+      console.error('Error processing imported invoices:', error);
+      res.status(500).json({ error: 'Failed to process imported invoices' });
+    }
+  });
+
   // Get all imported invoices
   app.get('/api/imported-invoices', isAuthenticated, async (req, res) => {
     try {
