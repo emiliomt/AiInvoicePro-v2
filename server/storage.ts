@@ -51,7 +51,7 @@ import {
   type ScheduledTask,
   type InsertScheduledTask
 } from "@shared/schema";
-import { eq, desc, sql, and, or, ilike, isNull } from "drizzle-orm";
+import { eq, desc, sql, and, or, ilike, isNull, inArray } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -72,6 +72,7 @@ export interface IStorage {
   getPendingApprovals(): Promise<any[]>;
   getTopIssuesThisMonth(): Promise<any[]>;
   deleteAllUserInvoices(userId: string): Promise<number>;
+  deleteAllCompanyInvoices(companyId: number): Promise<number>;
 
   // Petty Cash
   createPettyCashLog(log: any): Promise<any>;
@@ -94,6 +95,7 @@ export interface IStorage {
 
   // Additional methods
   getInvoicesWithProjectMatches(userId: string): Promise<any[]>;
+  getCompanyInvoicesWithProjectMatches(companyId: number): Promise<any[]>;
   getValidationRules(): Promise<any[]>;
   getValidationRule(id: number): Promise<any>;
   createValidationRule(rule: any): Promise<any>;
@@ -163,6 +165,7 @@ export interface IStorage {
   updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void>;
   deleteInvoice(id: number): Promise<void>;
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
+  getInvoicesByCompanyId(companyId: number): Promise<Invoice[]>;
 
   // Line Items
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
@@ -323,6 +326,12 @@ class PostgresStorage implements IStorage {
       .orderBy(desc(invoices.createdAt));
   }
 
+  async getInvoicesByCompanyId(companyId: number): Promise<Invoice[]> {
+    return await db.select().from(invoices)
+      .where(eq(invoices.companyId, companyId))
+      .orderBy(desc(invoices.createdAt));
+  }
+
   // Line Items
   async createLineItem(lineItem: InsertLineItem): Promise<LineItem> {
     const [result] = await db.insert(lineItems).values(lineItem).returning();
@@ -475,7 +484,7 @@ class PostgresStorage implements IStorage {
       ...updates,
       updatedAt: new Date()
     }).where(eq(erpConnections.id, id));
-    
+
     // Return the updated connection
     const [result] = await db.select().from(erpConnections).where(eq(erpConnections.id, id));
     if (!result) {
@@ -677,13 +686,13 @@ class PostgresStorage implements IStorage {
       // Get basic counts
       const totalInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
         .where(userId ? eq(invoices.userId, userId) : sql`true`);
-      
+
       const pendingInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
         .where(and(
           eq(invoices.status, 'pending'),
           userId ? eq(invoices.userId, userId) : sql`true`
         ));
-      
+
       const approvedInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
         .where(and(
           eq(invoices.status, 'approved'),
@@ -747,22 +756,164 @@ class PostgresStorage implements IStorage {
 
   async deleteAllUserInvoices(userId: string): Promise<number> {
     try {
-      // First delete related line items
-      const userInvoices = await db.select({ id: invoices.id }).from(invoices)
+      // First get count for return value
+      const userInvoices = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
         .where(eq(invoices.userId, userId));
-      
-      let deletedCount = 0;
-      for (const invoice of userInvoices) {
-        await db.delete(lineItems).where(eq(lineItems.invoiceId, invoice.id));
-        deletedCount++;
+
+      const count = userInvoices[0]?.count || 0;
+
+      if (count > 0) {
+        // Delete line items first
+        await db
+          .delete(lineItems)
+          .where(
+            inArray(
+              lineItems.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
+        // Delete approvals
+        await db
+          .delete(approvals)
+          .where(
+            inArray(
+              approvals.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
+        // Delete invoice flags
+        // await db
+        //   .delete(invoiceFlags)
+        //   .where(```text
+            inArray(
+              invoiceFlags.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
+        // Delete invoice-PO matches
+        await db
+          .delete(invoicePoMatches)
+          .where(
+            inArray(
+              invoicePoMatches.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
+        // Delete invoice-project matches
+        await db
+          .delete(invoiceProjectMatches)
+          .where(
+            inArray(
+              invoiceProjectMatches.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
+        // Delete feedback logs
+        // await db
+        //   .delete(feedbackLogs)
+        //   .where(
+        //     inArray(
+        //       feedbackLogs.invoiceId,
+        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+        //     )
+        //   );
+
+        // Finally delete the invoices
+        await db.delete(invoices).where(eq(invoices.userId, userId));
       }
 
-      // Then delete the invoices
-      await db.delete(invoices).where(eq(invoices.userId, userId));
-      
-      return deletedCount;
+      return count;
     } catch (error) {
-      console.error('Error in deleteAllUserInvoices:', error);
+      console.error('Error deleting all user invoices:', error);
+      throw error;
+    }
+  }
+
+  async deleteAllCompanyInvoices(companyId: number): Promise<number> {
+    try {
+      // First get count for return value
+      const companyInvoices = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
+        .where(eq(invoices.companyId, companyId));
+
+      const count = companyInvoices[0]?.count || 0;
+
+      if (count > 0) {
+        // Delete line items first
+        await db
+          .delete(lineItems)
+          .where(
+            inArray(
+              lineItems.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
+
+        // Delete approvals
+        await db
+          .delete(approvals)
+          .where(
+            inArray(
+              approvals.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
+
+        // Delete invoice flags
+        // await db
+        //   .delete(invoiceFlags)
+        //   .where(
+        //     inArray(
+        //       invoiceFlags.invoiceId,
+        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+        //     )
+        //   );
+
+        // Delete invoice-PO matches
+        await db
+          .delete(invoicePoMatches)
+          .where(
+            inArray(
+              invoicePoMatches.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
+
+        // Delete invoice-project matches
+        await db
+          .delete(invoiceProjectMatches)
+          .where(
+            inArray(
+              invoiceProjectMatches.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
+
+        // Delete feedback logs
+        // await db
+        //   .delete(feedbackLogs)
+        //   .where(
+        //     inArray(
+        //       feedbackLogs.invoiceId,
+        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+        //     )
+        //   );
+
+        // Finally delete the invoices
+        await db.delete(invoices).where(eq(invoices.companyId, companyId));
+      }
+
+      return count;
+    } catch (error) {
+      console.error('Error deleting all company invoices:', error);
       throw error;
     }
   }
@@ -787,7 +938,7 @@ class PostgresStorage implements IStorage {
           description: 'User preferences and settings'
         }
       };
-      
+
       return defaultSettings[key] || null;
     } catch (error) {
       console.error('Error in getSetting:', error);
@@ -839,10 +990,112 @@ class PostgresStorage implements IStorage {
     return null;
   }
 
-  // Additional methods for complete interface compatibility
   async getInvoicesWithProjectMatches(userId: string): Promise<any[]> {
-    return await this.getInvoicesByUserId(userId);
+    try {
+      const query = db
+        .select({
+          invoice: invoices,
+          matches: sql<any[]>`
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', ${invoiceProjectMatches.id},
+                  'projectId', ${invoiceProjectMatches.projectId},
+                  'matchScore', ${invoiceProjectMatches.matchScore},
+                  'status', ${invoiceProjectMatches.status},
+                  'matchDetails', ${invoiceProjectMatches.matchDetails},
+                  'isActive', ${invoiceProjectMatches.isActive},
+                  'project', json_build_object(
+                    'projectId', ${projects.projectId},
+                    'name', ${projects.name},
+                    'city', ${projects.city},
+                    'address', ${projects.address}
+                  )
+                )
+              ) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL),
+              '[]'::json
+            )
+          `
+        })
+        .from(invoices)
+        .leftJoin(
+          invoiceProjectMatches,
+          eq(invoices.id, invoiceProjectMatches.invoiceId)
+        )
+        .leftJoin(
+          projects,
+          eq(invoiceProjectMatches.projectId, projects.projectId)
+        )
+        .where(eq(invoices.userId, userId))
+        .groupBy(invoices.id)
+        .orderBy(desc(invoices.createdAt));
+
+      const results = await query;
+
+      return results.map(result => ({
+        ...result.invoice,
+        projectMatches: result.matches || []
+      }));
+    } catch (error) {
+      console.error('Error in getInvoicesWithProjectMatches:', error);
+      throw error;
+    }
   }
+
+  async getCompanyInvoicesWithProjectMatches(companyId: number): Promise<any[]> {
+    try {
+      const query = db
+        .select({
+          invoice: invoices,
+          matches: sql<any[]>`
+            COALESCE(
+              json_agg(
+                json_build_object(
+                  'id', ${invoiceProjectMatches.id},
+                  'projectId', ${invoiceProjectMatches.projectId},
+                  'matchScore', ${invoiceProjectMatches.matchScore},
+                  'status', ${invoiceProjectMatches.status},
+                  'matchDetails', ${invoiceProjectMatches.matchDetails},
+                  'isActive', ${invoiceProjectMatches.isActive},
+                  'project', json_build_object(
+                    'projectId', ${projects.projectId},
+                    'name', ${projects.name},
+                    'city', ${projects.city},
+                    'address', ${projects.address}
+                  )
+                )
+              ) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL),
+              '[]'::json
+            )
+          `
+        })
+        .from(invoices)
+        .leftJoin(
+          invoiceProjectMatches,
+          eq(invoices.id, invoiceProjectMatches.invoiceId)
+        )
+        .leftJoin(
+          projects,
+          eq(invoiceProjectMatches.projectId, projects.projectId)
+        )
+        .where(eq(invoices.companyId, companyId))
+        .groupBy(invoices.id)
+        .orderBy(desc(invoices.createdAt));
+
+      const results = await query;
+
+      return results.map(result => ({
+        ...result.invoice,
+        projectMatches: result.matches || []
+      }));
+    } catch (error) {
+      console.error('Error in getCompanyInvoicesWithProjectMatches:', error);
+      throw error;
+    }
+  }
+
+  // Additional methods for complete interface compatibility
+  
 
   async getValidationRules(): Promise<any[]> {
     return [];
@@ -997,24 +1250,12 @@ class PostgresStorage implements IStorage {
     // Placeholder implementation
   }
 
-
-
-
-
-  async getImportedInvoicesByLog(logId: number): Promise<any[]> {
-    return await db.select().from(importedInvoices)
-      .where(eq(importedInvoices.logId, logId))
-      .orderBy(desc(importedInvoices.createdAt));
-  }
-
   async updateImportedInvoice(id: number, updates: any): Promise<void> {
     await db.update(importedInvoices).set({
       ...updates,
       updatedAt: new Date()
     }).where(eq(importedInvoices.id, id));
   }
-
-
 }
 
 export const storage: IStorage = new PostgresStorage();
