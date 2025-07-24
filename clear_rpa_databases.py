@@ -8,8 +8,9 @@ Updated to match current RPA system implementation
 import os
 import sqlite3
 import sys
-import psycopg2
-from urllib.parse import urlparse
+import glob
+import shutil
+from datetime import datetime
 
 def clear_sqlite_database(db_path, db_type):
     """Clear a SQLite database"""
@@ -43,6 +44,15 @@ def clear_sqlite_database(db_path, db_type):
 def clear_postgresql_tables():
     """Clear PostgreSQL RPA tables"""
     try:
+        # Try psycopg2 first, then fall back to environment check
+        try:
+            import psycopg2
+            psycopg2_available = True
+        except ImportError:
+            psycopg2_available = False
+            print("⚠️  psycopg2 not available - skipping PostgreSQL cleanup")
+            return
+        
         # Get DATABASE_URL from environment
         database_url = os.getenv('DATABASE_URL')
         if not database_url:
@@ -114,7 +124,6 @@ def clear_files_in_directory(directory, keep_db_files=False):
                     file_count += 1
                 elif os.path.isdir(file_path):
                     # Remove subdirectories recursively
-                    import shutil
                     shutil.rmtree(file_path)
                     file_count += 1
                     
@@ -165,7 +174,6 @@ def main():
         (".", "*.log"),              # Log files in root
     ]
     
-    import glob
     for base_dir, pattern in cleanup_patterns:
         if os.path.exists(base_dir):
             files = glob.glob(os.path.join(base_dir, pattern))
@@ -190,7 +198,6 @@ def main():
         print(f"📁 Ensured directory exists: {directory}")
     
     # 6. Create today's debug capture directory
-    from datetime import datetime
     today = datetime.now().strftime("%Y-%m-%d")
     debug_today_dir = os.path.join("rpa_debug_captures", today)
     os.makedirs(debug_today_dir, exist_ok=True)
