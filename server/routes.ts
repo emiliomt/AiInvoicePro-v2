@@ -3780,7 +3780,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
   const httpServer = createServer(app);
 
-  // Progress tracking endpoint for invoice importer
+  // Enhanced progress tracking endpoint for invoice importer
   app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
     try {
       const user = req.user;
@@ -3789,88 +3789,77 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       const configId = parseInt(req.params.configId);
+      console.log(`Fetching progress for config ${configId}`);
+      
       const config = await storage.getInvoiceImporterConfig(configId);
       const currentUser = await storage.getUser((user as any).claims.sub);
 
       if (!config) {
+        console.log(`Config ${configId} not found`);
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
       // Check if user has access to this configuration (same company)
       if (!currentUser?.companyId || config.companyId !== currentUser.companyId) {
-        return res.status(403).json({ error: 'Access denied to this import configuration' });
+        console.log(`Access denied for config ${configId}: user company ${currentUser?.companyId}, config company ${config.companyId}`);
+        return res.status(403).json({ error: 'Access denied' });
       }
 
-      // Get the latest log for this configuration
-      const logs = await storage.getInvoiceImporterLogs(configId);
-      const latestLog = logs[0]; // Most recent log
+      // Try to get real-time progress from Python RPA service
+      const activeProgress = pythonInvoiceImporter.getProgress(configId);
+      console.log(`Active progress for config ${configId}:`, activeProgress ? 'found' : 'not found');
+      
+      if (activeProgress) {
+        // Return real-time data
+        const progressData = {
+          configId,
+          progress: activeProgress.progress || 0,
+          currentStep: activeProgress.currentStep || 'Processing...',
+          totalInvoices: activeProgress.totalInvoices || 0,
+          processedInvoices: activeProgress.processedInvoices || 0,
+          successfulImports: activeProgress.successfulImports || 0,
+          failedImports: activeProgress.failedImports || 0,
+          isComplete: activeProgress.isComplete || false
+        };
+        console.log(`Returning active progress:`, progressData);
+        return res.json(progressData);
+      }
 
+      // If no active progress, check for the latest log entry to show status
+      const logs = await storage.getInvoiceImporterLogs({ configId });
+      const latestLog = logs[0]; // Most recent log
+      
+      console.log(`Latest log for config ${configId}:`, latestLog ? `status: ${latestLog.status}, id: ${latestLog.id}` : 'none');
+      
       if (!latestLog) {
         return res.json({
-          id: 0,
           configId,
-          status: 'pending',
+          progress: 0,
+          currentStep: 'No import activity',
           totalInvoices: 0,
           processedInvoices: 0,
           successfulImports: 0,
           failedImports: 0,
-          steps: [],
-          logs: '',
-          screenshots: [],
-          errorMessage: null,
-          startedAt: null,
-          completedAt: null,
-          executionTime: null
+          isComplete: true
         });
       }
 
-      // Parse steps from logs if available
-      let steps: Array<{
-        id: string;
-        title: string;
-        status: string;
-        timestamp: string;
-        details: string;
-      }> = [];
-      try {
-        if (latestLog.logs) {
-          const logLines = latestLog.logs.split('\n');
-          steps = logLines
-            .filter(line => line.includes('[STEP]'))
-            .map((line, index) => {
-              const stepMatch = line.match(/\[STEP\]\s*(.+)/);
-              const statusMatch = line.match(/\[(COMPLETED|RUNNING|FAILED|PENDING)\]/);
-              return {
-                id: `step-${index}`,
-                title: stepMatch ? stepMatch[1] : `Step ${index + 1}`,
-                status: statusMatch ? statusMatch[1].toLowerCase() : 'pending',
-                timestamp: new Date().toISOString(),
-                details: ''
-              };
-            });
-        }
-      } catch (error) {
-        console.error('Error parsing steps from logs:', error);
-      }
-
-      const response = {
-        id: latestLog.id,
-        configId: latestLog.configId,
-        status: latestLog.status,
-        totalInvoices: latestLog.totalInvoices,
-        processedInvoices: latestLog.processedInvoices,
-        successfulImports: latestLog.successfulImports,
-        failedImports: latestLog.failedImports,
-        steps,
-        logs: latestLog.logs || '',
-        screenshots: latestLog.screenshots || [],
-        errorMessage: latestLog.errorMessage,
-        startedAt: latestLog.startedAt,
-        completedAt: latestLog.completedAt,
-        executionTime: latestLog.executionTime
+      // Return data based on latest log
+      const isRunning = latestLog.status === 'running';
+      const progressData = {
+        configId,
+        progress: latestLog.status === 'completed' ? 100 : (isRunning ? 50 : 0),
+        currentStep: latestLog.status === 'completed' ? 'Completed' : 
+                    latestLog.status === 'running' ? 'Running...' : 'Idle',
+        totalInvoices: latestLog.totalInvoices || 0,
+        processedInvoices: latestLog.processedInvoices || 0,
+        successfulImports: latestLog.successfulImports || 0,
+        failedImports: latestLog.failedImports || 0,
+        isComplete: latestLog.status === 'completed' || latestLog.status === 'failed'
       };
-
-      res.json(response);
+      
+      console.log(`Returning log-based progress:`, progressData);
+      return res.json(progressData);
     } catch (error) {
       console.error('Error fetching import progress:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
