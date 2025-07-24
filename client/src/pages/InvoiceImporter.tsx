@@ -213,8 +213,15 @@ export default function InvoiceImporter() {
             ...config,
             status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
             currentStep: currentStep || config.currentStep,
-            progress: progress,
-            stats: { ...config.stats, ...data.data }
+            progress: Math.max(progress, config.progress || 0), // Ensure progress only increases
+            stats: { 
+              total_invoices: data.data?.totalInvoices || config.stats?.total_invoices || 0,
+              processed_invoices: data.data?.processedInvoices || config.stats?.processed_invoices || 0,
+              successful_imports: data.data?.successfulImports || config.stats?.successful_imports || 0,
+              failed_imports: data.data?.failedImports || config.stats?.failed_imports || 0,
+              current_step: currentStep || config.stats?.current_step || 'Processing',
+              progress: Math.max(progress, config.stats?.progress || 0)
+            }
           };
         }
         return config;

@@ -375,7 +375,7 @@ class PythonInvoiceImporter {
       let stderr = '';
       let result: PythonRPAResult | null = null;
 
-      // Handle stdout (Python script output)
+      // Handle stdout (normal output)
       pythonProcess.stdout?.on('data', (data) => {
         const output = data.toString();
         console.log('Python RPA:', output.trim());
@@ -384,7 +384,7 @@ class PythonInvoiceImporter {
         if (progress) {
           // Process each line individually for real-time streaming
           const lines = output.split('\n').filter(line => line.trim());
-          
+
           for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
@@ -596,7 +596,7 @@ class PythonInvoiceImporter {
           return JSON.parse(statsLine.trim());
         }
       }
-      
+
       if (output.includes('PROGRESS:')) {
         const progressLine = output.split('PROGRESS:')[1]?.split('\n')[0];
         if (progressLine) {
@@ -767,7 +767,7 @@ class PythonInvoiceImporter {
   private async processRpaInvoiceWithFullPipeline(invoice: any, importedInvoice: any): Promise<void> {
     try {
       const fs = await import('fs');
-      
+
       // Check if file exists
       if (!fs.existsSync(importedInvoice.filePath)) {
         throw new Error(`Invoice file not found: ${importedInvoice.filePath}`);
@@ -794,7 +794,7 @@ class PythonInvoiceImporter {
       // Run AI extraction (same as manual import)
       console.log(`Starting AI extraction for RPA invoice ${invoice.id}`);
       const { extractInvoiceData } = await import('./aiService');
-      
+
       const aiPromise = extractInvoiceData(ocrText);
       const aiTimeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
@@ -841,6 +841,56 @@ class PythonInvoiceImporter {
           timestamp: new Date().toISOString(),
           step: "rpa_processing"
         },
+      });
+    }
+  }
+
+  /**
+   * Parse and update progress based on log line from Python script
+   *
+   * @param {ImportProgress} progress - The progress object to update
+   * @param {string} line - The log line from the Python script
+   * @param {InvoiceImporterConfig} config - The invoice importer config
+   * @returns {void}
+   */
+  private parseAndUpdateProgress(progress: ImportProgress, line: string, config: InvoiceImporterConfig): void {
+    // Look for progress indicators in the output
+    if (line.includes('INFO:')) {
+      const stepMatch = line.match(/INFO:\s*(.+)/);
+      if (stepMatch) {
+        progress.currentStep = stepMatch[1];
+      }
+    }
+
+    // Extract progress percentage and stats from output
+    const statsUpdate = this.extractStatsFromOutput(line);
+    if (statsUpdate) {
+      progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
+      progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
+      progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
+      progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
+      progress.progress = statsUpdate.progress || progress.progress;
+
+      // Send real-time progress update via WebSocket
+      progressTracker.sendProgress(config.userId, {
+        taskId: progress.logId,
+        step: progress.progress,
+        totalSteps: 100,
+        status: 'processing',
+        message: progress.currentStep,
+        timestamp: new Date(),
+        data: {
+          configId: progress.configId,
+          logId: progress.logId,
+          currentStep: progress.currentStep,
+          progress: progress.progress,
+          totalInvoices: progress.totalInvoices,
+          processedInvoices: progress.processedInvoices,
+          successfulImports: progress.successfulImports,
+          failedImports: progress.failedImports,
+          isComplete: progress.isComplete,
+          logs: progress.logs // Send accumulated logs for full history
+        }
       });
     }
   }

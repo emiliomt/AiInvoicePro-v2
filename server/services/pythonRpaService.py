@@ -110,6 +110,7 @@ class InvoiceRPAService:
         self.stats['current_step'] = step
         self.stats['progress'] = progress
         self.log(f"Progress: {progress}% - {step}")
+        sys.stdout.flush()  # Ensure immediate output
 
     def setup_driver(self):
         """Initialize Chrome WebDriver with download preferences"""
@@ -465,6 +466,7 @@ class InvoiceRPAService:
             
             # Wait for iframe to be available and switch to it
             self.log("Waiting for iframe 'pagina1' to be available...")
+            self.update_progress("Accessing invoice data frame", 35)
             WebDriverWait(self.driver, 15).until(EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
             self.log("✅ Successfully switched to iframe 'pagina1'")
             
@@ -481,6 +483,7 @@ class InvoiceRPAService:
                 data_rows = [r for r in rows if r.text.strip()]
                 if data_rows:
                     self.log(f"✅ Found {len(data_rows)} rows with content")
+                    self.update_progress(f"Found {len(data_rows)} invoices to process", 40)
                     # Debug capture when we find the invoice rows
                     self.debug_capture("16_invoice_rows_found")
                     break
@@ -536,6 +539,12 @@ class InvoiceRPAService:
                             self.log(f"❌ Failed to process invoice: {numero_documento}")
 
                         self.stats['processed_invoices'] += 1
+                        
+                        # Update progress based on processed invoices
+                        if self.stats['total_invoices'] > 0:
+                            invoice_progress = (self.stats['processed_invoices'] / self.stats['total_invoices']) * 40
+                            total_progress = 40 + int(invoice_progress)
+                            self.update_progress(f"Processing invoices: {self.stats['processed_invoices']}/{self.stats['total_invoices']}", total_progress)
 
                     except Exception as e:
                         self.log(f"❌ Error processing row {i}: {e}", "ERROR")
