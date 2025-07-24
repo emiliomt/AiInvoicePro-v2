@@ -82,6 +82,7 @@ class ProgressTracker {
 
     this.connections.get(userId)!.push({ userId, ws });
     console.log(`User ${userId} subscribed to progress updates. Total connections for user: ${this.connections.get(userId)!.length}`);
+    console.log(`Current connection map:`, Array.from(this.connections.entries()).map(([id, conns]) => [id, conns.length]));
 
     // Send subscription confirmation
     if (ws.readyState === WebSocket.OPEN) {

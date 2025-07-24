@@ -157,7 +157,17 @@ export default function InvoiceImporter() {
           userId: user?.id || 'current-user',
         };
         console.log('Sending subscription message:', subscribeMessage);
-        websocket.send(JSON.stringify(subscribeMessage));
+        console.log('User object:', user);
+        
+        // Ensure subscription is sent after connection is fully established
+        if (websocket.readyState === WebSocket.OPEN) {
+          websocket.send(JSON.stringify(subscribeMessage));
+        } else {
+          // If not ready, wait for open state
+          websocket.addEventListener('open', () => {
+            websocket.send(JSON.stringify(subscribeMessage));
+          }, { once: true });
+        }
       };
 
       websocket.onmessage = (event) => {
@@ -210,6 +220,8 @@ export default function InvoiceImporter() {
     const configId = data.data?.configId || data.taskId;
     const currentStep = data.data?.currentStep || data.message;
     const progress = data.data?.progress || data.step || 0;
+    
+    console.log('Progress update received:', { configId, currentStep, progress });
     
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
@@ -365,6 +377,83 @@ export default function InvoiceImporter() {
       variant: data.success ? "default" : "destructive"
     });
   };
+
+  // Enhanced polling system for real-time progress updates
+  useEffect(() => {
+    const runningConfigs = configs.filter(config => config.status === 'running');
+    
+    if (runningConfigs.length > 0) {
+      console.log(`Starting enhanced polling for ${runningConfigs.length} running configs`);
+      
+      const pollProgress = async () => {
+        for (const config of runningConfigs) {
+          try {
+            const response = await fetch(`/api/invoice-importer/progress/${config.id}`, {
+              credentials: 'include'
+            });
+            
+            if (response.ok) {
+              const progressData = await response.json();
+              console.log(`Polling received for config ${config.id}:`, progressData);
+              
+              // Directly update config state based on polling data
+              setConfigs(prevConfigs => 
+                prevConfigs.map(c => {
+                  if (c.id === config.id) {
+                    return {
+                      ...c,
+                      currentStep: progressData.currentStep || c.currentStep,
+                      progress: Math.max(progressData.progress || 0, c.progress || 0),
+                      stats: {
+                        total_invoices: progressData.totalInvoices || c.stats?.total_invoices || 0,
+                        processed_invoices: progressData.processedInvoices || c.stats?.processed_invoices || 0,
+                        successful_imports: progressData.successfulImports || c.stats?.successful_imports || 0,
+                        failed_imports: progressData.failedImports || c.stats?.failed_imports || 0,
+                        current_step: progressData.currentStep || c.stats?.current_step || 'Processing',
+                        progress: Math.max(progressData.progress || 0, c.stats?.progress || 0)
+                      },
+                      status: progressData.isComplete ? 'completed' : 'running'
+                    };
+                  }
+                  return c;
+                })
+              );
+              
+              // Also update console view if open for this config
+              if (consoleConfig && consoleConfig.id === config.id) {
+                setConsoleConfig(prev => prev ? {
+                  ...prev,
+                  currentStep: progressData.currentStep || prev.currentStep,
+                  progress: progressData.progress || prev.progress,
+                  stats: {
+                    ...prev.stats,
+                    total_invoices: progressData.totalInvoices || prev.stats?.total_invoices || 0,
+                    processed_invoices: progressData.processedInvoices || prev.stats?.processed_invoices || 0,
+                    successful_imports: progressData.successfulImports || prev.stats?.successful_imports || 0,
+                    failed_imports: progressData.failedImports || prev.stats?.failed_imports || 0,
+                    current_step: progressData.currentStep || prev.stats?.current_step || 'Processing',
+                    progress: progressData.progress || prev.stats?.progress || 0
+                  },
+                  status: progressData.isComplete ? 'completed' : 'running'
+                } : null);
+              }
+            }
+          } catch (error) {
+            console.error(`Error polling config ${config.id}:`, error);
+          }
+        }
+      };
+      
+      // Poll immediately, then set interval
+      pollProgress();
+      const interval = setInterval(pollProgress, 1500);
+      
+      return () => {
+        console.log('Stopping polling interval');
+        clearInterval(interval);
+      };
+    }
+  }, [configs, consoleConfig]);
 
   const fetchConfigs = async () => {
     try {

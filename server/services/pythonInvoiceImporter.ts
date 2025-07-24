@@ -552,6 +552,7 @@ class PythonInvoiceImporter {
     try {
       storage.getInvoiceImporterConfig(progress.configId).then(config => {
         if (config) {
+          console.log(`Attempting to send progress to user: ${config.userId}`);
           // Send individual log line for real-time streaming
           progressTracker.sendProgress(config.userId, {
             taskId: progress.logId,
