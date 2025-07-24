@@ -17,6 +17,7 @@ import {
   erpTasks,
   savedWorkflows,
   scheduledTasks,
+  feedbackLogs,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -316,6 +317,14 @@ class PostgresStorage implements IStorage {
   async deleteInvoice(id: number): Promise<void> {
     // Delete related line items first
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
+    // Delete feedback logs
+    await db.delete(feedbackLogs).where(eq(feedbackLogs.invoiceId, id));
+    // Delete approvals
+    await db.delete(approvals).where(eq(approvals.invoiceId, id));
+    // Delete invoice-PO matches
+    await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
+    // Delete invoice-project matches
+    await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
     // Then delete the invoice
     await db.delete(invoices).where(eq(invoices.id, id));
   }
@@ -813,6 +822,16 @@ class PostgresStorage implements IStorage {
         //     )
         //   );
 
+        // Delete feedback logs
+        await db
+          .delete(feedbackLogs)
+          .where(
+            inArray(
+              feedbackLogs.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+            )
+          );
+
         // Delete invoice-PO matches
         await db
           .delete(invoicePoMatches)
@@ -894,6 +913,16 @@ class PostgresStorage implements IStorage {
         //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
         //     )
         //   );
+
+        // Delete feedback logs
+        await db
+          .delete(feedbackLogs)
+          .where(
+            inArray(
+              feedbackLogs.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
 
         // Delete invoice-PO matches
         await db
