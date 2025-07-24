@@ -2,6 +2,7 @@
 #!/usr/bin/env python3
 """
 Clear RPA databases and reset system for debugging purposes
+Updated to match current RPA system implementation
 """
 
 import os
@@ -21,14 +22,18 @@ def clear_sqlite_database(db_path, db_type):
             cursor.execute("SELECT name FROM sqlite_master WHERE type='table';")
             tables = cursor.fetchall()
             
-            for table in tables:
-                table_name = table[0]
-                cursor.execute(f"DELETE FROM {table_name}")
-                print(f"Cleared SQLite table: {table_name}")
+            if tables:
+                for table in tables:
+                    table_name = table[0]
+                    cursor.execute(f"DELETE FROM {table_name}")
+                    print(f"Cleared SQLite table: {table_name}")
+                
+                conn.commit()
+                print(f"✅ Cleared {db_type} SQLite database: {db_path}")
+            else:
+                print(f"ℹ️  No tables found in {db_type} database: {db_path}")
             
-            conn.commit()
             conn.close()
-            print(f"✅ Cleared {db_type} SQLite database: {db_path}")
         else:
             print(f"⚠️  SQLite database not found: {db_path}")
             
@@ -50,19 +55,39 @@ def clear_postgresql_tables():
         
         # Clear RPA tables in correct order (due to foreign keys)
         tables_to_clear = [
-            'imported_invoices',
-            'invoice_importer_logs', 
-            'invoice_importer_configs'
+            'imported_invoices',           # Child table first
+            'invoice_importer_logs',       # Parent of imported_invoices
+            'invoice_importer_configs'     # Root table
         ]
         
         for table in tables_to_clear:
             try:
-                cursor.execute(f"DELETE FROM {table}")
-                cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                count = cursor.fetchone()[0]
-                print(f"Cleared PostgreSQL table: {table} (remaining rows: {count})")
+                # Check if table exists first
+                cursor.execute("""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.tables 
+                        WHERE table_name = %s
+                    );
+                """, (table,))
+                
+                if cursor.fetchone()[0]:
+                    cursor.execute(f"DELETE FROM {table}")
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
+                    count = cursor.fetchone()[0]
+                    print(f"Cleared PostgreSQL table: {table} (remaining rows: {count})")
+                else:
+                    print(f"⚠️  Table {table} does not exist")
             except Exception as e:
                 print(f"⚠️  Could not clear table {table}: {e}")
+        
+        # Reset sequences to start from 1
+        try:
+            cursor.execute("SELECT setval('invoice_importer_configs_id_seq', 1, false)")
+            cursor.execute("SELECT setval('invoice_importer_logs_id_seq', 1, false)")
+            cursor.execute("SELECT setval('imported_invoices_id_seq', 1, false)")
+            print("✅ Reset PostgreSQL sequences")
+        except Exception as e:
+            print(f"⚠️  Could not reset sequences: {e}")
         
         conn.commit()
         conn.close()
@@ -96,39 +121,62 @@ def clear_files_in_directory(directory, keep_db_files=False):
             print(f"🗑️  Removed {file_count} files/folders from {directory}")
         except Exception as e:
             print(f"❌ Error clearing directory {directory}: {e}")
+    else:
+        print(f"ℹ️  Directory {directory} does not exist")
 
 def main():
     """Main function to clear all RPA databases and files"""
     print("🗑️  Clearing RPA databases and files for debugging...")
+    print("📋 This will reset the duplicate detection system and allow re-processing of invoices")
     
     # 1. Clear PostgreSQL tables
     print("\n📊 Clearing PostgreSQL RPA tables...")
     clear_postgresql_tables()
     
-    # 2. Clear local SQLite databases
+    # 2. Clear local SQLite databases used by Python RPA
     print("\n💾 Clearing local SQLite databases...")
     sqlite_databases = [
-        "/tmp/invoice_downloads/invoices.db",
-        "/tmp/xml_invoices/invoices_xml.db"
+        "/tmp/invoice_downloads/invoices.db",    # Main invoice tracking
+        "/tmp/xml_invoices/invoices_xml.db"      # XML-specific tracking
     ]
     
     for db_path in sqlite_databases:
         db_name = os.path.basename(db_path)
         clear_sqlite_database(db_path, db_name)
     
-    # 3. Clear downloaded files
-    print("\n📁 Clearing downloaded files...")
+    # 3. Clear downloaded files and debug captures
+    print("\n📁 Clearing downloaded files and debug data...")
     directories_to_clear = [
-        "/tmp/invoice_downloads",
-        "/tmp/xml_invoices",
-        "uploads",  # Clear uploaded invoices
-        "rpa_debug_captures"  # Clear debug screenshots
+        "/tmp/invoice_downloads",     # Python RPA downloads
+        "/tmp/xml_invoices",         # XML processing temp files
+        "uploads",                   # Manual invoice uploads
+        "rpa_debug_captures"         # RPA debug screenshots and HTML
     ]
     
     for directory in directories_to_clear:
         clear_files_in_directory(directory, keep_db_files=False)
     
-    # 4. Recreate necessary directories
+    # 4. Clear specific file patterns that might remain
+    print("\n🧹 Cleaning up specific file patterns...")
+    cleanup_patterns = [
+        ("/tmp", "*.zip"),           # Downloaded ZIP files
+        ("/tmp", "*.xml"),           # Extracted XML files
+        ("/tmp", "*.pdf"),           # Extracted PDF files
+        (".", "*.log"),              # Log files in root
+    ]
+    
+    import glob
+    for base_dir, pattern in cleanup_patterns:
+        if os.path.exists(base_dir):
+            files = glob.glob(os.path.join(base_dir, pattern))
+            for file_path in files:
+                try:
+                    os.remove(file_path)
+                    print(f"🗑️  Removed: {file_path}")
+                except Exception as e:
+                    print(f"⚠️  Could not remove {file_path}: {e}")
+    
+    # 5. Recreate necessary directories
     print("\n📂 Recreating necessary directories...")
     essential_dirs = [
         "/tmp/invoice_downloads",
@@ -141,13 +189,23 @@ def main():
         os.makedirs(directory, exist_ok=True)
         print(f"📁 Ensured directory exists: {directory}")
     
+    # 6. Create today's debug capture directory
+    from datetime import datetime
+    today = datetime.now().strftime("%Y-%m-%d")
+    debug_today_dir = os.path.join("rpa_debug_captures", today)
+    os.makedirs(debug_today_dir, exist_ok=True)
+    print(f"📁 Created today's debug directory: {debug_today_dir}")
+    
     print("\n✅ RPA database and file reset complete - ready for fresh debugging!")
     print("\n🔧 What was cleared:")
     print("   • PostgreSQL tables: imported_invoices, invoice_importer_logs, invoice_importer_configs")
     print("   • SQLite databases: /tmp/invoice_downloads/invoices.db, /tmp/xml_invoices/invoices_xml.db") 
-    print("   • Downloaded files: ZIP and XML files from RPA downloads")
+    print("   • Downloaded files: ZIP, XML, and PDF files from RPA downloads")
     print("   • Uploaded files: Manual invoice uploads")
     print("   • Debug captures: RPA screenshots and HTML snapshots")
+    print("   • Temporary files: All temp processing files")
+    print("   • Database sequences: Reset to start from 1")
+    print("\n🔄 The RPA system will now re-process invoices that were previously skipped as duplicates")
 
 if __name__ == "__main__":
     main()
