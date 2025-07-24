@@ -1,0 +1,240 @@
+<html xmlns="http://www.w3.org/1999/xhtml"><head id="Head1">
+    <script>
+        const temaIV = true;
+        const sitio = (window.location.host + '_' + window.location.pathname.split('/')[1]).toLowerCase();
+        const theme = localStorage.getItem(sitio + '_css_theme');
+
+        if (theme != 'TemaCuatro') {
+            const base = window.location.href.replace(/seleccion_iv.aspx.*/ig, '');
+            window.location.href = base + 'Seleccion.aspx'
+        }
+
+        window.addEventListener('keydown', function (e) {
+            e = e || window.event;
+            if (e.keyCode == 73 && e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+
+                var sitio = (window.location.host + '_' + window.location.pathname.split('/')[1]).toLowerCase();
+                var theme = localStorage.getItem(sitio + '_css_theme');
+
+                if (theme == 'TemaCuatro') {
+                    localStorage.removeItem(sitio + '_css_theme');
+                    window.location.reload();
+                } else {
+                    localStorage.setItem(sitio + '_css_theme', 'TemaCuatro');
+                    window.location.reload();
+                }
+            }
+        });
+    </script>
+    <meta name="Content-Type" content="text/html; charset=utf-8"><meta http-equiv="X-UA-Compatible" content="IE=Edge"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="expires" content="0"><title>
+	SINCO ERP - Selección empresa y sucursal
+</title><link rel="shortcut icon" href="CascadingStyleSheets/images/favicon_iv.ico"><link rel="apple-touch-icon" href="CascadingStyleSheets/images/logosincoerp_54.png"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.svg" as="font" type="image/svg+xml" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.svg" as="font" type="image/svg+xml" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link href="CascadingStyleSheets/Estandar/Estandar.css" rel="stylesheet"><link href="CascadingStyleSheets/login/login.css" rel="stylesheet"><link href="CascadingStyleSheets/default/temacuatro_login.css" rel="stylesheet"><script>var id_session = 'b631f19c-0687-43b9-871b-c3e3fd050d88';</script><script src="Scripts/Sinco/aes.js?v=638889698940140774"></script><script src="Scripts/Sinco/s5/s5.version.js?v=638889698940140774"></script><script src="Scripts/Sinco/s5/s5.min.js?v=638889698940140774"></script><script src="Scripts/Sinco/s5/s5.icons.min.js?v=638889698940140774"></script><script src="Scripts/Sinco/s5/s5.autocomplete.js?v=638889698940140774"></script><script src="Scripts/Sinco/modules/seleccion.js?v=638889698940140774"></script><script src="Scripts/Sinco/s5/s5.autocomplete.min.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/s5/s5.carousel.min.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/comunes/noticias.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/seleccion/eventos.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/comunes/storage.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/seleccion/formulario.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/comunes/servicios.js?v=mar.27_05_2025_19:42:27,14"></script><script src="Scripts/Sinco/modules/comunes/main.js?v=mar.27_05_2025_19:42:27,14"></script><style type="text/css">#autocomplete-container-txtSucursal {
+    position: relative;
+    display: -ms-flexbox;
+    display: flex;
+}
+#autocomplete-container-txtSucursal > input {
+    -ms-flex: 1 1 auto;
+    flex: 1 1 auto;
+}
+#autocomplete-button-search-txtSucursal {
+    position: absolute;
+    top: 2px;
+    bottom: 10px;
+    right: 0px;
+    position: absolute;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-align: center;
+    align-items: center;
+    -ms-flex-pack: center;
+    justify-content: center;
+    width: 18px;
+    cursor: pointer;
+}
+#autocomplete-results-txtSucursal {
+    position: absolute;
+    top: 38px;
+    border-width: 0 1px 1px 1px;
+    border-style: solid;
+    border-color: silver;
+    left: 38px;
+    right: 0px;
+    border-radius: 0 0 5px 5px;
+    background-color: #FFF;
+    z-index: 16777271;
+    max-height: 300px;
+    overflow-x: hidden;
+    overflow-y: auto;
+    font-size: .75rem;
+}
+    #autocomplete-results-txtSucursal > div > div {
+        padding: 2px 5px;
+        cursor: pointer;
+    }
+        #autocomplete-results-txtSucursal > div > div:hover,
+        #autocomplete-results-txtSucursal > div > div.hover {
+            background-color: #1B344C;
+            color: #FFF;
+        }
+#autocomplete-icon-txtSucursal {
+    position: absolute;
+    top: 3px;
+    bottom: 11px;
+    left: 1px;
+    width: 37px;
+    border-right: 1px solid silver;
+    display: -ms-flexbox;
+    display: flex;
+    -ms-flex-pack: center;
+    justify-content: center;
+    -ms-flex-align: center !important;
+    align-items: center !important;
+    background-color: #E6E6E6;
+    cursor: pointer;
+    border-radius: 5px 0 0 5px;
+}
+    .autocomplete-icon:hover {
+        background-color: #DAD6D6 !important;
+    }</style><style id="carousel-styles">.carousel-container {
+      display: -ms-flexbox;
+      display: flex;
+      flex-flow: row nowrap;
+      -ms-flex-pack: start;
+      justify-content: flex-start;
+      -ms-flex-align: center;
+      align-items: center;
+      position: relative;
+}
+.carousel-dots-container {
+      display: -ms-flexbox;
+      display: flex;
+      -ms-flex-pack: center;
+      justify-content: center;
+      -ms-flex-align: center;
+      align-items: center;
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      height: 20px;
+      width: 100%;
+}
+.carousel-prevnext-buttons-container {
+      width: 20px;
+      top: 0;
+      bottom: 0;
+      position: absolute;
+      display: -ms-flexbox;
+      display: flex;
+      -ms-flex-pack: center;
+      justify-content: center;
+      -ms-flex-align: center;
+      align-items: center;
+}
+.carousel-prevnext-buttons-container.left {
+      left: 0;
+}
+.carousel-prevnext-buttons-container.right {
+      right: 0;
+}
+.carousel-button {
+      padding: 0 !important;
+      border: none !important;
+      background-color: transparent !important;
+}
+.carousel-prevnext-button {
+      padding: 0 4px !important;
+      height: 100% !important;
+}
+.carousel-prevnext-button.left > svg {
+      -moz-transform: rotate(180deg);
+      -ms-transform: rotate(180deg);
+      -o-transform: rotate(180deg);
+      -webkit-transform: rotate(180deg);
+      transform: rotate(180deg);
+}
+.carousel-element {
+      overflow-y: auto;
+      padding: 0 40px;
+}
+.carousel-invisible-element {
+      display: none;
+}
+.carousel-button-news > svg > circle {
+      fill: #68A6E0 !important;
+}
+.carousel-button-news.selected > svg > circle {
+      fill: #1B344C !important;
+      stroke: #1B344C !important;
+}
+.carousel-button-news {
+      padding: 0 2px !important;
+}</style></head>
+<body class="TemaCuatro">
+    <form name="ctl00" method="post" action="./Seleccion_iv.aspx" id="ctl00">
+<div>
+<input type="hidden" name="__VIEWSTATE" id="__VIEWSTATE" value="/wEPDwULLTE3MjY1MTM0NDFkZMAQekYWINbi5Z8XLw2mnNI1F8Kw">
+</div>
+
+<div>
+
+	<input type="hidden" name="__VIEWSTATEGENERATOR" id="__VIEWSTATEGENERATOR" value="F1B3E9A8">
+	<input type="hidden" name="__EVENTVALIDATION" id="__EVENTVALIDATION" value="/wEdAAM+ddEoh0NEml0sn3rtyj38ESGw+VwJQ10O3gJ/u6CN3ACWPWesgwBa6HtIeye1X4da0f4J0eZ7+3oNzhL/ICmeHQPJWA==">
+</div>
+        <input type="hidden" name="hdfUsuario" id="hdfUsuario" value="eceronr">
+        <input type="hidden" name="hdfDominio" id="hdfDominio" value="0">
+    </form>
+
+    <section class="contenedor-principal">
+
+        <section class="contenedor-icono">
+            <span>Innovamos para que construyas grandes proyectos.</span>
+            <div id="noticias" class="noticias carousel-container"></div>
+            <div class="linksinco">www.sinco.co</div>
+        </section>
+
+        <section class="contenedor-central">
+
+            <div class="cont-form">
+
+                <section class="cont-icono-empresa">
+                    <div id="icono" class="empresa">
+                        <img id="imgLicencias" src="../../Logos/LgoObycon_Nueva.JPG" alt="CONSTRUCCIONES OBYCON S.A.S.">
+                    </div>
+                    <span id="spnLicenciaEmpresa">CONSTRUCCIONES OBYCON S.A.S.</span>
+                </section>
+
+                <div class="formulario">
+                    <span>Empresa</span>
+
+                    <section id="contenedor-ddlEmpresa" class="focus">
+                        <select id="ddlEmpresa" title="Seleccione una empresa"><option value="1">CONSTRUCCIONES OBYCON S.A.S.</option></select>
+                        <aside class="autocomplete-icon" id="autocomplete-icon-ddlEmpresa">
+                        <svg preserveAspectRatio="xMinYMax meet" focusable="false" width="15" height="13.359375" viewBox="0 0 64 57"><rect x="7.958" width="19.963" height="48" style="stroke-width: 0; fill: rgb(90, 90, 90);"></rect><rect x="36.079" y="15.369" width="19.963" height="32.626" style="stroke-width: 0; fill: rgb(90, 90, 90);"></rect><rect y="53" width="64" height="4" style="stroke-width: 0; fill: rgb(90, 90, 90);"></rect></svg></aside>
+                    </section>
+
+                    <span>Sucursal</span>
+
+                    <section class="autocomplete-container" id="autocomplete-container-txtSucursal"><input type="text" id="txtSucursal" autocomplete="off" placeholder="Seleccione una opción" style="flex: 1 1 auto; padding-left: 47px;"><aside class="autocomplete-icon" id="autocomplete-icon-txtSucursal"><svg preserveAspectRatio="xMinYMax meet" focusable="false" width="14" height="13.20754716981132" viewBox="0 0 53 50"><rect x="18.49996" y="2.37497" height="10" width="16" style="stroke: rgb(90, 90, 90); stroke-width: 4; stroke-linecap: round; stroke-miterlimit: 10; fill: rgb(90, 90, 90);"></rect><rect x="20.49996" y="37.37497" height="10" width="12" style="stroke: rgb(90, 90, 90); stroke-width: 4; stroke-linecap: round; stroke-miterlimit: 10; fill: rgb(90, 90, 90);"></rect><rect x="2.49996" y="37.37497" height="10" width="12" style="stroke: rgb(90, 90, 90); stroke-width: 4; stroke-linecap: round; stroke-miterlimit: 10; fill: rgb(90, 90, 90);"></rect><rect x="38.49996" y="37.37497" height="10" width="12" style="stroke: rgb(90, 90, 90); stroke-width: 4; stroke-linecap: round; stroke-miterlimit: 10; fill: rgb(90, 90, 90);"></rect><line y2="12.37497" x2="26.49996" y1="37.37497" x1="26.49996" style="stroke-width: 4; stroke: rgb(90, 90, 90); stroke-linecap: round; stroke-miterlimit: 10; fill: none;"></line><polyline points="44.49994283169508,37.37495803833008 44.49994283169508,24.374958038330078 8.499957136809826,24.374958038330078 8.499957136809826,37.37495803833008" style="stroke-width: 4; stroke: rgb(90, 90, 90); stroke-linecap: round; stroke-miterlimit: 10; fill: none;"></polyline></svg></aside><div class="autocomplete-button-search" id="autocomplete-button-search-txtSucursal"><svg preserveAspectRatio="xMinYMax meet" focusable="false" width="6" height="6" viewBox="0 0 8 8"><polygon points="0,0 8,0 4,8" style="fill: rgb(90, 90, 90);"></polygon></svg></div><div class="autocomplete-results" id="autocomplete-results-txtSucursal" style="display: none;"></div></section>
+
+                    <div class="contenedor-controles">
+                        <button id="btnIngresar">Ingresar</button>
+                        <button id="btnRegresar" style="display: none;">Regresar</button>
+                    </div>
+
+                    <section class="cont-loader-info">
+                        <div class="loader" id="dvLoadEmpSuc" style="display: none;">Por favor, espere...</div>
+                        <span id="spnMsjEmpresas" class="error"></span>
+                    </section>
+                </div>
+            </div>
+        </section>
+
+    </section>
+
+    <footer>
+    </footer>
+
+
+</body></html>

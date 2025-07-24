@@ -152,15 +152,18 @@ export default function InvoiceImporter() {
         setWs(websocket);
 
         // Subscribe to progress updates with actual user ID
-        websocket.send(JSON.stringify({
+        const subscribeMessage = {
           type: 'subscribe',
           userId: user?.id || 'current-user',
-        }));
+        };
+        console.log('Sending subscription message:', subscribeMessage);
+        websocket.send(JSON.stringify(subscribeMessage));
       };
 
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
+          console.log('Received WebSocket message:', data);
           
           if (data.type === 'progress') {
             handleRealTimeProgressUpdate(data);
@@ -168,6 +171,8 @@ export default function InvoiceImporter() {
             handleTaskComplete(data);
           } else if (data.type === 'logs') {
             handleRealTimeLogs(data);
+          } else if (data.type === 'subscription_confirmed') {
+            console.log('Subscription confirmed for user:', data.userId);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);

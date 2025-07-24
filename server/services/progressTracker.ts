@@ -39,7 +39,10 @@ class ProgressTracker {
           const data = JSON.parse(messageStr);
 
           if (data.type === 'subscribe' && data.userId) {
+            console.log(`Processing subscription request for user: ${data.userId}`);
             this.addConnection(data.userId, ws);
+          } else {
+            console.log(`Received message with type: ${data.type}, userId: ${data.userId}`);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -78,12 +81,12 @@ class ProgressTracker {
     }
 
     this.connections.get(userId)!.push({ userId, ws });
-    console.log(`User ${userId} subscribed to progress updates`);
+    console.log(`User ${userId} subscribed to progress updates. Total connections for user: ${this.connections.get(userId)!.length}`);
 
     // Send subscription confirmation
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify({
-        type: 'subscribed',
+        type: 'subscription_confirmed',
         userId: userId,
         message: 'Successfully subscribed to progress updates'
       }));
@@ -106,11 +109,11 @@ class ProgressTracker {
 
   sendProgress(userId: string, progress: ProgressUpdate) {
     const connections = this.connections.get(userId);
+    console.log(`Checking connections for user ${userId}: ${connections ? connections.length : 0} connections found`);
+    console.log(`All tracked users:`, Array.from(this.connections.keys()));
+    
     if (!connections || connections.length === 0) {
-      // Don't spam logs - only log this occasionally
-      if (Math.random() < 0.1) {
-        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
-      }
+      console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
       return;
     }
 
