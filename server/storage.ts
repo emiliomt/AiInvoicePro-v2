@@ -788,12 +788,12 @@ class PostgresStorage implements IStorage {
         // Delete invoice flags
         // await db
         //   .delete(invoiceFlags)
-        //   .where(```text
-            inArray(
-              invoiceFlags.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
+        //   .where(
+        //     inArray(
+        //       invoiceFlags.invoiceId,
+        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
+        //     )
+        //   );
 
         // Delete invoice-PO matches
         await db
