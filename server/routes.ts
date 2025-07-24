@@ -3806,7 +3806,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
 
       // Try to get real-time progress from Python RPA service
-      const activeProgress = pythonInvoiceImporter.getProgress(configId);
+      const activeProgress = pythonInvoiceImporter.getProgressByConfigId(configId);
       console.log(`Active progress for config ${configId}:`, activeProgress ? 'found' : 'not found');
       
       if (activeProgress) {

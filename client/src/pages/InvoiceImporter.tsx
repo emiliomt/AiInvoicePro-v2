@@ -67,8 +67,6 @@ interface ERPConnection {
 
 export default function InvoiceImporter() {
   const { user } = useAuth();
-  const [configs, setConfigs] = useState<ImportConfig[]>([]);
-  const [logs, setLogs] = useState<ImportLog[]>([]);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -109,8 +107,6 @@ export default function InvoiceImporter() {
   const { toast } = useToast();
 
   useEffect(() => {
-    fetchConfigs();
-    fetchLogs();
     fetchERPConnections();
     initializeWebSocket();
 
@@ -319,27 +315,8 @@ export default function InvoiceImporter() {
   const handleTaskComplete = (data: any) => {
     const configId = data.data?.configId || data.configId;
 
-    setConfigs(prevConfigs => 
-      prevConfigs.map(config => {
-        if (config.id === configId) {
-          return {
-            ...config,
-            status: data.success ? 'completed' : 'failed',
-            lastRun: new Date().toISOString(),
-            progress: 100,
-            stats: data.data ? {
-              total_invoices: data.data.totalInvoices || 0,
-              processed_invoices: data.data.totalInvoices || 0,
-              successful_imports: data.data.successfulImports || 0,
-              failed_imports: data.data.failedImports || 0,
-              current_step: 'Completed',
-              progress: 100
-            } : config.stats
-          };
-        }
-        return config;
-      })
-    );
+    // Refresh configs after task completion
+    refetchConfigs();
 
     if (consoleConfig && consoleConfig.id === configId) {
       setConsoleConfig(prev => prev ? {
@@ -392,33 +369,15 @@ export default function InvoiceImporter() {
             const response = await fetch(`/api/invoice-importer/progress/${config.id}`, {
               credentials: 'include'
             });
+            
+            console.log(`Polling config ${config.id}, response status: ${response.status}`);
 
             if (response.ok) {
               const progressData = await response.json();
               console.log(`Polling received for config ${config.id}:`, progressData);
 
-              // Directly update config state based on polling data
-              setConfigs(prevConfigs => 
-                prevConfigs.map(c => {
-                  if (c.id === config.id) {
-                    return {
-                      ...c,
-                      currentStep: progressData.currentStep || c.currentStep,
-                      progress: Math.max(progressData.progress || 0, c.progress || 0),
-                      stats: {
-                        total_invoices: progressData.totalInvoices || c.stats?.total_invoices || 0,
-                        processed_invoices: progressData.processedInvoices || c.stats?.processed_invoices || 0,
-                        successful_imports: progressData.successfulImports || c.stats?.successful_imports || 0,
-                        failed_imports: progressData.failedImports || c.stats?.failed_imports || 0,
-                        current_step: progressData.currentStep || c.stats?.current_step || 'Processing',
-                        progress: Math.max(progressData.progress || 0, c.stats?.progress || 0)
-                      },
-                      status: progressData.isComplete ? 'completed' : 'running'
-                    };
-                  }
-                  return c;
-                })
-              );
+              // Log progress data for debugging
+              console.log(`Progress update for config ${config.id}:`, progressData);
 
               // Also update console view if open for this config
               if (consoleConfig && consoleConfig.id === config.id) {
@@ -456,29 +415,9 @@ export default function InvoiceImporter() {
     }
   }, [configs, consoleConfig]);
 
-  const fetchConfigs = async () => {
-    try {
-      const response = await fetch('/api/invoice-importer/configs');
-      if (response.ok) {
-        const data = await response.json();
-        setConfigs(data);
-      }
-    } catch (error) {
-      console.error('Error fetching configs:', error);
-    }
-  };
+  // fetchConfigs removed - now using useQuery
 
-  const fetchLogs = async () => {
-    try {
-      const response = await fetch('/api/invoice-importer/logs');
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data);
-      }
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-    }
-  };
+  // fetchLogs removed - now using useQuery
 
   const fetchERPConnections = async () => {
     try {
@@ -738,7 +677,7 @@ export default function InvoiceImporter() {
                 title: "Configuration Deleted",
                 description: "Import configuration deleted successfully"
             });
-            fetchConfigs(); // Refresh configurations after deletion
+            refetchConfigs(); // Refresh configurations after deletion
         } else {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Failed to delete configuration');
@@ -750,7 +689,8 @@ export default function InvoiceImporter() {
             variant: "destructive"
         });
     }
-};
+  };
+
   const { data: configs = [], refetch: refetchConfigs } = useQuery({
     queryKey: ['invoice-importer-configs'],
     queryFn: async () => {
@@ -885,7 +825,7 @@ export default function InvoiceImporter() {
             <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
             <p className="text-gray-600 mt-2">Configure automated ERP invoice import processes</p>
           </div>
-          <Button```text
+          <Button
             onClick={() => setShowCreateDialog(true)}
             className="flex items-center space-x-2"
           >
