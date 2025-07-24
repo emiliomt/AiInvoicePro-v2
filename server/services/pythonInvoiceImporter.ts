@@ -131,12 +131,13 @@ class PythonInvoiceImporter {
           executionTime: Date.now() - log.startedAt!.getTime(),
         });
 
-        // Save imported invoices from Python RPA to main database
+        // Process imported invoices through EXACT manual upload pipeline
         try {
-          await this.saveImportedInvoicesToDatabase(log.id, pythonConfig);
-          console.log(`Imported invoices saved to main database for log ${log.id}`);
+          console.log(`🔄 Starting RPA invoice processing through manual upload pipeline for log ${log.id}`);
+          await this.storeImportedInvoicesFast(log.id, progress);
+          console.log(`✅ RPA invoices successfully processed through manual upload pipeline for log ${log.id}`);
         } catch (dbError) {
-          console.error(`Failed to save imported invoices to database:`, dbError);
+          console.error(`❌ Failed to process imported invoices through manual upload pipeline:`, dbError);
         }
 
         progress.isComplete = true;
@@ -360,10 +361,16 @@ class PythonInvoiceImporter {
   private async executePythonRPA(config: any, progress: ImportProgress): Promise<PythonRPAResult> {
     return new Promise((resolve, reject) => {
       const pythonScriptPath = path.join(__dirname, 'pythonRpaService.py');
-      const configJson = JSON.stringify(config);
+      
+      // Add log_id to config for PostgreSQL transfer
+      const configWithLogId = {
+        ...config,
+        logId: progress.logId  // Pass log_id to Python script
+      };
+      const configJson = JSON.stringify(configWithLogId);
 
       console.log('Executing Python RPA script:', pythonScriptPath);
-      console.log('Python config:', configJson);
+      console.log('Python config with log_id:', configWithLogId.logId);
 
       // Spawn Python process
       const pythonProcess = spawn('python3', [pythonScriptPath, configJson], {

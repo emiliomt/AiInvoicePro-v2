@@ -13,6 +13,7 @@ import sqlite3
 import sys
 import json
 import base64
+import psycopg2
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -61,6 +62,9 @@ class InvoiceRPAService:
 
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
+        
+        # Store log_id for PostgreSQL transfer
+        self.log_id = config.get('logId')
 
         # Ensure directories exist (convert Windows paths to Linux paths in Replit)
         if os.name == 'posix':  # Linux/Unix (Replit environment)
@@ -716,6 +720,101 @@ class InvoiceRPAService:
             self.log(f"Error importing XML to database: {e}", "ERROR")
             return False
 
+    def transfer_to_postgresql(self) -> bool:
+        """Transfer imported invoices from SQLite to PostgreSQL imported_invoices table"""
+        try:
+            self.update_progress("Transferring invoices to main database", 95)
+            
+            # Get database URL from environment
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                self.log("DATABASE_URL environment variable not found", "ERROR")
+                return False
+
+            # Connect to PostgreSQL
+            pg_conn = psycopg2.connect(database_url)
+            pg_cursor = pg_conn.cursor()
+            
+            # Connect to local XML SQLite database
+            xml_conn = sqlite3.connect(self.xml_db_path)
+            xml_cursor = xml_conn.cursor()
+            
+            # Get log_id from config (passed from Node.js)
+            log_id = self.log_id
+            if not log_id:
+                self.log("No log_id provided for PostgreSQL transfer", "ERROR")
+                return False
+            
+            # Query all imported invoices from SQLite
+            xml_cursor.execute("""
+                SELECT numero_documento, emisor, valor_total, xml_content 
+                FROM downloaded_invoices 
+                WHERE xml_content IS NOT NULL
+            """)
+            sqlite_invoices = xml_cursor.fetchall()
+            
+            transferred_count = 0
+            for invoice in sqlite_invoices:
+                numero_documento, emisor, valor_total, xml_content = invoice
+                
+                try:
+                    # Create filename same as RPA processing logic
+                    safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
+                    original_filename = f"{numero_documento}_{safe_emisor}.xml"
+                    
+                    # Store XML file in the uploads directory to match manual upload pipeline
+                    uploads_dir = 'uploads'
+                    os.makedirs(uploads_dir, exist_ok=True)
+                    xml_file_path = os.path.join(uploads_dir, original_filename)
+                    with open(xml_file_path, 'w', encoding='utf-8') as f:
+                        f.write(xml_content)
+                    
+                    # Calculate file size
+                    file_size = len(xml_content.encode('utf-8'))
+                    
+                    # Insert into PostgreSQL imported_invoices table
+                    pg_cursor.execute("""
+                        INSERT INTO imported_invoices 
+                        (log_id, original_file_name, file_type, file_size, file_path, 
+                         erp_document_id, downloaded_at, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                        ON CONFLICT (log_id, original_file_name) DO NOTHING
+                    """, (
+                        log_id,
+                        original_filename,
+                        'xml',
+                        file_size,
+                        xml_file_path,
+                        numero_documento,
+                        datetime.now(),
+                        json.dumps({
+                            'emisor': emisor,
+                            'valor_total': valor_total,
+                            'source': 'python_rpa',
+                            'processing_status': 'ready_for_upload_pipeline'
+                        })
+                    ))
+                    
+                    transferred_count += 1
+                    self.log(f"Transferred to PostgreSQL: {original_filename}")
+                    
+                except Exception as e:
+                    self.log(f"Failed to transfer {numero_documento}: {e}", "ERROR")
+            
+            # Commit PostgreSQL changes
+            pg_conn.commit()
+            
+            # Close connections
+            xml_conn.close()
+            pg_conn.close()
+            
+            self.log(f"Successfully transferred {transferred_count} invoices to PostgreSQL")
+            return True
+            
+        except Exception as e:
+            self.log(f"Error transferring to PostgreSQL: {e}", "ERROR")
+            return False
+
     def cleanup(self):
         """Cleanup resources"""
         if self.driver:
@@ -775,6 +874,14 @@ class InvoiceRPAService:
                 return {
                     'success': False,
                     'error': 'Failed to import XML to database',
+                    'stats': self.stats
+                }
+
+            # Transfer to PostgreSQL (NEW STEP for integration)
+            if not self.transfer_to_postgresql():
+                return {
+                    'success': False,
+                    'error': 'Failed to transfer invoices to PostgreSQL',
                     'stats': self.stats
                 }
 
