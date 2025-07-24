@@ -106,28 +106,10 @@ class InvoiceRPAService:
         sys.stdout.flush()
 
     def update_progress(self, step: str, progress: int):
-        """Update progress tracking with structured output for backend parsing"""
+        """Update progress tracking"""
         self.stats['current_step'] = step
         self.stats['progress'] = progress
-        
-        # Log for visual tracking
         self.log(f"Progress: {progress}% - {step}")
-        
-        # Emit structured progress data that backend can parse via stdout
-        progress_data = {
-            "current_step": step,
-            "progress": progress,
-            "total_invoices": self.stats.get('total_invoices', 0),
-            "processed_invoices": self.stats.get('processed_invoices', 0),
-            "successful_imports": self.stats.get('successful_imports', 0),
-            "failed_imports": self.stats.get('failed_imports', 0),
-            "timestamp": datetime.now().isoformat()
-        }
-        
-        # Print structured data for backend WebSocket streaming
-        print(f"PROGRESS:{json.dumps(progress_data)}")
-        sys.stdout.flush()  # Ensure immediate output
-        sys.stdout.flush()  # Ensure immediate output
 
     def setup_driver(self):
         """Initialize Chrome WebDriver with download preferences"""
@@ -483,7 +465,6 @@ class InvoiceRPAService:
             
             # Wait for iframe to be available and switch to it
             self.log("Waiting for iframe 'pagina1' to be available...")
-            self.update_progress("Accessing invoice data frame", 35)
             WebDriverWait(self.driver, 15).until(EC.frame_to_be_available_and_switch_to_it((By.ID, "pagina1")))
             self.log("✅ Successfully switched to iframe 'pagina1'")
             
@@ -500,7 +481,6 @@ class InvoiceRPAService:
                 data_rows = [r for r in rows if r.text.strip()]
                 if data_rows:
                     self.log(f"✅ Found {len(data_rows)} rows with content")
-                    self.update_progress(f"Found {len(data_rows)} invoices to process", 40)
                     # Debug capture when we find the invoice rows
                     self.debug_capture("16_invoice_rows_found")
                     break
@@ -556,20 +536,6 @@ class InvoiceRPAService:
                             self.log(f"❌ Failed to process invoice: {numero_documento}")
 
                         self.stats['processed_invoices'] += 1
-                        
-                        # Update progress based on processed invoices with more granular updates
-                        if self.stats['total_invoices'] > 0:
-                            invoice_progress = (self.stats['processed_invoices'] / self.stats['total_invoices']) * 40
-                            total_progress = 40 + int(invoice_progress)
-                            
-                            # Update progress every invoice for real-time feedback
-                            step_message = f"Processing invoice {self.stats['processed_invoices']}/{self.stats['total_invoices']}: {numero_documento}"
-                            self.update_progress(step_message, total_progress)
-                            
-                            # Additional progress update every 5 invoices or at specific milestones
-                            if self.stats['processed_invoices'] % 5 == 0 or total_progress in [45, 50, 55, 60, 65, 70, 75]:
-                                milestone_message = f"Processed {self.stats['processed_invoices']} invoices successfully"
-                                self.update_progress(milestone_message, total_progress)
 
                     except Exception as e:
                         self.log(f"❌ Error processing row {i}: {e}", "ERROR")
@@ -660,10 +626,8 @@ class InvoiceRPAService:
         """Extract XML files from downloaded ZIPs"""
         try:
             self.update_progress("Extracting XML files from ZIPs", 70)
-            
-            # Track extraction progress
+
             extracted_count = 0
-            total_zips = len([f for f in os.listdir(self.download_dir) if f.lower().endswith(".zip")])
             for filename in os.listdir(self.download_dir):
                 if filename.lower().endswith(".zip"):
                     zip_path = os.path.join(self.download_dir, filename)
@@ -685,11 +649,6 @@ class InvoiceRPAService:
                                     xml_found = True
                                     extracted_count += 1
                                     self.log(f"Extracted XML: {new_name}")
-                                    
-                                    # Update progress during extraction
-                                    if total_zips > 0:
-                                        extract_progress = 70 + int((extracted_count / total_zips) * 15)
-                                        self.update_progress(f"Extracted {extracted_count}/{total_zips} XML files", extract_progress)
                                     break
 
                             shutil.rmtree(temp_dir)
@@ -717,7 +676,6 @@ class InvoiceRPAService:
 
             xml_conn = self.init_database(self.xml_db_path, 'xml')
             imported_count = 0
-            total_xmls = len([f for f in os.listdir(self.xml_dir) if f.lower().endswith(".xml")])
 
             for filename in os.listdir(self.xml_dir):
                 if filename.lower().endswith(".xml"):
@@ -745,11 +703,6 @@ class InvoiceRPAService:
                         os.remove(file_path)
                         imported_count += 1
                         self.log(f"Imported and deleted: {filename}")
-                        
-                        # Update progress during import
-                        if total_xmls > 0:
-                            import_progress = 90 + int((imported_count / total_xmls) * 8)
-                            self.update_progress(f"Imported {imported_count}/{total_xmls} XML files to database", import_progress)
 
                     except Exception as e:
                         self.log(f"Failed to process {filename}: {e}", "ERROR")

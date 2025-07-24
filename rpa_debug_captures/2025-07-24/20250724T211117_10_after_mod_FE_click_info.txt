@@ -1,7 +1,0 @@
-Debug Capture: 10_after_mod_FE_click
-Timestamp: 20250724T211117
-Current URL: https://www3.sincoerp.com/SincoObycon_Nueva/V3/Marco/Default_iv.aspx
-Page Title: Sinco ERP - CONSTRUCCIONES OBYCON S.A.S.
-Window Size: {'width': 1920, 'height': 1080}
-Page Load State: complete
-No error messages found

@@ -45,28 +45,6 @@ class PythonInvoiceImporter {
   private activeImports = new Map<number, ImportProgress>();
 
   /**
-   * Get current progress for a config ID
-   */
-  getProgressByConfigId(configId: number): any | null {
-    const progress = this.activeImports.get(configId);
-    if (!progress) {
-      return null;
-    }
-
-    return {
-      configId: progress.configId,
-      progress: progress.progress,
-      currentStep: progress.currentStep,
-      totalInvoices: progress.totalInvoices,
-      processedInvoices: progress.processedInvoices,
-      successfulImports: progress.successfulImports,
-      failedImports: progress.failedImports,
-      isComplete: progress.isComplete,
-      error: progress.error
-    };
-  }
-
-  /**
    * Execute Python RPA import task
    */
   async executeImportTask(configId: number): Promise<void> {
@@ -397,7 +375,7 @@ class PythonInvoiceImporter {
       let stderr = '';
       let result: PythonRPAResult | null = null;
 
-      // Handle stdout (normal output)
+      // Handle stdout (Python script output)
       pythonProcess.stdout?.on('data', (data) => {
         const output = data.toString();
         console.log('Python RPA:', output.trim());
@@ -406,12 +384,20 @@ class PythonInvoiceImporter {
         if (progress) {
           // Process each line individually for real-time streaming
           const lines = output.split('\n').filter(line => line.trim());
-
+          
           for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
 
-            // Extract progress percentage and stats from PROGRESS tags (higher priority)
+            // Update current step from log content
+            if (trimmedLine.includes('INFO:')) {
+              const stepMatch = trimmedLine.match(/INFO:\s*(.+)/);
+              if (stepMatch) {
+                progress.currentStep = stepMatch[1];
+              }
+            }
+
+            // Extract progress percentage and stats from output
             const statsUpdate = this.extractStatsFromOutput(trimmedLine);
             if (statsUpdate) {
               progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
@@ -419,19 +405,6 @@ class PythonInvoiceImporter {
               progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
               progress.progress = statsUpdate.progress || progress.progress;
-              
-              // Update current step from PROGRESS data if available
-              if ((statsUpdate as any).current_step) {
-                progress.currentStep = (statsUpdate as any).current_step;
-              }
-            } else {
-              // Fallback: Update current step from log content if no PROGRESS tag
-              if (trimmedLine.includes('INFO:')) {
-                const stepMatch = trimmedLine.match(/INFO:\s*(.+)/);
-                if (stepMatch) {
-                  progress.currentStep = stepMatch[1];
-                }
-              }
             }
 
             // Send real-time log line via WebSocket immediately
@@ -574,7 +547,6 @@ class PythonInvoiceImporter {
     try {
       storage.getInvoiceImporterConfig(progress.configId).then(config => {
         if (config) {
-          console.log(`Attempting to send progress to user: ${config.userId}`);
           // Send individual log line for real-time streaming
           progressTracker.sendProgress(config.userId, {
             taskId: progress.logId,
@@ -615,7 +587,6 @@ class PythonInvoiceImporter {
     successful_imports: number;
     failed_imports: number;
     progress: number;
-    current_step: string;
   }> | null {
     try {
       // Look for STATS: or PROGRESS: tags in output
@@ -625,18 +596,15 @@ class PythonInvoiceImporter {
           return JSON.parse(statsLine.trim());
         }
       }
-
+      
       if (output.includes('PROGRESS:')) {
         const progressLine = output.split('PROGRESS:')[1]?.split('\n')[0];
         if (progressLine) {
           const progressData = JSON.parse(progressLine.trim());
           return {
             progress: progressData.progress || 0,
-            processed_invoices: progressData.processed_invoices || 0,
-            total_invoices: progressData.total_invoices || 0,
-            successful_imports: progressData.successful_imports || 0,
-            failed_imports: progressData.failed_imports || 0,
-            current_step: progressData.current_step || null
+            processed_invoices: progressData.processed || 0,
+            total_invoices: progressData.total || 0
           };
         }
       }
@@ -799,7 +767,7 @@ class PythonInvoiceImporter {
   private async processRpaInvoiceWithFullPipeline(invoice: any, importedInvoice: any): Promise<void> {
     try {
       const fs = await import('fs');
-
+      
       // Check if file exists
       if (!fs.existsSync(importedInvoice.filePath)) {
         throw new Error(`Invoice file not found: ${importedInvoice.filePath}`);
@@ -826,7 +794,7 @@ class PythonInvoiceImporter {
       // Run AI extraction (same as manual import)
       console.log(`Starting AI extraction for RPA invoice ${invoice.id}`);
       const { extractInvoiceData } = await import('./aiService');
-
+      
       const aiPromise = extractInvoiceData(ocrText);
       const aiTimeoutPromise = new Promise((_, reject) => 
         setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
@@ -873,56 +841,6 @@ class PythonInvoiceImporter {
           timestamp: new Date().toISOString(),
           step: "rpa_processing"
         },
-      });
-    }
-  }
-
-  /**
-   * Parse and update progress based on log line from Python script
-   *
-   * @param {ImportProgress} progress - The progress object to update
-   * @param {string} line - The log line from the Python script
-   * @param {InvoiceImporterConfig} config - The invoice importer config
-   * @returns {void}
-   */
-  private parseAndUpdateProgress(progress: ImportProgress, line: string, config: InvoiceImporterConfig): void {
-    // Look for progress indicators in the output
-    if (line.includes('INFO:')) {
-      const stepMatch = line.match(/INFO:\s*(.+)/);
-      if (stepMatch) {
-        progress.currentStep = stepMatch[1];
-      }
-    }
-
-    // Extract progress percentage and stats from output
-    const statsUpdate = this.extractStatsFromOutput(line);
-    if (statsUpdate) {
-      progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
-      progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
-      progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
-      progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
-      progress.progress = statsUpdate.progress || progress.progress;
-
-      // Send real-time progress update via WebSocket
-      progressTracker.sendProgress(config.userId, {
-        taskId: progress.logId,
-        step: progress.progress,
-        totalSteps: 100,
-        status: 'processing',
-        message: progress.currentStep,
-        timestamp: new Date(),
-        data: {
-          configId: progress.configId,
-          logId: progress.logId,
-          currentStep: progress.currentStep,
-          progress: progress.progress,
-          totalInvoices: progress.totalInvoices,
-          processedInvoices: progress.processedInvoices,
-          successfulImports: progress.successfulImports,
-          failedImports: progress.failedImports,
-          isComplete: progress.isComplete,
-          logs: progress.logs // Send accumulated logs for full history
-        }
       });
     }
   }

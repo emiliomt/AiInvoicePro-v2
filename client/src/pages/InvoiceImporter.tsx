@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -10,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
 import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
-import { useAuth } from '../hooks/useAuth';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
@@ -68,7 +66,8 @@ interface ERPConnection {
 }
 
 export default function InvoiceImporter() {
-  const { user } = useAuth();
+  const [configs, setConfigs] = useState<ImportConfig[]>([]);
+  const [logs, setLogs] = useState<ImportLog[]>([]);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -93,77 +92,27 @@ export default function InvoiceImporter() {
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
   const [runningConfigName, setRunningConfigName] = useState<string>('');
-
+  
   // Console view state
   const [showConsoleView, setShowConsoleView] = useState(false);
   const [consoleConfig, setConsoleConfig] = useState<ImportConfig | null>(null);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [clearOnComplete, setClearOnComplete] = useState(false);
-
+  
   // WebSocket state for real-time updates
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
-
+  
   const { toast } = useToast();
 
-  // Move useQuery declarations here to avoid temporal dead zone
-  const { data: configs = [], refetch: refetchConfigs } = useQuery({
-    queryKey: ['invoice-importer-configs'],
-    queryFn: async () => {
-      if (!user) {
-        console.log('User not authenticated, skipping config fetch');
-        return [];
-      }
-
-      try {
-        const response = await fetch('/api/invoice-importer/configs', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (!response.ok) {
-          console.error('Failed to fetch configs:', response.status, response.statusText);
-          throw new Error('Failed to fetch configs');
-        }
-        return response.json();
-      } catch (error) {
-        console.error('Error fetching configs:', error);
-        throw error;
-      }
-    },
-    enabled: !!user,
-  });
-
-  const { data: logs = [], refetch: refetchLogs } = useQuery({
-    queryKey: ['invoice-importer-logs'],
-    queryFn: async () => {
-      if (!user) {
-        console.log('User not authenticated, skipping log fetch');
-        return [];
-      }
-
-      try {
-        const response = await fetch('/api/invoice-importer/logs', {
-          headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
-        });
-        if (!response.ok) {
-          console.error('Failed to fetch logs:', response.status, response.statusText);
-          throw new Error('Failed to fetch logs');
-        }
-        return response.json();
-      } catch (error) {
-        console.error('Error fetching logs:', error);
-        throw error;
-      }
-    },
-    refetchInterval: user ? 5000 : false,
-    enabled: !!user,
-  });
-
   useEffect(() => {
+    fetchConfigs();
+    fetchLogs();
     fetchERPConnections();
     initializeWebSocket();
-
+    
     return () => {
       // Clean up WebSocket connection
       if (wsRef.current) {
@@ -203,37 +152,22 @@ export default function InvoiceImporter() {
         setWs(websocket);
 
         // Subscribe to progress updates with actual user ID
-        const subscribeMessage = {
+        websocket.send(JSON.stringify({
           type: 'subscribe',
           userId: user?.id || 'current-user',
-        };
-        console.log('Sending subscription message:', subscribeMessage);
-        console.log('User object:', user);
-
-        // Ensure subscription is sent after connection is fully established
-        if (websocket.readyState === WebSocket.OPEN) {
-          websocket.send(JSON.stringify(subscribeMessage));
-        } else {
-          // If not ready, wait for open state
-          websocket.addEventListener('open', () => {
-            websocket.send(JSON.stringify(subscribeMessage));
-          }, { once: true });
-        }
+        }));
       };
 
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          console.log('Received WebSocket message:', data);
-
+          
           if (data.type === 'progress') {
             handleRealTimeProgressUpdate(data);
           } else if (data.type === 'task_complete') {
             handleTaskComplete(data);
           } else if (data.type === 'logs') {
             handleRealTimeLogs(data);
-          } else if (data.type === 'subscription_confirmed') {
-            console.log('Subscription confirmed for user:', data.userId);
           }
         } catch (error) {
           console.error('Error parsing WebSocket message:', error);
@@ -271,9 +205,7 @@ export default function InvoiceImporter() {
     const configId = data.data?.configId || data.taskId;
     const currentStep = data.data?.currentStep || data.message;
     const progress = data.data?.progress || data.step || 0;
-
-    console.log('Progress update received:', { configId, currentStep, progress });
-
+    
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
         if (config.id === configId) {
@@ -281,15 +213,8 @@ export default function InvoiceImporter() {
             ...config,
             status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
             currentStep: currentStep || config.currentStep,
-            progress: Math.max(progress, config.progress || 0), // Ensure progress only increases
-            stats: { 
-              total_invoices: data.data?.totalInvoices || config.stats?.total_invoices || 0,
-              processed_invoices: data.data?.processedInvoices || config.stats?.processed_invoices || 0,
-              successful_imports: data.data?.successfulImports || config.stats?.successful_imports || 0,
-              failed_imports: data.data?.failedImports || config.stats?.failed_imports || 0,
-              current_step: currentStep || config.stats?.current_step || 'Processing',
-              progress: Math.max(progress, config.stats?.progress || 0)
-            }
+            progress: progress,
+            stats: { ...config.stats, ...data.data }
           };
         }
         return config;
@@ -305,20 +230,20 @@ export default function InvoiceImporter() {
         progress: progress,
         stats: { ...prev.stats, ...data.data }
       } : null);
-
+      
       // Handle real-time log streaming
       if (data.data?.currentLogLine) {
         // Add individual log line in real-time
         const timestamp = new Date().toLocaleTimeString();
         const cleanLine = data.data.currentLogLine.replace('Python RPA: ', '').trim();
         const formattedLogLine = `[${timestamp}] ${cleanLine}`;
-
+        
         setConsoleLogs(prev => {
           const newLogs = [...prev, formattedLogLine];
           // Keep only last 15 lines for performance and readability
           return newLogs.slice(-15);
         });
-
+        
         // Auto-scroll if enabled
         if (autoScroll) {
           setTimeout(() => {
@@ -338,20 +263,20 @@ export default function InvoiceImporter() {
     if (consoleConfig && data.data && data.data.configId === consoleConfig.id) {
       const timestamp = new Date(data.data.timestamp || new Date()).toLocaleTimeString();
       let logMessage = data.data.logs || data.message || 'Unknown message';
-
+      
       // Format Python RPA logs better
       if (logMessage.includes('Python RPA:')) {
         logMessage = logMessage.replace('Python RPA:', '').trim();
       }
-
+      
       const formattedLog = `[${timestamp}] ${logMessage}`;
-
+      
       // Keep only last 15 lines for performance
       setConsoleLogs(prev => {
         const newLogs = [...prev, formattedLog];
         return newLogs.slice(-15); // Always maintain 15-line limit
       });
-
+      
       // Auto-scroll to bottom if enabled
       if (autoScroll) {
         setTimeout(() => {
@@ -368,9 +293,28 @@ export default function InvoiceImporter() {
   // Handle task completion
   const handleTaskComplete = (data: any) => {
     const configId = data.data?.configId || data.configId;
-
-    // Refresh configs after task completion
-    refetchConfigs();
+    
+    setConfigs(prevConfigs => 
+      prevConfigs.map(config => {
+        if (config.id === configId) {
+          return {
+            ...config,
+            status: data.success ? 'completed' : 'failed',
+            lastRun: new Date().toISOString(),
+            progress: 100,
+            stats: data.data ? {
+              total_invoices: data.data.totalInvoices || 0,
+              processed_invoices: data.data.totalInvoices || 0,
+              successful_imports: data.data.successfulImports || 0,
+              failed_imports: data.data.failedImports || 0,
+              current_step: 'Completed',
+              progress: 100
+            } : config.stats
+          };
+        }
+        return config;
+      })
+    );
 
     if (consoleConfig && consoleConfig.id === configId) {
       setConsoleConfig(prev => prev ? {
@@ -402,7 +346,7 @@ export default function InvoiceImporter() {
     }
 
     setRunningConfigId(null);
-
+    
     toast({
       title: data.success ? "Import Completed" : "Import Failed",
       description: data.message || (data.success ? "Invoice import completed successfully" : "Invoice import failed"),
@@ -410,68 +354,29 @@ export default function InvoiceImporter() {
     });
   };
 
-  // Enhanced polling system for real-time progress updates
-  useEffect(() => {
-    const runningConfigs = configs.filter(config => config.status === 'running');
-
-    if (runningConfigs.length > 0) {
-      console.log(`Starting enhanced polling for ${runningConfigs.length} running configs`);
-
-      const pollProgress = async () => {
-        for (const config of runningConfigs) {
-          try {
-            const response = await fetch(`/api/invoice-importer/progress/${config.id}`, {
-              credentials: 'include'
-            });
-
-            console.log(`Polling config ${config.id}, response status: ${response.status}`);
-
-            if (response.ok) {
-              const progressData = await response.json();
-              console.log(`Polling received for config ${config.id}:`, progressData);
-
-              // Log progress data for debugging
-              console.log(`Progress update for config ${config.id}:`, progressData);
-
-              // Also update console view if open for this config
-              if (consoleConfig && consoleConfig.id === config.id) {
-                setConsoleConfig(prev => prev ? {
-                  ...prev,
-                  currentStep: progressData.currentStep || prev.currentStep,
-                  progress: progressData.progress || prev.progress,
-                  stats: {
-                    ...prev.stats,
-                    total_invoices: progressData.totalInvoices || prev.stats?.total_invoices || 0,
-                    processed_invoices: progressData.processedInvoices || prev.stats?.processed_invoices || 0,
-                    successful_imports: progressData.successfulImports || prev.stats?.successful_imports || 0,
-                    failed_imports: progressData.failedImports || prev.stats?.failed_imports || 0,
-                    current_step: progressData.currentStep || prev.stats?.current_step || 'Processing',
-                    progress: progressData.progress || prev.stats?.progress || 0
-                  },
-                  status: progressData.isComplete ? 'completed' : 'running'
-                } : null);
-              }
-            }
-          } catch (error) {
-            console.error(`Error polling config ${config.id}:`, error);
-          }
-        }
-      };
-
-      // Poll immediately, then set interval
-      pollProgress();
-      const interval = setInterval(pollProgress, 1500);
-
-      return () => {
-        console.log('Stopping polling interval');
-        clearInterval(interval);
-      };
+  const fetchConfigs = async () => {
+    try {
+      const response = await fetch('/api/invoice-importer/configs');
+      if (response.ok) {
+        const data = await response.json();
+        setConfigs(data);
+      }
+    } catch (error) {
+      console.error('Error fetching configs:', error);
     }
-  }, [configs, consoleConfig]);
+  };
 
-  // fetchConfigs removed - now using useQuery
-
-  // fetchLogs removed - now using useQuery
+  const fetchLogs = async () => {
+    try {
+      const response = await fetch('/api/invoice-importer/logs');
+      if (response.ok) {
+        const data = await response.json();
+        setLogs(data);
+      }
+    } catch (error) {
+      console.error('Error fetching logs:', error);
+    }
+  };
 
   const fetchERPConnections = async () => {
     try {
@@ -492,7 +397,7 @@ export default function InvoiceImporter() {
     setConsoleConfig(config);
     setConsoleLogs([]); // Clear previous logs
     setShowConsoleView(true);
-
+    
     // Start fetching existing logs for this config
     fetchConfigLogs(config.id);
   };
@@ -545,38 +450,28 @@ export default function InvoiceImporter() {
     const config = configs.find(c => c.id === configId);
     if (!config) return;
 
-    console.log(`Starting import for config ${configId}: ${config.taskName}`);
-    
     setRunningConfigId(configId);
     setRunningConfigName(config.taskName);
-
+    
     // Update config status to running immediately
     setConfigs(prev => prev.map(c => 
       c.id === configId ? { ...c, status: 'running', progress: 0 } : c
     ));
 
     try {
-      console.log(`Making API call to /api/invoice-importer/configs/${configId}/execute`);
       const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
-        method: 'POST',
-        credentials: 'include'
+        method: 'POST'
       });
 
-      console.log(`API response status: ${response.status}`);
-      
       if (response.ok) {
-        const responseData = await response.json();
-        console.log('Import started successfully:', responseData);
-        
         toast({
           title: "Import Started",
           description: "Invoice import process has been initiated"
         });
 
-        refetchLogs();
+        fetchLogs();
       } else {
         const errorData = await response.json();
-        console.error('API error response:', errorData);
         throw new Error(errorData.error || 'Failed to start import');
       }
     } catch (error) {
@@ -716,7 +611,7 @@ export default function InvoiceImporter() {
           manualErpPassword: '',
           headless: true
         });
-        refetchConfigs();
+        fetchConfigs();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create configuration');
@@ -741,7 +636,7 @@ export default function InvoiceImporter() {
                 title: "Configuration Deleted",
                 description: "Import configuration deleted successfully"
             });
-            refetchConfigs(); // Refresh configurations after deletion
+            fetchConfigs(); // Refresh configurations after deletion
         } else {
             const errorData = await response.json();
             throw new Error(errorData.error || 'Failed to delete configuration');
@@ -753,84 +648,8 @@ export default function InvoiceImporter() {
             variant: "destructive"
         });
     }
-  };
+};
 
-  // useQuery declarations moved above to avoid temporal dead zone
-  useEffect(() => {
-    // Only connect WebSocket if user is authenticated
-    if (!user) {
-      console.log('User not authenticated, skipping WebSocket connection');
-      return;
-    }
-
-    const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${wsProtocol}//${window.location.host}/ws`;
-
-    const connectWebSocket = () => {
-      if (wsRef.current?.readyState === WebSocket.OPEN) {
-        return;
-      }
-
-      console.log('Connecting to WebSocket:', wsUrl);
-      wsRef.current = new WebSocket(wsUrl);
-
-      wsRef.current.onopen = () => {
-        console.log('WebSocket connected for Invoice Importer');
-        setConnectionStatus('connected');
-
-        // Send authentication message
-        if (user && wsRef.current?.readyState === WebSocket.OPEN) {
-          wsRef.current.send(JSON.stringify({
-            type: 'authenticate',
-            userId: user.sub
-          }));
-        }
-      };
-
-      wsRef.current.onmessage = (event) => {
-        try {
-          console.log('Received WebSocket message:', JSON.parse(event.data));
-          const data = JSON.parse(event.data);
-
-          if (data.type === 'progress') {
-            handleRealTimeProgressUpdate(data);
-          } else if (data.type === 'task_complete') {
-            handleTaskComplete(data);
-          } else if (data.type === 'logs') {
-            handleRealTimeLogs(data);
-          } else if (data.type === 'subscription_confirmed') {
-            console.log('Subscription confirmed for user:', data.userId);
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
-      };
-
-      wsRef.current.onclose = () => {
-        console.log('WebSocket disconnected');
-        setConnectionStatus('disconnected');
-        setWs(null);
-        wsRef.current = null;
-        // Try to reconnect after a delay if user is still authenticated
-        if (user) {
-          setTimeout(connectWebSocket, 3000);
-        }
-      };
-
-      wsRef.current.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionStatus('error');
-      };
-    };
-
-    connectWebSocket();
-
-    return () => {
-      if (wsRef.current) {
-        wsRef.current.close();
-      }
-    };
-  }, [user]);
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -841,7 +660,7 @@ export default function InvoiceImporter() {
             <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
             <p className="text-gray-600 mt-2">Configure automated ERP invoice import processes</p>
           </div>
-          <Button
+          <Button 
             onClick={() => setShowCreateDialog(true)}
             className="flex items-center space-x-2"
           >
@@ -936,7 +755,7 @@ export default function InvoiceImporter() {
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <div>
                           <p className="text-sm text-gray-600">ERP Connection</p>
-                          <p className="font-medium">{config.connection?.name || ('Connection ID: ' + config.connectionId)}</p>
+                          <p className="font-medium">{config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">File Types</p>
@@ -951,7 +770,7 @@ export default function InvoiceImporter() {
                           <p className="font-medium">{formatLastRun(config.lastRun)}</p>
                         </div>
                       </div>
-
+                      
                       {/* Progress bar for running tasks */}
                       {config.status === 'running' && (
                         <div className="space-y-2">
@@ -973,7 +792,7 @@ export default function InvoiceImporter() {
                           )}
                         </div>
                       )}
-
+                      
                       {/* Click hint */}
                       <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
                         <p className="text-sm text-gray-500">Click to view detailed console logs</p>
@@ -1247,7 +1066,7 @@ export default function InvoiceImporter() {
                   </div>
                 )}
 
-
+                
               </div>
 
               {/* Browser Configuration */}
@@ -1311,7 +1130,7 @@ export default function InvoiceImporter() {
                 </div>
               </div>
             </DialogHeader>
-
+            
             <div className="flex-1 flex flex-col min-h-0">
               {/* Stats Summary */}
               {consoleConfig?.stats && (
@@ -1425,7 +1244,7 @@ export default function InvoiceImporter() {
                         } else if (log.toLowerCase().includes('info') || log.toLowerCase().includes('starting')) {
                           colorClass = 'text-cyan-400';
                         }
-
+                        
                         return (
                           <div key={index} className={`whitespace-pre-wrap ${colorClass}`}>
                             {log}
