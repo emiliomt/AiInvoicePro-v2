@@ -423,7 +423,7 @@ export default function InvoiceImporter() {
             const response = await fetch(`/api/invoice-importer/progress/${config.id}`, {
               credentials: 'include'
             });
-            
+
             console.log(`Polling config ${config.id}, response status: ${response.status}`);
 
             if (response.ok) {
@@ -706,7 +706,7 @@ export default function InvoiceImporter() {
           manualErpPassword: '',
           headless: true
         });
-        fetchConfigs();
+        refetchConfigs();
       } else {
         const errorData = await response.json();
         throw new Error(errorData.error || 'Failed to create configuration');
@@ -926,7 +926,7 @@ export default function InvoiceImporter() {
                       <div className="grid grid-cols-2 gap-4 mb-4">
                         <div>
                           <p className="text-sm text-gray-600">ERP Connection</p>
-                          <p className="font-medium">{config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
+                          <p className="font-medium">{config.connection?.name || ('Connection ID: ' + config.connectionId)}</p>
                         </div>
                         <div>
                           <p className="text-sm text-gray-600">File Types</p>
