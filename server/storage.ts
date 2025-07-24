@@ -321,8 +321,26 @@ class PostgresStorage implements IStorage {
   }
 
   async getInvoicesByUserId(userId: string): Promise<Invoice[]> {
+    // Get user's company to include RPA invoices for the same company
+    const user = await this.getUser(userId);
+    if (!user || !user.companyId) {
+      // If no company, only return user's own invoices
+      return await db.select().from(invoices)
+        .where(eq(invoices.userId, userId))
+        .orderBy(desc(invoices.createdAt));
+    }
+
+    // Include both user's invoices and RPA invoices for the company
     return await db.select().from(invoices)
-      .where(eq(invoices.userId, userId))
+      .where(
+        or(
+          eq(invoices.userId, userId),
+          and(
+            eq(invoices.userId, 'rpa-system'),
+            eq(invoices.companyId, user.companyId)
+          )
+        )
+      )
       .orderBy(desc(invoices.createdAt));
   }
 

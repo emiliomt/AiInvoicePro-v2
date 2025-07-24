@@ -3674,8 +3674,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const invoiceData = {
         userId: 'rpa-system', // Special user for RPA imports
         fileName: filename,
-        fileSize: fileSize,
+        fileSize: fileSize,  
         status: 'processing' as const,
+        companyId: 1, // Set to default company ID so RPA invoices appear for company users
         // Note: source field not in schema, storing in extractedData instead
       };
       
