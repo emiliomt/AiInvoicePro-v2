@@ -679,9 +679,9 @@ class InvoiceRPAService:
                                                    before_files=existing_zips)
             self.log(f"Downloaded: {downloaded_zip}")
 
-            # Rename file with valor_total included
+            # Rename file
             new_name = os.path.join(self.download_dir,
-                                    f"{numero_documento}_{safe_emisor}_{valor_total}.zip")
+                                    f"{numero_documento}_{safe_emisor}.zip")
             final_path = self.safe_rename(downloaded_zip, new_name)
 
             # Record in database
@@ -941,20 +941,19 @@ class InvoiceRPAService:
                     try:
                         # Parse filename to get document info
                         base_name = os.path.splitext(filename)[0]
-                        parts = base_name.split("_")
-                        if len(parts) < 3:
+                        parts = base_name.split("_", 2)
+                        if len(parts) < 2:
                             self.log(f"Skipping invalid filename: {filename}")
                             continue
 
-                        # Handle the new format: numero_emisor_valor or numero_emisor_part1_part2_valor
                         numero = parts[0]
-                        valor = parts[-1]  # valor_total is always the last part
-                        emisor = "_".join(parts[1:-1])  # emisor is everything between numero and valor
+                        emisor = parts[1] if len(parts) > 1 else "unknown"
+                        valor = parts[2] if len(parts) > 2 else "0"
                         xml_file_path = os.path.join(self.xml_dir, filename)
 
-                        # Create standardized filename for manual pipeline with valor_total
+                        # Create standardized filename for manual pipeline
                         safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
-                        upload_filename = f"{numero}_{safe_emisor}_{valor}.xml"
+                        upload_filename = f"{numero}_{safe_emisor}.xml"
                         upload_path = os.path.join(uploads_dir, upload_filename)
                         
                         # Copy XML file to uploads directory
