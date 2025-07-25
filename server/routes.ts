@@ -3372,9 +3372,24 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       let connection = null;
       if (!data.isManualConfig && data.connectionId) {
         connection = await storage.getErpConnection(data.connectionId);
-        if (!connection || connection.userId !== (user as any).claims.sub) {
+        if (!connection) {
           return res.status(400).json({ 
-            error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account.' 
+            error: 'ERP connection not found. Please select a valid ERP connection.' 
+          });
+        }
+
+        // Check if user owns the connection OR has company access
+        const currentUser = await storage.getUser((user as any).claims.sub);
+        const connectionOwner = await storage.getUser(connection.userId);
+        
+        const hasAccess = connection.userId === (user as any).claims.sub || 
+          (currentUser?.companyId && connectionOwner?.companyId && 
+           currentUser.companyId === connectionOwner.companyId);
+
+        if (!hasAccess) {
+          console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to use ERP connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
+          return res.status(400).json({ 
+            error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account or company.' 
           });
         }
 
@@ -3384,7 +3399,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           });
         }
 
-        console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl})`);
+        console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl}) - Company access: ${currentUser?.companyId === connectionOwner?.companyId}`);
       } else if (data.isManualConfig) {
         console.log('Creating import config with manual ERP configuration');
         // Set connectionId to null for manual configurations
