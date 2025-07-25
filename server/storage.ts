@@ -502,7 +502,12 @@ class PostgresStorage implements IStorage {
     return result || null;
   }
 
-  async getErpConnections(): Promise<ErpConnection[]> {
+  async getErpConnections(userId?: string): Promise<ErpConnection[]> {
+    if (userId) {
+      return await db.select().from(erpConnections)
+        .where(eq(erpConnections.userId, userId))
+        .orderBy(desc(erpConnections.createdAt));
+    }
     return await db.select().from(erpConnections).orderBy(desc(erpConnections.createdAt));
   }
 

@@ -2177,10 +2177,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user owns the connection OR has company access
       const currentUser = await storage.getUser((user as any).claims.sub);
+      const connectionOwner = await storage.getUser(connection.userId);
+      
       const hasAccess = connection.userId === (user as any).claims.sub || 
-        (currentUser?.companyId && connection.companyId === currentUser.companyId);
+        (currentUser?.companyId && connectionOwner?.companyId && 
+         currentUser.companyId === connectionOwner.companyId);
 
       if (!hasAccess) {
+        console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to access connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
         return res.status(403).json({ error: 'Access denied to this connection' });
       }
 
@@ -2786,7 +2790,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const connections = await storage.getErpConnections((user as any).claims.sub);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let connections = await storage.getErpConnections((user as any).claims.sub);
+
+      // If user has a company, also include connections from other company members
+      if (currentUser?.companyId) {
+        const allConnections = await storage.getErpConnections();
+        const companyConnections = [];
+        
+        for (const conn of allConnections) {
+          const connectionOwner = await storage.getUser(conn.userId);
+          if (connectionOwner?.companyId === currentUser.companyId && conn.userId !== (user as any).claims.sub) {
+            companyConnections.push(conn);
+          }
+        }
+        connections = [...connections, ...companyConnections];
+      }
 
       // Remove passwords from response
       const safeConnections = connections.map(({ password, ...conn }) => conn);
@@ -2857,10 +2876,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if user owns the connection OR has company access
       const currentUser = await storage.getUser((user as any).claims.sub);
+      const connectionOwner = await storage.getUser(connection.userId);
+      
       const hasAccess = connection.userId === (user as any).claims.sub || 
-        (currentUser?.companyId && connection.companyId === currentUser.companyId);
+        (currentUser?.companyId && connectionOwner?.companyId && 
+         currentUser.companyId === connectionOwner.companyId);
 
       if (!hasAccess) {
+        console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to access connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
         return res.status(403).json({ error: 'Access denied to this connection' });
       }
 
