@@ -1734,7 +1734,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (invoice.userId !== userId) {
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 

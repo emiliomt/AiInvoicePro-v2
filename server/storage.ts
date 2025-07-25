@@ -783,87 +783,40 @@ class PostgresStorage implements IStorage {
 
   async deleteAllUserInvoices(userId: string): Promise<number> {
     try {
-      // First get count for return value
-      const userInvoices = await db
-        .select({ count: sql<number>`count(*)` })
-        .from(invoices)
-        .where(eq(invoices.userId, userId));
+      // Get user information to find company
+      const user = await this.getUser(userId);
+      if (!user) {
+        return 0;
+      }
 
-      const count = userInvoices[0]?.count || 0;
+      // Get all invoices that user has access to (owned by user OR RPA invoices from same company)
+      const accessibleInvoices = await db
+        .select()
+        .from(invoices)
+        .where(
+          or(
+            eq(invoices.userId, userId),
+            and(
+              eq(invoices.userId, 'rpa-system'),
+              eq(invoices.companyId, user.companyId)
+            )
+          )
+        );
+
+      const count = accessibleInvoices.length;
 
       if (count > 0) {
-        // Delete line items first
-        await db
-          .delete(lineItems)
-          .where(
-            inArray(
-              lineItems.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
+        const invoiceIds = accessibleInvoices.map(inv => inv.id);
 
-        // Delete approvals
-        await db
-          .delete(approvals)
-          .where(
-            inArray(
-              approvals.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
-
-        // Delete invoice flags
-        // await db
-        //   .delete(invoiceFlags)
-        //   .where(
-        //     inArray(
-        //       invoiceFlags.invoiceId,
-        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-        //     )
-        //   );
-
-        // Delete feedback logs
-        await db
-          .delete(feedbackLogs)
-          .where(
-            inArray(
-              feedbackLogs.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
-
-        // Delete invoice-PO matches
-        await db
-          .delete(invoicePoMatches)
-          .where(
-            inArray(
-              invoicePoMatches.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
-
-        // Delete invoice-project matches
-        await db
-          .delete(invoiceProjectMatches)
-          .where(
-            inArray(
-              invoiceProjectMatches.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-            )
-          );
-
-        // Delete feedback logs
-        // await db
-        //   .delete(feedbackLogs)
-        //   .where(
-        //     inArray(
-        //       feedbackLogs.invoiceId,
-        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.userId, userId))
-        //     )
-        //   );
+        // Delete related records first
+        await db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds));
+        await db.delete(feedbackLogs).where(inArray(feedbackLogs.invoiceId, invoiceIds));
+        await db.delete(approvals).where(inArray(approvals.invoiceId, invoiceIds));
+        await db.delete(invoicePoMatches).where(inArray(invoicePoMatches.invoiceId, invoiceIds));
+        await db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds));
 
         // Finally delete the invoices
-        await db.delete(invoices).where(eq(invoices.userId, userId));
+        await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
       }
 
       return count;
