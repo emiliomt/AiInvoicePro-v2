@@ -146,7 +146,10 @@ export default function Invoices() {
   const formatAmount = (amount: string | null, currency: string) => {
     if (!amount || amount === "null" || amount === "undefined") return "N/A";
 
-    const numericAmount = parseFloat(amount);
+    // Clean up any potential HTML or corrupted content
+    const cleanAmount = typeof amount === 'string' ? amount.replace(/<[^>]*>/g, '').trim() : amount;
+    
+    const numericAmount = parseFloat(cleanAmount);
     if (isNaN(numericAmount)) return "N/A";
 
     const formattedNumber = numericAmount.toLocaleString('en-US', {
@@ -163,6 +166,21 @@ export default function Invoices() {
     } catch {
       return "Invalid date";
     }
+  };
+
+  const safeRenderText = (text: string | null | undefined, fallback: string = "N/A") => {
+    if (!text || text === "null" || text === "undefined") return fallback;
+    
+    // Clean up any HTML tags or corrupted content
+    const cleanText = typeof text === 'string' ? text.replace(/<[^>]*>/g, '').trim() : String(text);
+    
+    // Check if the text contains excessive special characters (likely corrupted)
+    const specialCharRatio = (cleanText.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleanText.length;
+    if (specialCharRatio > 0.3) {
+      return fallback;
+    }
+    
+    return cleanText.substring(0, 100); // Limit length to prevent UI overflow
   };
 
   const isPDFFile = (fileName: string | null) => {
@@ -445,7 +463,7 @@ export default function Invoices() {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-gray-500">Vendor</p>
-                          <p className="text-sm text-gray-900">{invoice.vendorName || "N/A"}</p>
+                          <p className="text-sm text-gray-900">{safeRenderText(invoice.vendorName)}</p>
                         </div>
                         <div className="space-y-1">
                           <p className="text-sm font-medium text-gray-500">Amount</p>
@@ -604,11 +622,11 @@ export default function Invoices() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700">Vendor Name</label>
-                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.vendorName || "Not extracted"}</p>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText(selectedInvoice.vendorName, "Not extracted")}</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Tax ID/VAT Number</label>
-                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.taxId || "Not extracted"}</p>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText((selectedInvoice as any).extractedData?.taxId, "Not extracted")}</p>
                     </div>
                   </div>
                 </div>
@@ -620,7 +638,7 @@ export default function Invoices() {
                   <div className="grid grid-cols-2 gap-4">
                     <div>
                       <label className="text-sm font-medium text-gray-700">Invoice Number</label>
-                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.invoiceNumber || "Not extracted"}</p>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText(selectedInvoice.invoiceNumber, "Not extracted")}</p>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Invoice Date</label>

@@ -98,10 +98,25 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       invoiceNumber: extractedData.invoiceNumber
     });
 
-    // Validate extracted data
+    // Sanitize and validate extracted data
+    const sanitizeText = (text: any) => {
+      if (!text || typeof text !== 'string') return null;
+      
+      // Remove HTML tags and excessive special characters
+      const cleaned = text.replace(/<[^>]*>/g, '').trim();
+      
+      // Check if text is mostly corrupted (high ratio of special characters)
+      const specialCharRatio = (cleaned.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleaned.length;
+      if (specialCharRatio > 0.3 || cleaned.length > 500) {
+        return null;
+      }
+      
+      return cleaned;
+    };
+
     const cleanedData = {
-      vendorName: extractedData.vendorName || null,
-      invoiceNumber: extractedData.invoiceNumber || null,
+      vendorName: sanitizeText(extractedData.vendorName),
+      invoiceNumber: sanitizeText(extractedData.invoiceNumber),
       invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
       dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
       totalAmount: extractedData.totalAmount || null,
@@ -1264,6 +1279,94 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to upload invoices" });
     }
   });
+  // Clean corrupted invoice data
+  app.post('/api/invoices/clean-data', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      console.log(`User ${userId} requested to clean corrupted invoice data`);
+
+      // Get all invoices for the user
+      const invoices = await storage.getInvoicesByUserId(userId);
+      let cleanedCount = 0;
+
+      const sanitizeText = (text: any) => {
+        if (!text || typeof text !== 'string') return null;
+        
+        // Remove HTML tags and excessive special characters
+        const cleaned = text.replace(/<[^>]*>/g, '').trim();
+        
+        // Check if text is mostly corrupted
+        const specialCharRatio = (cleaned.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleaned.length;
+        if (specialCharRatio > 0.3 || cleaned.length > 500) {
+          return null;
+        }
+        
+        return cleaned;
+      };
+
+      for (const invoice of invoices) {
+        let needsUpdate = false;
+        const updates: any = {};
+
+        // Clean vendor name
+        if (invoice.vendorName && typeof invoice.vendorName === 'string') {
+          const cleanedVendor = sanitizeText(invoice.vendorName);
+          if (cleanedVendor !== invoice.vendorName) {
+            updates.vendorName = cleanedVendor;
+            needsUpdate = true;
+          }
+        }
+
+        // Clean invoice number
+        if (invoice.invoiceNumber && typeof invoice.invoiceNumber === 'string') {
+          const cleanedNumber = sanitizeText(invoice.invoiceNumber);
+          if (cleanedNumber !== invoice.invoiceNumber) {
+            updates.invoiceNumber = cleanedNumber;
+            needsUpdate = true;
+          }
+        }
+
+        // Clean extracted data
+        if (invoice.extractedData && typeof invoice.extractedData === 'object') {
+          const cleanedExtractedData = { ...invoice.extractedData };
+          let extractedDataChanged = false;
+
+          for (const [key, value] of Object.entries(cleanedExtractedData)) {
+            if (typeof value === 'string') {
+              const cleanedValue = sanitizeText(value);
+              if (cleanedValue !== value) {
+                cleanedExtractedData[key] = cleanedValue;
+                extractedDataChanged = true;
+              }
+            }
+          }
+
+          if (extractedDataChanged) {
+            updates.extractedData = cleanedExtractedData;
+            needsUpdate = true;
+          }
+        }
+
+        if (needsUpdate) {
+          await storage.updateInvoice(invoice.id, updates);
+          cleanedCount++;
+        }
+      }
+
+      res.json({ 
+        message: `Cleaned ${cleanedCount} invoices with corrupted data`,
+        cleanedCount
+      });
+      
+    } catch (error: any) {
+      console.error('Error cleaning invoice data:', error);
+      res.status(500).json({ 
+        message: 'Failed to clean invoice data', 
+        error: error.message 
+      });
+    }
+  });
+
   // Clear invoice files cache
   app.delete('/api/invoices/clear-cache', isAuthenticated, async (req: any, res) => {
     try {
