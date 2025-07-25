@@ -2171,8 +2171,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const connectionId = parseInt(req.params.connectionId);
       const connection = await storage.getErpConnection(connectionId);
 
-      if (!connection || connection.userId !== (user as any).claims.sub) {
+      if (!connection) {
         return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Check if user owns the connection OR has company access
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      const hasAccess = connection.userId === (user as any).claims.sub || 
+        (currentUser?.companyId && connection.companyId === currentUser.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied to this connection' });
       }
 
       // Decrypt password
@@ -2842,8 +2851,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const connectionId = parseInt(req.params.id);
       const connection = await storage.getErpConnection(connectionId);
 
-      if (!connection || connection.userId !== (user as any).claims.sub) {
+      if (!connection) {
         return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Check if user owns the connection OR has company access
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      const hasAccess = connection.userId === (user as any).claims.sub || 
+        (currentUser?.companyId && connection.companyId === currentUser.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied to this connection' });
       }
 
       // Decrypt password
