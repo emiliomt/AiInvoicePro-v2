@@ -2974,6 +2974,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
       
       const progress = pythonInvoiceImporter.getImportProgress(configId);
+      const activeImports = pythonInvoiceImporter.getActiveImports();
+      
+      // Add debug logging for specific config to verify API is working
+      if (configId === 18) {
+        console.log(`🔍 Progress request for config ${configId}:`, {
+          hasProgress: !!progress,
+          activeImportsCount: activeImports.length,
+          activeConfigIds: activeImports.map(imp => imp.configId),
+          progressData: progress ? {
+            progress: progress.progress,
+            currentStep: progress.currentStep,
+            isComplete: progress.isComplete
+          } : null
+        });
+      }
       
       if (!progress) {
         return res.json({
@@ -3007,6 +3022,54 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error fetching import progress:', error);
       res.status(500).json({ message: 'Failed to fetch import progress' });
+    }
+  });
+
+  // Test endpoint to simulate progress for demonstrating real-time updates
+  app.post('/api/invoice-importer/test-progress/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      
+      // Simulate progress updates for demonstration
+      const testProgress = {
+        configId,
+        logId: 999, // Test log ID
+        totalInvoices: 10,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        currentStep: 'Starting test import simulation',
+        progress: 0,
+        isComplete: false,
+      };
+
+      // Set initial progress
+      pythonInvoiceImporter.setTestProgress(configId, testProgress);
+
+      // Simulate progress updates over time
+      const steps = [
+        { progress: 10, step: 'Initializing browser', delay: 1000 },
+        { progress: 20, step: 'Logging into ERP system', delay: 2000 },
+        { progress: 40, step: 'Loading invoice list', delay: 3000 },
+        { progress: 60, step: 'Downloading invoice files', delay: 4000 },
+        { progress: 80, step: 'Extracting XML files', delay: 5000 },
+        { progress: 90, step: 'Processing XML files', delay: 6000 },
+        { progress: 100, step: 'Import completed successfully', delay: 7000, complete: true },
+      ];
+
+      steps.forEach(({ progress, step, delay, complete }) => {
+        setTimeout(() => {
+          const updatedProgress = { ...testProgress, progress, currentStep: step, isComplete: !!complete };
+          pythonInvoiceImporter.setTestProgress(configId, updatedProgress);
+          console.log(`🧪 Test progress updated: ${progress}% - ${step}`);
+        }, delay);
+      });
+
+      res.json({ message: `Test progress simulation started for config ${configId}` });
+    } catch (error) {
+      console.error('Error starting test progress:', error);
+      res.status(500).json({ message: 'Failed to start test progress' });
     }
   });
 

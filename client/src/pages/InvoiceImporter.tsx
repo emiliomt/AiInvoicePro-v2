@@ -7,7 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
@@ -107,6 +107,9 @@ export default function InvoiceImporter() {
   
   // Progress polling state
   const [progressPollingInterval, setProgressPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  
+  // User state for WebSocket
+  const [user] = useState({ id: 'current-user' });
   
   const { toast } = useToast();
 
@@ -555,7 +558,7 @@ export default function InvoiceImporter() {
           
           // Add logs to console if available
           if (progressData.logs && consoleConfig && consoleConfig.id === configId) {
-            const logLines = progressData.logs.split('\n').filter(line => line.trim());
+            const logLines = progressData.logs.split('\n').filter((line: string) => line.trim());
             setConsoleLogs(prev => {
               const newLogs = [...prev, ...logLines.slice(-3)]; // Add last 3 lines
               return newLogs.slice(-15); // Keep last 15 lines
@@ -756,7 +759,44 @@ export default function InvoiceImporter() {
             variant: "destructive"
         });
     }
-};
+  };
+
+  // Test progress simulation for demonstration
+  const handleTestProgress = async (configId: number) => {
+    try {
+      const response = await fetch(`/api/invoice-importer/test-progress/${configId}`, {
+        method: 'POST'
+      });
+
+      if (response.ok) {
+        toast({
+          title: "Test Progress Started",
+          description: "Progress simulation started. Watch the progress bar update in real-time!"
+        });
+        
+        // Start polling for this config
+        startProgressPolling(configId);
+        
+        // Update config status to show it's running
+        setConfigs(prevConfigs =>
+          prevConfigs.map(config =>
+            config.id === configId
+              ? { ...config, status: 'running', progress: 0, currentStep: 'Starting test simulation' }
+              : config
+          )
+        );
+      } else {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to start test progress');
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to start test progress",
+        variant: "destructive"
+      });
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -835,6 +875,17 @@ export default function InvoiceImporter() {
                           >
                             <Terminal className="w-4 h-4 mr-2" />
                             Console
+                          </Button>
+                          <Button 
+                            variant="outline" 
+                            size="sm" 
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleTestProgress(config.id);
+                            }}
+                          >
+                            <Zap className="w-4 h-4 mr-2" />
+                            Test Progress
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>

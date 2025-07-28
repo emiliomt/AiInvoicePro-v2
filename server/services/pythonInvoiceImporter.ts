@@ -215,10 +215,11 @@ class PythonInvoiceImporter {
         }
       }
     } finally {
-      // Clean up progress tracking after delay
+      // Keep progress tracking for longer so UI can see completion status
       setTimeout(() => {
+        console.log(`Cleaning up progress tracking for config ${configId}`);
         this.activeImports.delete(configId);
-      }, 30000); // Keep progress for 30 seconds after completion
+      }, 60000); // Keep progress for 60 seconds after completion for UI polling
     }
   }
 
@@ -414,6 +415,42 @@ class PythonInvoiceImporter {
               progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
               progress.progress = statsUpdate.progress || progress.progress;
+              
+              console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
+            }
+
+            // Manual progress milestones based on key log statements
+            if (trimmedLine.includes('Setting up Chrome WebDriver') || trimmedLine.includes('Initializing')) {
+              progress.progress = 10;
+              progress.currentStep = 'Initializing browser';
+            } else if (trimmedLine.includes('Logging into ERP') || trimmedLine.includes('Login successful')) {
+              progress.progress = 20;
+              progress.currentStep = 'Logging into ERP system';
+            } else if (trimmedLine.includes('Navigating to invoice') || trimmedLine.includes('Finding invoice')) {
+              progress.progress = 30;
+              progress.currentStep = 'Navigating to invoice section';
+            } else if (trimmedLine.includes('Found') && trimmedLine.includes('rows')) {
+              progress.progress = 40;
+              progress.currentStep = 'Processing invoice rows';
+              
+              // Extract row count for total invoices
+              const rowMatch = trimmedLine.match(/Found\s+(\d+)\s+rows/i);
+              if (rowMatch) {
+                progress.totalInvoices = parseInt(rowMatch[1]);
+              }
+            } else if (trimmedLine.includes('Downloaded:') || trimmedLine.includes('Processing:')) {
+              progress.progress = Math.min(progress.progress + 5, 70); // Increment during processing
+              progress.currentStep = 'Downloading invoice files';
+            } else if (trimmedLine.includes('Extracting XML') || trimmedLine.includes('Unzipping')) {
+              progress.progress = 80;
+              progress.currentStep = 'Extracting XML files';
+            } else if (trimmedLine.includes('Processing XML') || trimmedLine.includes('manual upload pipeline')) {
+              progress.progress = 90;
+              progress.currentStep = 'Processing XML files through upload pipeline';
+            } else if (trimmedLine.includes('Import process completed') || trimmedLine.includes('RESULT:')) {
+              progress.progress = 100;
+              progress.currentStep = 'Import completed successfully';
+              progress.isComplete = true;
             }
 
             // Send real-time log line via WebSocket immediately
@@ -663,6 +700,14 @@ class PythonInvoiceImporter {
    */
   getActiveImports(): ImportProgress[] {
     return Array.from(this.activeImports.values());
+  }
+
+  /**
+   * Set test progress for demonstration purposes
+   */
+  setTestProgress(configId: number, progress: ImportProgress): void {
+    this.activeImports.set(configId, progress);
+    console.log(`🧪 Test progress set for config ${configId}: ${progress.progress}% - ${progress.currentStep}`);
   }
 
   /**
