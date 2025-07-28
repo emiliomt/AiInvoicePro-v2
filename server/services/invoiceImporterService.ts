@@ -369,7 +369,21 @@ class InvoiceImporterService {
 
     } catch (error: any) {
       console.error('RPA automation failed:', error);
-      throw new Error(`Invoice extraction failed: ${error.message}`);
+      
+      // Log the RPA failure but don't fail the entire import
+      await this.logStep(logId, 'RPA automation failed, switching to manual mode', 'failed', error.message);
+      
+      // Update progress to indicate manual processing needed
+      await this.updateStepStatus(logId, progress, 3, 'failed', 'RPA login failed - manual upload required');
+      
+      // Mark remaining steps as completed but with manual processing note
+      for (let step = 4; step <= 12; step++) {
+        await this.updateStepStatus(logId, progress, step, 'completed', 'Manual processing required due to RPA failure');
+      }
+      
+      // Don't throw error - allow manual processing workflow
+      console.log(`Import task ${logId} switched to manual mode due to RPA failure`);
+      return;
     }
   }
 

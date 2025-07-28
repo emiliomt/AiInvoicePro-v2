@@ -823,7 +823,8 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
 
-            # Connect to local XML SQLite database
+            # Connect to local```python
+ XML SQLite database
             xml_conn = sqlite3.connect(self.xml_db_path)
             xml_cursor = xml_conn.cursor()
 
@@ -865,9 +866,9 @@ class InvoiceRPAService:
                         SELECT id FROM imported_invoices 
                         WHERE log_id = %s AND original_file_name = %s
                     """, (log_id, original_filename))
-                    
+
                     existing_record = pg_cursor.fetchone()
-                    
+
                     if not existing_record:
                         # Insert into PostgreSQL imported_invoices table
                         pg_cursor.execute("""
@@ -890,7 +891,7 @@ class InvoiceRPAService:
                                 'processing_status': 'ready_for_upload_pipeline'
                             })
                         ))
-                        
+
                         transferred_count += 1
                         self.log(f"Transferred to PostgreSQL: {original_filename}")
                     else:
@@ -929,13 +930,13 @@ class InvoiceRPAService:
         """Process extracted XML files directly through manual upload pipeline"""
         try:
             self.update_progress("Processing XML files through manual upload pipeline", 90)
-            
+
             # Ensure uploads directory exists
             uploads_dir = 'uploads'
             os.makedirs(uploads_dir, exist_ok=True)
-            
+
             processed_count = 0
-            
+
             for filename in os.listdir(self.xml_dir):
                 if filename.lower().endswith(".xml"):
                     try:
@@ -955,23 +956,23 @@ class InvoiceRPAService:
                         safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
                         upload_filename = f"{numero}_{safe_emisor}.xml"
                         upload_path = os.path.join(uploads_dir, upload_filename)
-                        
+
                         # Copy XML file to uploads directory
                         with open(xml_file_path, 'r', encoding='utf-8') as src:
                             xml_content = src.read()
-                        
+
                         with open(upload_path, 'w', encoding='utf-8') as dst:
                             dst.write(xml_content)
-                        
+
                         # Call Node.js endpoint to process the file through manual pipeline
                         self.trigger_manual_processing(upload_filename, numero, emisor, valor)
-                        
+
                         # Clean up temp XML file
                         os.remove(xml_file_path)
                         processed_count += 1
-                        
+
                         self.log(f"Processed through manual pipeline: {upload_filename}")
-                        
+
                     except Exception as e:
                         self.log(f"Failed to process {filename}: {e}", "ERROR")
 
@@ -986,11 +987,11 @@ class InvoiceRPAService:
         """Trigger the manual upload processing pipeline via HTTP request"""
         try:
             import requests
-            
+
             # Create the invoice record first (simulating manual upload)
             file_path = f"uploads/{filename}"
             file_size = os.path.getsize(file_path)
-            
+
             # Call the RPA integration endpoint instead of duplicating logic
             payload = {
                 'filename': filename,
@@ -1000,19 +1001,19 @@ class InvoiceRPAService:
                 'totalValue': valor,
                 'source': 'python_rpa'
             }
-            
+
             # Make request to Node.js server to process through manual pipeline
             response = requests.post(
                 'http://localhost:5000/api/rpa/process-xml',
                 json=payload,
                 timeout=30
             )
-            
+
             if response.status_code == 200:
                 self.log(f"Successfully triggered manual processing for {filename}")
             else:
                 self.log(f"Failed to trigger manual processing for {filename}: {response.status_code}")
-                
+
         except Exception as e:
             self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
 
