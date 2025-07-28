@@ -3073,6 +3073,116 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Schedule Overview API - Get all scheduled configurations with metadata
+  app.get('/api/schedule-overview', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Get all active configurations with schedule information
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
+
+      // If user has a company, also include configurations from other company members
+      if (currentUser?.companyId) {
+        const allConfigs = await storage.getInvoiceImporterConfigs();
+        const companyConfigs = [];
+        
+        for (const config of allConfigs) {
+          const configOwner = await storage.getUser(config.userId);
+          if (configOwner?.companyId === currentUser.companyId && config.userId !== (user as any).claims.sub) {
+            companyConfigs.push(config);
+          }
+        }
+        configs = [...configs, ...companyConfigs];
+      }
+
+      // Filter out manual configurations and format for schedule overview
+      const scheduledConfigs = configs.filter(config => config.scheduleType !== 'manual').map(config => {
+        // Calculate next run time based on schedule type and configuration
+        let nextRunTime = null;
+        let frequencyDetail = '';
+
+        if (config.scheduleType === 'daily') {
+          const today = new Date();
+          const [hours, minutes] = (config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00').split(':');
+          const nextRun = new Date(today);
+          nextRun.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+          
+          // If time has passed today, schedule for tomorrow
+          if (nextRun <= today) {
+            nextRun.setDate(nextRun.getDate() + 1);
+          }
+          nextRunTime = nextRun.toISOString();
+          frequencyDetail = `Daily at ${config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00'}`;
+        } else if (config.scheduleType === 'weekly') {
+          const days = config.scheduleConfig?.daysOfWeek || [];
+          const timeOfDay = config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00';
+          frequencyDetail = days.length > 0 
+            ? `${days.join(', ')} at ${timeOfDay}`
+            : `Weekly at ${timeOfDay}`;
+        } else if (config.scheduleType === 'hourly') {
+          const interval = config.scheduleConfig?.hourInterval || 1;
+          frequencyDetail = `Every ${interval} hour${interval > 1 ? 's' : ''}`;
+        } else if (config.scheduleType === 'multiple_daily') {
+          const timeSlots = config.scheduleConfig?.timeSlots || [];
+          frequencyDetail = timeSlots.length > 0 
+            ? `${timeSlots.length} times daily (${timeSlots.join(', ')})`
+            : 'Multiple times daily';
+        } else if (config.scheduleType === 'cron') {
+          frequencyDetail = `Cron: ${config.scheduleConfig?.cronExpression || 'Not configured'}`;
+        }
+
+        return {
+          configurationId: config.id,
+          configurationName: config.taskName,
+          connectionId: config.connectionId,
+          scheduleType: config.scheduleType,
+          frequencyDetail,
+          nextRunTime,
+          lastRunTime: config.lastRun?.toISOString() || null,
+          status: config.isPaused ? 'Paused' : (config.isActive ? 'Scheduled' : 'Inactive'),
+          connection: config.connection,
+          startDate: config.startDate?.toISOString() || null,
+          endDate: config.endDate?.toISOString() || null,
+          isPaused: config.isPaused || false,
+          timezone: config.timezone || 'UTC'
+        };
+      });
+
+      res.json(scheduledConfigs);
+    } catch (error) {
+      console.error('Error fetching schedule overview:', error);
+      res.status(500).json({ message: 'Failed to fetch schedule overview' });
+    }
+  });
+
+  // Pause/Resume schedule endpoint
+  app.post('/api/schedule-overview/:configId/toggle', isAuthenticated, async (req: any, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      const { isPaused } = req.body;
+      
+      const config = await storage.getInvoiceImporterConfig(configId);
+      if (!config) {
+        return res.status(404).json({ error: 'Configuration not found' });
+      }
+
+      await storage.updateInvoiceImporterConfig(configId, { isPaused });
+      
+      res.json({ 
+        message: `Schedule ${isPaused ? 'paused' : 'resumed'} successfully`,
+        configId,
+        isPaused 
+      });
+    } catch (error) {
+      console.error('Error toggling schedule:', error);
+      res.status(500).json({ message: 'Failed to toggle schedule' });
+    }
+  });
+
   // Get comprehensive import logs with metadata  
   app.get('/api/import-logs', isAuthenticated, async (req: any, res) => {
     try {

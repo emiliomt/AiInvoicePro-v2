@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -7,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap, Edit3, RotateCcw, TimerIcon, Database } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
@@ -1177,15 +1178,8 @@ export default function InvoiceImporter() {
             )}
           </TabsContent>
 
-          <TabsContent value="schedule">
-            <Card>
-              <CardHeader>
-                <CardTitle>Schedule Overview</CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-gray-600">Scheduled import tasks will appear here when configured.</p>
-              </CardContent>
-            </Card>
+          <TabsContent value="schedule" className="space-y-4">
+            <ScheduleOverview />
           </TabsContent>
         </Tabs>
 
@@ -1987,6 +1981,303 @@ export default function InvoiceImporter() {
         )}
       </div>
     </div>
+    </div>
+  );
+}
+
+// Comprehensive Schedule Overview Component
+function ScheduleOverview() {
+  const { toast } = useToast();
+
+  // Fetch scheduled configurations
+  const { data: scheduleData = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery({
+    queryKey: ['/api/schedule-overview'],
+    refetchInterval: 30000, // Refresh every 30 seconds
+  });
+
+  // Toggle pause/resume mutation
+  const toggleScheduleMutation = useMutation({
+    mutationFn: async ({ configId, isPaused }: { configId: number; isPaused: boolean }) => {
+      const response = await fetch(`/api/schedule-overview/${configId}/toggle`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isPaused }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to toggle schedule');
+      }
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Schedule Updated",
+        description: data.message,
+      });
+      refetchSchedule();
+    },
+    onError: (error) => {
+      toast({
+        title: "Error",
+        description: "Failed to update schedule",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const getStatusBadge = (status: string) => {
+    switch (status?.toLowerCase()) {
+      case 'scheduled':
+        return <Badge className="bg-green-100 text-green-800">Scheduled</Badge>;
+      case 'paused':
+        return <Badge className="bg-yellow-100 text-yellow-800">Paused</Badge>;
+      case 'running':
+        return <Badge className="bg-blue-100 text-blue-800">Running</Badge>;
+      case 'error':
+        return <Badge className="bg-red-100 text-red-800">Error</Badge>;
+      default:
+        return <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>;
+    }
+  };
+
+  const getScheduleTypeIcon = (scheduleType: string) => {
+    switch (scheduleType) {
+      case 'daily':
+        return <Calendar className="w-4 h-4" />;
+      case 'weekly':
+        return <Calendar className="w-4 h-4" />;
+      case 'hourly':
+        return <Clock className="w-4 h-4" />;
+      case 'multiple_daily':
+        return <TimerIcon className="w-4 h-4" />;
+      case 'cron':
+        return <Settings className="w-4 h-4" />;
+      default:
+        return <Play className="w-4 h-4" />;
+    }
+  };
+
+  const formatDateTime = (dateString: string | null) => {
+    if (!dateString) return 'Never';
+    return new Date(dateString).toLocaleString();
+  };
+
+  const getTimeUntilNextRun = (nextRunTime: string | null) => {
+    if (!nextRunTime) return null;
+    
+    const now = new Date();
+    const nextRun = new Date(nextRunTime);
+    const diff = nextRun.getTime() - now.getTime();
+    
+    if (diff <= 0) return 'Overdue';
+    
+    const hours = Math.floor(diff / (1000 * 60 * 60));
+    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
+    
+    if (hours > 24) {
+      const days = Math.floor(hours / 24);
+      return `${days} day${days > 1 ? 's' : ''}`;
+    } else if (hours > 0) {
+      return `${hours}h ${minutes}m`;
+    } else {
+      return `${minutes}m`;
+    }
+  };
+
+  const handleTogglePause = (configId: number, currentlyPaused: boolean) => {
+    toggleScheduleMutation.mutate({
+      configId,
+      isPaused: !currentlyPaused,
+    });
+  };
+
+  if (isLoadingSchedule) {
+    return (
+      <Card>
+        <CardContent className="flex items-center justify-center py-8">
+          <Loader2 className="w-6 h-6 animate-spin mr-2" />
+          <span>Loading schedule overview...</span>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (scheduleData.length === 0) {
+    return (
+      <Card>
+        <CardContent className="text-center py-8">
+          <Calendar className="w-12 h-12 mx-auto text-gray-400 mb-4" />
+          <p className="text-gray-600 mb-2">No Scheduled Tasks</p>
+          <p className="text-sm text-gray-500">
+            Create an import configuration with a schedule to see it here.
+            Scheduled tasks will run automatically according to their configured timing.
+          </p>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      {/* Header */}
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center space-x-2">
+            <Calendar className="w-5 h-5" />
+            <span>Schedule Overview</span>
+            <Badge variant="outline" className="ml-2">
+              {scheduleData.length} scheduled task{scheduleData.length !== 1 ? 's' : ''}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+      </Card>
+
+      {/* Schedule Cards */}
+      <div className="grid gap-4">
+        {scheduleData.map((schedule: any) => (
+          <Card key={schedule.configurationId} className="hover:shadow-md transition-shadow">
+            <CardContent className="p-6">
+              <div className="flex items-start justify-between">
+                <div className="flex-1">
+                  {/* Configuration Name and Type */}
+                  <div className="flex items-center space-x-2 mb-2">
+                    {getScheduleTypeIcon(schedule.scheduleType)}
+                    <h3 className="font-semibold text-lg">{schedule.configurationName}</h3>
+                    <Badge variant="outline" className="text-xs">
+                      {schedule.scheduleType.replace('_', ' ').toUpperCase()}
+                    </Badge>
+                  </div>
+
+                  {/* Connection Info */}
+                  {schedule.connection && (
+                    <div className="flex items-center space-x-2 text-sm text-gray-600 mb-3">
+                      <Database className="w-4 h-4" />
+                      <span>{schedule.connection.name}</span>
+                      <span className="text-gray-400">•</span>
+                      <span className="font-mono text-xs">{schedule.connection.baseUrl}</span>
+                    </div>
+                  )}
+
+                  {/* Schedule Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                    <div>
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Frequency</div>
+                      <div className="font-medium">{schedule.frequencyDetail}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Next Run</div>
+                      <div className="font-medium">
+                        {schedule.nextRunTime ? (
+                          <div>
+                            <div>{formatDateTime(schedule.nextRunTime)}</div>
+                            <div className="text-xs text-blue-600 mt-1">
+                              in {getTimeUntilNextRun(schedule.nextRunTime)}
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-gray-400">Not calculated</span>
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Last Run</div>
+                      <div className="font-medium">
+                        {formatDateTime(schedule.lastRunTime)}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Schedule Period */}
+                  {(schedule.startDate || schedule.endDate) && (
+                    <div className="mb-4">
+                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Schedule Period</div>
+                      <div className="text-sm">
+                        {schedule.startDate && (
+                          <span>From {new Date(schedule.startDate).toLocaleDateString()}</span>
+                        )}
+                        {schedule.startDate && schedule.endDate && <span> </span>}
+                        {schedule.endDate && (
+                          <span>to {new Date(schedule.endDate).toLocaleDateString()}</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Timezone */}
+                  <div className="text-xs text-gray-500">
+                    Timezone: {schedule.timezone}
+                  </div>
+                </div>
+
+                {/* Status and Actions */}
+                <div className="flex flex-col items-end space-y-3">
+                  {getStatusBadge(schedule.status)}
+
+                  <div className="flex items-center space-x-2">
+                    {/* Pause/Resume Button */}
+                    <Button
+                      size="sm"
+                      variant={schedule.isPaused ? "default" : "outline"}
+                      onClick={() => handleTogglePause(schedule.configurationId, schedule.isPaused)}
+                      disabled={toggleScheduleMutation.isPending}
+                    >
+                      {toggleScheduleMutation.isPending ? (
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                      ) : schedule.isPaused ? (
+                        <>
+                          <Play className="w-4 h-4 mr-1" />
+                          Resume
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="w-4 h-4 mr-1" />
+                          Pause
+                        </>
+                      )}
+                    </Button>
+
+                    {/* Edit Button */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => {
+                        // Navigate to edit configuration
+                        toast({
+                          title: "Edit Configuration",
+                          description: "Edit functionality will be available in the Configurations tab",
+                        });
+                      }}
+                    >
+                      <Edit3 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      {/* Summary Footer */}
+      <Card>
+        <CardContent className="p-4">
+          <div className="flex items-center justify-between text-sm text-gray-600">
+            <div className="flex items-center space-x-4">
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                <span>{scheduleData.filter((s: any) => s.status === 'Scheduled').length} Active</span>
+              </div>
+              <div className="flex items-center space-x-1">
+                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
+                <span>{scheduleData.filter((s: any) => s.isPaused).length} Paused</span>
+              </div>
+            </div>
+            <div className="text-xs text-gray-500">
+              Auto-refresh: 30 seconds
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     </div>
   );
 }
