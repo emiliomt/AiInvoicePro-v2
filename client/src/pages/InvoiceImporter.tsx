@@ -68,6 +68,9 @@ interface ERPConnection {
 export default function InvoiceImporter() {
   const [configs, setConfigs] = useState<ImportConfig[]>([]);
   const [logs, setLogs] = useState<ImportLog[]>([]);
+  const [importLogs, setImportLogs] = useState<any[]>([]);
+  const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
+  const [showLogDetails, setShowLogDetails] = useState(false);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
@@ -117,6 +120,7 @@ export default function InvoiceImporter() {
     fetchConfigs();
     fetchLogs();
     fetchERPConnections();
+    fetchImportLogs();
     initializeWebSocket();
     
     return () => {
@@ -395,6 +399,70 @@ export default function InvoiceImporter() {
       console.error('Error fetching ERP connections:', error);
     }
   };
+
+  const fetchImportLogs = async () => {
+    try {
+      const response = await fetch('/api/import-logs');
+      if (response.ok) {
+        const logsData = await response.json();
+        setImportLogs(logsData);
+      } else {
+        console.error('Failed to fetch import logs');
+      }
+    } catch (error) {
+      console.error('Error fetching import logs:', error);
+    }
+  };
+
+  const handleViewLogDetails = async (logId: number) => {
+    try {
+      const response = await fetch(`/api/import-logs/${logId}`);
+      if (response.ok) {
+        const logDetails = await response.json();
+        setSelectedLogDetails(logDetails);
+        setShowLogDetails(true);
+      } else {
+        toast({
+          title: "Error",
+          description: "Failed to fetch log details",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to fetch log details",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const formatDuration = (seconds: number | null) => {
+    if (!seconds) return 'N/A';
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+    const secs = seconds % 60;
+    
+    if (hours > 0) {
+      return `${hours}h ${minutes}m ${secs}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${secs}s`;
+    } else {
+      return `${secs}s`;
+    }
+  };
+
+  const getStatusBadgeVariant = (status: string) => {
+    switch (status) {
+      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
+      case 'failed': return 'bg-red-100 text-red-800 border-red-200';
+      case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
+      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
+      default: return 'bg-gray-100 text-gray-800 border-gray-200';
+    }
+  };
+
+
 
 
 
@@ -965,7 +1033,7 @@ export default function InvoiceImporter() {
           </TabsContent>
 
           <TabsContent value="logs" className="space-y-4">
-            {logs.length === 0 ? (
+            {importLogs.length === 0 ? (
               <Card>
                 <CardContent className="text-center py-8">
                   <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
@@ -974,22 +1042,130 @@ export default function InvoiceImporter() {
                 </CardContent>
               </Card>
             ) : (
-              <div className="grid gap-4">
-                {logs.map((log) => (
-                  <Card key={log.id}>
-                    <CardHeader>
-                      <CardTitle>Log ID: {log.id}</CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      <p>Config ID: {log.configId}</p>
-                      <p>Timestamp: {log.timestamp}</p>
-                      <p>Message: {log.message}</p>
-                      <p>Documents Processed: {log.documentsProcessed}</p>
-                      <p>Errors Count: {log.errorsCount}</p>
-                      <Badge className={getStatusColor(log.status)}>{log.status}</Badge>
-                    </CardContent>
-                  </Card>
-                ))}
+              <div className="space-y-4">
+                {/* Header */}
+                <div className="flex justify-between items-center">
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">Import Execution History</h3>
+                    <p className="text-sm text-gray-600">Complete history of import processes with detailed metadata</p>
+                  </div>
+                  <Button 
+                    variant="outline" 
+                    size="sm" 
+                    onClick={fetchImportLogs}
+                    className="flex items-center space-x-2"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Refresh</span>
+                  </Button>
+                </div>
+
+                {/* Import Logs Table */}
+                <Card>
+                  <CardContent className="p-0">
+                    <div className="overflow-x-auto">
+                      <table className="w-full">
+                        <thead className="bg-gray-50 border-b border-gray-200">
+                          <tr>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Configuration
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Start Time
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Duration
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              File Type
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Results
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Status
+                            </th>
+                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                              Actions
+                            </th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {importLogs.map((log) => (
+                            <tr key={log.logId} className="hover:bg-gray-50">
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <div className="text-sm font-medium text-gray-900">
+                                    {log.configurationName || 'Unknown Config'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    ID: {log.logId} • ERP: {log.erpConnectionId}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex flex-col">
+                                  <div className="text-sm text-gray-900">
+                                    {log.startTime ? new Date(log.startTime).toLocaleDateString() : 'N/A'}
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    {log.startTime ? new Date(log.startTime).toLocaleTimeString() : 'N/A'}
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">
+                                  {formatDuration(log.duration)}
+                                </div>
+                                <div className="text-xs text-gray-500">
+                                  {log.triggeredBy || 'Manual'}
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <Badge variant="outline" className="text-xs">
+                                  {log.fileType?.toUpperCase() || 'N/A'}
+                                </Badge>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="text-sm text-gray-900">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="text-blue-600 font-medium">{log.totalInvoices || 0}</span>
+                                    <span className="text-gray-500">/</span>
+                                    <span className="text-green-600 font-medium">{log.successfulImports || 0}</span>
+                                    <span className="text-gray-500">/</span>
+                                    <span className="text-red-600 font-medium">{log.failedImports || 0}</span>
+                                  </div>
+                                  <div className="text-xs text-gray-500">
+                                    Total / Success / Failed
+                                  </div>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap">
+                                <div className="flex items-center space-x-2">
+                                  {getStatusIcon(log.status)}
+                                  <Badge className={getStatusBadgeVariant(log.status)}>
+                                    {log.status?.charAt(0).toUpperCase() + log.status?.slice(1) || 'Unknown'}
+                                  </Badge>
+                                </div>
+                              </td>
+                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleViewLogDetails(log.logId)}
+                                  className="text-blue-600 hover:text-blue-900"
+                                >
+                                  <Eye className="w-4 h-4 mr-1" />
+                                  View Logs
+                                </Button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </CardContent>
+                </Card>
               </div>
             )}
           </TabsContent>
@@ -1421,6 +1597,137 @@ export default function InvoiceImporter() {
                 </ScrollArea>
               </div>
             </div>
+          </DialogContent>
+        </Dialog>
+
+        {/* Log Details Dialog */}
+        <Dialog open={showLogDetails} onOpenChange={setShowLogDetails}>
+          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
+            <DialogHeader>
+              <DialogTitle className="flex items-center space-x-2">
+                <FileText className="w-5 h-5" />
+                <span>Import Log Details</span>
+                {selectedLogDetails && (
+                  <Badge className={getStatusBadgeVariant(selectedLogDetails.status)}>
+                    {selectedLogDetails.status?.charAt(0).toUpperCase() + selectedLogDetails.status?.slice(1)}
+                  </Badge>
+                )}
+              </DialogTitle>
+            </DialogHeader>
+            
+            {selectedLogDetails && (
+              <div className="flex-1 min-h-0 space-y-4">
+                {/* Log Overview */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Configuration</div>
+                    <div className="font-medium">{selectedLogDetails.configurationName || 'N/A'}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Duration</div>
+                    <div className="font-medium">{formatDuration(selectedLogDetails.duration)}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Total Invoices</div>
+                    <div className="font-medium">{selectedLogDetails.totalInvoices || 0}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs text-gray-500 uppercase tracking-wide">Success Rate</div>
+                    <div className="font-medium">
+                      {selectedLogDetails.totalInvoices > 0 
+                        ? `${Math.round((selectedLogDetails.successfulImports / selectedLogDetails.totalInvoices) * 100)}%`
+                        : 'N/A'}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Execution Statistics */}
+                <div className="grid grid-cols-3 gap-4">
+                  <Card className="text-center">
+                    <CardContent className="pt-4">
+                      <div className="text-2xl font-bold text-blue-600">{selectedLogDetails.successfulImports || 0}</div>
+                      <div className="text-sm text-gray-500">Successful</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="text-center">
+                    <CardContent className="pt-4">
+                      <div className="text-2xl font-bold text-red-600">{selectedLogDetails.failedImports || 0}</div>
+                      <div className="text-sm text-gray-500">Failed</div>
+                    </CardContent>
+                  </Card>
+                  <Card className="text-center">
+                    <CardContent className="pt-4">
+                      <div className="text-2xl font-bold text-gray-600">{selectedLogDetails.processedInvoices || 0}</div>
+                      <div className="text-sm text-gray-500">Processed</div>
+                    </CardContent>
+                  </Card>
+                </div>
+
+                {/* Console Logs */}
+                <div className="flex-1 min-h-0">
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-medium">Console Output</h4>
+                    <Badge variant="outline" className="text-xs">
+                      {selectedLogDetails.formattedLogs?.length || 0} lines
+                    </Badge>
+                  </div>
+                  <ScrollArea className="h-64 w-full border rounded-lg p-4 bg-black text-green-400 font-mono text-sm">
+                    {selectedLogDetails.formattedLogs && selectedLogDetails.formattedLogs.length > 0 ? (
+                      <div className="space-y-1">
+                        {selectedLogDetails.formattedLogs.map((log: string, index: number) => (
+                          <div key={index} className="whitespace-pre-wrap">
+                            {log}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-gray-500 italic">
+                        No console logs available for this execution.
+                      </div>
+                    )}
+                  </ScrollArea>
+                </div>
+
+                {/* Imported Invoices */}
+                {selectedLogDetails.importedInvoices && selectedLogDetails.importedInvoices.length > 0 && (
+                  <div>
+                    <h4 className="font-medium mb-2">Imported Files ({selectedLogDetails.importedInvoices.length})</h4>
+                    <div className="max-h-32 overflow-y-auto border rounded-lg">
+                      <table className="w-full text-sm">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left">File Name</th>
+                            <th className="px-3 py-2 text-left">Type</th>
+                            <th className="px-3 py-2 text-left">Size</th>
+                            <th className="px-3 py-2 text-left">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-gray-200">
+                          {selectedLogDetails.importedInvoices.map((invoice: any, index: number) => (
+                            <tr key={index}>
+                              <td className="px-3 py-2 font-mono text-xs">{invoice.originalFileName}</td>
+                              <td className="px-3 py-2">
+                                <Badge variant="outline" className="text-xs">
+                                  {invoice.fileType?.toUpperCase()}
+                                </Badge>
+                              </td>
+                              <td className="px-3 py-2">{invoice.fileSize ? `${Math.round(invoice.fileSize / 1024)}KB` : 'N/A'}</td>
+                              <td className="px-3 py-2">
+                                {invoice.invoiceId ? (
+                                  <Badge className="bg-green-100 text-green-800 text-xs">Processed</Badge>
+                                ) : (
+                                  <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pending</Badge>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
           </DialogContent>
         </Dialog>
 

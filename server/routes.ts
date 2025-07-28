@@ -3073,6 +3073,64 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get comprehensive import logs with metadata  
+  app.get('/api/import-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logs = await storage.getImportLogsWithDetails();
+      
+      // Filter logs by user's company for multi-tenant support
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let filteredLogs = logs;
+      
+      if (currentUser?.companyId) {
+        // Get all users in the same company
+        const companyUsers = await storage.getUsersByCompany(currentUser.companyId);
+        const companyUserIds = companyUsers.map(u => u.id);
+        
+        filteredLogs = logs.filter(log => 
+          log.userId && companyUserIds.includes(log.userId)
+        );
+      } else {
+        // If no company, only show user's own logs
+        filteredLogs = logs.filter(log => log.userId === (user as any).claims.sub);
+      }
+
+      res.json(filteredLogs);
+    } catch (error) {
+      console.error('Error fetching import logs:', error);
+      res.status(500).json({ message: 'Failed to fetch import logs' });
+    }
+  });
+
+  // Get detailed logs for a specific import execution
+  app.get('/api/import-logs/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      const log = await storage.getInvoiceImporterLog(logId);
+      
+      if (!log) {
+        return res.status(404).json({ message: 'Import log not found' });
+      }
+
+      // Get associated imported invoices for this log
+      const importedInvoices = await storage.getImportedInvoicesByLog(logId);
+      
+      res.json({
+        ...log,
+        importedInvoices,
+        formattedLogs: log.logs ? log.logs.split('\n').filter(line => line.trim()) : []
+      });
+    } catch (error) {
+      console.error('Error fetching import log details:', error);
+      res.status(500).json({ message: 'Failed to fetch import log details' });
+    }
+  });
+
   // Update ERP connection
   app.put('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
     try {

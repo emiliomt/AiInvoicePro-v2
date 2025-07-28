@@ -153,6 +153,8 @@ export interface IStorage {
   getImportedInvoicesByLog(logId: number): Promise<any[]>;
   updateImportedInvoice(id: number, updates: any): Promise<void>;
   getInvoiceImporterLogs(configId?: number): Promise<any[]>;
+  getImportLogsWithDetails(): Promise<any[]>;
+  getUsersByCompany(companyId: number): Promise<User[]>;
 
   // Users  
   upsertUser(user: UpsertUser): Promise<User>;
@@ -1272,6 +1274,58 @@ class PostgresStorage implements IStorage {
       ...updates,
       updatedAt: new Date()
     }).where(eq(invoiceImporterConfigs.id, id));
+  }
+
+  // Enhanced import logs with comprehensive metadata
+  async getImportLogsWithDetails(): Promise<any[]> {
+    const result = await db
+      .select({
+        logId: invoiceImporterLogs.id,
+        configId: invoiceImporterLogs.configId,
+        configurationName: invoiceImporterConfigs.taskName,
+        erpConnectionId: invoiceImporterConfigs.connectionId,
+        userId: invoiceImporterConfigs.userId,
+        startTime: invoiceImporterLogs.startedAt,
+        endTime: invoiceImporterLogs.completedAt,
+        duration: sql<number>`
+          CASE 
+            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL 
+            THEN EXTRACT(EPOCH FROM (${invoiceImporterLogs.completedAt} - ${invoiceImporterLogs.startedAt}))
+            ELSE NULL 
+          END
+        `,
+        status: invoiceImporterLogs.status,
+        totalInvoices: invoiceImporterLogs.totalInvoices,
+        processedInvoices: invoiceImporterLogs.processedInvoices,
+        successfulImports: invoiceImporterLogs.successfulImports,
+        failedImports: invoiceImporterLogs.failedImports,
+        fileType: invoiceImporterConfigs.fileTypes,
+        logs: invoiceImporterLogs.logs,
+        errorMessage: invoiceImporterLogs.errorMessage,
+        createdAt: invoiceImporterLogs.createdAt,
+        triggeredBy: sql<string>`
+          CASE 
+            WHEN ${invoiceImporterConfigs.scheduleType} = 'once' THEN 'Manual'
+            ELSE 'Scheduled'
+          END
+        `
+      })
+      .from(invoiceImporterLogs)
+      .leftJoin(invoiceImporterConfigs, eq(invoiceImporterLogs.configId, invoiceImporterConfigs.id))
+      .orderBy(desc(invoiceImporterLogs.startedAt));
+
+    return result.map(log => ({
+      ...log,
+      duration: log.duration ? Math.round(log.duration) : null,
+      startTime: log.startTime?.toISOString(),
+      endTime: log.endTime?.toISOString(),
+      createdAt: log.createdAt?.toISOString()
+    }));
+  }
+
+  // Get users by company for multi-tenant filtering
+  async getUsersByCompany(companyId: number): Promise<User[]> {
+    return await db.select().from(users).where(eq(users.companyId, companyId));
   }
 }
 
