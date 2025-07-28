@@ -2967,6 +2967,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Get real-time import progress for a specific config
+  app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      
+      const progress = pythonInvoiceImporter.getImportProgress(configId);
+      
+      if (!progress) {
+        return res.json({
+          configId,
+          isRunning: false,
+          progress: 0,
+          currentStep: 'Not running',
+          stats: {
+            total_invoices: 0,
+            processed_invoices: 0,
+            successful_imports: 0,
+            failed_imports: 0
+          }
+        });
+      }
+      
+      res.json({
+        configId,
+        isRunning: !progress.isComplete,
+        progress: progress.progress,
+        currentStep: progress.currentStep,
+        stats: {
+          total_invoices: progress.totalInvoices,
+          processed_invoices: progress.processedInvoices,
+          successful_imports: progress.successfulImports,
+          failed_imports: progress.failedImports
+        },
+        error: progress.error,
+        logs: progress.logs
+      });
+    } catch (error) {
+      console.error('Error fetching import progress:', error);
+      res.status(500).json({ message: 'Failed to fetch import progress' });
+    }
+  });
+
   // Update ERP connection
   app.put('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
     try {

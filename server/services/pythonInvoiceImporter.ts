@@ -45,6 +45,13 @@ class PythonInvoiceImporter {
   private activeImports = new Map<number, ImportProgress>();
 
   /**
+   * Get real-time import progress for a configuration
+   */
+  getImportProgress(configId: number): ImportProgress | null {
+    return this.activeImports.get(configId) || null;
+  }
+
+  /**
    * Execute Python RPA import task
    */
   async executeImportTask(configId: number): Promise<void> {

@@ -105,6 +105,9 @@ export default function InvoiceImporter() {
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
   
+  // Progress polling state
+  const [progressPollingInterval, setProgressPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  
   const { toast } = useToast();
 
   useEffect(() => {
@@ -455,8 +458,11 @@ export default function InvoiceImporter() {
     
     // Update config status to running immediately
     setConfigs(prev => prev.map(c => 
-      c.id === configId ? { ...c, status: 'running', progress: 0 } : c
+      c.id === configId ? { ...c, status: 'running', progress: 0, currentStep: 'Initializing...' } : c
     ));
+
+    // Start real-time progress polling
+    startProgressPolling(configId);
 
     try {
       const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
@@ -476,6 +482,7 @@ export default function InvoiceImporter() {
       }
     } catch (error) {
       setRunningConfigId(null);
+      stopProgressPolling();
       // Reset status on error
       setConfigs(prev => prev.map(c => 
         c.id === configId ? { ...c, status: 'idle' } : c
@@ -487,6 +494,107 @@ export default function InvoiceImporter() {
       });
     }
   };
+
+  // Start polling for progress updates
+  const startProgressPolling = (configId: number) => {
+    // Clear any existing interval
+    stopProgressPolling();
+    
+    console.log(`Starting progress polling for config ${configId}`);
+    
+    const pollProgress = async () => {
+      try {
+        const response = await fetch(`/api/invoice-importer/progress/${configId}`);
+        if (response.ok) {
+          const progressData = await response.json();
+          
+          // Update config with live progress data
+          setConfigs(prevConfigs => 
+            prevConfigs.map(config => {
+              if (config.id === configId) {
+                return {
+                  ...config,
+                  status: progressData.isRunning ? 'running' : 
+                          (progressData.progress === 100 ? 'completed' : 
+                           (progressData.error ? 'failed' : config.status)),
+                  progress: progressData.progress,
+                  currentStep: progressData.currentStep,
+                  stats: {
+                    total_invoices: progressData.stats.total_invoices,
+                    processed_invoices: progressData.stats.processed_invoices,
+                    successful_imports: progressData.stats.successful_imports,
+                    failed_imports: progressData.stats.failed_imports,
+                    current_step: progressData.currentStep,
+                    progress: progressData.progress
+                  }
+                };
+              }
+              return config;
+            })
+          );
+          
+          // Update console config if it's open for this config
+          if (consoleConfig && consoleConfig.id === configId) {
+            setConsoleConfig(prev => prev ? {
+              ...prev,
+              status: progressData.isRunning ? 'running' : 
+                      (progressData.progress === 100 ? 'completed' : 
+                       (progressData.error ? 'failed' : prev.status)),
+              progress: progressData.progress,
+              currentStep: progressData.currentStep,
+              stats: {
+                total_invoices: progressData.stats.total_invoices,
+                processed_invoices: progressData.stats.processed_invoices,
+                successful_imports: progressData.stats.successful_imports,
+                failed_imports: progressData.stats.failed_imports,
+                current_step: progressData.currentStep,
+                progress: progressData.progress
+              }
+            } : null);
+          }
+          
+          // Add logs to console if available
+          if (progressData.logs && consoleConfig && consoleConfig.id === configId) {
+            const logLines = progressData.logs.split('\n').filter(line => line.trim());
+            setConsoleLogs(prev => {
+              const newLogs = [...prev, ...logLines.slice(-3)]; // Add last 3 lines
+              return newLogs.slice(-15); // Keep last 15 lines
+            });
+          }
+          
+          // Stop polling when complete
+          if (!progressData.isRunning || progressData.progress >= 100) {
+            console.log(`Progress polling completed for config ${configId}: ${progressData.progress}%`);
+            stopProgressPolling();
+            setRunningConfigId(null);
+          }
+        }
+      } catch (error) {
+        console.error('Error polling progress:', error);
+      }
+    };
+    
+    // Poll immediately and then every 2 seconds
+    pollProgress();
+    const interval = setInterval(pollProgress, 2000);
+    setProgressPollingInterval(interval);
+  };
+
+  // Stop progress polling
+  const stopProgressPolling = () => {
+    if (progressPollingInterval) {
+      clearInterval(progressPollingInterval);
+      setProgressPollingInterval(null);
+      console.log('Progress polling stopped');
+    }
+  };
+
+  // Clean up polling on unmount
+  useEffect(() => {
+    return () => {
+      stopProgressPolling();
+    };
+  }, [progressPollingInterval]);
 
   const validateMultipleDailySchedule = () => {
     if (newConfig.schedule !== 'multiple_daily') return true;
