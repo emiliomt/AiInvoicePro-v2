@@ -393,11 +393,11 @@ function extractLineItems(xmlContent: string): Array<{
     itemType?: string;
   }> = [];
 
-  // Extract all invoice lines
-  const linePattern = /<cac:InvoiceLine[^>]*>(.*?)<\/cac:InvoiceLine>/gi;
+  // Extract all invoice lines (for Invoice documents)
+  const invoiceLinePattern = /<cac:InvoiceLine[^>]*>(.*?)<\/cac:InvoiceLine>/gi;
   let lineMatch;
 
-  while ((lineMatch = linePattern.exec(xmlContent)) !== null) {
+  while ((lineMatch = invoiceLinePattern.exec(xmlContent)) !== null) {
     const lineContent = lineMatch[1];
 
     const description = extractTextFromXMLTag(lineContent, 'Description') || 
@@ -422,6 +422,36 @@ function extractLineItems(xmlContent: string): Array<{
     });
   }
 
+  // Extract all credit note lines (for CreditNote documents) - using improved pattern matching
+  const creditLineMatches = xmlContent.match(/<cac:CreditNoteLine[\s\S]*?<\/cac:CreditNoteLine>/g);
+  
+  if (creditLineMatches) {
+    for (const creditLineMatch of creditLineMatches) {
+      const lineContent = creditLineMatch;
+
+      const description = extractTextFromXMLTag(lineContent, 'Description') || 
+                         extractTextFromXMLTag(lineContent, 'Name') || '';
+
+      const quantity = extractTextFromXMLTag(lineContent, 'CreditedQuantity') || '1';
+
+      const unitPriceResult = extractAmountFromXMLTag(lineContent, 'PriceAmount');
+      const unitPrice = unitPriceResult.amount || '0.00';
+
+      const totalPriceResult = extractAmountFromXMLTag(lineContent, 'LineExtensionAmount');
+      const totalPrice = totalPriceResult.amount || '0.00';
+
+      const itemType = extractTextFromXMLTag(lineContent, 'ClassificationCode') || undefined;
+
+      lineItems.push({
+        description,
+        quantity,
+        unitPrice,
+        totalPrice,
+        itemType
+      });
+    }
+  }
+
   return lineItems;
 }
 
@@ -440,14 +470,14 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     
     if (isAttachedDocument && hasEmbeddedContent) {
       // Enhanced detection: Look for Invoice or CreditNote root elements outside CDATA
-      const hasTopLevelInvoice = /<(Invoice|CreditNote)[\s>]/.test(xmlContent.replace(/<!\[CDATA\[.*?\]\]>/gs, ''));
+      const hasTopLevelInvoice = /<(Invoice|CreditNote)[\s>]/.test(xmlContent.replace(/<!\[CDATA\[.*?\]\]>/g, ''));
       
       // If no Invoice/CreditNote found at top level (excluding CDATA), this is a pure wrapper
       if (!hasTopLevelInvoice) {
         console.log('Detected AttachedDocument wrapper with embedded CDATA content, extracting...');
         
         // Extract the CDATA content from Description tag
-        const cdataPattern = /<cbc:Description><!\[CDATA\[(.*?)\]\]><\/cbc:Description>/s;
+        const cdataPattern = /<cbc:Description><!\[CDATA\[(.*?)\]\]><\/cbc:Description>/;
         const cdataMatch = xmlContent.match(cdataPattern);
         
         if (cdataMatch && cdataMatch[1]) {
@@ -468,6 +498,29 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
         console.log('AttachedDocument detected but has top-level invoice data, proceeding with normal parsing');
       }
     }
+    // Define scoring function first
+    function scoreInvoiceNumber(number: string): number {
+      let score = 0;
+
+      // Prefer shorter numbers (more readable)
+      if (number.length <= 15) score += 3;
+      else if (number.length <= 25) score += 2;
+      else if (number.length <= 35) score += 1;
+
+      // Prefer numbers without UUIDs characteristics
+      if (!number.includes('-') || number.split('-').length <= 2) score += 2;
+
+      // Prefer numbers with digits
+      if (/\d/.test(number)) score += 2;
+
+      // Prefer numbers that look like invoice patterns
+      if (/^(FE|INV|FACT|DOC)/i.test(number)) score += 3;
+      if (/^\d+$/.test(number)) score += 2; // Pure numeric
+      if (/^[A-Z]{1,3}\d+$/i.test(number)) score += 2; // Letter prefix + numbers
+
+      return score;
+    }
+
     // Extract supplier info
     const supplierInfo = extractPartyInfo(xmlContent, 'supplier');
 
@@ -477,10 +530,10 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     // Enhanced invoice number extraction with priority for readable formats
     let invoiceNumber = null;
 
-    // Try common invoice number fields in order of preference
+    // Try common invoice number fields in order of preference (added ParentDocumentID for CreditNote)
     const invoiceNumberFields = [
       'InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number', 
-      'InvoiceID', 'DocumentID', 'ID'
+      'InvoiceID', 'DocumentID', 'ParentDocumentID', 'ID'
     ];
 
     // Score and select the best invoice number
@@ -526,28 +579,6 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
           invoiceNumber = uuid;
         }
       }
-    }
-
-    function scoreInvoiceNumber(number: string): number {
-      let score = 0;
-
-      // Prefer shorter numbers (more readable)
-      if (number.length <= 15) score += 3;
-      else if (number.length <= 25) score += 2;
-      else if (number.length <= 35) score += 1;
-
-      // Prefer numbers without UUIDs characteristics
-      if (!number.includes('-') || number.split('-').length <= 2) score += 2;
-
-      // Prefer numbers with digits
-      if (/\d/.test(number)) score += 2;
-
-      // Prefer numbers that look like invoice patterns
-      if (/^(FE|INV|FACT|DOC)/i.test(number)) score += 3;
-      if (/^\d+$/.test(number)) score += 2; // Pure numeric
-      if (/^[A-Z]{1,3}\d+$/i.test(number)) score += 2; // Letter prefix + numbers
-
-      return score;
     }
 
     // Use regex patterns as fallback for better Spanish/Latin American support
