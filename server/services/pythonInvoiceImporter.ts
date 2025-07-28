@@ -131,17 +131,12 @@ class PythonInvoiceImporter {
           executionTime: Date.now() - log.startedAt!.getTime(),
         });
 
-        // Process imported invoices through EXACT manual upload pipeline
-        try {
-          console.log(`🔄 Starting RPA invoice processing through manual upload pipeline for log ${log.id}`);
-          await this.storeImportedInvoicesFast(log.id, progress);
-          console.log(`✅ RPA invoices successfully processed through manual upload pipeline for log ${log.id}`);
-        } catch (dbError) {
-          console.error(`❌ Failed to process imported invoices through manual upload pipeline:`, dbError);
-        }
+        // Update the configuration's lastRun timestamp
+        await storage.updateInvoiceImporterConfig(configId, {
+          lastRun: new Date(),
+        });
 
         progress.isComplete = true;
-        progress.progress = 100;
         progress.currentStep = 'Import completed successfully';
 
         // Complete progress tracking
@@ -361,7 +356,7 @@ class PythonInvoiceImporter {
   private async executePythonRPA(config: any, progress: ImportProgress): Promise<PythonRPAResult> {
     return new Promise((resolve, reject) => {
       const pythonScriptPath = path.join(__dirname, 'pythonRpaService.py');
-      
+
       // Add log_id to config for PostgreSQL transfer
       const configWithLogId = {
         ...config,
@@ -391,7 +386,7 @@ class PythonInvoiceImporter {
         if (progress) {
           // Process each line individually for real-time streaming
           const lines = output.split('\n').filter(line => line.trim());
-          
+
           for (const line of lines) {
             const trimmedLine = line.trim();
             if (!trimmedLine) continue;
@@ -603,7 +598,7 @@ class PythonInvoiceImporter {
           return JSON.parse(statsLine.trim());
         }
       }
-      
+
       if (output.includes('PROGRESS:')) {
         const progressLine = output.split('PROGRESS:')[1]?.split('\n')[0];
         if (progressLine) {

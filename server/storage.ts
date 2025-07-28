@@ -1100,7 +1100,7 @@ class PostgresStorage implements IStorage {
   }
 
   // Additional methods for complete interface compatibility
-  
+
 
   async getValidationRules(): Promise<any[]> {
     return [];
@@ -1260,6 +1260,18 @@ class PostgresStorage implements IStorage {
       ...updates,
       updatedAt: new Date()
     }).where(eq(importedInvoices.id, id));
+  }
+
+  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
+    const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+    return result || null;
+  }
+
+  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void> {
+     await db.update(invoiceImporterConfigs).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(invoiceImporterConfigs.id, id));
   }
 }
 

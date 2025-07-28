@@ -136,6 +136,11 @@ class InvoiceImporterService {
         logs: this.generateLogsFromSteps(progress.steps),
       });
 
+      // Update the configuration's lastRun timestamp
+      await storage.updateInvoiceImporterConfig(config.id, {
+        lastRun: new Date(),
+      });
+
       console.log(`Import task ${logId} completed successfully`);
 
     } catch (error: any) {
@@ -172,6 +177,14 @@ class InvoiceImporterService {
           completedAt: new Date(),
           logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import failed: ${error.message}`,
         });
+
+        // Update the configuration's lastRun timestamp even for failed imports
+        const config = await storage.getInvoiceImporterConfig(configId);
+        if (config) {
+          await storage.updateInvoiceImporterConfig(config.id, {
+            lastRun: new Date(),
+          });
+        }
       }
 
       // Don't re-throw the error to prevent unhandled rejections
