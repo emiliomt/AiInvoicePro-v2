@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<cac:AttachedDocument xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+                      xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+    <cbc:DocumentType>ApplicationResponse</cbc:DocumentType>
+    <cbc:Description><![CDATA[<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns="urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+         xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+         xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2">
+    <cbc:UBLVersionID>2.1</cbc:UBLVersionID>
+    <cbc:ID>WRAP-TEST-001</cbc:ID>
+    <cbc:IssueDate>2025-01-28</cbc:IssueDate>
+    <cbc:DueDate>2025-02-28</cbc:DueDate>
+    <cac:AccountingSupplierParty>
+        <cac:Party>
+            <cac:PartyName>
+                <cbc:Name>AttachedDocument Test Vendor</cbc:Name>
+            </cac:PartyName>
+            <cac:PartyTaxScheme>
+                <cbc:CompanyID>987654321-9</cbc:CompanyID>
+            </cac:PartyTaxScheme>
+            <cac:PostalAddress>
+                <cbc:StreetName>Test Street 123</cbc:StreetName>
+                <cbc:CityName>Bogotá</cbc:CityName>
+                <cbc:CountrySubentity>Cundinamarca</cbc:CountrySubentity>
+            </cac:PostalAddress>
+        </cac:Party>
+    </cac:AccountingSupplierParty>
+    <cac:AccountingCustomerParty>
+        <cac:Party>
+            <cac:PartyName>
+                <cbc:Name>Test Customer Company</cbc:Name>
+            </cac:PartyName>
+            <cac:PartyTaxScheme>
+                <cbc:CompanyID>802014471-6</cbc:CompanyID>
+            </cac:PartyTaxScheme>
+        </cac:Party>
+    </cac:AccountingCustomerParty>
+    <cac:LegalMonetaryTotal>
+        <cbc:TaxExclusiveAmount currencyID="COP">500000.00</cbc:TaxExclusiveAmount>
+        <cbc:TaxInclusiveAmount currencyID="COP">595000.00</cbc:TaxInclusiveAmount>
+        <cbc:PayableAmount currencyID="COP">595000.00</cbc:PayableAmount>
+    </cac:LegalMonetaryTotal>
+    <cac:TaxTotal>
+        <cbc:TaxAmount currencyID="COP">95000.00</cbc:TaxAmount>
+    </cac:TaxTotal>
+    <cac:InvoiceLine>
+        <cbc:InvoicedQuantity>1</cbc:InvoicedQuantity>
+        <cac:Item>
+            <cbc:Description>Test wrapper service parsing</cbc:Description>
+            <cbc:Name>XML Wrapper Processing</cbc:Name>
+        </cac:Item>
+        <cac:Price>
+            <cbc:PriceAmount currencyID="COP">500000.00</cbc:PriceAmount>
+        </cac:Price>
+        <cbc:LineExtensionAmount currencyID="COP">500000.00</cbc:LineExtensionAmount>
+    </cac:InvoiceLine>
+</Invoice>]]></cbc:Description>
+</cac:AttachedDocument>

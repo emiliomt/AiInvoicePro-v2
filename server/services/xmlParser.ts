@@ -434,6 +434,40 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
   }
 
   try {
+    // Check if this is an AttachedDocument wrapper with embedded CDATA content
+    const isAttachedDocument = xmlContent.includes('<AttachedDocument') || xmlContent.includes('<cac:AttachedDocument');
+    const hasEmbeddedContent = xmlContent.includes('<cbc:Description><![CDATA[') && xmlContent.includes(']]></cbc:Description>');
+    
+    if (isAttachedDocument && hasEmbeddedContent) {
+      // Enhanced detection: Look for Invoice or CreditNote root elements outside CDATA
+      const hasTopLevelInvoice = /<(Invoice|CreditNote)[\s>]/.test(xmlContent.replace(/<!\[CDATA\[.*?\]\]>/gs, ''));
+      
+      // If no Invoice/CreditNote found at top level (excluding CDATA), this is a pure wrapper
+      if (!hasTopLevelInvoice) {
+        console.log('Detected AttachedDocument wrapper with embedded CDATA content, extracting...');
+        
+        // Extract the CDATA content from Description tag
+        const cdataPattern = /<cbc:Description><!\[CDATA\[(.*?)\]\]><\/cbc:Description>/s;
+        const cdataMatch = xmlContent.match(cdataPattern);
+        
+        if (cdataMatch && cdataMatch[1]) {
+          const embeddedXml = cdataMatch[1].trim();
+          
+          if (enableDebug) {
+            console.log('DEBUG: Found embedded XML content in CDATA section');
+            console.log(`DEBUG: Embedded XML length: ${embeddedXml.length} characters`);
+            console.log('DEBUG: Recursively parsing embedded content...');
+          }
+          
+          // Recursively call parseInvoiceXML on the embedded content
+          return parseInvoiceXML(embeddedXml, enableDebug);
+        } else {
+          console.log('Warning: AttachedDocument detected but no CDATA content found in Description tag');
+        }
+      } else {
+        console.log('AttachedDocument detected but has top-level invoice data, proceeding with normal parsing');
+      }
+    }
     // Extract supplier info
     const supplierInfo = extractPartyInfo(xmlContent, 'supplier');
 
