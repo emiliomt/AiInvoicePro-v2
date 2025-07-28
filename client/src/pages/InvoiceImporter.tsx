@@ -79,7 +79,23 @@ export default function InvoiceImporter() {
     name: '',
     connectionId: '',
     fileTypes: 'pdf',
-    schedule: 'once',
+    scheduleType: 'manual',
+    scheduleConfig: {
+      timeOfDay: '09:00',
+      timezone: 'UTC',
+      daysOfWeek: [] as string[],
+      hourInterval: 1,
+      timeSlots: ['09:00'] as string[],
+      cronExpression: '',
+      weekdaysOnly: false,
+      weekendsOnly: false,
+      specificDays: [] as string[]
+    },
+    startDate: '',
+    endDate: '',
+    isPaused: false,
+    // Legacy fields for backward compatibility
+    schedule: 'manual',
     executionsPerDay: 3,
     spacingValue: 120,
     spacingUnit: 'minutes',
@@ -742,21 +758,21 @@ export default function InvoiceImporter() {
         taskName: newConfig.name,
         connectionId: newConfig.manualConfig ? null : parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
-        scheduleType: newConfig.schedule,
+        scheduleType: newConfig.scheduleType,
+        scheduleConfig: newConfig.scheduleConfig,
+        timezone: newConfig.scheduleConfig.timezone,
+        startDate: newConfig.startDate || null,
+        endDate: newConfig.endDate || null,
+        isPaused: newConfig.isPaused,
         // Python RPA fields - use manual config or auto-populate from ERP connection
         erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection?.baseUrl,
         erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection?.username,
         erpPassword: newConfig.manualConfig ? newConfig.manualErpPassword : '', // Password will be retrieved from connection on server side if not manual
         isManualConfig: newConfig.manualConfig,
         headless: newConfig.headless,
-        ...(newConfig.schedule === 'multiple_daily' && {
-          scheduleConfig: {
-            executionsPerDay: newConfig.executionsPerDay,
-            spacingValue: newConfig.spacingValue,
-            spacingUnit: newConfig.spacingUnit,
-            startTime: newConfig.startTime
-          }
-        })
+        // Legacy fields for backward compatibility
+        scheduleTime: newConfig.scheduleConfig.timeOfDay,
+        scheduleDay: newConfig.scheduleConfig.daysOfWeek.join(',')
       };
 
       const response = await fetch('/api/invoice-importer/configs', {
@@ -777,7 +793,23 @@ export default function InvoiceImporter() {
           name: '', 
           connectionId: '', 
           fileTypes: 'pdf', 
-          schedule: 'once',
+          scheduleType: 'manual',
+          scheduleConfig: {
+            timeOfDay: '09:00',
+            timezone: 'UTC',
+            daysOfWeek: [],
+            hourInterval: 1,
+            timeSlots: ['09:00'],
+            cronExpression: '',
+            weekdaysOnly: false,
+            weekendsOnly: false,
+            specificDays: []
+          },
+          startDate: '',
+          endDate: '',
+          isPaused: false,
+          // Legacy fields for backward compatibility
+          schedule: 'manual',
           executionsPerDay: 3,
           spacingValue: 120,
           spacingUnit: 'minutes',
@@ -1208,95 +1240,333 @@ export default function InvoiceImporter() {
                   </SelectContent>
                 </Select>
               </div>
-              <div>
-                <Label htmlFor="schedule">Schedule</Label>
-                <Select
-                  value={newConfig.schedule}
-                  onValueChange={(value) => setNewConfig({ ...newConfig, schedule: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="once">Manual</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="multiple_daily">Multiple times per day</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Multiple Daily Schedule Configuration */}
-              {newConfig.schedule === 'multiple_daily' && (
-                <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-                  <h4 className="font-medium text-sm text-gray-700">Multiple Daily Execution Settings</h4>
-
-                  <div>
-                    <Label htmlFor="executions-per-day">Number of executions per day</Label>
-                    <Input
-                      id="executions-per-day"
-                      type="number"
-                      min="2"
-                      max="24"
-                      value={newConfig.executionsPerDay}
-                      onChange={(e) => setNewConfig({ 
+              {/* Dynamic Scheduling Interface */}
+              <div className="space-y-4">
+                <Label>Schedule Configuration</Label>
+                
+                {/* Schedule Type Selector */}
+                <div className="grid grid-cols-3 gap-2">
+                  {[
+                    { value: 'manual', label: 'Manual', icon: '🔘' },
+                    { value: 'daily', label: 'Daily', icon: '🔁' },
+                    { value: 'weekly', label: 'Weekly', icon: '🔁' },
+                    { value: 'hourly', label: 'Hourly', icon: '🔁' },
+                    { value: 'multiple_daily', label: 'Multiple Daily', icon: '🔁' },
+                    { value: 'cron', label: 'Advanced (Cron)', icon: '⏰' }
+                  ].map((schedule) => (
+                    <Button
+                      key={schedule.value}
+                      type="button"
+                      variant={newConfig.scheduleType === schedule.value ? "default" : "outline"}
+                      size="sm"
+                      onClick={() => setNewConfig({ 
                         ...newConfig, 
-                        executionsPerDay: parseInt(e.target.value) || 2 
+                        scheduleType: schedule.value,
+                        schedule: schedule.value // Keep legacy field in sync
                       })}
-                    />
-                  </div>
+                      className="flex flex-col items-center p-2 h-auto"
+                    >
+                      <span className="text-lg mb-1">{schedule.icon}</span>
+                      <span className="text-xs">{schedule.label}</span>
+                    </Button>
+                  ))}
+                </div>
 
-                  <div>
-                    <Label htmlFor="spacing">Spacing between executions</Label>
-                    <div className="flex gap-2">
-                      <Input
-                        id="spacing"
-                        type="number"
-                        min="1"
-                        value={newConfig.spacingValue}
-                        onChange={(e) => setNewConfig({ 
-                          ...newConfig, 
-                          spacingValue: parseInt(e.target.value) || 1 
-                        })}
-                        className="flex-1"
-                      />
-                      <Select
-                        value={newConfig.spacingUnit}
-                        onValueChange={(value) => setNewConfig({ ...newConfig, spacingUnit: value })}
-                      >
-                        <SelectTrigger className="w-24">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="minutes">minutes</SelectItem>
-                          <SelectItem value="hours">hours</SelectItem>
-                        </SelectContent>
-                      </Select>
+                {/* Dynamic Schedule Configuration */}
+                {newConfig.scheduleType !== 'manual' && (
+                  <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
+                    {/* Daily Schedule */}
+                    {newConfig.scheduleType === 'daily' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Daily Schedule</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="daily-time">Time of Day</Label>
+                            <Input
+                              id="daily-time"
+                              type="time"
+                              value={newConfig.scheduleConfig.timeOfDay}
+                              onChange={(e) => setNewConfig({
+                                ...newConfig,
+                                scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
+                              })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="timezone">Time Zone</Label>
+                            <Select
+                              value={newConfig.scheduleConfig.timezone}
+                              onValueChange={(value) => setNewConfig({
+                                ...newConfig,
+                                scheduleConfig: { ...newConfig.scheduleConfig, timezone: value }
+                              })}
+                            >
+                              <SelectTrigger>
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="UTC">UTC</SelectItem>
+                                <SelectItem value="America/New_York">Eastern (EST/EDT)</SelectItem>
+                                <SelectItem value="America/Chicago">Central (CST/CDT)</SelectItem>
+                                <SelectItem value="America/Denver">Mountain (MST/MDT)</SelectItem>
+                                <SelectItem value="America/Los_Angeles">Pacific (PST/PDT)</SelectItem>
+                                <SelectItem value="America/Bogota">Colombia (COT)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Weekly Schedule */}
+                    {newConfig.scheduleType === 'weekly' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Weekly Schedule</h4>
+                        <div>
+                          <Label>Days of Week</Label>
+                          <div className="grid grid-cols-7 gap-2 mt-2">
+                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                              <Button
+                                key={day}
+                                type="button"
+                                variant={newConfig.scheduleConfig.daysOfWeek.includes(day) ? "default" : "outline"}
+                                size="sm"
+                                onClick={() => {
+                                  const days = newConfig.scheduleConfig.daysOfWeek;
+                                  const newDays = days.includes(day)
+                                    ? days.filter(d => d !== day)
+                                    : [...days, day];
+                                  setNewConfig({
+                                    ...newConfig,
+                                    scheduleConfig: { ...newConfig.scheduleConfig, daysOfWeek: newDays }
+                                  });
+                                }}
+                                className="text-xs p-1"
+                              >
+                                {day}
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="weekly-time">Time of Day</Label>
+                          <Input
+                            id="weekly-time"
+                            type="time"
+                            value={newConfig.scheduleConfig.timeOfDay}
+                            onChange={(e) => setNewConfig({
+                              ...newConfig,
+                              scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
+                            })}
+                          />
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Hourly Schedule */}
+                    {newConfig.scheduleType === 'hourly' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Hourly Schedule</h4>
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="hour-interval">Repeat every X hours</Label>
+                            <Input
+                              id="hour-interval"
+                              type="number"
+                              min="1"
+                              max="24"
+                              value={newConfig.scheduleConfig.hourInterval}
+                              onChange={(e) => setNewConfig({
+                                ...newConfig,
+                                scheduleConfig: { ...newConfig.scheduleConfig, hourInterval: parseInt(e.target.value) || 1 }
+                              })}
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="starting-at">Starting at (optional)</Label>
+                            <Input
+                              id="starting-at"
+                              type="time"
+                              value={newConfig.scheduleConfig.timeOfDay}
+                              onChange={(e) => setNewConfig({
+                                ...newConfig,
+                                scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
+                              })}
+                            />
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Multiple Times Per Day Schedule */}
+                    {newConfig.scheduleType === 'multiple_daily' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Multiple Times Per Day</h4>
+                        <div>
+                          <Label>Time Slots</Label>
+                          <div className="space-y-2 mt-2">
+                            {newConfig.scheduleConfig.timeSlots.map((time, index) => (
+                              <div key={index} className="flex items-center space-x-2">
+                                <Input
+                                  type="time"
+                                  value={time}
+                                  onChange={(e) => {
+                                    const newTimeSlots = [...newConfig.scheduleConfig.timeSlots];
+                                    newTimeSlots[index] = e.target.value;
+                                    setNewConfig({
+                                      ...newConfig,
+                                      scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
+                                    });
+                                  }}
+                                  className="flex-1"
+                                />
+                                {newConfig.scheduleConfig.timeSlots.length > 1 && (
+                                  <Button
+                                    type="button"
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => {
+                                      const newTimeSlots = newConfig.scheduleConfig.timeSlots.filter((_, i) => i !== index);
+                                      setNewConfig({
+                                        ...newConfig,
+                                        scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
+                                      });
+                                    }}
+                                  >
+                                    Remove
+                                  </Button>
+                                )}
+                              </div>
+                            ))}
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={() => {
+                                const newTimeSlots = [...newConfig.scheduleConfig.timeSlots, '12:00'];
+                                setNewConfig({
+                                  ...newConfig,
+                                  scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
+                                });
+                              }}
+                            >
+                              Add Time Slot
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Optional Filters */}
+                        <div className="space-y-2">
+                          <Label>Optional Filters</Label>
+                          <div className="space-y-2">
+                            <div className="flex items-center space-x-2">
+                              <Checkbox
+                                id="weekdays-only"
+                                checked={newConfig.scheduleConfig.weekdaysOnly}
+                                onCheckedChange={(checked) => setNewConfig({
+                                  ...newConfig,
+                                  scheduleConfig: { 
+                                    ...newConfig.scheduleConfig, 
+                                    weekdaysOnly: checked === true,
+                                    weekendsOnly: checked === true ? false : newConfig.scheduleConfig.weekendsOnly
+                                  }
+                                })}
+                              />
+                              <Label htmlFor="weekdays-only" className="text-sm">Weekdays only</Label>
+                            </div>
+                            <div className="flex items-center space-x-2">
+                              <Checkbox
+                                id="weekends-only"
+                                checked={newConfig.scheduleConfig.weekendsOnly}
+                                onCheckedChange={(checked) => setNewConfig({
+                                  ...newConfig,
+                                  scheduleConfig: { 
+                                    ...newConfig.scheduleConfig, 
+                                    weekendsOnly: checked === true,
+                                    weekdaysOnly: checked === true ? false : newConfig.scheduleConfig.weekdaysOnly
+                                  }
+                                })}
+                              />
+                              <Label htmlFor="weekends-only" className="text-sm">Weekends only</Label>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Advanced Cron Schedule */}
+                    {newConfig.scheduleType === 'cron' && (
+                      <div className="space-y-3">
+                        <h4 className="font-medium text-sm text-gray-700">Advanced (Cron Expression)</h4>
+                        <div>
+                          <Label htmlFor="cron-input">Cron Expression</Label>
+                          <Input
+                            id="cron-input"
+                            placeholder="0 9 * * 1 (Every Monday at 9:00 AM)"
+                            value={newConfig.scheduleConfig.cronExpression}
+                            onChange={(e) => setNewConfig({
+                              ...newConfig,
+                              scheduleConfig: { ...newConfig.scheduleConfig, cronExpression: e.target.value }
+                            })}
+                          />
+                          <p className="text-xs text-gray-500 mt-1">
+                            Format: minute hour day month dayofweek
+                          </p>
+                        </div>
+                        {newConfig.scheduleConfig.cronExpression && (
+                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border">
+                            <strong>Preview:</strong> {newConfig.scheduleConfig.cronExpression}
+                          </div>
+                        )}
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={() => setNewConfig({
+                            ...newConfig,
+                            scheduleType: 'daily'
+                          })}
+                        >
+                          Switch to Basic Mode
+                        </Button>
+                      </div>
+                    )}
+
+                    {/* Common Schedule Options */}
+                    <div className="space-y-3 border-t pt-3">
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <Label htmlFor="start-date">Start Date (optional)</Label>
+                          <Input
+                            id="start-date"
+                            type="date"
+                            value={newConfig.startDate}
+                            onChange={(e) => setNewConfig({ ...newConfig, startDate: e.target.value })}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="end-date">End Date (optional)</Label>
+                          <Input
+                            id="end-date"
+                            type="date"
+                            value={newConfig.endDate}
+                            onChange={(e) => setNewConfig({ ...newConfig, endDate: e.target.value })}
+                          />
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center space-x-2">
+                        <Checkbox
+                          id="pause-schedule"
+                          checked={newConfig.isPaused}
+                          onCheckedChange={(checked) => setNewConfig({ ...newConfig, isPaused: checked === true })}
+                        />
+                        <Label htmlFor="pause-schedule" className="text-sm">Pause schedule after creation</Label>
+                      </div>
                     </div>
                   </div>
-
-                  <div>
-                    <Label htmlFor="start-time">Start time (optional)</Label>
-                    <Input
-                      id="start-time"
-                      type="time"
-                      value={newConfig.startTime}
-                      onChange={(e) => setNewConfig({ ...newConfig, startTime: e.target.value })}
-                    />
-                    <p className="text-xs text-gray-500 mt-1">
-                      Time when the first execution should run
-                    </p>
-                  </div>
-
-                  {/* Schedule Preview */}
-                  <div className="text-xs text-gray-600 bg-white p-2 rounded border">
-                    <strong>Preview:</strong> {newConfig.executionsPerDay} executions per day, 
-                    every {newConfig.spacingValue} {newConfig.spacingUnit}, 
-                    starting at {newConfig.startTime}
-                  </div>
-                </div>
-              )}
+                )}
+              </div>
 
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">

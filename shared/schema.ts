@@ -448,7 +448,7 @@ export const feedbackLogs = pgTable("feedback_logs", {
 
 // Invoice Importer module enums
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
-export const scheduleTypeEnum = pgEnum("schedule_type", ["once", "daily", "weekly", "hourly", "multiple_daily"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["manual", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
 export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled"]);
 
 // Invoice Importer configurations
@@ -460,9 +460,18 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   taskName: varchar("task_name", { length: 255 }).notNull(),
   description: text("description"),
   fileTypes: fileTypeEnum("file_types").default("both"),
-  scheduleType: scheduleTypeEnum("schedule_type").default("once"),
-  scheduleTime: varchar("schedule_time", { length: 50 }), // "14:30" for daily, "monday-14:30" for weekly, "4" for hourly, "3" for multiple daily
-  scheduleDay: varchar("schedule_day", { length: 20 }), // for weekly scheduling
+  scheduleType: scheduleTypeEnum("schedule_type").default("manual"),
+  
+  // Enhanced scheduling fields
+  scheduleConfig: jsonb("schedule_config"), // Comprehensive schedule configuration object
+  timezone: varchar("timezone", { length: 50 }).default("UTC"),
+  startDate: timestamp("start_date"),
+  endDate: timestamp("end_date"),
+  
+  // Legacy fields for backward compatibility
+  scheduleTime: varchar("schedule_time", { length: 50 }), 
+  scheduleDay: varchar("schedule_day", { length: 20 }),
+  
   // Python RPA specific fields
   erpUrl: varchar("erp_url", { length: 500 }),
   erpUsername: varchar("erp_username", { length: 255 }),
@@ -472,6 +481,7 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   isManualConfig: boolean("is_manual_config").default(false),
   headless: boolean('headless').default(true),
   isActive: boolean("is_active").default(true),
+  isPaused: boolean("is_paused").default(false), // Allow pausing schedules
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
   createdAt: timestamp("created_at").defaultNow(),
