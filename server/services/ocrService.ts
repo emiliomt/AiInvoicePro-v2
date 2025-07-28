@@ -3,11 +3,6 @@ import { fromBuffer } from 'pdf2pic';
 import sharp from 'sharp';
 import * as fs from 'fs';
 import * as path from 'path';
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.js';
-import { TextItem } from 'pdfjs-dist/types/src/display/api';
-import { createWorker } from 'tesseract.js';
-import path from 'path';
-import fs from 'fs';
 
 // Define interface for pdf2pic result
 interface PDFConvertResult {
@@ -22,9 +17,13 @@ function detectFileType(buffer: Buffer): string {
     return 'PDF';
   }
 
-  // Check for XML files
+  // Check for XML files - enhanced to detect AttachedDocument wrappers
   const textContent = buffer.toString('utf8', 0, Math.min(buffer.length, 1000));
-  if (textContent.trim().startsWith('<?xml') || textContent.includes('<Invoice') || textContent.includes('<Factura')) {
+  if (textContent.trim().startsWith('<?xml') || 
+      textContent.includes('<Invoice') || 
+      textContent.includes('<CreditNote') ||
+      textContent.includes('<AttachedDocument') ||
+      textContent.includes('<Factura')) {
     return 'XML';
   }
 

@@ -83,15 +83,63 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       throw new Error("OCR did not extract sufficient text from the document");
     }
 
-    // Extract structured data using AI with timeout
+    // Extract structured data using AI with timeout or XML parser for XML files
     console.log(`Starting AI extraction for invoice ${invoice.id}`);
 
-    const aiPromise = extractInvoiceData(ocrText);
-    const aiTimeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
-    );
+    let extractedData: any;
 
-    const extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
+    // Check if this is XML content that should use our XML parser instead of AI
+    const isXmlContent = ocrText.trim().startsWith('<?xml') && 
+                        (ocrText.includes('<Invoice') || ocrText.includes('<CreditNote') || ocrText.includes('<AttachedDocument'));
+
+    if (isXmlContent) {
+      console.log(`XML content detected for invoice ${invoice.id}, using XML parser instead of AI`);
+      
+      // Import XML parser
+      const { parseInvoiceXML } = await import('./services/xmlParser');
+      
+      try {
+        const xmlData = parseInvoiceXML(ocrText, false);
+        console.log(`XML parser extracted data for invoice ${invoice.id}:`, {
+          vendor: xmlData.vendorName,
+          amount: xmlData.totalAmount,
+          invoiceNumber: xmlData.invoiceNumber,
+          lineItems: xmlData.lineItems?.length || 0
+        });
+
+        // Convert XML parser output to expected AI format
+        extractedData = {
+          vendorName: xmlData.vendorName,
+          invoiceNumber: xmlData.invoiceNumber,
+          invoiceDate: xmlData.invoiceDate,
+          dueDate: xmlData.dueDate,
+          totalAmount: xmlData.totalAmount,
+          taxAmount: xmlData.taxAmount,
+          subtotal: xmlData.subtotal,
+          currency: xmlData.currency || 'COP',
+          lineItems: xmlData.lineItems || [],
+          taxId: xmlData.taxId,
+          buyerTaxId: xmlData.buyerTaxId,
+          companyName: xmlData.companyName,
+          confidenceScore: 0.95 // High confidence for XML parsing
+        };
+      } catch (xmlError) {
+        console.error(`XML parsing failed for invoice ${invoice.id}, falling back to AI:`, xmlError);
+        // Fallback to AI if XML parsing fails
+        const aiPromise = extractInvoiceData(ocrText);
+        const aiTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+        );
+        extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
+      }
+    } else {
+      // Use AI for non-XML content
+      const aiPromise = extractInvoiceData(ocrText);
+      const aiTimeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+      );
+      extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
+    }
     console.log(`AI extraction completed for invoice ${invoice.id}:`, {
       vendor: extractedData.vendorName,
       amount: extractedData.totalAmount,
