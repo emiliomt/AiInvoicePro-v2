@@ -907,9 +907,7 @@ export default function InvoiceImporter() {
               <div className="grid gap-4">
                 {configs.map((config) => (
                   <Card 
-                    key={config.id} 
-                    className="cursor-pointer hover:shadow-md transition-shadow duration-200"
-                    onClick={() => openConsoleView(config)}
+                    key={config.id}
                   >
                     <CardHeader>
                       <div className="flex justify-between items-center">
@@ -935,25 +933,6 @@ export default function InvoiceImporter() {
                               <Play className="w-4 h-4 mr-2" />
                             )}
                             {config.status === 'running' ? 'Running...' : 'Run Now'}
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => openConsoleView(config)}
-                          >
-                            <Terminal className="w-4 h-4 mr-2" />
-                            Console
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleTestProgress(config.id);
-                            }}
-                          >
-                            <Zap className="w-4 h-4 mr-2" />
-                            Test Progress
                           </Button>
                           <AlertDialog>
                             <AlertDialogTrigger asChild>
@@ -1020,11 +999,7 @@ export default function InvoiceImporter() {
                         </div>
                       )}
                       
-                      {/* Click hint */}
-                      <div className="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between">
-                        <p className="text-sm text-gray-500">Click to view detailed console logs</p>
-                        <Eye className="w-4 h-4 text-gray-400" />
-                      </div>
+                      
                     </CardContent>
                   </Card>
                 ))}
