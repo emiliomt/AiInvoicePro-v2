@@ -823,8 +823,7 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
 
-            # Connect to local```python
- XML SQLite database
+            # Connect to local XML SQLite database
             xml_conn = sqlite3.connect(self.xml_db_path)
             xml_cursor = xml_conn.cursor()
 
