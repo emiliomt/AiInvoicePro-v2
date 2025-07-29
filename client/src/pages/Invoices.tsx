@@ -455,15 +455,19 @@ export default function Invoices() {
     setIsProcessingAutomatic(true);
 
     try {
+      const requestPayload = {
+        invoiceIds: selectedInvoices,
+        source: 'manual'
+      };
+
+      console.log('Sending automatic processing request:', requestPayload);
+
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({
-          invoiceIds: selectedInvoices,
-          source: 'manual'
-        }),
+        body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) {
