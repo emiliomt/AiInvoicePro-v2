@@ -4161,14 +4161,56 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'XML file not found' });
       }
       
-      const fileBuffer = fs.readFileSync(filePath);
+      const xmlContent = fs.readFileSync(filePath, 'utf-8');
+      
+      // Parse XML content using the XML parser
+      const { parseInvoiceXML } = await import('./services/xmlParser');
+      const extractedData = parseInvoiceXML(xmlContent, true);
+      
+      console.log(`✅ XML parsed successfully for ${filename}:`, {
+        vendor: extractedData.vendorName,
+        amount: extractedData.totalAmount,
+        invoiceNumber: extractedData.invoiceNumber
+      });
       
       // Create invoice record in the same way as manual upload
       const invoiceData = {
         userId: 'rpa-system', // Special user for RPA imports
         fileName: filename,
         fileSize: fileSize,  
-        status: 'processing' as const,
+        status: 'extracted' as const,
+        vendorName: extractedData.vendorName,
+        invoiceNumber: extractedData.invoiceNumber,
+        invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+        dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+        totalAmount: extractedData.totalAmount,
+        taxAmount: extractedData.taxAmount,
+        subtotal: extractedData.subtotal,
+        currency: extractedData.currency || 'COP',
+        ocrText: xmlContent,
+        extractedData: extractedData,
+        projectName: extractedData.projectName,
+        confidenceScore: extractedData.confidenceScore || '0.95'
+      };
+      
+      const invoice = await storage.createInvoice(invoiceData);
+      
+      console.log(`✅ Created invoice record ${invoice.id} for RPA XML file: ${filename}`);
+      
+      res.json({ 
+        success: true, 
+        invoiceId: invoice.id,
+        message: `XML file ${filename} processed successfully` 
+      });
+      
+    } catch (error) {
+      console.error(`❌ Error processing RPA XML file:`, error);
+      res.status(500).json({ 
+        error: 'Failed to process XML file',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
         companyId: 1, // Set to default company ID so RPA invoices appear for company users
         // Note: source field not in schema, storing in extractedData instead
       };
