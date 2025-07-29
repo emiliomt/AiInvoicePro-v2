@@ -90,6 +90,7 @@ export default function Invoices() {
         
         // Fetch linked files for RPA-imported invoices
         const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
+        console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map(i => i.id));
         if (rpaInvoices.length > 0) {
           fetchLinkedFilesForInvoices(rpaInvoices);
         }
@@ -116,6 +117,7 @@ export default function Invoices() {
         const response = await apiRequest('GET', `/api/invoices/${invoice.id}/linked-files`);
         if (response.ok) {
           const linkedInfo: LinkedFilesInfo = await response.json();
+          console.log(`Linked files for invoice ${invoice.id}:`, linkedInfo);
           linkedFilesData[invoice.id] = linkedInfo;
         }
       } catch (error) {
@@ -123,6 +125,7 @@ export default function Invoices() {
       }
     }
     
+    console.log('Setting linkedFilesMap:', linkedFilesData);
     setLinkedFilesMap(linkedFilesData);
   };
 
@@ -683,6 +686,17 @@ export default function Invoices() {
                                 <div className="flex items-center space-x-1 text-blue-600">
                                   <Link size={14} />
                                   <span>{linkedFilesMap[invoice.id].linkedFiles.length} linked file(s)</span>
+                                </div>
+                              )}
+                              {/* Debug indicator for RPA invoices */}
+                              {invoice.userId === 'rpa-system' && (
+                                <div className="flex items-center space-x-1 text-purple-600 text-xs">
+                                  <span>RPA</span>
+                                  {linkedFilesMap[invoice.id] ? (
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'} links)</span>
+                                  ) : (
+                                    <span>(loading...)</span>
+                                  )}
                                 </div>
                               )}
                             </div>
