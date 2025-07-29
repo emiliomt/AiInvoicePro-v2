@@ -380,6 +380,11 @@ class InvoiceImporterService {
       await this.simulateDelay(200);
       await this.updateStepStatus(logId, progress, 12, 'completed');
 
+      // Step 13: Trigger automatic processing if enabled
+      if (config.automaticProcessing) {
+        await this.triggerAutomaticProcessing(logId, config.userId);
+      }
+
     } catch (error: any) {
       console.error('RPA automation failed:', error);
       
@@ -721,6 +726,62 @@ class InvoiceImporterService {
 
   private async simulateDelay(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  private async triggerAutomaticProcessing(logId: number, userId: string): Promise<void> {
+    try {
+      console.log(`🤖 Triggering automatic processing for import log ${logId}`);
+
+      // Get all imported invoices from this RPA session
+      const { storage } = await import('../storage.js');
+      const importedInvoices = await storage.getImportedInvoicesByLogId(logId);
+
+      if (importedInvoices.length === 0) {
+        console.log('No invoices found for automatic processing');
+        return;
+      }
+
+      // Extract invoice IDs
+      const invoiceIds = importedInvoices.map(inv => inv.id).filter(Boolean);
+
+      if (invoiceIds.length === 0) {
+        console.log('No valid invoice IDs found for automatic processing');
+        return;
+      }
+
+      console.log(`Initiating automatic processing for ${invoiceIds.length} RPA-imported invoices`);
+
+      // Make internal API call to trigger automatic processing
+      const fetch = (await import('node-fetch')).default;
+      
+      const response = await fetch('http://localhost:5000/api/invoices/initiate-automatic-process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // Add user context for internal call
+          'X-Internal-User-Id': userId
+        },
+        body: JSON.stringify({
+          invoiceIds,
+          source: 'rpa_automation'
+        })
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        console.log(`✅ Automatic processing triggered successfully:`, result.summary);
+        
+        await this.logStep(logId, `Automatic processing initiated for ${result.summary.totalInvoices} invoices`, 'completed');
+      } else {
+        const error = await response.text();
+        console.error('Failed to trigger automatic processing:', error);
+        await this.logStep(logId, 'Failed to initiate automatic processing', 'failed', error);
+      }
+
+    } catch (error: any) {
+      console.error('Error triggering automatic processing:', error);
+      await this.logStep(logId, 'Error initiating automatic processing', 'failed', error.message);
+    }
   }
 
   private generateLogsFromSteps(steps: ImporterStep[]): string {

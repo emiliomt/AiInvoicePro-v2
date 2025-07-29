@@ -337,5 +337,59 @@ def run_comprehensive_test():
     print(f"🎯 All components working correctly")
     print(f"📈 Ready to process real invoices")
 
+def process_invoice_from_stdin():
+    """Process invoice data received from Node.js via stdin"""
+    try:
+        import sys
+        import json
+        
+        # Read invoice data from stdin
+        input_data = sys.stdin.read()
+        if not input_data.strip():
+            raise ValueError("No input data received")
+            
+        invoice_data = json.loads(input_data)
+        
+        logger.info(f"Processing invoice from Node.js: {invoice_data.get('invoice_id')}")
+        logger.info(f"File path: {invoice_data.get('file_path')}")
+        logger.info(f"Vendor: {invoice_data.get('vendor_name')}")
+        
+        # Execute the full workflow
+        result = process_invoice_workflow_fixed(
+            invoice_data.get('file_path', '/tmp/unknown_invoice.pdf'),
+            invoice_data.get('user_id', 'unknown_user')
+        )
+        
+        # Add invoice-specific data to result
+        result['input_invoice_data'] = {
+            'invoice_id': invoice_data.get('invoice_id'),
+            'vendor_name': invoice_data.get('vendor_name'),
+            'invoice_number': invoice_data.get('invoice_number'),
+            'total_amount': invoice_data.get('total_amount')
+        }
+        
+        # Output structured result for Node.js to parse
+        print(f"WORKFLOW_RESULT:{json.dumps(result)}")
+        
+        if result.get('processing_complete'):
+            logger.info(f"✅ Successfully processed invoice {invoice_data.get('invoice_id')}")
+            sys.exit(0)
+        else:
+            logger.error(f"❌ Failed to process invoice {invoice_data.get('invoice_id')}")
+            sys.exit(1)
+            
+    except Exception as e:
+        error_result = {
+            'success': False,
+            'error': str(e),
+            'processing_complete': False
+        }
+        print(f"WORKFLOW_RESULT:{json.dumps(error_result)}")
+        logger.error(f"Invoice processing failed: {e}")
+        sys.exit(1)
+
 if __name__ == "__main__":
-    run_comprehensive_test()
+    if len(sys.argv) > 1 and sys.argv[1] == "test":
+        run_comprehensive_test()
+    else:
+        process_invoice_from_stdin()

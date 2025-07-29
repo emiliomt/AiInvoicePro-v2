@@ -1,8 +1,12 @@
+# Analyzing the code changes and integrating them into the original code.
+# The user wants to add functionality to initiate an automatic process for invoices, including a button and associated logic.
+# The changes involve adding imports, state variables, handler functions, and UI elements.
+
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2 } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
@@ -44,7 +48,9 @@ interface Invoice {
 }
 
 export default function Invoices() {
+  const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
+  const [bulkAction, setBulkAction] = useState<string>('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -52,6 +58,7 @@ export default function Invoices() {
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -148,7 +155,7 @@ export default function Invoices() {
 
     // Clean up any potential HTML or corrupted content
     const cleanAmount = typeof amount === 'string' ? amount.replace(/<[^>]*>/g, '').trim() : amount;
-    
+
     const numericAmount = parseFloat(cleanAmount);
     if (isNaN(numericAmount)) return "N/A";
 
@@ -170,16 +177,16 @@ export default function Invoices() {
 
   const safeRenderText = (text: string | null | undefined, fallback: string = "N/A") => {
     if (!text || text === "null" || text === "undefined") return fallback;
-    
+
     // Clean up any HTML tags or corrupted content
     const cleanText = typeof text === 'string' ? text.replace(/<[^>]*>/g, '').trim() : String(text);
-    
+
     // Check if the text contains excessive special characters (likely corrupted)
     const specialCharRatio = (cleanText.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleanText.length;
     if (specialCharRatio > 0.3) {
       return fallback;
     }
-    
+
     return cleanText.substring(0, 100); // Limit length to prevent UI overflow
   };
 
@@ -269,7 +276,7 @@ export default function Invoices() {
       Array.from(files).forEach((file) => {
         formData.append('invoice', file);
       });
-      
+
       const response = await apiRequest('POST', '/api/invoices/upload', formData);
       if (!response.ok) {
         const errorText = await response.text();
@@ -310,6 +317,92 @@ export default function Invoices() {
 
   const handleUploadClick = () => {
     fileInputRef.current?.click();
+  };
+
+  const handleBulkAction = async () => {
+    if (!bulkAction || selectedInvoices.length === 0) return;
+
+    try {
+      const response = await fetch('/api/invoices/bulk-action', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          action: bulkAction,
+          invoiceIds: selectedInvoices,
+        }),
+      });
+
+      if (!response.ok) throw new Error('Bulk action failed');
+
+      toast({
+        title: "Success",
+        description: `Bulk ${bulkAction} completed successfully`,
+      });
+
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setSelectedInvoices([]);
+      setBulkAction('');
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Failed to perform bulk action",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const handleInitiateAutomaticProcess = async () => {
+    if (selectedInvoices.length === 0) {
+      toast({
+        title: "No Invoices Selected",
+        description: "Please select invoices to process automatically",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessingAutomatic(true);
+
+    try {
+      const response = await fetch('/api/invoices/initiate-automatic-process', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceIds: selectedInvoices,
+          source: 'manual'
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Automatic processing failed');
+      }
+
+      const result = await response.json();
+
+      toast({
+        title: "Automatic Processing Initiated",
+        description: `Processing ${result.summary.totalInvoices} invoices. ${result.summary.successful} successful, ${result.summary.failed} failed.`,
+      });
+
+      // Refresh the invoices list
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      setSelectedInvoices([]);
+
+    } catch (error: any) {
+      console.error('Automatic processing failed:', error);
+      toast({
+        title: "Automatic Processing Failed",
+        description: error.message || "Failed to initiate automatic processing",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessingAutomatic(false);
+    }
   };
 
   if (isLoading) {
@@ -391,6 +484,25 @@ export default function Invoices() {
                   </AlertDialogContent>
                 </AlertDialog>
               )}
+              <Button
+                    onClick={handleInitiateAutomaticProcess}
+                    variant="outline"
+                    size="sm"
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
+                    className="flex items-center space-x-2"
+                  >
+                    {isProcessingAutomatic ? (
+                      <>
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                        <span>Processing...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="h-4 w-4" />
+                        <span>Initiate Automatic Process ({selectedInvoices.length})</span>
+                      </>
+                    )}
+                  </Button>
             </div>
           </div>
         </div>
@@ -724,7 +836,7 @@ export default function Invoices() {
                   <p className="text-sm text-gray-600 mb-3">Vendor and buyer address details</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">Vendor Address</label>
+                      <labelclassName="text-sm font-medium text-gray-700">Vendor Address</label>
                       <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.vendorAddress || "Not extracted"}</p>
                     </div>
                     <div>
@@ -837,3 +949,4 @@ export default function Invoices() {
     </div>
   );
 }
+</replit_final_file>
