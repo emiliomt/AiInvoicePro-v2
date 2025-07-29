@@ -171,6 +171,7 @@ export interface IStorage {
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
   getInvoicesByCompanyId(companyId: number): Promise<Invoice[]>;
   getInvoicesByIds(invoiceIds: number[]): Promise<Invoice[]>;
+  getInvoicesByFileName(baseFileName: string): Promise<Invoice[]>;
 
   // Line Items
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
@@ -370,6 +371,18 @@ class PostgresStorage implements IStorage {
 
   async getInvoicesByIds(invoiceIds: number[]): Promise<Invoice[]> {
     return await db.select().from(invoices).where(inArray(invoices.id, invoiceIds));
+  }
+
+  async getInvoicesByFileName(baseFileName: string): Promise<Invoice[]> {
+    // Search for invoices with filenames that match the base name (with or without extension)
+    return await db.select().from(invoices)
+      .where(
+        or(
+          ilike(invoices.fileName, `${baseFileName}.%`),
+          eq(invoices.fileName, baseFileName)
+        )
+      )
+      .orderBy(desc(invoices.createdAt));
   }
 
   // Line Items

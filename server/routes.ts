@@ -4238,7 +4238,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
       
-      console.log(`📋 Processing RPA XML file: ${filename} (config: ${configId})`);
+      console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
       
       // Get import configuration to determine company ID
       let companyId = null;
@@ -4262,6 +4262,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       if (!companyId) {
         companyId = 1;
         console.log(`🔧 Using fallback company ID: ${companyId}`);
+      }
+      
+      // Check for existing invoice with same document number to prevent duplicates
+      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      if (existingInvoices.length > 0) {
+        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), skipping XML processing`);
+        return res.json({ 
+          success: true, 
+          invoiceId: existingInvoices[0].id,
+          message: `XML file ${filename} skipped - invoice already exists`,
+          duplicate: true
+        });
       }
       
       // Read the XML file from uploads directory
@@ -4328,9 +4341,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
-      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, isReferenceOnly } = req.body;
       
-      console.log(`📋 Processing RPA PDF file: ${filename} (config: ${configId})`);
+      // Check if this is a reference-only PDF (when XML exists for same invoice)
+      if (isReferenceOnly) {
+        console.log(`📎 Storing PDF as reference only: ${filename} (NO EXTRACTION)`);
+        return res.json({ 
+          success: true, 
+          message: `PDF file ${filename} stored as reference only`,
+          referenceOnly: true
+        });
+      }
+      
+      console.log(`📄 Processing RPA PDF file: ${filename} (config: ${configId})`);
       
       // Get import configuration to determine company ID
       let companyId = null;
@@ -4354,6 +4377,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       if (!companyId) {
         companyId = 1;
         console.log(`🔧 Using fallback company ID: ${companyId}`);
+      }
+      
+      // Check for existing invoice with same base name to prevent duplicates
+      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      if (existingInvoices.length > 0) {
+        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), PDF will be reference only`);
+        return res.json({ 
+          success: true, 
+          invoiceId: existingInvoices[0].id,
+          message: `PDF file ${filename} linked as reference to existing invoice`,
+          linkedToExisting: true
+        });
       }
       
       // Read the PDF file from uploads directory

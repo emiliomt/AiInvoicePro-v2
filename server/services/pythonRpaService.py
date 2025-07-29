@@ -809,7 +809,7 @@ class InvoiceRPAService:
         return matches
 
     def _process_xml_file(self, temp_dir, xml_file, zip_base_name, processed_files):
-        """Process XML file for data extraction"""
+        """Process standalone XML file for data extraction"""
         try:
             # Keep the same naming convention as ZIP (which already includes valor_total)
             new_name = f"{zip_base_name}.xml"
@@ -817,21 +817,24 @@ class InvoiceRPAService:
             dst = os.path.join(self.xml_dir, new_name)
             shutil.move(src, dst)
             
+            self.log(f"📄 XML-ONLY PROCESSING: '{xml_file}' will be processed for structured data extraction")
+            
             processed_files.append({
                 'type': 'xml',
                 'original_name': xml_file,
                 'processed_name': new_name,
                 'base_name': os.path.splitext(xml_file)[0],
-                'is_data_source': True
+                'is_data_source': True,  # XML is always data source
+                'triggers_extraction': True  # XML always triggers processing
             })
             
-            self.log(f"Extracted XML: {new_name}")
+            self.log(f"✅ Extracted standalone XML: {new_name} (DATA SOURCE)")
             
         except Exception as e:
             self.log(f"Error processing XML file {xml_file}: {e}", "ERROR")
 
     def _process_pdf_file(self, temp_dir, pdf_file, zip_base_name, processed_files):
-        """Process PDF file for OCR"""
+        """Process standalone PDF file for OCR (when no XML is available)"""
         try:
             # Create PDF directory if it doesn't exist
             pdf_dir = os.path.join(self.download_dir, 'pdfs')
@@ -843,25 +846,36 @@ class InvoiceRPAService:
             dst = os.path.join(pdf_dir, new_name)
             shutil.move(src, dst)
             
+            self.log(f"📄 PDF-ONLY PROCESSING: '{pdf_file}' will be processed via OCR (no XML available)")
+            
             processed_files.append({
                 'type': 'pdf',
                 'original_name': pdf_file,
                 'processed_name': new_name,
                 'base_name': os.path.splitext(pdf_file)[0],
-                'is_data_source': True  # PDF will be used for OCR
+                'is_data_source': True,  # PDF will be used for OCR when no XML
+                'triggers_extraction': True  # PDF triggers processing when standalone
             })
             
-            self.log(f"Extracted PDF: {new_name}")
+            self.log(f"✅ Extracted standalone PDF: {new_name} (DATA SOURCE via OCR)")
             
         except Exception as e:
             self.log(f"Error processing PDF file {pdf_file}: {e}", "ERROR")
 
     def _process_matched_files(self, temp_dir, file_pair, zip_base_name, processed_files):
-        """Process matched XML and PDF files"""
+        """Process matched XML and PDF files with priority rules:
+        - XML is always used for data extraction (isDataSource=true)
+        - PDF is stored as reference only (isDataSource=false)
+        - Only XML triggers the extraction pipeline
+        """
         try:
             xml_file = file_pair['xml']
             pdf_file = file_pair.get('pdf')
             base_name = os.path.splitext(xml_file)[0]
+            
+            self.log(f"🔄 PRIORITY PROCESSING: XML '{xml_file}' will be used for data extraction")
+            if pdf_file:
+                self.log(f"📎 PDF '{pdf_file}' will be stored as visual reference only")
             
             # Process XML first (for data extraction)
             xml_new_name = f"{zip_base_name}.xml"
@@ -874,11 +888,12 @@ class InvoiceRPAService:
                 'original_name': xml_file,
                 'processed_name': xml_new_name,
                 'base_name': base_name,
-                'is_data_source': True,
-                'matched_file': None
+                'is_data_source': True,  # XML is the data source
+                'matched_file': None,
+                'triggers_extraction': True  # Only XML triggers processing
             }
             
-            # Process PDF if available (for reference)
+            # Process PDF if available (for reference ONLY - no extraction)
             if pdf_file:
                 pdf_dir = os.path.join(self.download_dir, 'pdfs')
                 os.makedirs(pdf_dir, exist_ok=True)
@@ -894,15 +909,16 @@ class InvoiceRPAService:
                     'processed_name': pdf_new_name,
                     'base_name': base_name,
                     'is_data_source': False,  # PDF is for reference only
-                    'matched_file': xml_new_name
+                    'matched_file': xml_new_name,
+                    'triggers_extraction': False  # PDF does NOT trigger processing
                 }
                 
                 xml_entry['matched_file'] = pdf_new_name
                 processed_files.append(pdf_entry)
                 
-                self.log(f"Matched files: {xml_new_name} (data) + {pdf_new_name} (reference)")
+                self.log(f"✅ Matched files processed: {xml_new_name} (DATA SOURCE) + {pdf_new_name} (REFERENCE)")
             else:
-                self.log(f"Extracted XML only: {xml_new_name}")
+                self.log(f"✅ XML only processed: {xml_new_name} (DATA SOURCE)")
             
             processed_files.append(xml_entry)
             
@@ -1114,28 +1130,23 @@ class InvoiceRPAService:
                 pdf_filename = pdf_files.get(base_name)
                 
                 if xml_filename and pdf_filename:
-                    # Case: Both XML and PDF files present - store both as separate entries
-                    self.log(f"📦 Processing matched pair: {base_name}")
+                    # ✅ PRIORITY RULE: Both XML and PDF present - ONLY process XML for data extraction
+                    self.log(f"🔄 EXTRACTION PRIORITY: XML '{xml_filename}' will be processed for data, PDF '{pdf_filename}' stored as reference ONLY")
                     
-                    # Process XML (data source)
+                    # Process XML (data source) - ONLY this triggers extraction
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
+                        xml_info['base_file_name'] = base_name
+                        xml_info['matched_file_name'] = pdf_filename
                         processed_files.append(xml_info)
                         processed_count += 1
+                        self.log(f"✅ XML processed for extraction: {xml_filename}")
                     
-                    # Process PDF (reference, linked to XML)
-                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, 
-                                                            is_data_source=False, matched_xml=xml_filename)
+                    # Store PDF as reference ONLY - NO extraction pipeline
+                    pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
                     if pdf_info:
-                        # Link PDF to XML using baseFileName
-                        pdf_info['base_file_name'] = base_name
                         processed_files.append(pdf_info)
-                        processed_count += 1
-                        
-                    # Update XML with matched PDF info
-                    if xml_info and pdf_info:
-                        xml_info['matched_file_name'] = pdf_filename
-                        xml_info['base_file_name'] = base_name
+                        self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION)")
                     
                 elif xml_filename and not pdf_filename:
                     # Case: Only XML file present - store XML, set isDataSource = true
@@ -1147,13 +1158,14 @@ class InvoiceRPAService:
                         processed_count += 1
                         
                 elif pdf_filename and not xml_filename:
-                    # Case: Only PDF file present - store PDF, set isDataSource = false
-                    self.log(f"🗎 Processing PDF only: {base_name}")
-                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=False)
+                    # Case: Only PDF file present - process for OCR extraction (no XML available)
+                    self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
+                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
                     if pdf_info:
                         pdf_info['base_file_name'] = base_name
                         processed_files.append(pdf_info)
                         processed_count += 1
+                        self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
 
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
@@ -1269,6 +1281,37 @@ class InvoiceRPAService:
 
         except Exception as e:
             self.log(f"Error processing PDF {filename}: {e}", "ERROR")
+            return None
+
+    def _store_pdf_as_reference_only(self, filename, pdf_dir, base_name, matched_xml=None):
+        """Store PDF as reference file without triggering extraction pipeline"""
+        try:
+            # Parse filename to get basic info (for metadata only)
+            parts = base_name.split("_", 2)
+            if len(parts) < 2:
+                self.log(f"Skipping invalid PDF filename: {filename}")
+                return None
+
+            numero = parts[0]
+            emisor = parts[1] if len(parts) > 1 else "unknown"
+            valor = parts[2] if len(parts) > 2 else "0"
+
+            self.log(f"📎 Storing PDF as reference: {filename} (NO EXTRACTION)")
+            
+            return {
+                'type': 'pdf',
+                'base_name': base_name,
+                'upload_filename': filename,  # Keep original name since not processed through pipeline
+                'numero': numero,
+                'emisor': emisor,
+                'valor': valor,
+                'is_data_source': False,  # This is NOT a data source
+                'matched_xml': matched_xml,
+                'reference_only': True  # Flag to indicate this is reference only
+            }
+
+        except Exception as e:
+            self.log(f"Error storing PDF reference {filename}: {e}", "ERROR")
             return None
 
     def _store_conditional_files_to_database(self, processed_files):
