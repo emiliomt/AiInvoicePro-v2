@@ -4247,10 +4247,21 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           const config = await storage.getInvoiceImporterConfig(configId);
           if (config) {
             companyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+          } else {
+            console.warn(`⚠️ Config ${configId} not found`);
           }
         } catch (error) {
-          console.warn(`Could not retrieve config ${configId} for company ID:`, error);
+          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
         }
+      } else {
+        console.warn(`⚠️ No configId provided for XML processing`);
+      }
+      
+      // Fallback: If no company ID from config, default to 1 for existing users
+      if (!companyId) {
+        companyId = 1;
+        console.log(`🔧 Using fallback company ID: ${companyId}`);
       }
       
       // Read the XML file from uploads directory
@@ -4328,10 +4339,21 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           const config = await storage.getInvoiceImporterConfig(configId);
           if (config) {
             companyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+          } else {
+            console.warn(`⚠️ Config ${configId} not found`);
           }
         } catch (error) {
-          console.warn(`Could not retrieve config ${configId} for company ID:`, error);
+          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
         }
+      } else {
+        console.warn(`⚠️ No configId provided for PDF processing`);
+      }
+      
+      // Fallback: If no company ID from config, default to 1 for existing users
+      if (!companyId) {
+        companyId = 1;
+        console.log(`🔧 Using fallback company ID: ${companyId}`);
       }
       
       // Read the PDF file from uploads directory
