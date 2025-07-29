@@ -4211,35 +4211,6 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       });
     }
   });
-        companyId: 1, // Set to default company ID so RPA invoices appear for company users
-        // Note: source field not in schema, storing in extractedData instead
-      };
-      
-      // Create invoice record in database
-      const invoice = await storage.createInvoice(invoiceData);
-      console.log(`Created invoice record ${invoice.id} for RPA file ${filename}`);
-      
-      // Process through the exact same pipeline as manual uploads
-      setImmediate(async () => {
-        try {
-          await processInvoiceAsync(invoice, fileBuffer);
-          console.log(`✅ RPA invoice ${invoice.id} processed successfully`);
-        } catch (error) {
-          console.error(`❌ RPA invoice ${invoice.id} processing failed:`, error);
-        }
-      });
-      
-      res.json({ 
-        success: true, 
-        invoiceId: invoice.id,
-        message: `XML file ${filename} queued for processing` 
-      });
-      
-    } catch (error) {
-      console.error('Error processing RPA XML:', error);
-      res.status(500).json({ error: 'Failed to process XML file' });
-    }
-  });
 
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
