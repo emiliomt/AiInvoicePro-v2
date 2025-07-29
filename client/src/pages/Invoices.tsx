@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, Upload, Play, Loader2, CheckSquare, Square, Package, Link } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
@@ -801,15 +801,6 @@ export default function Invoices() {
                         </Button>
                         {invoice.status === 'extracted' && (
                           <>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handlePositiveFeedback(invoice.id)}
-                              className="text-green-600 border-green-300 hover:bg-green-50"
-                            >
-                              <ThumbsUp size={14} className="mr-1" />
-                              Good Job AI!
-                            </Button>
                             {/* Only show Report Error for AI-extracted invoices (confidence < 0.9) */}
                             {(!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9) && (
                               <Button

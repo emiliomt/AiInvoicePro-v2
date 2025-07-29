@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle, ThumbsUp } from "lucide-react";
+import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -195,38 +195,6 @@ export default function ExtractedData() {
     },
   });
 
-  const positiveFeedbackMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
-      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/positive-feedback`);
-      return response.json();
-    },
-    onSuccess: () => {
-      toast({
-        title: "Feedback Submitted",
-        description: "Thanks! Your positive feedback helps improve our AI extraction.",
-      });
-    },
-    onError: (error: Error) => {
-      if (isUnauthorizedError(error)) {
-        toast({
-          title: "Unauthorized",
-          description: "You are logged out. Logging in again...",
-          variant: "destructive",
-        });
-        setTimeout(() => {
-          window.location.href = "/api/login";
-        }, 500);
-        return;
-      }
-
-      toast({
-        title: "Feedback Failed",
-        description: error.message,
-        variant: "destructive",
-      });
-    },
-  });
-
   const handleApprove = () => {
     if (invoiceToShow) {
       approveMutation.mutate(invoiceToShow.id);
@@ -236,12 +204,6 @@ export default function ExtractedData() {
   const handleReject = () => {
     if (invoiceToShow) {
       rejectMutation.mutate({ invoiceId: invoiceToShow.id, comments: rejectionComments });
-    }
-  };
-
-  const handlePositiveFeedback = () => {
-    if (invoiceToShow) {
-      positiveFeedbackMutation.mutate(invoiceToShow.id);
     }
   };
 
@@ -610,15 +572,6 @@ export default function ExtractedData() {
               </div>
               <div className="space-y-3">
                 <div className="flex space-x-3">
-                  <Button
-                    variant="outline"
-                    onClick={handlePositiveFeedback}
-                    disabled={positiveFeedbackMutation.isPending}
-                    className="text-green-600 border-green-300 hover:bg-green-50"
-                  >
-                    <ThumbsUp className="w-4 h-4 mr-2" />
-                    Good Job AI!
-                  </Button>
                   <Button
                     variant="outline"
                     onClick={handleReject}
