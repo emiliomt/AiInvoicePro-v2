@@ -4594,6 +4594,79 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Get linked files for an invoice
+  app.get('/api/invoices/:id/linked-files', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+      
+      // Verify invoice access
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Check access permissions
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Query for linked files
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      try {
+        await dbClient.connect();
+        
+        const linkedFilesQuery = `
+          SELECT 
+            original_file_name,
+            file_type,
+            file_size,
+            base_file_name,
+            is_data_source,
+            downloaded_at,
+            metadata
+          FROM imported_invoices 
+          WHERE linked_invoice_id = $1
+          ORDER BY file_type, original_file_name
+        `;
+        
+        const result = await dbClient.query(linkedFilesQuery, [invoiceId]);
+        
+        const linkedFiles = result.rows.map(row => ({
+          fileName: row.original_file_name,
+          fileType: row.file_type,
+          fileSize: row.file_size,
+          baseFileName: row.base_file_name,
+          isDataSource: row.is_data_source,
+          downloadedAt: row.downloaded_at,
+          metadata: row.metadata
+        }));
+        
+        res.json({
+          invoiceId,
+          mainFile: invoice.fileName,
+          linkedFiles,
+          hasLinkedFiles: linkedFiles.length > 0
+        });
+        
+      } finally {
+        await dbClient.end();
+      }
+      
+    } catch (error) {
+      console.error('Error fetching linked files:', error);
+      res.status(500).json({ error: 'Failed to fetch linked files' });
+    }
+  });
+
   // Helper function for executing import tasks asynchronously
   async function executeImportAsync(configId: number) {
     try {
@@ -4854,53 +4927,75 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
       const path = await import('path');
       const archiver = await import('archiver');
       
-      // Check if this is an RPA-imported invoice with potential matched files
-      if (invoice.userId === 'rpa-system' && (invoice.extractedData as any)?.source === 'rpa') {
-        const importLogId = (invoice.extractedData as any)?.importLogId;
+      // Enhanced PDF linking: Check if this invoice has linked PDF files
+      if (invoice.userId === 'rpa-system') {
+        console.log(`🔍 Checking for linked files for RPA invoice: ${invoice.fileName}`);
         
-        if (importLogId) {
-          // Get all imported invoices for this log to find matches
-          const importedInvoices = await storage.getImportedInvoicesByLog(importLogId);
-          const baseFileName = path.parse(invoice.fileName).name;
+        // Query for linked PDF files using the new linked_invoice_id field
+        const { Client } = await import('pg');
+        const dbClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+        });
+        
+        try {
+          await dbClient.connect();
           
-          // Find matching files by base filename
-          const matchedFiles = importedInvoices.filter(imported => 
-            imported.baseFileName === baseFileName
-          );
+          // Find PDFs linked to this main invoice
+          const linkedPDFQuery = `
+            SELECT original_file_name, file_path, file_type, base_file_name
+            FROM imported_invoices 
+            WHERE linked_invoice_id = $1 
+            AND file_type = 'pdf'
+            AND is_data_source = false
+          `;
           
-          if (matchedFiles.length > 1) {
-            // Multiple files found - create ZIP
-            console.log(`Creating ZIP for matched files: ${matchedFiles.length} files`);
+          const linkedPDFs = await dbClient.query(linkedPDFQuery, [invoiceId]);
+          console.log(`📎 Found ${linkedPDFs.rows.length} linked PDF files for invoice ${invoiceId}`);
+          
+          if (linkedPDFs.rows.length > 0) {
+            // Create ZIP with main invoice + linked PDFs
+            const baseFileName = path.parse(invoice.fileName).name;
+            const zipName = `${baseFileName}_with_references.zip`;
             
-            const zipName = `${baseFileName}_files.zip`;
+            console.log(`📦 Creating ZIP package: ${zipName}`);
             res.setHeader('Content-Type', 'application/zip');
             res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
             
             const archive = archiver.default('zip', {
-              zlib: { level: 9 } // Maximum compression
+              zlib: { level: 9 }
             });
             
             archive.pipe(res);
             
-            // Add each matched file to the ZIP
-            let filesAdded = 0;
-            for (const matchedFile of matchedFiles) {
-              const matchedFilePath = path.join('uploads', matchedFile.originalFileName);
-              if (fs.existsSync(matchedFilePath)) {
-                archive.file(matchedFilePath, { name: matchedFile.originalFileName });
-                filesAdded++;
-                console.log(`Added to ZIP: ${matchedFile.originalFileName}`);
+            // Add main invoice file (XML)
+            const mainFilePath = path.join('uploads', invoice.fileName);
+            if (fs.existsSync(mainFilePath)) {
+              archive.file(mainFilePath, { name: invoice.fileName });
+              console.log(`✅ Added main file to ZIP: ${invoice.fileName}`);
+            }
+            
+            // Add linked PDF files
+            let linkedFilesAdded = 0;
+            for (const linkedPDF of linkedPDFs.rows) {
+              const pdfPath = path.join('uploads', linkedPDF.original_file_name);
+              if (fs.existsSync(pdfPath)) {
+                archive.file(pdfPath, { 
+                  name: `${linkedPDF.original_file_name}` 
+                });
+                linkedFilesAdded++;
+                console.log(`📎 Added linked PDF to ZIP: ${linkedPDF.original_file_name}`);
               }
             }
             
-            if (filesAdded === 0) {
-              return res.status(404).json({ error: 'No matching files found on disk' });
-            }
-            
+            console.log(`📦 ZIP package ready with 1 main file + ${linkedFilesAdded} linked PDFs`);
             archive.finalize();
-            console.log(`ZIP download completed: ${zipName} (${filesAdded} files)`);
             return;
           }
+          
+        } catch (dbError) {
+          console.error('Database error checking for linked files:', dbError);
+        } finally {
+          await dbClient.end();
         }
       }
       

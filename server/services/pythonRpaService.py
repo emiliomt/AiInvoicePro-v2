@@ -1145,8 +1145,11 @@ class InvoiceRPAService:
                     # Store PDF as reference ONLY - NO extraction pipeline
                     pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
                     if pdf_info:
+                        # Mark PDF to be linked after XML processing is complete
+                        pdf_info['link_to_xml_invoice'] = True
+                        pdf_info['xml_filename'] = xml_filename
                         processed_files.append(pdf_info)
-                        self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION)")
+                        self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION, will link to XML invoice)")
                     
                 elif xml_filename and not pdf_filename:
                     # Case: Only XML file present - store XML, set isDataSource = true
@@ -1170,11 +1173,14 @@ class InvoiceRPAService:
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
             
+            # After all files are processed through manual pipeline, link PDFs to XML-derived invoice records
+            self._link_pdfs_to_main_invoices(processed_files)
+            
             # Note: Files are already processed through manual pipeline via trigger_manual_processing
             # The manual pipeline creates records in the main 'invoices' table
             # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
-            self.log(f"✅ Processed {processed_count} files through manual pipeline")
+            self.log(f"✅ Processed {processed_count} files through manual pipeline with proper PDF linking")
             self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
             
             return True
@@ -1409,6 +1415,94 @@ class InvoiceRPAService:
 
         except Exception as e:
             self.log(f"Error storing conditional files to database: {e}", "ERROR")
+            return False
+
+    def _link_pdfs_to_main_invoices(self, processed_files):
+        """Link PDF files to their corresponding XML-derived invoice records in the main invoices table"""
+        try:
+            # Connect to PostgreSQL
+            pg_conn = psycopg2.connect(
+                host=os.getenv("PGHOST"),
+                port=int(os.getenv("PGPORT", 5432)),
+                database=os.getenv("PGDATABASE"),
+                user=os.getenv("PGUSER"),
+                password=os.getenv("PGPASSWORD"),
+            )
+            pg_cursor = pg_conn.cursor()
+
+            # Find PDFs that need to be linked to XML-derived invoices
+            pdf_files_to_link = [f for f in processed_files if f['type'] == 'pdf' and f.get('link_to_xml_invoice')]
+            
+            for pdf_info in pdf_files_to_link:
+                try:
+                    base_name = pdf_info.get('base_file_name', pdf_info['base_name'])
+                    xml_filename = pdf_info.get('xml_filename')
+                    pdf_filename = pdf_info['upload_filename']
+                    
+                    self.log(f"🔗 Linking PDF {pdf_filename} to XML-derived invoice for base name: {base_name}")
+                    
+                    # Find the main invoice record created from the XML file
+                    # Look for invoice with the same base filename (remove extension)
+                    pg_cursor.execute("""
+                        SELECT id, file_name FROM invoices 
+                        WHERE (file_name ILIKE %s OR file_name ILIKE %s)
+                        AND user_id = 'rpa-system'
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """, (f"{base_name}.xml", f"{xml_filename}"))
+                    
+                    invoice_result = pg_cursor.fetchone()
+                    
+                    if invoice_result:
+                        invoice_id = invoice_result[0]
+                        invoice_filename = invoice_result[1]
+                        
+                        # Check if we already have a PDF association for this invoice
+                        pg_cursor.execute("""
+                            SELECT id FROM imported_invoices 
+                            WHERE base_file_name = %s 
+                            AND file_type = 'pdf' 
+                            AND log_id = %s
+                        """, (base_name, self.log_id))
+                        
+                        pdf_record = pg_cursor.fetchone()
+                        
+                        if pdf_record:
+                            pdf_record_id = pdf_record[0]
+                            
+                            # Update the PDF record with the link to the main invoice
+                            pg_cursor.execute("""
+                                UPDATE imported_invoices 
+                                SET linked_invoice_id = %s,
+                                    metadata = metadata || %s
+                                WHERE id = %s
+                            """, (
+                                invoice_id, 
+                                json.dumps({'linked_to_main_invoice': True, 'main_invoice_id': invoice_id}),
+                                pdf_record_id
+                            ))
+                            
+                            self.log(f"✅ Successfully linked PDF {pdf_filename} to main invoice {invoice_id} ({invoice_filename})")
+                        else:
+                            self.log(f"⚠️ PDF record not found for {pdf_filename} in imported_invoices table")
+                    else:
+                        self.log(f"⚠️ Main invoice not found for base name: {base_name} (XML: {xml_filename})")
+                        
+                except Exception as e:
+                    self.log(f"❌ Failed to link PDF {pdf_info['upload_filename']}: {e}", "ERROR")
+                    continue
+
+            # Commit all changes
+            pg_conn.commit()
+            pg_conn.close()
+            
+            if pdf_files_to_link:
+                self.log(f"✅ PDF linking completed for {len(pdf_files_to_link)} files")
+            
+            return True
+
+        except Exception as e:
+            self.log(f"❌ Error linking PDFs to main invoices: {e}", "ERROR")
             return False
 
     def _store_file_matches(self, processed_files):
