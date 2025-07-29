@@ -394,7 +394,7 @@ class PythonInvoiceImporter {
         // Update progress with live logs
         if (progress) {
           // Process each line individually for real-time streaming
-          const lines = output.split('\n').filter(line => line.trim());
+          const lines = output.split('\n').filter((line: string) => line.trim());
 
           for (const line of lines) {
             const trimmedLine = line.trim();
@@ -543,12 +543,12 @@ class PythonInvoiceImporter {
             console.error('Failed to update database with final stats:', error);
           });
 
-          console.log(`Python RPA import task ${configId} completed successfully`);
+          console.log(`Python RPA import task ${config.id} completed successfully`);
 
           // Clean up active imports after a short delay to allow final API calls
           setTimeout(() => {
-            console.log(`Cleaning up progress tracking for config ${configId}`);
-            this.activeImports.delete(configId);
+            console.log(`Cleaning up progress tracking for config ${config.id}`);
+            this.activeImports.delete(config.id);
           }, 5000); // 5 second delay
 
           resolve(result);
@@ -838,13 +838,7 @@ class PythonInvoiceImporter {
           fileName: importedInvoice.originalFileName,
           status: "pending", // Start with pending, same as manual upload
           fileUrl: filePath, // Use uploads/ path, same as manual upload
-          metadata: {
-            source: 'rpa', // Mark as RPA source
-            originalPath: importedInvoice.filePath,
-            importLogId: logId,
-            erpDocumentId: importedInvoice.erpDocumentId,
-            downloadedAt: importedInvoice.downloadedAt
-          }
+          companyId: config.companyId
         });
 
         console.log(`✅ Created invoice ${invoice.id} in main system: ${invoice.fileName}`);

@@ -1487,6 +1487,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Process invoice endpoint (for RPA and manual processing)
+  app.post('/api/invoices/:id/process', async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      console.log(`📄 Processing invoice ${invoiceId}: ${invoice.fileName}`);
+
+      // Check if file exists
+      const fs = await import('fs');
+      if (!invoice.fileUrl || !fs.default.existsSync(invoice.fileUrl)) {
+        return res.status(400).json({ message: "Invoice file not found on disk" });
+      }
+
+      // Read file buffer
+      const fileBuffer = fs.default.readFileSync(invoice.fileUrl);
+      
+      // Process asynchronously
+      setImmediate(async () => {
+        try {
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ Invoice ${invoiceId} processing completed`);
+        } catch (error) {
+          console.error(`❌ Invoice ${invoiceId} processing failed:`, error);
+          // Update invoice status to failed
+          await storage.updateInvoice(invoiceId, { 
+            status: "pending",
+            extractedData: { error: error instanceof Error ? error.message : "Processing failed" }
+          });
+        }
+      });
+
+      res.json({ message: "Processing started", invoiceId });
+    } catch (error) {
+      console.error("Error starting invoice processing:", error);
+      res.status(500).json({ message: "Failed to start processing" });
+    }
+  });
+
   // Manual processing endpoints
   app.post('/api/invoices/:id/process-ocr', isAuthenticated, async (req: any, res) => {
     try {
