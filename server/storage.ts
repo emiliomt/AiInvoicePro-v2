@@ -325,7 +325,51 @@ class PostgresStorage implements IStorage {
   }
 
   async deleteInvoice(id: number): Promise<void> {
-    // Delete related line items first
+    // Delete linked imported invoice files first (for RPA invoices)
+    const { Client } = await import('pg');
+    const dbClient = new Client({
+      connectionString: process.env.DATABASE_URL,
+    });
+    
+    try {
+      await dbClient.connect();
+      
+      // First, get the linked files so we can delete the physical files
+      const linkedFilesQuery = `
+        SELECT file_path, original_file_name 
+        FROM imported_invoices 
+        WHERE linked_invoice_id = $1
+      `;
+      const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
+      
+      // Delete physical files from disk
+      const fs = await import('fs');
+      for (const file of linkedFiles.rows) {
+        try {
+          if (fs.existsSync(file.file_path)) {
+            fs.unlinkSync(file.file_path);
+            console.log(`🗑️ Deleted physical file: ${file.file_path}`);
+          }
+        } catch (fileError) {
+          console.error(`Error deleting physical file ${file.file_path}:`, fileError);
+        }
+      }
+      
+      // Delete linked PDF files from imported_invoices table
+      const deleteResult = await dbClient.query(
+        'DELETE FROM imported_invoices WHERE linked_invoice_id = $1',
+        [id]
+      );
+      
+      console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for invoice ${id}`);
+      
+    } catch (error) {
+      console.error(`Error deleting linked files for invoice ${id}:`, error);
+    } finally {
+      await dbClient.end();
+    }
+    
+    // Delete related line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
     // Delete feedback logs
     await db.delete(feedbackLogs).where(eq(feedbackLogs.invoiceId, id));
@@ -335,8 +379,10 @@ class PostgresStorage implements IStorage {
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
     // Delete invoice-project matches
     await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
-    // Then delete the invoice
+    // Finally delete the main invoice
     await db.delete(invoices).where(eq(invoices.id, id));
+    
+    console.log(`✅ Successfully deleted invoice ${id} and all related records`);
   }
 
   async getInvoicesByUserId(userId: string): Promise<Invoice[]> {
