@@ -1692,12 +1692,6 @@ class InvoiceRPAService:
                         if fallback_result:
                             self.log(f"🔄 Found fallback match using document number only: {fallback_result[1]}")
                             # Could implement fallback linking here if needed
-                            
-                            self.log(f"✅ Successfully linked PDF {pdf_filename} to main invoice {invoice_id} ({invoice_filename})")
-                        else:
-                            self.log(f"⚠️ PDF record not found for {pdf_filename} in imported_invoices table")
-                    else:
-                        self.log(f"⚠️ Main invoice not found for base name: {base_name} (XML: {xml_filename})")
                         
                 except Exception as e:
                     self.log(f"❌ Failed to link PDF {pdf_info['upload_filename']}: {e}", "ERROR")
