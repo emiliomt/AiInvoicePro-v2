@@ -170,7 +170,7 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
 
-            # Force headless mode for Replit environment with enhanced flags
+            # Enhanced stability configuration for Replit environment
             chrome_options.add_argument("--headless=new")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
@@ -178,15 +178,44 @@ class InvoiceRPAService:
             chrome_options.add_argument("--allow-running-insecure-content")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--ignore-ssl-errors")
-            chrome_options.add_argument(
-                "--disable-blink-features=AutomationControlled")
-            chrome_options.add_argument(
-                "--disable-background-timer-throttling")
-            chrome_options.add_argument(
-                "--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument("--disable-background-timer-throttling")
+            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--disable-features=TranslateUI")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
+            
+            # Universal browser stability improvements (both XML and PDF)
+            chrome_options.add_argument("--disable-crash-reporter")
+            chrome_options.add_argument("--disable-logging")
+            chrome_options.add_argument("--disable-in-process-stack-traces")
+            chrome_options.add_argument("--disable-accelerated-2d-canvas")
+            chrome_options.add_argument("--disable-accelerated-video-decode")
+            chrome_options.add_argument("--num-raster-threads=1")
+            chrome_options.add_argument("--enable-surface-synchronization")
+            chrome_options.add_argument("--run-all-compositor-stages-before-draw")
+            chrome_options.add_argument("--disable-threaded-compositing")
+            chrome_options.add_argument("--disable-threaded-scrolling")
+            
+            # Enhanced stability flags for PDF processing to prevent browser crashes
+            file_types = self.config.get('fileTypes', 'both')
+            if file_types == 'pdf':
+                self.log("🔧 SETUP DEBUG - Adding PDF-specific stability flags")
+                # Use lightweight configuration to prevent memory issues
+                chrome_options.add_argument("--disable-software-rasterizer")
+                chrome_options.add_argument("--disable-background-networking")
+                chrome_options.add_argument("--disable-sync")
+                chrome_options.add_argument("--disable-default-apps")
+                chrome_options.add_argument("--disable-translate")
+                chrome_options.add_argument("--disable-plugins")
+                chrome_options.add_argument("--disable-images")  # Reduce memory usage
+                chrome_options.add_argument("--disable-css3-animations")
+                chrome_options.add_argument("--disable-smooth-scrolling")
+                chrome_options.add_argument("--disable-accelerated-2d-canvas")
+                chrome_options.add_argument("--disable-accelerated-video-decode")
+                chrome_options.add_argument("--memory-pressure-off")
+                chrome_options.add_argument("--max-old-space-size=256")  # Lower memory limit
+                chrome_options.add_argument("--js-flags=--max-old-space-size=256")
 
             self.log(
                 "Initializing ChromeDriver in headless mode with debug capture..."
@@ -428,9 +457,33 @@ class InvoiceRPAService:
             self.debug_capture("03_after_siguiente_click")
 
             self.log("Waiting for 'Ingresar' button...")
-            ingresar_btn = self.wait.until(
-                EC.element_to_be_clickable((By.ID, "btnIngresar")))
-            self.driver.execute_script("arguments[0].click();", ingresar_btn)
+            # Enhanced handling for PDF imports - add retries and crash detection
+            file_types = self.config.get('fileTypes', 'both')
+            max_retries = 3 if file_types == 'pdf' else 1
+            
+            for attempt in range(max_retries):
+                try:
+                    if attempt > 0:
+                        self.log(f"🔧 PDF LOGIN - Retry attempt {attempt + 1}/{max_retries}")
+                        # Small delay between retries
+                        time.sleep(2)
+                    
+                    ingresar_btn = self.wait.until(
+                        EC.element_to_be_clickable((By.ID, "btnIngresar")))
+                    self.driver.execute_script("arguments[0].click();", ingresar_btn)
+                    break  # Success, exit retry loop
+                    
+                except WebDriverException as e:
+                    if attempt < max_retries - 1:
+                        self.log(f"🔧 PDF LOGIN - WebDriver exception on attempt {attempt + 1}, retrying: {e}")
+                        # Capture debug info for the failed attempt
+                        self.debug_capture(f"07_login_retry_{attempt + 1}_error")
+                        continue
+                    else:
+                        # Final attempt failed
+                        self.log(f"🔧 PDF LOGIN - All retry attempts failed: {e}")
+                        self.debug_capture("08_login_final_error")
+                        raise e
 
             # Debug capture after login attempt
             self.debug_capture("04_after_ingresar_click")
