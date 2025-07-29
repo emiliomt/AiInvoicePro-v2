@@ -4892,6 +4892,86 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   }
 });
 
+  // Preview linked PDF files for RPA invoices
+  app.get('/api/invoices/:id/preview-pdf', isAuthenticated, async (req: any, res: any) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: 'Invalid invoice ID' });
+      }
+
+      const userId = (req.user as any).claims.sub;
+      
+      // Get the invoice to verify access
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Query for linked PDF files
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      try {
+        await dbClient.connect();
+        
+        // Find PDFs linked to this main invoice
+        const linkedPDFQuery = `
+          SELECT original_file_name, file_path, file_type, base_file_name
+          FROM imported_invoices 
+          WHERE linked_invoice_id = $1 
+          AND file_type = 'pdf'
+          AND is_data_source = false
+          LIMIT 1
+        `;
+        
+        const linkedPDFs = await dbClient.query(linkedPDFQuery, [invoiceId]);
+        
+        if (linkedPDFs.rows.length === 0) {
+          return res.status(404).json({ error: 'No linked PDF found' });
+        }
+
+        const pdfFile = linkedPDFs.rows[0];
+        const fs = await import('fs');
+        
+        // Check if file exists
+        if (!fs.existsSync(pdfFile.file_path)) {
+          return res.status(404).json({ error: 'PDF file not found on disk' });
+        }
+
+        // Set headers for PDF viewing
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${pdfFile.original_file_name}"`);
+        res.setHeader('Content-Length', fs.statSync(pdfFile.file_path).size);
+
+        // Stream the PDF file
+        const fileStream = fs.createReadStream(pdfFile.file_path);
+        fileStream.pipe(res);
+
+      } catch (dbError) {
+        console.error('Database error checking for linked files:', dbError);
+        return res.status(500).json({ error: 'Database error' });
+      } finally {
+        await dbClient.end();
+      }
+
+    } catch (error) {
+      console.error('Error serving linked PDF preview:', error);
+      res.status(500).json({ error: 'Failed to serve PDF preview' });
+    }
+  });
+
   // Download invoice file endpoint with ZIP support for matched files
   app.get('/api/invoices/:id/download', isAuthenticated, async (req: any, res: any) => {
     try {
@@ -4977,13 +5057,18 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
             // Add linked PDF files
             let linkedFilesAdded = 0;
             for (const linkedPDF of linkedPDFs.rows) {
-              const pdfPath = path.join('uploads', linkedPDF.original_file_name);
+              // Use the file_path from database (already includes uploads/ prefix)
+              const pdfPath = linkedPDF.file_path;
+              console.log(`🔍 Checking PDF file path: ${pdfPath}`);
+              
               if (fs.existsSync(pdfPath)) {
                 archive.file(pdfPath, { 
                   name: `${linkedPDF.original_file_name}` 
                 });
                 linkedFilesAdded++;
                 console.log(`📎 Added linked PDF to ZIP: ${linkedPDF.original_file_name}`);
+              } else {
+                console.log(`⚠️ PDF file not found at: ${pdfPath}`);
               }
             }
             

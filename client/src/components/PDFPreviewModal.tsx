@@ -17,6 +17,7 @@ interface PDFPreviewModalProps {
   invoiceId: number;
   fileName: string;
   invoiceNumber?: string;
+  customPreviewUrl?: string; // For linked PDFs
 }
 
 declare global {
@@ -30,7 +31,8 @@ export default function PDFPreviewModal({
   onClose, 
   invoiceId, 
   fileName = "Invoice Document",
-  invoiceNumber
+  invoiceNumber,
+  customPreviewUrl
 }: PDFPreviewModalProps) {
   const [zoom, setZoom] = useState(100);
   const [isLoading, setIsLoading] = useState(false);
@@ -82,7 +84,8 @@ export default function PDFPreviewModal({
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
       }
 
-      const url = `/api/invoices/${invoiceId}/preview/file`;
+      // Use custom URL for linked PDFs, otherwise use default preview endpoint
+      const url = customPreviewUrl || `/api/invoices/${invoiceId}/preview/file`;
       const loadingTask = window.pdfjsLib.getDocument(url);
       
       const pdf = await loadingTask.promise;

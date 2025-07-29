@@ -238,7 +238,24 @@ export default function Invoices() {
   };
 
   const handlePreviewClick = (invoice: Invoice) => {
-    setPreviewInvoice(invoice);
+    // For RPA invoices with linked PDFs, we need to create a special preview invoice object
+    // that points to the linked PDF endpoint instead of the main file
+    const linkedInfo = linkedFilesMap[invoice.id];
+    const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
+    
+    if (hasLinkedFiles && invoice.userId === 'rpa-system') {
+      // Create a modified invoice object for linked PDF preview
+      const linkedPDFInvoice = {
+        ...invoice,
+        fileName: linkedInfo.linkedFiles[0]?.fileName || 'linked.pdf',
+        // Use special preview endpoint for linked PDFs
+        _isLinkedPDF: true,
+        _linkedPDFUrl: `/api/invoices/${invoice.id}/preview-pdf`
+      };
+      setPreviewInvoice(linkedPDFInvoice as any);
+    } else {
+      setPreviewInvoice(invoice);
+    }
     setShowPreviewModal(true);
   };
 
@@ -747,15 +764,16 @@ export default function Invoices() {
                           <Eye size={16} className="mr-2" />
                           View Details
                         </Button>
-                        {isPDFFile(invoice.fileName) && (
+                        {(isPDFFile(invoice.fileName) || linkedFilesMap[invoice.id]?.hasLinkedFiles) && (
                           <>
                             <Button
                               variant="outline"
                               size="sm"
                               onClick={() => handlePreviewClick(invoice)}
+                              className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                             >
                               <FileIcon size={16} className="mr-2" />
-                              Preview
+                              {linkedFilesMap[invoice.id]?.hasLinkedFiles ? "Preview PDF" : "Preview"}
                             </Button>
                           </>
                         )}
@@ -1043,7 +1061,7 @@ export default function Invoices() {
                   <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close
                   </Button>
-                  {isPDFFile(selectedInvoice.fileName) && (
+                  {(isPDFFile(selectedInvoice.fileName) || linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles) && (
                     <>
                       <Button
                         variant="outline"
@@ -1051,9 +1069,10 @@ export default function Invoices() {
                           setShowDetailsModal(false);
                           handlePreviewClick(selectedInvoice);
                         }}
+                        className={linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                       >
                         <FileIcon size={16} className="mr-2" />
-                        Preview PDF
+                        {linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "Preview Linked PDF" : "Preview PDF"}
                       </Button>
                     </>
                   )}
@@ -1078,6 +1097,7 @@ export default function Invoices() {
             invoiceId={previewInvoice.id}
             fileName={previewInvoice.fileName || 'Unknown File'}
             invoiceNumber={previewInvoice.invoiceNumber}
+            customPreviewUrl={(previewInvoice as any)._linkedPDFUrl}
           />
         )}
 
