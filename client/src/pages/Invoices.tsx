@@ -87,14 +87,14 @@ export default function Invoices() {
         }
         const data = await response.json();
         console.log('Invoices fetched:', data.length, 'invoices');
-        
+
         // Fetch linked files for RPA-imported invoices
         const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
         console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map(i => i.id));
         if (rpaInvoices.length > 0) {
           fetchLinkedFilesForInvoices(rpaInvoices);
         }
-        
+
         return data;
       } catch (err: any) {
         console.error('Invoices query error:', err.message);
@@ -111,7 +111,7 @@ export default function Invoices() {
   // Function to fetch linked files for RPA invoices
   const fetchLinkedFilesForInvoices = async (rpaInvoices: Invoice[]) => {
     const linkedFilesData: Record<number, LinkedFilesInfo> = {};
-    
+
     for (const invoice of rpaInvoices) {
       try {
         const response = await apiRequest('GET', `/api/invoices/${invoice.id}/linked-files`);
@@ -124,7 +124,7 @@ export default function Invoices() {
         console.error(`Failed to fetch linked files for invoice ${invoice.id}:`, error);
       }
     }
-    
+
     console.log('Setting linkedFilesMap:', linkedFilesData);
     setLinkedFilesMap(linkedFilesData);
   };
@@ -242,7 +242,7 @@ export default function Invoices() {
     // that points to the linked PDF endpoint instead of the main file
     const linkedInfo = linkedFilesMap[invoice.id];
     const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
-    
+
     if (hasLinkedFiles && invoice.userId === 'rpa-system') {
       // Create a modified invoice object for linked PDF preview
       const linkedPDFInvoice = {
@@ -297,7 +297,7 @@ export default function Invoices() {
     try {
       const linkedInfo = linkedFilesMap[invoice.id];
       const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
-      
+
       const response = await fetch(`/api/invoices/${invoice.id}/download`, {
         method: 'GET',
         credentials: 'include',
@@ -313,7 +313,7 @@ export default function Invoices() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      
+
       // Set appropriate filename based on whether it's a ZIP or single file
       if (hasLinkedFiles) {
         const baseFileName = invoice.fileName.replace(/\.[^/.]+$/, "");
@@ -321,7 +321,7 @@ export default function Invoices() {
       } else {
         a.download = invoice.fileName;
       }
-      
+
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -671,7 +671,7 @@ export default function Invoices() {
                   </div>
                 </CardContent>
               </Card>
-              
+
               <div className="grid gap-6">
               {invoices.map((invoice) => {
                 if (!invoice || !invoice.id) {
@@ -810,15 +810,18 @@ export default function Invoices() {
                               <ThumbsUp size={14} className="mr-1" />
                               Good Job AI!
                             </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => handleFeedback(invoice)}
-                              className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                            >
-                              <AlertTriangle size={16} className="mr-2" />
-                              Report Error
-                            </Button>
+                            {/* Only show Report Error for AI-extracted invoices (confidence < 0.9) */}
+                            {(!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleFeedback(invoice)}
+                                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                              >
+                                <AlertTriangle size={16} className="mr-2" />
+                                Report Error
+                              </Button>
+                            )}
                           </>
                         )}
                         <AlertDialog>
@@ -883,7 +886,7 @@ export default function Invoices() {
                         <Badge className={getStatusColor(selectedInvoice.status)}>
                           {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                         </Badge>
-                      </div>
+</div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Upload Date</label>
