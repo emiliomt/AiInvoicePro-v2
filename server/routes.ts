@@ -4199,6 +4199,60 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
+  app.post('/api/rpa/process-pdf', async (req: any, res) => {
+    try {
+      const { filename, fileSize, documentNumber, emisor, totalValue, source } = req.body;
+      
+      console.log(`📋 Processing RPA PDF file: ${filename}`);
+      
+      // Read the PDF file from uploads directory
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join('uploads', filename);
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'PDF file not found' });
+      }
+      
+      const fileBuffer = fs.readFileSync(filePath);
+      
+      // Create invoice record in the same way as manual upload
+      const invoiceData = {
+        userId: 'rpa-system', // Special user for RPA imports
+        fileName: filename,
+        fileSize: fileSize,  
+        status: 'processing' as const,
+        companyId: 1, // Set to default company ID so RPA invoices appear for company users
+        // Note: source field not in schema, storing in extractedData instead
+      };
+      
+      // Create invoice record in database
+      const invoice = await storage.createInvoice(invoiceData);
+      console.log(`Created invoice record ${invoice.id} for RPA PDF file ${filename}`);
+      
+      // Process through the exact same pipeline as manual uploads (with OCR for PDF)
+      setImmediate(async () => {
+        try {
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ RPA PDF invoice ${invoice.id} processed successfully`);
+        } catch (error) {
+          console.error(`❌ RPA PDF invoice ${invoice.id} processing failed:`, error);
+        }
+      });
+      
+      res.json({ 
+        success: true, 
+        invoiceId: invoice.id,
+        message: `PDF file ${filename} queued for processing` 
+      });
+      
+    } catch (error) {
+      console.error('Error processing RPA PDF:', error);
+      res.status(500).json({ error: 'Failed to process RPA PDF file' });
+    }
+  });
+
   // Get all imported invoices
   app.get('/api/imported-invoices', isAuthenticated, async (req, res) => {
     try {

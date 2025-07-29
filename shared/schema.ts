@@ -516,6 +516,9 @@ export const importedInvoices = pgTable("imported_invoices", {
   fileSize: integer("file_size"),
   filePath: varchar("file_path", { length: 500 }),
   erpDocumentId: varchar("erp_document_id", { length: 100 }), // ERP system reference
+  matchedFileId: integer("matched_file_id").references(() => importedInvoices.id), // Links XML to PDF
+  baseFileName: varchar("base_file_name", { length: 255 }), // Filename without extension for matching
+  isDataSource: boolean("is_data_source").default(false), // True for XML used for extraction
   downloadedAt: timestamp("downloaded_at"),
   processedAt: timestamp("processed_at"),
   metadata: jsonb("metadata"), // extracted invoice data

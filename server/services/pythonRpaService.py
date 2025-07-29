@@ -711,54 +711,197 @@ class InvoiceRPAService:
             self.log(f"Failed to download invoice: {e}", "ERROR")
             return False
 
-    def extract_xml_files(self) -> bool:
-        """Extract XML files from downloaded ZIPs"""
+    def extract_invoices_from_zip(self) -> bool:
+        """Extract invoice files from ZIP archives based on configuration"""
         try:
-            self.update_progress("Extracting XML files from ZIPs", 70)
+            file_types = self.config.get('fileTypes', 'both')
+            self.update_progress(f"Extracting {file_types} files from ZIP archives", 70)
 
-            extracted_count = 0
+            processed_files = []
+            
             for filename in os.listdir(self.download_dir):
-                if filename.lower().endswith(".zip"):
+                if filename.lower().endswith('.zip'):
                     zip_path = os.path.join(self.download_dir, filename)
                     base_name = os.path.splitext(filename)[0]
 
                     try:
                         with zipfile.ZipFile(zip_path, 'r') as zip_ref:
-                            temp_dir = os.path.join(self.download_dir,
-                                                    "__temp_extract__")
+                            temp_dir = os.path.join(self.download_dir, "__temp_extract__")
                             os.makedirs(temp_dir, exist_ok=True)
                             zip_ref.extractall(temp_dir)
 
-                            xml_found = False
+                            # Scan for XML and PDF files
+                            xml_files = []
+                            pdf_files = []
+                            
                             for f in os.listdir(temp_dir):
-                                if f.lower().endswith(".xml"):
-                                    # Keep the same naming convention as ZIP (which already includes valor_total)
-                                    new_name = f"{base_name}.xml"
-                                    src = os.path.join(temp_dir, f)
-                                    dst = os.path.join(self.xml_dir, new_name)
-                                    shutil.move(src, dst)
-                                    xml_found = True
-                                    extracted_count += 1
-                                    self.log(f"Extracted XML: {new_name}")
-                                    break
+                                if f.lower().endswith(".xml") and file_types in ['xml', 'both']:
+                                    xml_files.append(f)
+                                elif f.lower().endswith(".pdf") and file_types in ['pdf', 'both']:
+                                    pdf_files.append(f)
+
+                            self.log(f"Found in {filename}: {len(xml_files)} XML, {len(pdf_files)} PDF files")
+
+                            # Process files based on configuration
+                            if file_types == 'xml':
+                                # XML only - current behavior
+                                for xml_file in xml_files:
+                                    self._process_xml_file(temp_dir, xml_file, base_name, processed_files)
+                                    
+                            elif file_types == 'pdf':
+                                # PDF only - extract PDFs for OCR processing
+                                for pdf_file in pdf_files:
+                                    self._process_pdf_file(temp_dir, pdf_file, base_name, processed_files)
+                                    
+                            elif file_types == 'both':
+                                # Both - match by base filename and prioritize XML for data extraction
+                                matches = self._match_files_by_name(xml_files, pdf_files)
+                                
+                                for base_filename, file_pair in matches.items():
+                                    if file_pair.get('xml'):
+                                        # Use XML for data extraction, include matched PDF
+                                        self._process_matched_files(temp_dir, file_pair, base_name, processed_files)
+                                    elif file_pair.get('pdf'):
+                                        # Only PDF available, use for OCR
+                                        self._process_pdf_file(temp_dir, file_pair['pdf'], base_name, processed_files)
 
                             shutil.rmtree(temp_dir)
 
-                        if xml_found:
+                        if processed_files:
                             os.remove(zip_path)
-                            self.log(f"Deleted ZIP: {filename}")
+                            self.log(f"Processed ZIP: {filename} -> {len(processed_files)} files")
                         else:
-                            self.log(f"No XML found in: {filename}")
+                            self.log(f"No processable files found in: {filename}")
 
                     except Exception as e:
                         self.log(f"Error extracting {filename}: {e}", "ERROR")
 
-            self.log(f"Extracted {extracted_count} XML files")
+            self.log(f"Extracted {len(processed_files)} invoice files")
             return True
 
         except Exception as e:
-            self.log(f"Error extracting XML files: {e}", "ERROR")
+            self.log(f"Error extracting invoice files: {e}", "ERROR")
             return False
+
+    def _match_files_by_name(self, xml_files, pdf_files):
+        """Match XML and PDF files by base filename"""
+        matches = {}
+        
+        # Create lookup sets for efficient matching
+        xml_base_names = {os.path.splitext(f)[0]: f for f in xml_files}
+        pdf_base_names = {os.path.splitext(f)[0]: f for f in pdf_files}
+        
+        # Find all unique base names
+        all_base_names = set(xml_base_names.keys()) | set(pdf_base_names.keys())
+        
+        for base_name in all_base_names:
+            matches[base_name] = {
+                'xml': xml_base_names.get(base_name),
+                'pdf': pdf_base_names.get(base_name)
+            }
+            
+        return matches
+
+    def _process_xml_file(self, temp_dir, xml_file, zip_base_name, processed_files):
+        """Process XML file for data extraction"""
+        try:
+            # Keep the same naming convention as ZIP (which already includes valor_total)
+            new_name = f"{zip_base_name}.xml"
+            src = os.path.join(temp_dir, xml_file)
+            dst = os.path.join(self.xml_dir, new_name)
+            shutil.move(src, dst)
+            
+            processed_files.append({
+                'type': 'xml',
+                'original_name': xml_file,
+                'processed_name': new_name,
+                'base_name': os.path.splitext(xml_file)[0],
+                'is_data_source': True
+            })
+            
+            self.log(f"Extracted XML: {new_name}")
+            
+        except Exception as e:
+            self.log(f"Error processing XML file {xml_file}: {e}", "ERROR")
+
+    def _process_pdf_file(self, temp_dir, pdf_file, zip_base_name, processed_files):
+        """Process PDF file for OCR"""
+        try:
+            # Create PDF directory if it doesn't exist
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            os.makedirs(pdf_dir, exist_ok=True)
+            
+            # Keep the same naming convention as ZIP
+            new_name = f"{zip_base_name}.pdf"
+            src = os.path.join(temp_dir, pdf_file)
+            dst = os.path.join(pdf_dir, new_name)
+            shutil.move(src, dst)
+            
+            processed_files.append({
+                'type': 'pdf',
+                'original_name': pdf_file,
+                'processed_name': new_name,
+                'base_name': os.path.splitext(pdf_file)[0],
+                'is_data_source': True  # PDF will be used for OCR
+            })
+            
+            self.log(f"Extracted PDF: {new_name}")
+            
+        except Exception as e:
+            self.log(f"Error processing PDF file {pdf_file}: {e}", "ERROR")
+
+    def _process_matched_files(self, temp_dir, file_pair, zip_base_name, processed_files):
+        """Process matched XML and PDF files"""
+        try:
+            xml_file = file_pair['xml']
+            pdf_file = file_pair.get('pdf')
+            base_name = os.path.splitext(xml_file)[0]
+            
+            # Process XML first (for data extraction)
+            xml_new_name = f"{zip_base_name}.xml"
+            xml_src = os.path.join(temp_dir, xml_file)
+            xml_dst = os.path.join(self.xml_dir, xml_new_name)
+            shutil.move(xml_src, xml_dst)
+            
+            xml_entry = {
+                'type': 'xml',
+                'original_name': xml_file,
+                'processed_name': xml_new_name,
+                'base_name': base_name,
+                'is_data_source': True,
+                'matched_file': None
+            }
+            
+            # Process PDF if available (for reference)
+            if pdf_file:
+                pdf_dir = os.path.join(self.download_dir, 'pdfs')
+                os.makedirs(pdf_dir, exist_ok=True)
+                
+                pdf_new_name = f"{zip_base_name}.pdf"
+                pdf_src = os.path.join(temp_dir, pdf_file)
+                pdf_dst = os.path.join(pdf_dir, pdf_new_name)
+                shutil.move(pdf_src, pdf_dst)
+                
+                pdf_entry = {
+                    'type': 'pdf',
+                    'original_name': pdf_file,
+                    'processed_name': pdf_new_name,
+                    'base_name': base_name,
+                    'is_data_source': False,  # PDF is for reference only
+                    'matched_file': xml_new_name
+                }
+                
+                xml_entry['matched_file'] = pdf_new_name
+                processed_files.append(pdf_entry)
+                
+                self.log(f"Matched files: {xml_new_name} (data) + {pdf_new_name} (reference)")
+            else:
+                self.log(f"Extracted XML only: {xml_new_name}")
+            
+            processed_files.append(xml_entry)
+            
+        except Exception as e:
+            self.log(f"Error processing matched files: {e}", "ERROR")
 
     def import_xml_to_database(self) -> bool:
         """Import XML files to database"""
@@ -925,64 +1068,190 @@ class InvoiceRPAService:
             except Exception as e:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
 
-    def process_xml_through_manual_pipeline(self) -> bool:
-        """Process extracted XML files directly through manual upload pipeline"""
+    def process_files_through_manual_pipeline(self) -> bool:
+        """Process extracted files (XML/PDF) through manual upload pipeline"""
         try:
-            self.update_progress("Processing XML files through manual upload pipeline", 90)
+            file_types = self.config.get('fileTypes', 'both')
+            self.update_progress(f"Processing {file_types} files through manual upload pipeline", 90)
 
             # Ensure uploads directory exists
             uploads_dir = 'uploads'
             os.makedirs(uploads_dir, exist_ok=True)
 
             processed_count = 0
+            processed_files = []
 
-            for filename in os.listdir(self.xml_dir):
-                if filename.lower().endswith(".xml"):
-                    try:
-                        # Parse filename to get document info
-                        base_name = os.path.splitext(filename)[0]
-                        parts = base_name.split("_", 2)
-                        if len(parts) < 2:
-                            self.log(f"Skipping invalid filename: {filename}")
-                            continue
+            # Process XML files (always for data extraction)
+            if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
+                for filename in os.listdir(self.xml_dir):
+                    if filename.lower().endswith(".xml"):
+                        try:
+                            file_info = self._process_xml_for_pipeline(filename, uploads_dir)
+                            if file_info:
+                                processed_files.append(file_info)
+                                processed_count += 1
+                        except Exception as e:
+                            self.log(f"Failed to process XML {filename}: {e}", "ERROR")
 
-                        numero = parts[0]
-                        emisor = parts[1] if len(parts) > 1 else "unknown"
-                        valor = parts[2] if len(parts) > 2 else "0"
-                        xml_file_path = os.path.join(self.xml_dir, filename)
+            # Process PDF files (when PDF-only or no matching XML found)
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
+                for filename in os.listdir(pdf_dir):
+                    if filename.lower().endswith(".pdf"):
+                        try:
+                            # Check if there's already an XML with same base name
+                            base_name = os.path.splitext(filename)[0]
+                            xml_exists = any(f['base_name'] == base_name for f in processed_files if f['type'] == 'xml')
+                            
+                            if not xml_exists or file_types == 'pdf':
+                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, pdf_dir)
+                                if file_info:
+                                    processed_files.append(file_info)
+                                    processed_count += 1
+                        except Exception as e:
+                            self.log(f"Failed to process PDF {filename}: {e}", "ERROR")
 
-                        # Create standardized filename for manual pipeline
-                        safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
-                        upload_filename = f"{numero}_{safe_emisor}.xml"
-                        upload_path = os.path.join(uploads_dir, upload_filename)
+            # Store file matching information in metadata
+            self._store_file_matches(processed_files)
 
-                        # Copy XML file to uploads directory
-                        with open(xml_file_path, 'r', encoding='utf-8') as src:
-                            xml_content = src.read()
-
-                        with open(upload_path, 'w', encoding='utf-8') as dst:
-                            dst.write(xml_content)
-
-                        # Call Node.js endpoint to process the file through manual pipeline
-                        self.trigger_manual_processing(upload_filename, numero, emisor, valor)
-
-                        # Clean up temp XML file
-                        os.remove(xml_file_path)
-                        processed_count += 1
-
-                        self.log(f"Processed through manual pipeline: {upload_filename}")
-
-                    except Exception as e:
-                        self.log(f"Failed to process {filename}: {e}", "ERROR")
-
-            self.log(f"Processed {processed_count} XML files through manual pipeline")
+            self.log(f"Processed {processed_count} files through manual pipeline")
+            self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
+            
             return True
 
         except Exception as e:
-            self.log(f"Error processing XML through manual pipeline: {e}", "ERROR")
+            self.log(f"Error processing files through manual pipeline: {e}", "ERROR")
             return False
 
-    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str):
+    def _process_xml_for_pipeline(self, filename, uploads_dir):
+        """Process XML file for manual pipeline"""
+        try:
+            # Parse filename to get document info
+            base_name = os.path.splitext(filename)[0]
+            parts = base_name.split("_", 2)
+            if len(parts) < 2:
+                self.log(f"Skipping invalid filename: {filename}")
+                return None
+
+            numero = parts[0]
+            emisor = parts[1] if len(parts) > 1 else "unknown"
+            valor = parts[2] if len(parts) > 2 else "0"
+            xml_file_path = os.path.join(self.xml_dir, filename)
+
+            # Create standardized filename for manual pipeline
+            safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
+            upload_filename = f"{numero}_{safe_emisor}.xml"
+            upload_path = os.path.join(uploads_dir, upload_filename)
+
+            # Copy XML file to uploads directory
+            with open(xml_file_path, 'r', encoding='utf-8') as src:
+                xml_content = src.read()
+
+            with open(upload_path, 'w', encoding='utf-8') as dst:
+                dst.write(xml_content)
+
+            # Call Node.js endpoint to process the file through manual pipeline
+            self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
+
+            # Clean up temp XML file
+            os.remove(xml_file_path)
+
+            self.log(f"Processed XML through manual pipeline: {upload_filename}")
+            
+            return {
+                'type': 'xml',
+                'base_name': base_name,
+                'upload_filename': upload_filename,
+                'numero': numero,
+                'emisor': emisor,
+                'valor': valor
+            }
+
+        except Exception as e:
+            self.log(f"Error processing XML {filename}: {e}", "ERROR")
+            return None
+
+    def _process_pdf_for_pipeline(self, filename, uploads_dir, pdf_dir):
+        """Process PDF file for manual pipeline (OCR)"""
+        try:
+            # Parse filename to get document info
+            base_name = os.path.splitext(filename)[0]
+            parts = base_name.split("_", 2)
+            if len(parts) < 2:
+                self.log(f"Skipping invalid PDF filename: {filename}")
+                return None
+
+            numero = parts[0]
+            emisor = parts[1] if len(parts) > 1 else "unknown"
+            valor = parts[2] if len(parts) > 2 else "0"
+            pdf_file_path = os.path.join(pdf_dir, filename)
+
+            # Create standardized filename for manual pipeline
+            safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
+            upload_filename = f"{numero}_{safe_emisor}.pdf"
+            upload_path = os.path.join(uploads_dir, upload_filename)
+
+            # Copy PDF file to uploads directory
+            shutil.copy2(pdf_file_path, upload_path)
+
+            # Call Node.js endpoint to process the file through manual pipeline
+            self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
+
+            # Clean up temp PDF file
+            os.remove(pdf_file_path)
+
+            self.log(f"Processed PDF through manual pipeline: {upload_filename}")
+            
+            return {
+                'type': 'pdf',
+                'base_name': base_name,
+                'upload_filename': upload_filename,
+                'numero': numero,
+                'emisor': emisor,
+                'valor': valor
+            }
+
+        except Exception as e:
+            self.log(f"Error processing PDF {filename}: {e}", "ERROR")
+            return None
+
+    def _store_file_matches(self, processed_files):
+        """Store file matching information for logging"""
+        xml_files = [f for f in processed_files if f['type'] == 'xml']
+        pdf_files = [f for f in processed_files if f['type'] == 'pdf']
+        
+        matched_pairs = []
+        unmatched_xml = []
+        unmatched_pdf = []
+        
+        for xml_file in xml_files:
+            matched_pdf = next((p for p in pdf_files if p['base_name'] == xml_file['base_name']), None)
+            if matched_pdf:
+                matched_pairs.append({'xml': xml_file['upload_filename'], 'pdf': matched_pdf['upload_filename']})
+            else:
+                unmatched_xml.append(xml_file['upload_filename'])
+        
+        for pdf_file in pdf_files:
+            if not any(p['xml'] for p in matched_pairs if p.get('pdf') == pdf_file['upload_filename']):
+                unmatched_pdf.append(pdf_file['upload_filename'])
+        
+        if matched_pairs:
+            self.log(f"Matched file pairs: {len(matched_pairs)}")
+            for pair in matched_pairs:
+                self.log(f"  📎 {pair['xml']} ↔ {pair['pdf']}")
+        
+        if unmatched_xml:
+            self.log(f"XML files without PDF match: {', '.join(unmatched_xml)}")
+        
+        if unmatched_pdf:
+            self.log(f"PDF files without XML match: {', '.join(unmatched_pdf)}")
+
+        # Store in stats for logging
+        self.stats['matched_pairs'] = len(matched_pairs)
+        self.stats['unmatched_xml'] = len(unmatched_xml)
+        self.stats['unmatched_pdf'] = len(unmatched_pdf)
+
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml'):
         """Trigger the manual upload processing pipeline via HTTP request"""
         try:
             import requests
@@ -998,18 +1267,20 @@ class InvoiceRPAService:
                 'documentNumber': numero,
                 'emisor': emisor,
                 'totalValue': valor,
+                'fileType': file_type,
                 'source': 'python_rpa'
             }
 
             # Make request to Node.js server to process through manual pipeline
+            endpoint = '/api/rpa/process-xml' if file_type == 'xml' else '/api/rpa/process-pdf'
             response = requests.post(
-                'http://localhost:5000/api/rpa/process-xml',
+                f'http://localhost:5000{endpoint}',
                 json=payload,
                 timeout=30
             )
 
             if response.status_code == 200:
-                self.log(f"Successfully triggered manual processing for {filename}")
+                self.log(f"Successfully triggered manual processing for {filename} ({file_type})")
             else:
                 self.log(f"Failed to trigger manual processing for {filename}: {response.status_code}")
 
@@ -1053,19 +1324,19 @@ class InvoiceRPAService:
                     'stats': self.stats
                 }
 
-            # Extract XML files
-            if not self.extract_xml_files():
+            # Extract invoice files (XML/PDF based on configuration)
+            if not self.extract_invoices_from_zip():
                 return {
                     'success': False,
-                    'error': 'Failed to extract XML files',
+                    'error': 'Failed to extract invoice files',
                     'stats': self.stats
                 }
 
-            # NEW: Process XML files through manual upload pipeline (replaces old database steps)
-            if not self.process_xml_through_manual_pipeline():
+            # NEW: Process extracted files through manual upload pipeline
+            if not self.process_files_through_manual_pipeline():
                 return {
                     'success': False,
-                    'error': 'Failed to process XML files through manual pipeline',
+                    'error': 'Failed to process files through manual pipeline',
                     'stats': self.stats
                 }
 

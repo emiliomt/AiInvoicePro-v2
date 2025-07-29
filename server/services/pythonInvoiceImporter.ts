@@ -109,6 +109,7 @@ class PythonInvoiceImporter {
         downloadPath: config.downloadPath || '/tmp/invoice_downloads',
         xmlPath: config.xmlPath || '/tmp/xml_invoices',
         headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
+        fileTypes: config.fileTypes || 'both', // Support XML, PDF, or both
       };
 
       // Validate required fields
