@@ -4734,7 +4734,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   }
 });
 
-  // Download invoice file endpoint
+  // Download invoice file endpoint with ZIP support for matched files
   app.get('/api/invoices/:id/download', isAuthenticated, async (req: any, res: any) => {
     try {
       const invoiceId = parseInt(req.params.id);
@@ -4764,13 +4764,64 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
         return res.status(403).json({ error: 'Access denied' });
       }
 
-      // Import fs and path modules
+      // Import required modules
       const fs = await import('fs');
       const path = await import('path');
+      const archiver = await import('archiver');
       
-      // Construct file path - check uploads directory
+      // Check if this is an RPA-imported invoice with potential matched files
+      if (invoice.userId === 'rpa-system' && (invoice.extractedData as any)?.source === 'rpa') {
+        const importLogId = (invoice.extractedData as any)?.importLogId;
+        
+        if (importLogId) {
+          // Get all imported invoices for this log to find matches
+          const importedInvoices = await storage.getImportedInvoicesByLog(importLogId);
+          const baseFileName = path.parse(invoice.fileName).name;
+          
+          // Find matching files by base filename
+          const matchedFiles = importedInvoices.filter(imported => 
+            imported.baseFileName === baseFileName
+          );
+          
+          if (matchedFiles.length > 1) {
+            // Multiple files found - create ZIP
+            console.log(`Creating ZIP for matched files: ${matchedFiles.length} files`);
+            
+            const zipName = `${baseFileName}_files.zip`;
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+            
+            const archive = archiver.default('zip', {
+              zlib: { level: 9 } // Maximum compression
+            });
+            
+            archive.pipe(res);
+            
+            // Add each matched file to the ZIP
+            let filesAdded = 0;
+            for (const matchedFile of matchedFiles) {
+              const matchedFilePath = path.join('uploads', matchedFile.originalFileName);
+              if (fs.existsSync(matchedFilePath)) {
+                archive.file(matchedFilePath, { name: matchedFile.originalFileName });
+                filesAdded++;
+                console.log(`Added to ZIP: ${matchedFile.originalFileName}`);
+              }
+            }
+            
+            if (filesAdded === 0) {
+              return res.status(404).json({ error: 'No matching files found on disk' });
+            }
+            
+            archive.finalize();
+            console.log(`ZIP download completed: ${zipName} (${filesAdded} files)`);
+            return;
+          }
+        }
+      }
+      
+      // Single file download (default behavior)
       const filePath = path.join('uploads', invoice.fileName);
-      console.log(`Looking for file at: ${filePath}`);
+      console.log(`Looking for single file at: ${filePath}`);
       
       // Check if file exists
       if (!fs.existsSync(filePath)) {
@@ -4797,7 +4848,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
           break;
       }
 
-      console.log(`Serving file: ${invoice.fileName} (${mimeType})`);
+      console.log(`Serving single file: ${invoice.fileName} (${mimeType})`);
 
       // Set headers for file download
       res.setHeader('Content-Type', mimeType);

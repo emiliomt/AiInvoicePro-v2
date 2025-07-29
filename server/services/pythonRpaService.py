@@ -1073,7 +1073,7 @@ class InvoiceRPAService:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
 
     def process_files_through_manual_pipeline(self) -> bool:
-        """Process extracted files (XML/PDF) through manual upload pipeline"""
+        """Process extracted files (XML/PDF) through manual upload pipeline with conditional storage logic"""
         try:
             file_types = self.config.get('fileTypes', 'both')
             self.update_progress(f"Processing {file_types} files through manual upload pipeline", 90)
@@ -1085,40 +1085,78 @@ class InvoiceRPAService:
             processed_count = 0
             processed_files = []
 
-            # Process XML files (always for data extraction)
+            # Build file inventory first
+            xml_files = {}
+            pdf_files = {}
+            
+            # Scan XML files
             if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
                 for filename in os.listdir(self.xml_dir):
                     if filename.lower().endswith(".xml"):
-                        try:
-                            file_info = self._process_xml_for_pipeline(filename, uploads_dir)
-                            if file_info:
-                                processed_files.append(file_info)
-                                processed_count += 1
-                        except Exception as e:
-                            self.log(f"Failed to process XML {filename}: {e}", "ERROR")
+                        base_name = os.path.splitext(filename)[0]
+                        xml_files[base_name] = filename
 
-            # Process PDF files (when PDF-only or no matching XML found)
+            # Scan PDF files  
             pdf_dir = os.path.join(self.download_dir, 'pdfs')
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
                 for filename in os.listdir(pdf_dir):
                     if filename.lower().endswith(".pdf"):
-                        try:
-                            # Check if there's already an XML with same base name
-                            base_name = os.path.splitext(filename)[0]
-                            xml_exists = any(f['base_name'] == base_name for f in processed_files if f['type'] == 'xml')
-                            
-                            if not xml_exists or file_types == 'pdf':
-                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, pdf_dir)
-                                if file_info:
-                                    processed_files.append(file_info)
-                                    processed_count += 1
-                        except Exception as e:
-                            self.log(f"Failed to process PDF {filename}: {e}", "ERROR")
+                        base_name = os.path.splitext(filename)[0]
+                        pdf_files[base_name] = filename
 
-            # Store file matching information in metadata
-            self._store_file_matches(processed_files)
+            # Apply conditional file storage logic
+            all_base_names = set(xml_files.keys()) | set(pdf_files.keys())
+            
+            for base_name in all_base_names:
+                xml_filename = xml_files.get(base_name)
+                pdf_filename = pdf_files.get(base_name)
+                
+                if xml_filename and pdf_filename:
+                    # Case: Both XML and PDF files present - store both as separate entries
+                    self.log(f"📦 Processing matched pair: {base_name}")
+                    
+                    # Process XML (data source)
+                    xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
+                    if xml_info:
+                        processed_files.append(xml_info)
+                        processed_count += 1
+                    
+                    # Process PDF (reference, linked to XML)
+                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, 
+                                                            is_data_source=False, matched_xml=xml_filename)
+                    if pdf_info:
+                        # Link PDF to XML using baseFileName
+                        pdf_info['base_file_name'] = base_name
+                        processed_files.append(pdf_info)
+                        processed_count += 1
+                        
+                    # Update XML with matched PDF info
+                    if xml_info and pdf_info:
+                        xml_info['matched_file_name'] = pdf_filename
+                        xml_info['base_file_name'] = base_name
+                    
+                elif xml_filename and not pdf_filename:
+                    # Case: Only XML file present - store XML, set isDataSource = true
+                    self.log(f"📄 Processing XML only: {base_name}")
+                    xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
+                    if xml_info:
+                        xml_info['base_file_name'] = base_name
+                        processed_files.append(xml_info)
+                        processed_count += 1
+                        
+                elif pdf_filename and not xml_filename:
+                    # Case: Only PDF file present - store PDF, set isDataSource = false
+                    self.log(f"🗎 Processing PDF only: {base_name}")
+                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=False)
+                    if pdf_info:
+                        pdf_info['base_file_name'] = base_name
+                        processed_files.append(pdf_info)
+                        processed_count += 1
 
-            self.log(f"Processed {processed_count} files through manual pipeline")
+            # Store processed files to database with proper linking
+            self._store_conditional_files_to_database(processed_files)
+
+            self.log(f"✅ Processed {processed_count} files through manual pipeline")
             self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
             
             return True
@@ -1127,7 +1165,7 @@ class InvoiceRPAService:
             self.log(f"Error processing files through manual pipeline: {e}", "ERROR")
             return False
 
-    def _process_xml_for_pipeline(self, filename, uploads_dir):
+    def _process_xml_for_pipeline(self, filename, uploads_dir, is_data_source=True):
         """Process XML file for manual pipeline"""
         try:
             # Parse filename to get document info
@@ -1172,14 +1210,15 @@ class InvoiceRPAService:
                 'upload_filename': upload_filename,
                 'numero': numero,
                 'emisor': emisor,
-                'valor': valor
+                'valor': valor,
+                'is_data_source': is_data_source
             }
 
         except Exception as e:
             self.log(f"Error processing XML {filename}: {e}", "ERROR")
             return None
 
-    def _process_pdf_for_pipeline(self, filename, uploads_dir, pdf_dir):
+    def _process_pdf_for_pipeline(self, filename, uploads_dir, pdf_dir, is_data_source=False, matched_xml=None):
         """Process PDF file for manual pipeline (OCR)"""
         try:
             # Parse filename to get document info
@@ -1217,12 +1256,111 @@ class InvoiceRPAService:
                 'upload_filename': upload_filename,
                 'numero': numero,
                 'emisor': emisor,
-                'valor': valor
+                'valor': valor,
+                'is_data_source': is_data_source,
+                'matched_xml': matched_xml
             }
 
         except Exception as e:
             self.log(f"Error processing PDF {filename}: {e}", "ERROR")
             return None
+
+    def _store_conditional_files_to_database(self, processed_files):
+        """Store processed files to database with conditional logic for matching"""
+        try:
+            # Connect to PostgreSQL
+            pg_conn = psycopg2.connect(
+                host=os.getenv("PGHOST"),
+                port=int(os.getenv("PGPORT", 5432)),
+                database=os.getenv("PGDATABASE"),
+                user=os.getenv("PGUSER"),
+                password=os.getenv("PGPASSWORD"),
+            )
+            pg_cursor = pg_conn.cursor()
+
+            log_id = self.log_id
+            if not log_id:
+                self.log("No log_id provided for conditional file storage", "ERROR")
+                return False
+
+            # Store files with proper linking
+            file_id_mapping = {}  # Track XML file IDs for linking PDFs
+            
+            # First pass: Store XML files and standalone PDFs
+            for file_info in processed_files:
+                try:
+                    file_path = os.path.join('uploads', file_info['upload_filename'])
+                    file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
+                    base_name = file_info.get('base_file_name', file_info['base_name'])
+                    
+                    # Insert into imported_invoices table
+                    pg_cursor.execute("""
+                        INSERT INTO imported_invoices 
+                        (log_id, original_file_name, file_type, file_size, file_path, 
+                         erp_document_id, base_file_name, is_data_source, downloaded_at, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                        RETURNING id
+                    """, (
+                        log_id,
+                        file_info['upload_filename'],
+                        file_info['type'],
+                        file_size,
+                        file_path,
+                        file_info['numero'],  # ERP document ID
+                        base_name,
+                        file_info.get('is_data_source', True),
+                        datetime.now(),
+                        json.dumps({
+                            'emisor': file_info['emisor'],
+                            'valor': file_info['valor'],
+                            'source': 'python_rpa',
+                            'processing_status': 'ready_for_upload_pipeline',
+                            'matched_xml': file_info.get('matched_xml')
+                        })
+                    ))
+                    
+                    file_id = pg_cursor.fetchone()[0]
+                    file_id_mapping[file_info['upload_filename']] = file_id
+                    
+                    self.log(f"Stored {file_info['type'].upper()} file: {file_info['upload_filename']} (ID: {file_id})")
+                    
+                except Exception as e:
+                    self.log(f"Failed to store file {file_info['upload_filename']}: {e}", "ERROR")
+                    continue
+
+            # Second pass: Update PDFs with matched XML file IDs
+            for file_info in processed_files:
+                if file_info['type'] == 'pdf' and 'matched_xml' in file_info and file_info['matched_xml']:
+                    try:
+                        pdf_filename = file_info['upload_filename']
+                        xml_filename = file_info['matched_xml']
+                        
+                        if pdf_filename in file_id_mapping and xml_filename in file_id_mapping:
+                            pdf_id = file_id_mapping[pdf_filename]
+                            xml_id = file_id_mapping[xml_filename]
+                            
+                            # Update PDF record to link to XML
+                            pg_cursor.execute("""
+                                UPDATE imported_invoices 
+                                SET matched_file_id = %s 
+                                WHERE id = %s
+                            """, (xml_id, pdf_id))
+                            
+                            self.log(f"Linked PDF {pdf_filename} to XML {xml_filename}")
+                            
+                    except Exception as e:
+                        self.log(f"Failed to link PDF {file_info['upload_filename']}: {e}", "ERROR")
+
+            # Commit all changes
+            pg_conn.commit()
+            pg_conn.close()
+            
+            self.log(f"✅ Successfully stored {len(processed_files)} files to database with conditional logic")
+            return True
+
+        except Exception as e:
+            self.log(f"Error storing conditional files to database: {e}", "ERROR")
+            return False
 
     def _store_file_matches(self, processed_files):
         """Store file matching information for logging"""
