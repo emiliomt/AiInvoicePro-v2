@@ -1151,7 +1151,11 @@ class InvoiceRPAService:
                 dst.write(xml_content)
 
             # Call Node.js endpoint to process the file through manual pipeline
-            self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
+            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
+            
+            if not success:
+                self.log(f"Failed to process XML {upload_filename} through manual pipeline", "ERROR")
+                return None
 
             # Clean up temp XML file
             os.remove(xml_file_path)
@@ -1195,10 +1199,11 @@ class InvoiceRPAService:
             shutil.copy2(pdf_file_path, upload_path)
 
             # Call Node.js endpoint to process the file through manual pipeline
-            self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
-
-            # Clean up temp PDF file
-            os.remove(pdf_file_path)
+            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
+            
+            if not success:
+                self.log(f"Failed to process PDF {upload_filename} through manual pipeline", "ERROR")
+                return None
 
             self.log(f"Processed PDF through manual pipeline: {upload_filename}")
             
@@ -1281,11 +1286,14 @@ class InvoiceRPAService:
 
             if response.status_code == 200:
                 self.log(f"Successfully triggered manual processing for {filename} ({file_type})")
+                return True
             else:
-                self.log(f"Failed to trigger manual processing for {filename}: {response.status_code}")
+                self.log(f"Failed to trigger manual processing for {filename}: {response.status_code} - {response.text}")
+                return False
 
         except Exception as e:
             self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
+            return False
 
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
