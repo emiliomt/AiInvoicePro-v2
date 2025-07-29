@@ -51,6 +51,7 @@ class InvoiceRPAService:
         self.download_dir = config.get('downloadPath',
                                        '/tmp/invoice_downloads')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
+        self.pdf_dir = config.get('pdfPath', '/tmp/pdf_invoices')
 
         # Get headless mode from config (default to False for easier debugging)
         self.headless_mode = config.get('headless', False)
@@ -68,6 +69,7 @@ class InvoiceRPAService:
 
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
+        self.pdf_db_path = os.path.join(self.pdf_dir, 'invoices_pdf.db')
 
         # Store log_id for PostgreSQL transfer
         self.log_id = config.get('logId')
@@ -79,12 +81,16 @@ class InvoiceRPAService:
                 self.download_dir = '/tmp/invoice_downloads'
             if self.xml_dir.startswith('C:\\'):
                 self.xml_dir = '/tmp/xml_invoices'
+            if self.pdf_dir.startswith('C:\\'):
+                self.pdf_dir = '/tmp/pdf_invoices'
 
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
+        os.makedirs(self.pdf_dir, exist_ok=True)
 
         self.log(f"Download directory: {self.download_dir}")
         self.log(f"XML directory: {self.xml_dir}")
+        self.log(f"PDF directory: {self.pdf_dir}")
 
         # Initialize driver
         self.driver = None
@@ -227,6 +233,18 @@ class InvoiceRPAService:
                     emisor TEXT,
                     valor_total TEXT,
                     xml_content TEXT,
+                    downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    PRIMARY KEY (numero_documento, emisor, valor_total)
+                )
+            """)
+        elif table_type == 'pdf':
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS downloaded_invoices (
+                    numero_documento TEXT,
+                    emisor TEXT,
+                    valor_total TEXT,
+                    filename TEXT,
+                    file_path TEXT,
                     downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (numero_documento, emisor, valor_total)
                 )
@@ -827,14 +845,13 @@ class InvoiceRPAService:
     def _process_pdf_file(self, temp_dir, pdf_file, zip_base_name, processed_files):
         """Process PDF file for OCR"""
         try:
-            # Create PDF directory if it doesn't exist
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
-            os.makedirs(pdf_dir, exist_ok=True)
+            # Use dedicated PDF directory
+            os.makedirs(self.pdf_dir, exist_ok=True)
             
             # Keep the same naming convention as ZIP
             new_name = f"{zip_base_name}.pdf"
             src = os.path.join(temp_dir, pdf_file)
-            dst = os.path.join(pdf_dir, new_name)
+            dst = os.path.join(self.pdf_dir, new_name)
             shutil.move(src, dst)
             
             processed_files.append({
@@ -874,12 +891,11 @@ class InvoiceRPAService:
             
             # Process PDF if available (for reference)
             if pdf_file:
-                pdf_dir = os.path.join(self.download_dir, 'pdfs')
-                os.makedirs(pdf_dir, exist_ok=True)
+                os.makedirs(self.pdf_dir, exist_ok=True)
                 
                 pdf_new_name = f"{zip_base_name}.pdf"
                 pdf_src = os.path.join(temp_dir, pdf_file)
-                pdf_dst = os.path.join(pdf_dir, pdf_new_name)
+                pdf_dst = os.path.join(self.pdf_dir, pdf_new_name)
                 shutil.move(pdf_src, pdf_dst)
                 
                 pdf_entry = {
@@ -1094,9 +1110,8 @@ class InvoiceRPAService:
                             self.log(f"Failed to process XML {filename}: {e}", "ERROR")
 
             # Process PDF files (when PDF-only or no matching XML found)
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
-            if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
-                for filename in os.listdir(pdf_dir):
+            if file_types in ['pdf', 'both'] and os.path.exists(self.pdf_dir):
+                for filename in os.listdir(self.pdf_dir):
                     if filename.lower().endswith(".pdf"):
                         try:
                             # Check if there's already an XML with same base name
@@ -1104,7 +1119,7 @@ class InvoiceRPAService:
                             xml_exists = any(f['base_name'] == base_name for f in processed_files if f['type'] == 'xml')
                             
                             if not xml_exists or file_types == 'pdf':
-                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, pdf_dir)
+                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, self.pdf_dir)
                                 if file_info:
                                     processed_files.append(file_info)
                                     processed_count += 1
