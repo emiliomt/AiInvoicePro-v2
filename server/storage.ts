@@ -213,6 +213,11 @@ export interface IStorage {
   getErpConnections(): Promise<ErpConnection[]>;
   updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<void>;
   deleteErpConnection(id: number): Promise<void>;
+  syncErpCredentialsToImportConfigs(connectionId: number, credentials: {
+    erpUrl: string;
+    erpUsername: string;
+    erpPassword: string;
+  }): Promise<void>;
 
   // Invoice Importer
   createInvoiceImporterConfig(config: InsertInvoiceImporterConfig): Promise<InvoiceImporterConfig>;
@@ -528,6 +533,20 @@ class PostgresStorage implements IStorage {
 
   async deleteErpConnection(id: number): Promise<void> {
     await db.delete(erpConnections).where(eq(erpConnections.id, id));
+  }
+
+  async syncErpCredentialsToImportConfigs(connectionId: number, credentials: {
+    erpUrl: string;
+    erpUsername: string;
+    erpPassword: string;
+  }): Promise<void> {
+    // Update all invoice import configurations that reference this ERP connection
+    await db.update(invoiceImporterConfigs).set({
+      erpUrl: credentials.erpUrl,
+      erpUsername: credentials.erpUsername,
+      erpPassword: credentials.erpPassword,
+      updatedAt: new Date()
+    }).where(eq(invoiceImporterConfigs.connectionId, connectionId));
   }
 
   // Invoice Importer
