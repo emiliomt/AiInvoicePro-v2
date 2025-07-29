@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2 } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
@@ -349,6 +349,22 @@ export default function Invoices() {
     }
   };
 
+  const handleSelectInvoice = (invoiceId: number) => {
+    setSelectedInvoices(prev => 
+      prev.includes(invoiceId) 
+        ? prev.filter(id => id !== invoiceId)
+        : [...prev, invoiceId]
+    );
+  };
+
+  const handleSelectAll = () => {
+    if (selectedInvoices.length === invoices.length) {
+      setSelectedInvoices([]);
+    } else {
+      setSelectedInvoices(invoices.map(invoice => invoice.id));
+    }
+  };
+
   const handleInitiateAutomaticProcess = async () => {
     if (selectedInvoices.length === 0) {
       toast({
@@ -542,7 +558,40 @@ export default function Invoices() {
               </CardContent>
             </Card>
           ) : !error && invoices.length > 0 ? (
-            <div className="grid gap-6">
+            <div>
+              {/* Select All Option */}
+              <Card className="mb-4">
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleSelectAll}
+                        className="flex items-center space-x-2"
+                      >
+                        {selectedInvoices.length === invoices.length ? (
+                          <CheckSquare className="h-4 w-4" />
+                        ) : (
+                          <Square className="h-4 w-4" />
+                        )}
+                        <span>
+                          {selectedInvoices.length === invoices.length 
+                            ? "Deselect All" 
+                            : `Select All (${invoices.length})`}
+                        </span>
+                      </Button>
+                      {selectedInvoices.length > 0 && (
+                        <span className="text-sm text-gray-600">
+                          {selectedInvoices.length} selected
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <div className="grid gap-6">
               {invoices.map((invoice) => {
                 if (!invoice || !invoice.id) {
                   console.warn('Invalid invoice data:', invoice);
@@ -553,13 +602,27 @@ export default function Invoices() {
                   <Card key={invoice.id} className="hover:shadow-md transition-shadow">
                     <CardHeader>
                       <div className="flex justify-between items-start">
-                        <div className="space-y-2">
-                          <CardTitle className="flex items-center space-x-2">
-                            <FileText className="text-blue-600" size={20} />
-                            <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
-                          </CardTitle>
-                          <div className="flex items-center space-x-4 text-sm text-gray-600">
-                            <span>Uploaded {formatDate(invoice.createdAt)}</span>
+                        <div className="flex items-start space-x-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSelectInvoice(invoice.id)}
+                            className="p-1 h-auto"
+                          >
+                            {selectedInvoices.includes(invoice.id) ? (
+                              <CheckSquare className="h-4 w-4" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <div className="space-y-2">
+                            <CardTitle className="flex items-center space-x-2">
+                              <FileText className="text-blue-600" size={20} />
+                              <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
+                            </CardTitle>
+                            <div className="flex items-center space-x-4 text-sm text-gray-600">
+                              <span>Uploaded {formatDate(invoice.createdAt)}</span>
+                            </div>
                           </div>
                         </div>
                         <Badge className={getStatusColor(invoice.status)}>
@@ -681,6 +744,7 @@ export default function Invoices() {
                   </Card>
                 );
               }).filter(Boolean)}
+            </div>
             </div>
           ) : null}
         </div>
