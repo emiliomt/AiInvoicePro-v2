@@ -71,6 +71,8 @@ class InvoiceRPAService:
 
         # Store log_id for PostgreSQL transfer
         self.log_id = config.get('logId')
+        # Store config_id for company association
+        self.config_id = config.get('configId') or config.get('id')
 
         # Ensure directories exist (convert Windows paths to Linux paths in Replit)
         if os.name == 'posix':  # Linux/Unix (Replit environment)
