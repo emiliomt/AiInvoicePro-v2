@@ -523,6 +523,33 @@ class PythonInvoiceImporter {
           progress.processedInvoices = result.stats.processed_invoices;
           progress.successfulImports = result.stats.successful_imports;
           progress.failedImports = result.stats.failed_imports;
+          progress.progress = 100;
+          progress.isComplete = true;
+          progress.currentStep = result.stats.current_step || 'Import process completed successfully';
+
+          // Update database with final results immediately
+          storage.updateInvoiceImporterLog(progress.logId, {
+            status: 'completed',
+            totalInvoices: progress.totalInvoices,
+            processedInvoices: progress.processedInvoices,
+            successfulImports: progress.successfulImports,  
+            failedImports: progress.failedImports,
+            completedAt: new Date(),
+            logs: progress.logs || '',
+            currentStep: progress.currentStep
+          }).then(() => {
+            console.log(`✅ Database updated with final stats for log ${progress.logId}: Total: ${progress.totalInvoices}, Processed: ${progress.processedInvoices}, Success: ${progress.successfulImports}`);
+          }).catch(error => {
+            console.error('Failed to update database with final stats:', error);
+          });
+
+          console.log(`Python RPA import task ${configId} completed successfully`);
+
+          // Clean up active imports after a short delay to allow final API calls
+          setTimeout(() => {
+            console.log(`Cleaning up progress tracking for config ${configId}`);
+            this.activeImports.delete(configId);
+          }, 5000); // 5 second delay
 
           resolve(result);
         } else {

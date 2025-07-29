@@ -3003,6 +3003,26 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
       
       if (!progress) {
+        // No active progress in memory, check database for latest completed results
+        const latestLog = await storage.getLatestInvoiceImporterLog(configId);
+        
+        if (latestLog && latestLog.status === 'completed') {
+          // Return completed stats from database
+          return res.json({
+            configId,
+            isRunning: false,
+            progress: 100,
+            currentStep: 'Import completed successfully',
+            stats: {
+              total_invoices: latestLog.totalInvoices || 0,
+              processed_invoices: latestLog.processedInvoices || 0,
+              successful_imports: latestLog.successfulImports || 0,
+              failed_imports: latestLog.failedImports || 0
+            }
+          });
+        }
+        
+        // No completed imports found, return default
         return res.json({
           configId,
           isRunning: false,
