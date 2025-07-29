@@ -3081,6 +3081,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
+      // First cleanup any inactive configurations from the database
+      await storage.cleanupInactiveConfigurations();
+
       // Get all active configurations with schedule information
       const currentUser = await storage.getUser((user as any).claims.sub);
       let configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
@@ -3099,8 +3102,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         configs = [...configs, ...companyConfigs];
       }
 
-      // Filter out manual configurations and format for schedule overview
-      const scheduledConfigs = configs.filter(config => config.scheduleType !== 'manual').map(config => {
+      // Filter out manual configurations and one-time ('once') configurations, only show active ones
+      const scheduledConfigs = configs.filter(config => 
+        config.scheduleType !== 'manual' && 
+        config.scheduleType !== 'once' && 
+        config.isActive === true
+      ).map(config => {
         // Calculate next run time based on schedule type and configuration
         let nextRunTime = null;
         let frequencyDetail = '';

@@ -113,6 +113,7 @@ export interface IStorage {
   updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void>;
   deleteInvoiceImporterConfig(id: number): Promise<void>;
   deleteInvoiceImporterConfigCascade(configId: number): Promise<void>;
+  cleanupInactiveConfigurations(): Promise<void>;
   createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
   getInvoiceImporterLogs(): Promise<InvoiceImporterLog[]>;
   getInvoiceImporterLogsByConfig(configId: number): Promise<InvoiceImporterLog[]>;
@@ -582,6 +583,32 @@ class PostgresStorage implements IStorage {
     } catch (error) {
       console.error('Error in cascading delete:', error);
       throw error;
+    }
+  }
+
+  async cleanupInactiveConfigurations(): Promise<void> {
+    try {
+      // Get all inactive configurations older than 1 day that shouldn't be in schedules
+      const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      
+      const inactiveConfigs = await db.select({ id: invoiceImporterConfigs.id })
+        .from(invoiceImporterConfigs)
+        .where(
+          and(
+            eq(invoiceImporterConfigs.isActive, false),
+            sql`${invoiceImporterConfigs.createdAt} < ${oneDayAgo}`
+          )
+        );
+
+      // Delete inactive configurations with cascade
+      for (const config of inactiveConfigs) {
+        await this.deleteInvoiceImporterConfigCascade(config.id);
+      }
+
+      console.log(`Cleaned up ${inactiveConfigs.length} inactive configurations`);
+    } catch (error) {
+      console.error('Error cleaning up inactive configurations:', error);
+      // Don't throw error to prevent API failure
     }
   }
 
