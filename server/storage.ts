@@ -170,6 +170,7 @@ export interface IStorage {
   deleteInvoice(id: number): Promise<void>;
   getInvoicesByUserId(userId: string): Promise<Invoice[]>;
   getInvoicesByCompanyId(companyId: number): Promise<Invoice[]>;
+  getInvoicesByIds(invoiceIds: number[]): Promise<Invoice[]>;
 
   // Line Items
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
@@ -360,6 +361,10 @@ class PostgresStorage implements IStorage {
     return await db.select().from(invoices)
       .where(eq(invoices.companyId, companyId))
       .orderBy(desc(invoices.createdAt));
+  }
+
+  async getInvoicesByIds(invoiceIds: number[]): Promise<Invoice[]> {
+    return await db.select().from(invoices).where(inArray(invoices.id, invoiceIds));
   }
 
   // Line Items
@@ -590,7 +595,7 @@ class PostgresStorage implements IStorage {
     try {
       // Get all inactive configurations older than 1 day that shouldn't be in schedules
       const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      
+
       const inactiveConfigs = await db.select({ id: invoiceImporterConfigs.id })
         .from(invoiceImporterConfigs)
         .where(
@@ -764,6 +769,7 @@ class PostgresStorage implements IStorage {
 
       const [totalInvoices, pendingInvoices, approvedInvoices, totalProjects] = await Promise.all([
         totalInvoicesPromise,
+```text
         pendingInvoicesPromise,
         approvedInvoicesPromise,
         totalProjectsPromise
