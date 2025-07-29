@@ -32,6 +32,14 @@ class InvoiceRPAService:
         self.config = config
         self.erp_url = config.get('erpUrl', '')
         self.username = config.get('erpUsername', '')
+        
+        # Debug log the exact configuration received
+        file_types = config.get('fileTypes', 'both')
+        self.log(f"🔧 INIT DEBUG - Configuration received for file types: {file_types}")
+        self.log(f"🔧 INIT DEBUG - Full config keys: {list(config.keys())}")
+        self.log(f"🔧 INIT DEBUG - ERP URL: {self.erp_url}")
+        self.log(f"🔧 INIT DEBUG - Username: {self.username}")
+        self.log(f"🔧 INIT DEBUG - Headless setting: {config.get('headless', 'not set')}")
 
         # Decode Base64 password if it appears to be encoded
         raw_password = config.get('erpPassword', '')
@@ -127,6 +135,8 @@ class InvoiceRPAService:
 
     def setup_driver(self):
         """Initialize Chrome WebDriver with download preferences"""
+        file_types = self.config.get('fileTypes', 'both')
+        self.log(f"🔧 SETUP DEBUG - Setting up Chrome WebDriver for file types: {file_types}")
         self.log("Setting up Chrome WebDriver...")
 
         try:
@@ -191,6 +201,8 @@ class InvoiceRPAService:
             self.short_wait = WebDriverWait(self.driver, 5)
             self.long_wait = WebDriverWait(self.driver, 60)
 
+            file_types = self.config.get('fileTypes', 'both')
+            self.log(f"🔧 SETUP DEBUG - Chrome WebDriver initialized successfully for file types: {file_types}")
             self.log("Chrome WebDriver initialized successfully")
             return True
 
@@ -374,6 +386,14 @@ class InvoiceRPAService:
             return False
 
         try:
+            # Debug log file type configuration
+            file_types = self.config.get('fileTypes', 'both')
+            self.log(f"🔧 Login DEBUG - File types configuration: {file_types}")
+            self.log(f"🔧 Login DEBUG - ERP URL: {self.erp_url}")
+            self.log(f"🔧 Login DEBUG - Username: {self.username}")
+            self.log(f"🔧 Login DEBUG - Password length: {len(self.password) if self.password else 0}")
+            self.log(f"🔧 Login DEBUG - Headless mode: {self.headless_mode}")
+            
             self.update_progress("Logging into ERP system", 10)
             self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
@@ -442,6 +462,15 @@ class InvoiceRPAService:
                     By.CLASS_NAME, "alert-danger")
                 if error_elements:
                     self.log(f"❌ Login error: {error_elements[0].text}")
+                    
+                    # Add specific debug capture for PDF login errors
+                    file_types = self.config.get('fileTypes', 'both')
+                    if file_types == 'pdf':
+                        self.debug_capture("PDF_login_error")
+                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - URL: {current_url}")
+                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - Title: {page_title}")
+                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - Error: {error_elements[0].text}")
+                    
                     return False
 
                 # If URL changed or we see expected elements, consider it success
@@ -452,9 +481,21 @@ class InvoiceRPAService:
                     self.debug_capture("07_login_success_fallback")
                     return True
 
+                # Additional debug for PDF failures
+                file_types = self.config.get('fileTypes', 'both')
+                if file_types == 'pdf':
+                    self.debug_capture("PDF_login_timeout_debug")
+                    self.log(f"🔧 PDF LOGIN TIMEOUT DEBUG - Current state after timeout")
+
                 return False
 
         except Exception as e:
+            file_types = self.config.get('fileTypes', 'both')
+            if file_types == 'pdf':
+                self.debug_capture("PDF_login_exception_debug")
+                self.log(f"🔧 PDF LOGIN EXCEPTION DEBUG - File types: {file_types}")
+                self.log(f"🔧 PDF LOGIN EXCEPTION DEBUG - Exception: {str(e)}")
+            
             self.debug_capture("08_login_exception_error")
             self.log(f"❌ Login failed: {e}", "ERROR")
             return False
@@ -1313,23 +1354,31 @@ class InvoiceRPAService:
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
         try:
+            file_types = self.config.get('fileTypes', 'both')
+            self.log(f"🔧 RUN DEBUG - Starting Python RPA invoice import process for file types: {file_types}")
             self.log("Starting Python RPA invoice import process")
 
             # Setup driver
+            self.log(f"🔧 RUN DEBUG - About to setup driver for file types: {file_types}")
             if not self.setup_driver():
+                self.log(f"🔧 RUN DEBUG - Driver setup FAILED for file types: {file_types}")
                 return {
                     'success': False,
                     'error': 'Failed to setup WebDriver',
                     'stats': self.stats
                 }
+            self.log(f"🔧 RUN DEBUG - Driver setup SUCCESS for file types: {file_types}")
 
             # Login
+            self.log(f"🔧 RUN DEBUG - About to login for file types: {file_types}")
             if not self.login_to_erp():
+                self.log(f"🔧 RUN DEBUG - Login FAILED for file types: {file_types}")
                 return {
                     'success': False,
                     'error': 'Failed to login to ERP',
                     'stats': self.stats
                 }
+            self.log(f"🔧 RUN DEBUG - Login SUCCESS for file types: {file_types}")
 
             # Navigate
             if not self.navigate_to_invoices():
