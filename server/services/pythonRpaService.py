@@ -1153,8 +1153,12 @@ class InvoiceRPAService:
                         processed_files.append(pdf_info)
                         processed_count += 1
 
-            # Store processed files to database with proper linking
+            # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
+            
+            # Note: Files are already processed through manual pipeline via trigger_manual_processing
+            # The manual pipeline creates records in the main 'invoices' table
+            # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
             self.log(f"✅ Processed {processed_count} files through manual pipeline")
             self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
@@ -1415,7 +1419,8 @@ class InvoiceRPAService:
                 'emisor': emisor,
                 'totalValue': valor,
                 'fileType': file_type,
-                'source': 'python_rpa'
+                'source': 'python_rpa',
+                'configId': self.config_id  # Add config ID for company association
             }
 
             # Make request to Node.js server to process through manual pipeline

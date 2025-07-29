@@ -4236,9 +4236,22 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   // RPA XML processing endpoint - integrates RPA with manual upload pipeline
   app.post('/api/rpa/process-xml', async (req: any, res) => {
     try {
-      const { filename, fileSize, documentNumber, emisor, totalValue, source } = req.body;
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
       
-      console.log(`📋 Processing RPA XML file: ${filename}`);
+      console.log(`📋 Processing RPA XML file: ${filename} (config: ${configId})`);
+      
+      // Get import configuration to determine company ID
+      let companyId = null;
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            companyId = config.companyId;
+          }
+        } catch (error) {
+          console.warn(`Could not retrieve config ${configId} for company ID:`, error);
+        }
+      }
       
       // Read the XML file from uploads directory
       const fs = await import('fs');
@@ -4264,6 +4277,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Create invoice record in the same way as manual upload
       const invoiceData = {
         userId: 'rpa-system', // Special user for RPA imports
+        companyId: companyId, // Set company ID from import configuration
         fileName: filename,
         fileSize: fileSize,  
         status: 'extracted' as const,
@@ -4303,9 +4317,22 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
-      const { filename, fileSize, documentNumber, emisor, totalValue, source } = req.body;
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
       
-      console.log(`📋 Processing RPA PDF file: ${filename}`);
+      console.log(`📋 Processing RPA PDF file: ${filename} (config: ${configId})`);
+      
+      // Get import configuration to determine company ID
+      let companyId = null;
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            companyId = config.companyId;
+          }
+        } catch (error) {
+          console.warn(`Could not retrieve config ${configId} for company ID:`, error);
+        }
+      }
       
       // Read the PDF file from uploads directory
       const fs = await import('fs');
@@ -4321,10 +4348,10 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Create invoice record in the same way as manual upload
       const invoiceData = {
         userId: 'rpa-system', // Special user for RPA imports
+        companyId: companyId, // Set company ID from import configuration
         fileName: filename,
         fileSize: fileSize,  
         status: 'processing' as const,
-        companyId: 1, // Set to default company ID so RPA invoices appear for company users
         // Note: source field not in schema, storing in extractedData instead
       };
       
