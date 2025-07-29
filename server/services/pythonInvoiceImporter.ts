@@ -108,7 +108,6 @@ class PythonInvoiceImporter {
         erpPassword: config.erpPassword,
         downloadPath: config.downloadPath || '/tmp/invoice_downloads',
         xmlPath: config.xmlPath || '/tmp/xml_invoices',
-        pdfPath: config.pdfPath || '/tmp/pdf_invoices', // Add dedicated PDF directory
         headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
         fileTypes: config.fileTypes || 'both', // Support XML, PDF, or both
       };
@@ -123,9 +122,6 @@ class PythonInvoiceImporter {
         erpUsername: pythonConfig.erpUsername,
         downloadPath: pythonConfig.downloadPath,
         xmlPath: pythonConfig.xmlPath,
-        pdfPath: pythonConfig.pdfPath,
-        fileTypes: pythonConfig.fileTypes,
-        headless: pythonConfig.headless,
       });
 
       // Execute Python RPA process

@@ -32,14 +32,6 @@ class InvoiceRPAService:
         self.config = config
         self.erp_url = config.get('erpUrl', '')
         self.username = config.get('erpUsername', '')
-        
-        # Debug log the exact configuration received
-        file_types = config.get('fileTypes', 'both')
-        self.log(f"🔧 INIT DEBUG - Configuration received for file types: {file_types}")
-        self.log(f"🔧 INIT DEBUG - Full config keys: {list(config.keys())}")
-        self.log(f"🔧 INIT DEBUG - ERP URL: {self.erp_url}")
-        self.log(f"🔧 INIT DEBUG - Username: {self.username}")
-        self.log(f"🔧 INIT DEBUG - Headless setting: {config.get('headless', 'not set')}")
 
         # Decode Base64 password if it appears to be encoded
         raw_password = config.get('erpPassword', '')
@@ -59,7 +51,6 @@ class InvoiceRPAService:
         self.download_dir = config.get('downloadPath',
                                        '/tmp/invoice_downloads')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
-        self.pdf_dir = config.get('pdfPath', '/tmp/pdf_invoices')
 
         # Get headless mode from config (default to False for easier debugging)
         self.headless_mode = config.get('headless', False)
@@ -77,7 +68,6 @@ class InvoiceRPAService:
 
         self.db_path = os.path.join(self.download_dir, 'invoices.db')
         self.xml_db_path = os.path.join(self.xml_dir, 'invoices_xml.db')
-        self.pdf_db_path = os.path.join(self.pdf_dir, 'invoices_pdf.db')
 
         # Store log_id for PostgreSQL transfer
         self.log_id = config.get('logId')
@@ -89,16 +79,12 @@ class InvoiceRPAService:
                 self.download_dir = '/tmp/invoice_downloads'
             if self.xml_dir.startswith('C:\\'):
                 self.xml_dir = '/tmp/xml_invoices'
-            if self.pdf_dir.startswith('C:\\'):
-                self.pdf_dir = '/tmp/pdf_invoices'
 
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
-        os.makedirs(self.pdf_dir, exist_ok=True)
 
         self.log(f"Download directory: {self.download_dir}")
         self.log(f"XML directory: {self.xml_dir}")
-        self.log(f"PDF directory: {self.pdf_dir}")
 
         # Initialize driver
         self.driver = None
@@ -135,8 +121,6 @@ class InvoiceRPAService:
 
     def setup_driver(self):
         """Initialize Chrome WebDriver with download preferences"""
-        file_types = self.config.get('fileTypes', 'both')
-        self.log(f"🔧 SETUP DEBUG - Setting up Chrome WebDriver for file types: {file_types}")
         self.log("Setting up Chrome WebDriver...")
 
         try:
@@ -170,7 +154,7 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
 
-            # Enhanced stability configuration for Replit environment
+            # Force headless mode for Replit environment with enhanced flags
             chrome_options.add_argument("--headless=new")
             chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
@@ -178,44 +162,15 @@ class InvoiceRPAService:
             chrome_options.add_argument("--allow-running-insecure-content")
             chrome_options.add_argument("--ignore-certificate-errors")
             chrome_options.add_argument("--ignore-ssl-errors")
-            chrome_options.add_argument("--disable-blink-features=AutomationControlled")
-            chrome_options.add_argument("--disable-background-timer-throttling")
-            chrome_options.add_argument("--disable-backgrounding-occluded-windows")
+            chrome_options.add_argument(
+                "--disable-blink-features=AutomationControlled")
+            chrome_options.add_argument(
+                "--disable-background-timer-throttling")
+            chrome_options.add_argument(
+                "--disable-backgrounding-occluded-windows")
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--disable-features=TranslateUI")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
-            
-            # Universal browser stability improvements (both XML and PDF)
-            chrome_options.add_argument("--disable-crash-reporter")
-            chrome_options.add_argument("--disable-logging")
-            chrome_options.add_argument("--disable-in-process-stack-traces")
-            chrome_options.add_argument("--disable-accelerated-2d-canvas")
-            chrome_options.add_argument("--disable-accelerated-video-decode")
-            chrome_options.add_argument("--num-raster-threads=1")
-            chrome_options.add_argument("--enable-surface-synchronization")
-            chrome_options.add_argument("--run-all-compositor-stages-before-draw")
-            chrome_options.add_argument("--disable-threaded-compositing")
-            chrome_options.add_argument("--disable-threaded-scrolling")
-            
-            # Enhanced stability flags for PDF processing to prevent browser crashes
-            file_types = self.config.get('fileTypes', 'both')
-            if file_types == 'pdf':
-                self.log("🔧 SETUP DEBUG - Adding PDF-specific stability flags")
-                # Use lightweight configuration to prevent memory issues
-                chrome_options.add_argument("--disable-software-rasterizer")
-                chrome_options.add_argument("--disable-background-networking")
-                chrome_options.add_argument("--disable-sync")
-                chrome_options.add_argument("--disable-default-apps")
-                chrome_options.add_argument("--disable-translate")
-                chrome_options.add_argument("--disable-plugins")
-                chrome_options.add_argument("--disable-images")  # Reduce memory usage
-                chrome_options.add_argument("--disable-css3-animations")
-                chrome_options.add_argument("--disable-smooth-scrolling")
-                chrome_options.add_argument("--disable-accelerated-2d-canvas")
-                chrome_options.add_argument("--disable-accelerated-video-decode")
-                chrome_options.add_argument("--memory-pressure-off")
-                chrome_options.add_argument("--max-old-space-size=256")  # Lower memory limit
-                chrome_options.add_argument("--js-flags=--max-old-space-size=256")
 
             self.log(
                 "Initializing ChromeDriver in headless mode with debug capture..."
@@ -230,8 +185,6 @@ class InvoiceRPAService:
             self.short_wait = WebDriverWait(self.driver, 5)
             self.long_wait = WebDriverWait(self.driver, 60)
 
-            file_types = self.config.get('fileTypes', 'both')
-            self.log(f"🔧 SETUP DEBUG - Chrome WebDriver initialized successfully for file types: {file_types}")
             self.log("Chrome WebDriver initialized successfully")
             return True
 
@@ -274,18 +227,6 @@ class InvoiceRPAService:
                     emisor TEXT,
                     valor_total TEXT,
                     xml_content TEXT,
-                    downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    PRIMARY KEY (numero_documento, emisor, valor_total)
-                )
-            """)
-        elif table_type == 'pdf':
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS downloaded_invoices (
-                    numero_documento TEXT,
-                    emisor TEXT,
-                    valor_total TEXT,
-                    filename TEXT,
-                    file_path TEXT,
                     downloaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     PRIMARY KEY (numero_documento, emisor, valor_total)
                 )
@@ -415,14 +356,6 @@ class InvoiceRPAService:
             return False
 
         try:
-            # Debug log file type configuration
-            file_types = self.config.get('fileTypes', 'both')
-            self.log(f"🔧 Login DEBUG - File types configuration: {file_types}")
-            self.log(f"🔧 Login DEBUG - ERP URL: {self.erp_url}")
-            self.log(f"🔧 Login DEBUG - Username: {self.username}")
-            self.log(f"🔧 Login DEBUG - Password length: {len(self.password) if self.password else 0}")
-            self.log(f"🔧 Login DEBUG - Headless mode: {self.headless_mode}")
-            
             self.update_progress("Logging into ERP system", 10)
             self.log(f"Navigating to ERP URL: {self.erp_url}")
             self.driver.get(self.erp_url)
@@ -457,33 +390,9 @@ class InvoiceRPAService:
             self.debug_capture("03_after_siguiente_click")
 
             self.log("Waiting for 'Ingresar' button...")
-            # Enhanced handling for PDF imports - add retries and crash detection
-            file_types = self.config.get('fileTypes', 'both')
-            max_retries = 3 if file_types == 'pdf' else 1
-            
-            for attempt in range(max_retries):
-                try:
-                    if attempt > 0:
-                        self.log(f"🔧 PDF LOGIN - Retry attempt {attempt + 1}/{max_retries}")
-                        # Small delay between retries
-                        time.sleep(2)
-                    
-                    ingresar_btn = self.wait.until(
-                        EC.element_to_be_clickable((By.ID, "btnIngresar")))
-                    self.driver.execute_script("arguments[0].click();", ingresar_btn)
-                    break  # Success, exit retry loop
-                    
-                except WebDriverException as e:
-                    if attempt < max_retries - 1:
-                        self.log(f"🔧 PDF LOGIN - WebDriver exception on attempt {attempt + 1}, retrying: {e}")
-                        # Capture debug info for the failed attempt
-                        self.debug_capture(f"07_login_retry_{attempt + 1}_error")
-                        continue
-                    else:
-                        # Final attempt failed
-                        self.log(f"🔧 PDF LOGIN - All retry attempts failed: {e}")
-                        self.debug_capture("08_login_final_error")
-                        raise e
+            ingresar_btn = self.wait.until(
+                EC.element_to_be_clickable((By.ID, "btnIngresar")))
+            self.driver.execute_script("arguments[0].click();", ingresar_btn)
 
             # Debug capture after login attempt
             self.debug_capture("04_after_ingresar_click")
@@ -515,15 +424,6 @@ class InvoiceRPAService:
                     By.CLASS_NAME, "alert-danger")
                 if error_elements:
                     self.log(f"❌ Login error: {error_elements[0].text}")
-                    
-                    # Add specific debug capture for PDF login errors
-                    file_types = self.config.get('fileTypes', 'both')
-                    if file_types == 'pdf':
-                        self.debug_capture("PDF_login_error")
-                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - URL: {current_url}")
-                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - Title: {page_title}")
-                        self.log(f"🔧 PDF LOGIN ERROR DEBUG - Error: {error_elements[0].text}")
-                    
                     return False
 
                 # If URL changed or we see expected elements, consider it success
@@ -534,21 +434,9 @@ class InvoiceRPAService:
                     self.debug_capture("07_login_success_fallback")
                     return True
 
-                # Additional debug for PDF failures
-                file_types = self.config.get('fileTypes', 'both')
-                if file_types == 'pdf':
-                    self.debug_capture("PDF_login_timeout_debug")
-                    self.log(f"🔧 PDF LOGIN TIMEOUT DEBUG - Current state after timeout")
-
                 return False
 
         except Exception as e:
-            file_types = self.config.get('fileTypes', 'both')
-            if file_types == 'pdf':
-                self.debug_capture("PDF_login_exception_debug")
-                self.log(f"🔧 PDF LOGIN EXCEPTION DEBUG - File types: {file_types}")
-                self.log(f"🔧 PDF LOGIN EXCEPTION DEBUG - Exception: {str(e)}")
-            
             self.debug_capture("08_login_exception_error")
             self.log(f"❌ Login failed: {e}", "ERROR")
             return False
@@ -939,13 +827,14 @@ class InvoiceRPAService:
     def _process_pdf_file(self, temp_dir, pdf_file, zip_base_name, processed_files):
         """Process PDF file for OCR"""
         try:
-            # Use dedicated PDF directory
-            os.makedirs(self.pdf_dir, exist_ok=True)
+            # Create PDF directory if it doesn't exist
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            os.makedirs(pdf_dir, exist_ok=True)
             
             # Keep the same naming convention as ZIP
             new_name = f"{zip_base_name}.pdf"
             src = os.path.join(temp_dir, pdf_file)
-            dst = os.path.join(self.pdf_dir, new_name)
+            dst = os.path.join(pdf_dir, new_name)
             shutil.move(src, dst)
             
             processed_files.append({
@@ -985,11 +874,12 @@ class InvoiceRPAService:
             
             # Process PDF if available (for reference)
             if pdf_file:
-                os.makedirs(self.pdf_dir, exist_ok=True)
+                pdf_dir = os.path.join(self.download_dir, 'pdfs')
+                os.makedirs(pdf_dir, exist_ok=True)
                 
                 pdf_new_name = f"{zip_base_name}.pdf"
                 pdf_src = os.path.join(temp_dir, pdf_file)
-                pdf_dst = os.path.join(self.pdf_dir, pdf_new_name)
+                pdf_dst = os.path.join(pdf_dir, pdf_new_name)
                 shutil.move(pdf_src, pdf_dst)
                 
                 pdf_entry = {
@@ -1204,8 +1094,9 @@ class InvoiceRPAService:
                             self.log(f"Failed to process XML {filename}: {e}", "ERROR")
 
             # Process PDF files (when PDF-only or no matching XML found)
-            if file_types in ['pdf', 'both'] and os.path.exists(self.pdf_dir):
-                for filename in os.listdir(self.pdf_dir):
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
+                for filename in os.listdir(pdf_dir):
                     if filename.lower().endswith(".pdf"):
                         try:
                             # Check if there's already an XML with same base name
@@ -1213,7 +1104,7 @@ class InvoiceRPAService:
                             xml_exists = any(f['base_name'] == base_name for f in processed_files if f['type'] == 'xml')
                             
                             if not xml_exists or file_types == 'pdf':
-                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, self.pdf_dir)
+                                file_info = self._process_pdf_for_pipeline(filename, uploads_dir, pdf_dir)
                                 if file_info:
                                     processed_files.append(file_info)
                                     processed_count += 1
@@ -1407,31 +1298,23 @@ class InvoiceRPAService:
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
         try:
-            file_types = self.config.get('fileTypes', 'both')
-            self.log(f"🔧 RUN DEBUG - Starting Python RPA invoice import process for file types: {file_types}")
             self.log("Starting Python RPA invoice import process")
 
             # Setup driver
-            self.log(f"🔧 RUN DEBUG - About to setup driver for file types: {file_types}")
             if not self.setup_driver():
-                self.log(f"🔧 RUN DEBUG - Driver setup FAILED for file types: {file_types}")
                 return {
                     'success': False,
                     'error': 'Failed to setup WebDriver',
                     'stats': self.stats
                 }
-            self.log(f"🔧 RUN DEBUG - Driver setup SUCCESS for file types: {file_types}")
 
             # Login
-            self.log(f"🔧 RUN DEBUG - About to login for file types: {file_types}")
             if not self.login_to_erp():
-                self.log(f"🔧 RUN DEBUG - Login FAILED for file types: {file_types}")
                 return {
                     'success': False,
                     'error': 'Failed to login to ERP',
                     'stats': self.stats
                 }
-            self.log(f"🔧 RUN DEBUG - Login SUCCESS for file types: {file_types}")
 
             # Navigate
             if not self.navigate_to_invoices():
