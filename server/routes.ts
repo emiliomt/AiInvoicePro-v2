@@ -1581,9 +1581,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check if user owns the invoice
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
       const userId = (req.user as any).claims.sub;
-      if (invoice.userId !== userId) {
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -1613,9 +1617,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send('Invoice not found');
       }
 
-      // Check if user owns the invoice
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
       const userId = (req.user as any).claims.sub;
-      if (invoice.userId !== userId) {
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        console.log(`Preview access denied for user ${userId} to invoice ${invoiceId}`);
         return res.status(403).send('Access denied');
       }
 
@@ -1629,16 +1638,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const fs = await import('fs');
       const path = await import('path');
 
-      // Check if we have a stored file path, otherwise create a demo PDF
-      if (invoice.fileUrl && fs.existsSync(invoice.fileUrl)) {
-        const stat = fs.statSync(invoice.fileUrl);
+      // Construct file path - check uploads directory (same as download endpoint)
+      const filePath = path.join('uploads', invoice.fileName);
+      console.log(`Looking for preview file at: ${filePath}`);
+      
+      if (fs.existsSync(filePath)) {
+        const stat = fs.statSync(filePath);
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Length', stat.size.toString());
         res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
         res.setHeader('Cache-Control', 'private, no-cache');
         res.setHeader('Accept-Ranges', 'bytes');
 
-        const stream = fs.createReadStream(invoice.fileUrl);
+        const stream = fs.createReadStream(filePath);
         stream.pipe(res);
 
         stream.on('error', (err) => {
