@@ -1495,7 +1495,17 @@ class InvoiceRPAService:
             # First pass: Store XML files and standalone PDFs
             for file_info in processed_files:
                 try:
-                    file_path = os.path.join('uploads', file_info['upload_filename'])
+                    # Use correct file path based on file type
+                    if file_info['type'] == 'pdf':
+                        # PDFs are stored in download/pdfs directory, use original filename
+                        original_filename = file_info.get('upload_filename', file_info['base_name'] + '.pdf')
+                        if not original_filename.endswith('.pdf'):
+                            original_filename += '.pdf'
+                        file_path = os.path.join('/tmp/invoice_downloads/pdfs', original_filename)
+                    else:
+                        # XML files are copied to uploads directory
+                        file_path = os.path.join('uploads', file_info['upload_filename'])
+                    
                     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
                     base_name = file_info.get('base_file_name', file_info['base_name'])
                     
