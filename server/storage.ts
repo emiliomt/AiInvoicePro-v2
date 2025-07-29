@@ -918,15 +918,61 @@ class PostgresStorage implements IStorage {
       if (count > 0) {
         const invoiceIds = accessibleInvoices.map(inv => inv.id);
 
-        // Delete related records first
+        // Delete linked imported invoice files first (for RPA invoices)
+        const { Client } = await import('pg');
+        const dbClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+        });
+        
+        try {
+          await dbClient.connect();
+          
+          // Get linked files that will be deleted so we can remove physical files
+          const linkedFilesQuery = `
+            SELECT file_path, original_file_name 
+            FROM imported_invoices 
+            WHERE linked_invoice_id = ANY($1)
+          `;
+          const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
+          
+          // Delete physical files from disk
+          const fs = await import('fs');
+          for (const file of linkedFiles.rows) {
+            try {
+              if (fs.existsSync(file.file_path)) {
+                fs.unlinkSync(file.file_path);
+                console.log(`🗑️ Deleted physical file: ${file.file_path}`);
+              }
+            } catch (fileError) {
+              console.error(`Error deleting physical file ${file.file_path}:`, fileError);
+            }
+          }
+          
+          // Delete linked PDF files from imported_invoices table
+          const deleteResult = await dbClient.query(
+            'DELETE FROM imported_invoices WHERE linked_invoice_id = ANY($1)',
+            [invoiceIds]
+          );
+          
+          console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for ${count} invoices`);
+          
+        } catch (error) {
+          console.error(`Error deleting linked files for bulk deletion:`, error);
+        } finally {
+          await dbClient.end();
+        }
+
+        // Delete related records
         await db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds));
         await db.delete(feedbackLogs).where(inArray(feedbackLogs.invoiceId, invoiceIds));
         await db.delete(approvals).where(inArray(approvals.invoiceId, invoiceIds));
         await db.delete(invoicePoMatches).where(inArray(invoicePoMatches.invoiceId, invoiceIds));
         await db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds));
 
-        // Finally delete the invoices
+        // Finally delete the main invoices
         await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
+        
+        console.log(`✅ Successfully deleted ${count} invoices and all related records`);
       }
 
       return count;
