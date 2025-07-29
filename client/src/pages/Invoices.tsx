@@ -1,7 +1,3 @@
-# Analyzing the code changes and integrating them into the original code.
-# The user wants to add functionality to initiate an automatic process for invoices, including a button and associated logic.
-# The changes involve adding imports, state variables, handler functions, and UI elements.
-
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -836,7 +832,7 @@ export default function Invoices() {
                   <p className="text-sm text-gray-600 mb-3">Vendor and buyer address details</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <labelclassName="text-sm font-medium text-gray-700">Vendor Address</label>
+                      <label className="text-sm font-medium text-gray-700">Vendor Address</label>
                       <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.vendorAddress || "Not extracted"}</p>
                     </div>
                     <div>
@@ -949,4 +945,3 @@ export default function Invoices() {
     </div>
   );
 }
-</replit_final_file>
