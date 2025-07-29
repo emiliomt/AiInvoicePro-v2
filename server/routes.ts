@@ -3259,16 +3259,55 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const connectionId = parseInt(req.params.id);
       const data = insertErpConnectionSchema.partial().parse(req.body);
 
+      console.log(`🔄 Updating ERP connection ${connectionId}:`, {
+        name: data.name,
+        baseUrl: data.baseUrl,
+        username: data.username,
+        hasPassword: !!data.password,
+        fieldsBeingUpdated: Object.keys(data)
+      });
+
       // Encrypt password if provided
       if (data.password) {
+        const originalPassword = data.password;
         data.password = Buffer.from(data.password).toString('base64');
+        console.log(`🔐 Password encryption for connection ${connectionId}:`);
+        console.log(`🔐 Original password: ${originalPassword}`);
+        console.log(`🔐 Encrypted password: ${data.password}`);
+        console.log(`🔐 Encrypted length: ${data.password.length}`);
       }
 
       const connection = await storage.updateErpConnection(connectionId, data);
+      console.log(`✅ ERP connection ${connectionId} updated successfully`);
+      
+      // Verify the update by reading back the connection
+      const updatedConnection = await storage.getErpConnection(connectionId);
+      if (updatedConnection) {
+        console.log(`🔍 Verification - Updated connection ${connectionId}:`, {
+          name: updatedConnection.name,
+          baseUrl: updatedConnection.baseUrl,
+          username: updatedConnection.username,
+          passwordLength: updatedConnection.password ? updatedConnection.password.length : 0,
+          lastUpdated: updatedConnection.updatedAt
+        });
+        
+        // 🔄 CRITICAL: Sync updated credentials to import configurations that use this connection
+        if (data.baseUrl || data.username || data.password) {
+          console.log(`🔄 Syncing updated ERP credentials to import configurations using connection ${connectionId}`);
+          await storage.syncErpCredentialsToImportConfigs(connectionId, {
+            erpUrl: updatedConnection.baseUrl,
+            erpUsername: updatedConnection.username,
+            erpPassword: updatedConnection.password
+          });
+          console.log(`✅ Import configurations synced with updated ERP connection credentials`);
+        }
+      }
+      
       // Safely destructure password (might be undefined)
       const { password: _, ...safeConnection } = connection || {};
       res.json(safeConnection);
     } catch (error) {
+      console.error(`❌ Failed to update ERP connection ${req.params.id}:`, error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(400).json({ error: errorMessage });
     }

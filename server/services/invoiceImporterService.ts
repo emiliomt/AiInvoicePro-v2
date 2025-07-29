@@ -115,10 +115,46 @@ class InvoiceImporterService {
       // Send initial progress update
       await this.updateStepStatus(logId, progress, 1, 'running', 'Starting import process...');
 
-      // Get ERP connection
-      const connection = await storage.getErpConnection(config.connectionId);
-      if (!connection) {
-        throw new Error('ERP connection not found');
+      // Get ERP connection or use manual configuration
+      let connection: any = null;
+      
+      if (config.isManualConfig || !config.connectionId) {
+        // Manual configuration - use credentials stored directly in the config
+        console.log(`🔍 Invoice import: Using manual ERP configuration for config "${config.name}"`);
+        connection = {
+          id: 'manual',
+          name: `Manual Config - ${config.taskName}`,
+          baseUrl: config.erpUrl,
+          username: config.erpUsername,
+          password: config.erpPassword, // Already encrypted in database
+          isActive: true,
+          updatedAt: new Date()
+        };
+        
+        console.log(`🔍 Invoice import: Manual configuration details:`, {
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username,
+          passwordLength: connection.password ? connection.password.length : 0,
+          isManualConfig: true
+        });
+      } else {
+        // Connection-based configuration - retrieve fresh credentials from ERP connection
+        console.log(`🔍 Invoice import: Retrieving ERP connection ${config.connectionId} for config "${config.name}"`);
+        connection = await storage.getErpConnection(config.connectionId);
+        if (!connection) {
+          throw new Error('ERP connection not found');
+        }
+        
+        console.log(`🔍 Invoice import: Retrieved ERP connection details:`, {
+          connectionId: connection.id,
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username,
+          passwordLength: connection.password ? connection.password.length : 0,
+          lastUpdated: connection.updatedAt,
+          isActive: connection.isActive
+        });
       }
 
       // Start the actual import process with retry logic
@@ -297,12 +333,26 @@ class InvoiceImporterService {
     const taskDescription = `Quick login and navigate to FE module. Extract invoice document list from Documentos recibidos section. Focus on document numbers, download links, and any project/contract references in document descriptions.`;
 
     try {
+      // Decrypt password for RPA script generation
+      const decryptedPassword = connection.password ? Buffer.from(connection.password, 'base64').toString('utf8') : '';
+      
+      console.log(`🔍 Invoice import: Preparing credentials for RPA script generation:`, {
+        configType: config.isManualConfig ? 'Manual' : 'Connection-based',
+        connectionId: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username || '',
+        encryptedPasswordLength: connection.password ? connection.password.length : 0,
+        decryptedPasswordLength: decryptedPassword.length,
+        decryptedPassword: decryptedPassword
+      });
+      
       const script = await erpAutomationService.generateRPAScript(taskDescription, {
         id: connection.id,
         name: connection.name,
         baseUrl: connection.baseUrl,
         username: connection.username || '',
-        password: connection.password || ''
+        password: decryptedPassword
       });
 
       await this.logStep(logId, 'Automation script generated successfully', 'completed');
@@ -312,12 +362,22 @@ class InvoiceImporterService {
       await this.logStep(logId, 'Connecting to ERP system', 'running');
       await this.updateStepStatus(logId, progress, 3, 'running', 'Connecting to ERP system...');
 
+      console.log(`🔍 Invoice import: Preparing credentials for RPA execution:`, {
+        configType: config.isManualConfig ? 'Manual' : 'Connection-based',
+        connectionId: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username || '',
+        decryptedPasswordLength: decryptedPassword.length,
+        decryptedPassword: decryptedPassword
+      });
+      
       const result = await erpAutomationService.executeRPAScript(script, {
         id: connection.id,
         name: connection.name,
         baseUrl: connection.baseUrl,
         username: connection.username || '',
-        password: connection.password || ''
+        password: decryptedPassword
       }, config.userId, logId);
 
       if (!result.success) {
