@@ -2126,108 +2126,6 @@ export default function InvoiceImporter() {
           </DialogContent>
         </Dialog>
 
-        {/* Edit Configuration Dialog */}
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Edit Import Configuration</DialogTitle>
-            </DialogHeader>
-            
-            <div className="space-y-4">
-              {/* Configuration Name */}
-              <div>
-                <Label htmlFor="edit-name">Configuration Name</Label>
-                <Input
-                  id="edit-name"
-                  placeholder="Enter configuration name"
-                  value={newConfig.name}
-                  onChange={(e) => setNewConfig(prev => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-
-              {/* ERP Connection */}
-              <div>
-                <Label htmlFor="edit-connection">ERP Connection</Label>
-                <Select 
-                  value={newConfig.connectionId} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, connectionId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select ERP connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {erpConnections.map((conn) => (
-                      <SelectItem key={conn.id} value={conn.id.toString()}>
-                        {conn.name} ({conn.baseUrl})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* File Types */}
-              <div>
-                <Label htmlFor="edit-fileTypes">File Types</Label>
-                <Select 
-                  value={newConfig.fileTypes} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, fileTypes: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="xml">XML Only</SelectItem>
-                    <SelectItem value="pdf">PDF Only</SelectItem>
-                    <SelectItem value="both">Both XML and PDF</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Schedule Type */}
-              <div>
-                <Label htmlFor="edit-schedule">Schedule Type</Label>
-                <Select 
-                  value={newConfig.scheduleType} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, scheduleType: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="multiple_daily">Multiple Times Per Day</SelectItem>
-                    <SelectItem value="cron">Advanced (Cron)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Headless Mode */}
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="edit-headless"
-                  checked={newConfig.headless}
-                  onCheckedChange={(checked) => 
-                    setNewConfig(prev => ({ ...prev, headless: checked === true }))
-                  }
-                />
-                <Label htmlFor="edit-headless">Run in headless mode (recommended for Replit)</Label>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleUpdateConfig}>
-                Update Configuration
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
         {/* Progress Tracker */}
         {runningConfigId && (
           <ProgressTracker
@@ -2536,6 +2434,106 @@ function ScheduleOverview() {
           </div>
         </CardContent>
       </Card>
-    </div>
+
+
+      <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle>Edit Import Configuration</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-4">
+          {/* Configuration Name */}
+          <div>
+            <Label htmlFor="edit-name">Configuration Name</Label>
+            <Input
+              id="edit-name"
+              placeholder="Enter configuration name"
+              value={newConfig.name}
+              onChange={(e) => setNewConfig(prev => ({ ...prev, name: e.target.value }))}
+            />
+          </div>
+
+          {/* ERP Connection */}
+          <div>
+            <Label htmlFor="edit-connection">ERP Connection</Label>
+            <Select 
+              value={newConfig.connectionId} 
+              onValueChange={(value) => setNewConfig(prev => ({ ...prev, connectionId: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select ERP connection" />
+              </SelectTrigger>
+              <SelectContent>
+                {erpConnections.map((conn) => (
+                  <SelectItem key={conn.id} value={conn.id.toString()}>
+                    {conn.name} ({conn.baseUrl})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* File Types */}
+          <div>
+            <Label htmlFor="edit-fileTypes">File Types</Label>
+            <Select 
+              value={newConfig.fileTypes} 
+              onValueChange={(value) => setNewConfig(prev => ({ ...prev, fileTypes: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="xml">XML Only</SelectItem>
+                <SelectItem value="pdf">PDF Only</SelectItem>
+                <SelectItem value="both">Both XML and PDF</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Schedule Type */}
+          <div>
+            <Label htmlFor="edit-schedule">Schedule Type</Label>
+            <Select 
+              value={newConfig.scheduleType} 
+              onValueChange={(value) => setNewConfig(prev => ({ ...prev, scheduleType: value }))}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="manual">Manual</SelectItem>
+                <SelectItem value="daily">Daily</SelectItem>
+                <SelectItem value="weekly">Weekly</SelectItem>
+                <SelectItem value="hourly">Hourly</SelectItem>
+                <SelectItem value="multiple_daily">Multiple Times Per Day</SelectItem>
+                <SelectItem value="cron">Advanced (Cron)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Headless Mode */}
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="edit-headless"
+              checked={newConfig.headless}
+              onCheckedChange={(checked) => 
+                setNewConfig(prev => ({ ...prev, headless: checked === true }))
+              }
+            />
+            <Label htmlFor="edit-headless">Run in headless mode (recommended for Replit)</Label>
+          </div>
+        </div>
+
+        <div className="flex justify-end space-x-2 pt-4">
+          <Button variant="outline" onClick={() => setShowEditDialog(false)}>
+            Cancel
+          </Button>
+          <Button onClick={handleUpdateConfig}>
+            Update Configuration
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
   );
 }
