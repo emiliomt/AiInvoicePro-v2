@@ -103,12 +103,6 @@ export default function InvoiceImporter() {
     spacingValue: 120,
     spacingUnit: 'minutes',
     startTime: '09:00',
-    // Python RPA specific fields (ERP credentials auto-populated from connection)
-    // Manual configuration fields
-    manualConfig: false,
-    manualErpUrl: '',
-    manualErpUsername: '',
-    manualErpPassword: '',
     headless: true // Default to true for Replit environment
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
@@ -716,50 +710,35 @@ export default function InvoiceImporter() {
       return;
     }
 
-    // Only require ERP connection if not using manual config
-    if (!newConfig.manualConfig && !newConfig.connectionId) {
+    // Require ERP connection selection
+    if (!newConfig.connectionId) {
       toast({
         title: "Missing Information",
-        description: "Please select an ERP connection or enable manual configuration",
+        description: "Please select an ERP connection",
         variant: "destructive"
       });
       return;
-    }
-
-    // Validate manual config fields if manual config is enabled
-    if (newConfig.manualConfig) {
-      if (!newConfig.manualErpUrl || !newConfig.manualErpUsername || !newConfig.manualErpPassword) {
-        toast({
-          title: "Missing Manual Configuration",
-          description: "Please fill in all manual ERP configuration fields",
-          variant: "destructive"
-        });
-        return;
-      }
     }
 
     if (!validateMultipleDailySchedule()) {
       return;
     }
 
-    // Get the selected ERP connection to auto-populate credentials (only if not manual)
-    let selectedConnection = null;
-    if (!newConfig.manualConfig) {
-      selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
-      if (!selectedConnection) {
-        toast({
-          title: "Invalid Connection",
-          description: "Selected ERP connection not found",
-          variant: "destructive"
-        });
-        return;
-      }
+    // Get the selected ERP connection to auto-populate credentials
+    const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
+    if (!selectedConnection) {
+      toast({
+        title: "Invalid Connection",
+        description: "Selected ERP connection not found",
+        variant: "destructive"
+      });
+      return;
     }
 
     try {
       const configData = {
         taskName: newConfig.name,
-        connectionId: newConfig.manualConfig ? null : parseInt(newConfig.connectionId),
+        connectionId: parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.scheduleType,
         scheduleConfig: newConfig.scheduleConfig,
@@ -767,11 +746,11 @@ export default function InvoiceImporter() {
         startDate: newConfig.startDate || null,
         endDate: newConfig.endDate || null,
         isPaused: newConfig.isPaused,
-        // Python RPA fields - use manual config or auto-populate from ERP connection
-        erpUrl: newConfig.manualConfig ? newConfig.manualErpUrl : selectedConnection?.baseUrl,
-        erpUsername: newConfig.manualConfig ? newConfig.manualErpUsername : selectedConnection?.username,
-        erpPassword: newConfig.manualConfig ? newConfig.manualErpPassword : '', // Password will be retrieved from connection on server side if not manual
-        isManualConfig: newConfig.manualConfig,
+        // ERP credentials will be automatically retrieved from the selected connection
+        erpUrl: selectedConnection.baseUrl,
+        erpUsername: selectedConnection.username,
+        erpPassword: '', // Password will be retrieved from connection on server side
+        isManualConfig: false, // Always false - only connection-based configs allowed
         headless: newConfig.headless,
         // Legacy fields for backward compatibility
         scheduleTime: newConfig.scheduleConfig.timeOfDay,
@@ -817,12 +796,6 @@ export default function InvoiceImporter() {
           spacingValue: 120,
           spacingUnit: 'minutes',
           startTime: '09:00',
-          // Reset Python RPA fields (ERP credentials auto-populated from connection)
-          // Reset manual configuration fields
-          manualConfig: false,
-          manualErpUrl: '',
-          manualErpUsername: '',
-          manualErpPassword: '',
           headless: true
         });
         fetchConfigs();
@@ -893,11 +866,6 @@ export default function InvoiceImporter() {
       spacingValue: 120,
       spacingUnit: 'minutes',
       startTime: '09:00',
-      // Manual configuration fields
-      manualConfig: false,
-      manualErpUrl: '',
-      manualErpUsername: '',
-      manualErpPassword: '',
       headless: true
     });
     
@@ -916,10 +884,10 @@ export default function InvoiceImporter() {
       return;
     }
 
-    if (!newConfig.manualConfig && !newConfig.connectionId) {
+    if (!newConfig.connectionId) {
       toast({
         title: "Missing Information",
-        description: "Please select an ERP connection or enable manual configuration",
+        description: "Please select an ERP connection",
         variant: "destructive"
       });
       return;
@@ -930,20 +898,31 @@ export default function InvoiceImporter() {
     }
 
     try {
+      // Get the selected ERP connection for validation
+      const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
+      if (!selectedConnection) {
+        toast({
+          title: "Invalid Connection",
+          description: "Selected ERP connection not found",
+          variant: "destructive"
+        });
+        return;
+      }
+
       const configData = {
         taskName: newConfig.name,
-        connectionId: newConfig.manualConfig ? null : parseInt(newConfig.connectionId),
+        connectionId: parseInt(newConfig.connectionId),
         fileTypes: newConfig.fileTypes,
         scheduleType: newConfig.scheduleType,
         scheduleConfig: newConfig.scheduleConfig,
         startDate: newConfig.startDate || null,
         endDate: newConfig.endDate || null,
         isPaused: newConfig.isPaused,
-        // Python RPA fields (manual configuration or auto-populated from connection)
-        manualConfig: newConfig.manualConfig,
-        manualErpUrl: newConfig.manualErpUrl,
-        manualErpUsername: newConfig.manualErpUsername,
-        manualErpPassword: newConfig.manualErpPassword,
+        // ERP credentials will be automatically retrieved from the connection
+        erpUrl: selectedConnection.baseUrl,
+        erpUsername: selectedConnection.username,
+        erpPassword: '', // Password will be retrieved from connection on server side
+        isManualConfig: false, // Always false - only connection-based configs allowed
         headless: newConfig.headless,
         // Legacy fields for backward compatibility
         scheduleTime: newConfig.scheduleConfig.timeOfDay,
@@ -989,10 +968,6 @@ export default function InvoiceImporter() {
           spacingValue: 120,
           spacingUnit: 'minutes',
           startTime: '09:00',
-          manualConfig: false,
-          manualErpUrl: '',
-          manualErpUsername: '',
-          manualErpPassword: '',
           headless: true
         });
         fetchConfigs();
@@ -1354,26 +1329,24 @@ export default function InvoiceImporter() {
                   placeholder="Enter configuration name"
                 />
               </div>
-              {!newConfig.manualConfig && (
-                <div>
-                  <Label htmlFor="erp-connection">ERP Connection</Label>
-                  <Select
-                    value={newConfig.connectionId}
-                    onValueChange={(value) => setNewConfig({ ...newConfig, connectionId: value })}
-                  >
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select ERP connection" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {erpConnections.map((connection) => (
-                        <SelectItem key={connection.id} value={connection.id.toString()}>
-                          {connection.name} ({connection.baseUrl})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
+              <div>
+                <Label htmlFor="erp-connection">ERP Connection</Label>
+                <Select
+                  value={newConfig.connectionId}
+                  onValueChange={(value) => setNewConfig({ ...newConfig, connectionId: value })}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select ERP connection" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {erpConnections.map((connection) => (
+                      <SelectItem key={connection.id} value={connection.id.toString()}>
+                        {connection.name} ({connection.baseUrl})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
               <div>
                 <Label htmlFor="file-types">File Types</Label>
                 <Select
@@ -1720,22 +1693,9 @@ export default function InvoiceImporter() {
 
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setNewConfig({ 
-                      ...newConfig, 
-                      manualConfig: !newConfig.manualConfig 
-                    })}
-                  >
-                    {newConfig.manualConfig ? 'Use Connection' : 'Manual Config'}
-                  </Button>
-                </div>
-
-                {!newConfig.manualConfig && newConfig.connectionId && (
+                <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
+                
+                {newConfig.connectionId && (
                   <div className="p-3 bg-white rounded border-l-4 border-blue-400">
                     <p className="text-sm text-gray-600">
                       <strong>ERP Connection:</strong> {erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId))?.name}
@@ -1746,57 +1706,13 @@ export default function InvoiceImporter() {
                   </div>
                 )}
 
-                {!newConfig.manualConfig && !newConfig.connectionId && (
+                {!newConfig.connectionId && (
                   <div className="p-3 bg-yellow-50 rounded border-l-4 border-yellow-400">
                     <p className="text-sm text-yellow-700">
-                      Please select an ERP connection above, or enable manual configuration to enter credentials directly.
+                      Please select an ERP connection above to configure the automation credentials.
                     </p>
                   </div>
                 )}
-
-                {newConfig.manualConfig && (
-                  <div className="space-y-4 p-3 bg-white rounded border">
-                    <h5 className="font-medium text-sm text-gray-700">Manual ERP Credentials</h5>
-
-                    <div>
-                      <Label htmlFor="manual-erp-url">ERP URL</Label>
-                      <Input
-                        id="manual-erp-url"
-                        value={newConfig.manualErpUrl || ''}
-                        onChange={(e) => setNewConfig({ ...newConfig, manualErpUrl: e.target.value })}
-                        placeholder="https://your-erp-system.com"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      <div>
-                        <Label htmlFor="manual-erp-username">ERP Username</Label>
-                        <Input
-                          id="manual-erp-username"
-                          value={newConfig.manualErpUsername || ''}
-                          onChange={(e) => setNewConfig({ ...newConfig, manualErpUsername: e.target.value })}
-                          placeholder="username"
-                        />
-                      </div>
-                      <div>
-                        <Label htmlFor="manual-erp-password">ERP Password</Label>
-                        <Input
-                          id="manual-erp-password"
-                          type="password"
-                          value={newConfig.manualErpPassword || ''}
-                          onChange={(e) => setNewConfig({ ...newConfig, manualErpPassword: e.target.value })}
-                          placeholder="••••••••"
-                        />
-                      </div>
-                    </div>
-
-                    <p className="text-xs text-gray-500">
-                      Manual configuration will override the selected ERP connection credentials
-                    </p>
-                  </div>
-                )}
-
-                
               </div>
 
               {/* Browser Configuration */}
@@ -2360,7 +2276,7 @@ function ScheduleOverview() {
     );
   }
 
-  if (scheduleData.length === 0) {
+  if (!scheduleData || scheduleData.length === 0) {
     return (
       <Card>
         <CardContent className="text-center py-8">
@@ -2384,7 +2300,7 @@ function ScheduleOverview() {
             <Calendar className="w-5 h-5" />
             <span>Schedule Overview</span>
             <Badge variant="outline" className="ml-2">
-              {scheduleData.length} scheduled task{scheduleData.length !== 1 ? 's' : ''}
+              {scheduleData?.length || 0} scheduled task{(scheduleData?.length || 0) !== 1 ? 's' : ''}
             </Badge>
           </CardTitle>
         </CardHeader>
@@ -2392,7 +2308,7 @@ function ScheduleOverview() {
 
       {/* Schedule Cards */}
       <div className="grid gap-4">
-        {scheduleData.map((schedule: any) => (
+        {scheduleData?.map((schedule: any) => (
           <Card key={schedule.configurationId} className="hover:shadow-md transition-shadow">
             <CardContent className="p-6">
               <div className="flex items-start justify-between">

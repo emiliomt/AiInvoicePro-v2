@@ -3874,9 +3874,15 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         });
       }
       
-      // Validate ERP connection only if not using manual configuration
+      // Enforce connection-only configurations - manual configurations no longer supported
+      if (!data.connectionId) {
+        return res.status(400).json({ 
+          error: 'ERP connection is required. Manual configurations are no longer supported for security reasons.' 
+        });
+      }
+
       let connection = null;
-      if (!data.isManualConfig && data.connectionId) {
+      if (data.connectionId) {
         connection = await storage.getErpConnection(data.connectionId);
         if (!connection) {
           return res.status(400).json({ 
@@ -3906,48 +3912,19 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         }
 
         console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl}) - Company access: ${currentUser?.companyId === connectionOwner?.companyId}`);
-      } else if (data.isManualConfig) {
-        console.log('Creating import config with manual ERP configuration');
-        // Set connectionId to null for manual configurations
-        data.connectionId = null;
-        
-        // Validate manual configuration fields
-        if (!data.erpUrl || !data.erpUsername || !data.erpPassword) {
-          return res.status(400).json({ 
-            error: 'Manual configuration requires ERP URL, username, and password.' 
-          });
-        }
-      } else {
-        return res.status(400).json({ 
-          error: 'Either select an ERP connection or enable manual configuration.' 
-        });
       }
       
-      // Handle manual configuration or auto-populate from ERP connection
-      let configDataWithCredentials;
+      // Auto-populate ERP credentials from the selected connection (connection-only configurations)
+      const configDataWithCredentials = {
+        ...data,
+        connectionId: data.connectionId, // Always use the provided connection ID
+        erpUrl: connection.baseUrl,
+        erpUsername: connection.username,
+        erpPassword: connection.password, // This is already encrypted in storage
+        isManualConfig: false, // Always false - manual configurations no longer supported
+      };
       
-      if (data.isManualConfig) {
-        // Use manual configuration - encrypt the password if provided
-        const encryptedPassword = data.erpPassword ? Buffer.from(data.erpPassword).toString('base64') : '';
-        
-        configDataWithCredentials = {
-          ...data,
-          connectionId: null, // Explicitly set to null for manual configs
-          erpPassword: encryptedPassword,
-        };
-        
-        console.log('Using manual ERP configuration');
-      } else {
-        // Auto-populate ERP credentials from the selected connection
-        configDataWithCredentials = {
-          ...data,
-          erpUrl: connection.baseUrl,
-          erpUsername: connection.username,
-          erpPassword: connection.password, // This is already encrypted in storage
-        };
-        
-        console.log('Using ERP connection credentials');
-      }
+      console.log('Using ERP connection credentials');
       
       const configWithUserId = {
         ...configDataWithCredentials,
@@ -3993,7 +3970,32 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
+      // Parse and validate updates
       const updates = insertInvoiceImporterConfigSchema.partial().parse(req.body);
+      
+      // Enforce connection-only configurations for any connection ID updates
+      if (updates.connectionId) {
+        const connection = await storage.getErpConnection(updates.connectionId);
+        if (!connection) {
+          return res.status(400).json({ 
+            error: 'ERP connection not found. Please select a valid ERP connection.' 
+          });
+        }
+        
+        // Auto-populate ERP credentials from the connection
+        updates.erpUrl = connection.baseUrl;
+        updates.erpUsername = connection.username;
+        updates.erpPassword = connection.password; // Already encrypted
+        updates.isManualConfig = false; // Always false for connection-based configs
+      }
+      
+      // Prevent manual configuration mode
+      if (updates.isManualConfig === true) {
+        return res.status(400).json({ 
+          error: 'Manual configurations are no longer supported for security reasons. Please use an ERP connection.' 
+        });
+      }
+      
       const updatedConfig = await storage.updateInvoiceImporterConfig(configId, updates);
       res.json(updatedConfig);
     } catch (error) {
