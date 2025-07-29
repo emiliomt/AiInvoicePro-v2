@@ -39,6 +39,8 @@ interface Invoice {
   status: string;
   lineItems?: LineItem[];
   currency?: string;
+  fileName?: string;
+  ocrText?: string | null;
 }
 
 interface LineItem {
@@ -65,6 +67,20 @@ interface ProjectMatch {
   matchScore: number;
   matchReasons: string[];
 }
+
+// Helper function to determine if invoice was extracted using AI/OCR (vs XML)
+const isAIExtractedInvoice = (invoice: Invoice): boolean => {
+  // XML files don't need AI feedback buttons since they have structured data
+  if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
+    return false;
+  }
+  
+  // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
+  const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
+  const hasOCRText = !!invoice.ocrText;
+  
+  return isPDFImageFile || hasOCRText;
+};
 
 export default function ExtractedData() {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
@@ -606,19 +622,21 @@ export default function ExtractedData() {
             <div className="flex justify-between items-start pt-6 border-t border-gray-200">
               <div className="flex items-center space-x-2 text-sm text-gray-600">
                 <Info className="w-4 h-4" />
-                <span>AI extracted data - please review for accuracy</span>
+                <span>{isAIExtractedInvoice(invoice) ? 'AI extracted data - please review for accuracy' : 'XML data extracted - review and approve'}</span>
               </div>
               <div className="space-y-3">
                 <div className="flex space-x-3">
-                  <Button
-                    variant="outline"
-                    onClick={handlePositiveFeedback}
-                    disabled={positiveFeedbackMutation.isPending}
-                    className="text-green-600 border-green-300 hover:bg-green-50"
-                  >
-                    <ThumbsUp className="w-4 h-4 mr-2" />
-                    Good Job AI!
-                  </Button>
+                  {isAIExtractedInvoice(invoice) && (
+                    <Button
+                      variant="outline"
+                      onClick={handlePositiveFeedback}
+                      disabled={positiveFeedbackMutation.isPending}
+                      className="text-green-600 border-green-300 hover:bg-green-50"
+                    >
+                      <ThumbsUp className="w-4 h-4 mr-2" />
+                      Good Job AI!
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     onClick={handleReject}

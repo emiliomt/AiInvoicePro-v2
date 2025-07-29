@@ -41,6 +41,11 @@ interface Invoice {
   dueDate: string | null;
   createdAt: string;
   userId: string;
+  ocrText?: string | null;
+  extractedData?: {
+    confidenceScore?: string;
+    [key: string]: any;
+  };
 }
 
 interface LinkedFile {
@@ -59,6 +64,20 @@ interface LinkedFilesInfo {
   linkedFiles: LinkedFile[];
   hasLinkedFiles: boolean;
 }
+
+// Helper function to determine if invoice was extracted using AI/OCR (vs XML)
+const isAIExtractedInvoice = (invoice: Invoice): boolean => {
+  // XML files don't need AI feedback buttons since they have structured data
+  if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
+    return false;
+  }
+  
+  // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
+  const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
+  const hasOCRText = !!invoice.ocrText;
+  
+  return isPDFImageFile || hasOCRText;
+};
 
 export default function Invoices() {
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
@@ -799,7 +818,7 @@ export default function Invoices() {
                             </>
                           )}
                         </Button>
-                        {invoice.status === 'extracted' && (
+                        {invoice.status === 'extracted' && isAIExtractedInvoice(invoice) && (
                           <>
                             <Button
                               variant="outline"
