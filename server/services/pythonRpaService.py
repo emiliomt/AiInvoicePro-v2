@@ -789,24 +789,175 @@ class InvoiceRPAService:
             self.log(f"Error extracting invoice files: {e}", "ERROR")
             return False
 
-    def _match_files_by_name(self, xml_files, pdf_files):
-        """Match XML and PDF files by base filename"""
+    def _extract_invoice_token(self, filename, file_path=None, file_type='xml'):
+        """Extract unique invoice token from filename and optionally file content"""
+        try:
+            # Parse filename components (format: DOCUMENT_NUMBER_TAX_ID_COMPANY_NAME)
+            base_name = os.path.splitext(filename)[0]
+            parts = base_name.split("_", 2)
+            
+            if len(parts) >= 2:
+                document_number = parts[0].strip()
+                tax_id = parts[1].strip()
+                
+                # For XML files, try to extract additional metadata from content
+                if file_type == 'xml' and file_path and os.path.exists(file_path):
+                    try:
+                        import xml.etree.ElementTree as ET
+                        tree = ET.parse(file_path)
+                        root = tree.getroot()
+                        
+                        # Find total amount in XML content (multiple possible tags)
+                        total_amount = None
+                        amount_tags = [
+                            './/{*}PayableAmount',
+                            './/{*}TotalAmount', 
+                            './/{*}LineExtensionAmount',
+                            './/{*}TaxExclusiveAmount'
+                        ]
+                        
+                        for tag in amount_tags:
+                            element = root.find(tag)
+                            if element is not None and element.text:
+                                try:
+                                    total_amount = float(element.text.strip())
+                                    break
+                                except:
+                                    continue
+                        
+                        # Create composite token with amount if available
+                        if total_amount is not None:
+                            # Normalize amount to avoid floating point precision issues
+                            normalized_amount = round(total_amount, 2)
+                            token = f"{document_number}_{tax_id}_{normalized_amount}"
+                        else:
+                            token = f"{document_number}_{tax_id}"
+                            
+                    except Exception as e:
+                        self.log(f"Warning: Could not parse XML content for {filename}: {e}")
+                        token = f"{document_number}_{tax_id}"
+                else:
+                    # For PDF files or when XML parsing fails, use filename-based token
+                    token = f"{document_number}_{tax_id}"
+                
+                self.log(f"Generated token for {filename}: {token}")
+                return {
+                    'token': token,
+                    'document_number': document_number,
+                    'tax_id': tax_id,
+                    'base_name': base_name
+                }
+            else:
+                self.log(f"Warning: Could not parse filename format for {filename}")
+                return {
+                    'token': base_name,
+                    'document_number': base_name,
+                    'tax_id': '',
+                    'base_name': base_name
+                }
+                
+        except Exception as e:
+            self.log(f"Error extracting invoice token from {filename}: {e}", "ERROR")
+            base_name = os.path.splitext(filename)[0]
+            return {
+                'token': base_name,
+                'document_number': base_name,
+                'tax_id': '',
+                'base_name': base_name
+            }
+
+    def _match_files_by_token(self, xml_files, pdf_files, temp_dir):
+        """Match XML and PDF files by invoice token (enhanced matching)"""
         matches = {}
         
-        # Create lookup sets for efficient matching
-        xml_base_names = {os.path.splitext(f)[0]: f for f in xml_files}
-        pdf_base_names = {os.path.splitext(f)[0]: f for f in pdf_files}
-        
-        # Find all unique base names
-        all_base_names = set(xml_base_names.keys()) | set(pdf_base_names.keys())
-        
-        for base_name in all_base_names:
-            matches[base_name] = {
-                'xml': xml_base_names.get(base_name),
-                'pdf': pdf_base_names.get(base_name)
+        # Extract tokens for all XML files
+        xml_tokens = {}
+        for xml_file in xml_files:
+            xml_path = os.path.join(temp_dir, xml_file)
+            token_info = self._extract_invoice_token(xml_file, xml_path, 'xml')
+            xml_tokens[token_info['token']] = {
+                'filename': xml_file,
+                'token_info': token_info
             }
+        
+        # Extract tokens for all PDF files
+        pdf_tokens = {}
+        for pdf_file in pdf_files:
+            token_info = self._extract_invoice_token(pdf_file, None, 'pdf')
+            pdf_tokens[token_info['token']] = {
+                'filename': pdf_file,
+                'token_info': token_info
+            }
+        
+        # Primary matching: Exact token match
+        matched_tokens = set()
+        for token in xml_tokens:
+            if token in pdf_tokens:
+                base_name = xml_tokens[token]['token_info']['base_name']
+                matches[base_name] = {
+                    'xml': xml_tokens[token]['filename'],
+                    'pdf': pdf_tokens[token]['filename'],
+                    'token': token,
+                    'match_type': 'exact_token'
+                }
+                matched_tokens.add(token)
+                self.log(f"✅ Exact token match: {token} -> XML: {xml_tokens[token]['filename']}, PDF: {pdf_tokens[token]['filename']}")
+        
+        # Secondary matching: Fallback to document_number + tax_id for unmatched files
+        unmatched_xml = {k: v for k, v in xml_tokens.items() if k not in matched_tokens}
+        unmatched_pdf = {k: v for k, v in pdf_tokens.items() if k not in matched_tokens}
+        
+        for xml_token, xml_data in unmatched_xml.items():
+            xml_doc_tax = f"{xml_data['token_info']['document_number']}_{xml_data['token_info']['tax_id']}"
             
+            for pdf_token, pdf_data in unmatched_pdf.items():
+                pdf_doc_tax = f"{pdf_data['token_info']['document_number']}_{pdf_data['token_info']['tax_id']}"
+                
+                if xml_doc_tax == pdf_doc_tax and pdf_token not in matched_tokens:
+                    base_name = xml_data['token_info']['base_name']
+                    matches[base_name] = {
+                        'xml': xml_data['filename'],
+                        'pdf': pdf_data['filename'],
+                        'token': xml_token,
+                        'match_type': 'fallback_doc_tax'
+                    }
+                    matched_tokens.add(pdf_token)
+                    self.log(f"🔄 Fallback match: {xml_doc_tax} -> XML: {xml_data['filename']}, PDF: {pdf_data['filename']}")
+                    break
+        
+        # Handle unmatched files (XML-only or PDF-only)
+        for xml_token, xml_data in xml_tokens.items():
+            if xml_token not in matched_tokens:
+                base_name = xml_data['token_info']['base_name']
+                matches[base_name] = {
+                    'xml': xml_data['filename'],
+                    'pdf': None,
+                    'token': xml_token,
+                    'match_type': 'xml_only'
+                }
+                self.log(f"📄 XML-only file: {xml_data['filename']}")
+        
+        for pdf_token, pdf_data in pdf_tokens.items():
+            if pdf_token not in matched_tokens:
+                base_name = pdf_data['token_info']['base_name']
+                if base_name not in matches:  # Don't override XML-only matches
+                    matches[base_name] = {
+                        'xml': None,
+                        'pdf': pdf_data['filename'],
+                        'token': pdf_token,
+                        'match_type': 'pdf_only'
+                    }
+                    self.log(f"📎 PDF-only file: {pdf_data['filename']}")
+        
+        self.log(f"Token-based matching completed: {len(matches)} file groups, {sum(1 for m in matches.values() if m['xml'] and m['pdf'])} paired matches")
         return matches
+
+    def _match_files_by_name(self, xml_files, pdf_files):
+        """Legacy method - now redirects to token-based matching"""
+        # For backward compatibility, use a temp directory approach
+        # This method is kept for any legacy calls but should use token matching
+        temp_dir = self.download_dir  # Use download dir as temp reference
+        return self._match_files_by_token(xml_files, pdf_files, temp_dir)
 
     def _process_xml_file(self, temp_dir, xml_file, zip_base_name, processed_files):
         """Process standalone XML file for data extraction"""
@@ -1418,7 +1569,7 @@ class InvoiceRPAService:
             return False
 
     def _link_pdfs_to_main_invoices(self, processed_files):
-        """Link PDF files to their corresponding XML-derived invoice records in the main invoices table"""
+        """Link PDF files to their corresponding XML-derived invoice records using token-based matching"""
         try:
             # Connect to PostgreSQL
             pg_conn = psycopg2.connect(
@@ -1439,48 +1590,108 @@ class InvoiceRPAService:
                     xml_filename = pdf_info.get('xml_filename')
                     pdf_filename = pdf_info['upload_filename']
                     
-                    self.log(f"🔗 Linking PDF {pdf_filename} to XML-derived invoice for base name: {base_name}")
+                    # Extract invoice token from PDF filename for robust matching
+                    pdf_token_info = self._extract_invoice_token(pdf_filename)
+                    document_number = pdf_token_info['document_number']
+                    tax_id = pdf_token_info['tax_id']
                     
-                    # Find the main invoice record created from the XML file
-                    # Look for invoice with the same base filename (remove extension)
+                    self.log(f"🔗 Token-based linking: PDF {pdf_filename} (token: {pdf_token_info['token']}) to XML-derived invoice")
+                    
+                    # Enhanced search: Look for invoice using multiple matching strategies
+                    # Strategy 1: Find by extracted data using document number and tax ID
                     pg_cursor.execute("""
-                        SELECT id, file_name FROM invoices 
-                        WHERE (file_name ILIKE %s OR file_name ILIKE %s)
-                        AND user_id = 'rpa-system'
+                        SELECT id, file_name, extracted_data FROM invoices 
+                        WHERE user_id = 'rpa-system'
+                        AND (
+                            -- Match by extracted vendor and invoice number
+                            (extracted_data->>'documentNumber' = %s AND extracted_data->>'vendorTaxId' = %s) OR
+                            (extracted_data->>'invoiceNumber' = %s AND extracted_data->>'vendorTaxId' = %s) OR
+                            -- Fallback: Match by filename patterns
+                            (file_name ILIKE %s OR file_name ILIKE %s OR file_name ILIKE %s)
+                        )
                         ORDER BY created_at DESC 
                         LIMIT 1
-                    """, (f"{base_name}.xml", f"{xml_filename}"))
+                    """, (
+                        document_number, tax_id,  # Strategy 1a: documentNumber + vendorTaxId
+                        document_number, tax_id,  # Strategy 1b: invoiceNumber + vendorTaxId  
+                        f"{document_number}_{tax_id}%",  # Strategy 2a: filename pattern
+                        f"{base_name}.xml",  # Strategy 2b: exact base name
+                        f"{xml_filename}" if xml_filename else ""  # Strategy 2c: exact XML filename
+                    ))
                     
                     invoice_result = pg_cursor.fetchone()
                     
                     if invoice_result:
                         invoice_id = invoice_result[0]
                         invoice_filename = invoice_result[1]
+                        extracted_data = invoice_result[2] if len(invoice_result) > 2 else {}
                         
-                        # Check if we already have a PDF association for this invoice
+                        self.log(f"✅ Found matching invoice: ID {invoice_id}, file: {invoice_filename}")
+                        
+                        # Check if we already have a PDF association for this invoice using token
                         pg_cursor.execute("""
                             SELECT id FROM imported_invoices 
-                            WHERE base_file_name = %s 
+                            WHERE (
+                                base_file_name = %s OR 
+                                original_file_name ILIKE %s OR
+                                metadata->>'invoice_token' = %s
+                            )
                             AND file_type = 'pdf' 
                             AND log_id = %s
-                        """, (base_name, self.log_id))
+                        """, (base_name, f"{document_number}_{tax_id}%", pdf_token_info['token'], self.log_id))
                         
                         pdf_record = pg_cursor.fetchone()
                         
                         if pdf_record:
                             pdf_record_id = pdf_record[0]
                             
-                            # Update the PDF record with the link to the main invoice
+                            # Update the PDF record with enhanced linking metadata
+                            linking_metadata = {
+                                'linked_to_main_invoice': True, 
+                                'main_invoice_id': invoice_id,
+                                'invoice_token': pdf_token_info['token'],
+                                'document_number': document_number,
+                                'tax_id': tax_id,
+                                'linking_method': 'token_based',
+                                'linked_at': datetime.now().isoformat()
+                            }
+                            
+                            # Update the PDF record with the enhanced link
                             pg_cursor.execute("""
                                 UPDATE imported_invoices 
                                 SET linked_invoice_id = %s,
-                                    metadata = metadata || %s
+                                    metadata = COALESCE(metadata, '{}'::jsonb) || %s
                                 WHERE id = %s
                             """, (
                                 invoice_id, 
-                                json.dumps({'linked_to_main_invoice': True, 'main_invoice_id': invoice_id}),
+                                json.dumps(linking_metadata),
                                 pdf_record_id
                             ))
+                            
+                            self.log(f"✅ Successfully linked PDF {pdf_filename} to invoice {invoice_id} via token {pdf_token_info['token']}")
+                        else:
+                            self.log(f"⚠️ PDF record not found in imported_invoices for: {pdf_filename} (token: {pdf_token_info['token']})")
+                    else:
+                        self.log(f"⚠️ No matching invoice found for PDF {pdf_filename}")
+                        self.log(f"   Search criteria: doc_num={document_number}, tax_id={tax_id}, token={pdf_token_info['token']}")
+                        
+                        # Optional: Try alternative search by just document number if tax ID search fails
+                        pg_cursor.execute("""
+                            SELECT id, file_name FROM invoices 
+                            WHERE user_id = 'rpa-system'
+                            AND (
+                                extracted_data->>'documentNumber' = %s OR
+                                extracted_data->>'invoiceNumber' = %s OR
+                                file_name ILIKE %s
+                            )
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        """, (document_number, document_number, f"{document_number}%"))
+                        
+                        fallback_result = pg_cursor.fetchone()
+                        if fallback_result:
+                            self.log(f"🔄 Found fallback match using document number only: {fallback_result[1]}")
+                            # Could implement fallback linking here if needed
                             
                             self.log(f"✅ Successfully linked PDF {pdf_filename} to main invoice {invoice_id} ({invoice_filename})")
                         else:
