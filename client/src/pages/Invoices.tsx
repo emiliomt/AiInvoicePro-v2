@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
@@ -43,6 +43,23 @@ interface Invoice {
   userId: string;
 }
 
+interface LinkedFile {
+  fileName: string;
+  fileType: string;
+  fileSize: number;
+  baseFileName: string;
+  isDataSource: boolean;
+  downloadedAt: string;
+  metadata: any;
+}
+
+interface LinkedFilesInfo {
+  invoiceId: number;
+  mainFile: string;
+  linkedFiles: LinkedFile[];
+  hasLinkedFiles: boolean;
+}
+
 export default function Invoices() {
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -55,6 +72,7 @@ export default function Invoices() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
+  const [linkedFilesMap, setLinkedFilesMap] = useState<Record<number, LinkedFilesInfo>>({});
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -69,6 +87,13 @@ export default function Invoices() {
         }
         const data = await response.json();
         console.log('Invoices fetched:', data.length, 'invoices');
+        
+        // Fetch linked files for RPA-imported invoices
+        const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
+        if (rpaInvoices.length > 0) {
+          fetchLinkedFilesForInvoices(rpaInvoices);
+        }
+        
         return data;
       } catch (err: any) {
         console.error('Invoices query error:', err.message);
@@ -81,6 +106,25 @@ export default function Invoices() {
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
+
+  // Function to fetch linked files for RPA invoices
+  const fetchLinkedFilesForInvoices = async (rpaInvoices: Invoice[]) => {
+    const linkedFilesData: Record<number, LinkedFilesInfo> = {};
+    
+    for (const invoice of rpaInvoices) {
+      try {
+        const response = await apiRequest('GET', `/api/invoices/${invoice.id}/linked-files`);
+        if (response.ok) {
+          const linkedInfo: LinkedFilesInfo = await response.json();
+          linkedFilesData[invoice.id] = linkedInfo;
+        }
+      } catch (error) {
+        console.error(`Failed to fetch linked files for invoice ${invoice.id}:`, error);
+      }
+    }
+    
+    setLinkedFilesMap(linkedFilesData);
+  };
 
   const deleteMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
@@ -231,6 +275,9 @@ export default function Invoices() {
 
   const handleDownload = async (invoice: Invoice) => {
     try {
+      const linkedInfo = linkedFilesMap[invoice.id];
+      const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
+      
       const response = await fetch(`/api/invoices/${invoice.id}/download`, {
         method: 'GET',
         credentials: 'include',
@@ -246,7 +293,15 @@ export default function Invoices() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = invoice.fileName;
+      
+      // Set appropriate filename based on whether it's a ZIP or single file
+      if (hasLinkedFiles) {
+        const baseFileName = invoice.fileName.replace(/\.[^/.]+$/, "");
+        a.download = `${baseFileName}_with_references.zip`;
+      } else {
+        a.download = invoice.fileName;
+      }
+      
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -254,7 +309,9 @@ export default function Invoices() {
 
       toast({
         title: "Download Started",
-        description: `Downloading ${invoice.fileName}`,
+        description: hasLinkedFiles 
+          ? `Downloading ${invoice.fileName} with ${linkedInfo.linkedFiles.length} linked file(s)`
+          : `Downloading ${invoice.fileName}`,
       });
     } catch (error) {
       console.error('Download error:', error);
@@ -622,6 +679,12 @@ export default function Invoices() {
                             </CardTitle>
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
                               <span>Uploaded {formatDate(invoice.createdAt)}</span>
+                              {linkedFilesMap[invoice.id]?.hasLinkedFiles && (
+                                <div className="flex items-center space-x-1 text-blue-600">
+                                  <Link size={14} />
+                                  <span>{linkedFilesMap[invoice.id].linkedFiles.length} linked file(s)</span>
+                                </div>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -686,9 +749,19 @@ export default function Invoices() {
                           variant="outline" 
                           size="sm"
                           onClick={() => handleDownload(invoice)}
+                          className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-blue-600 border-blue-300" : ""}
                         >
-                          <Download size={16} className="mr-2" />
-                          Download
+                          {linkedFilesMap[invoice.id]?.hasLinkedFiles ? (
+                            <>
+                              <Package size={16} className="mr-2" />
+                              Download Package ({linkedFilesMap[invoice.id].linkedFiles.length + 1} files)
+                            </>
+                          ) : (
+                            <>
+                              <Download size={16} className="mr-2" />
+                              Download
+                            </>
+                          )}
                         </Button>
                         {invoice.status === 'extracted' && (
                           <>
