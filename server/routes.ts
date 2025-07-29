@@ -4946,14 +4946,24 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
         const fs = await import('fs');
         
         // Check if file exists
+        console.log(`🔍 Checking for PDF file at: ${pdfFile.file_path}`);
         if (!fs.existsSync(pdfFile.file_path)) {
-          return res.status(404).json({ error: 'PDF file not found on disk' });
+          console.log(`❌ PDF file not found at: ${pdfFile.file_path}`);
+          console.log(`📋 Available files in uploads:`, fs.readdirSync('uploads').filter(f => f.includes('FEPG793514')));
+          return res.status(404).json({ 
+            error: 'PDF file not found on disk',
+            expectedPath: pdfFile.file_path,
+            fileName: pdfFile.original_file_name,
+            troubleshooting: 'The PDF file may not have been properly saved during RPA import'
+          });
         }
 
-        // Set headers for PDF viewing
+        // Set headers for PDF viewing (same as regular PDF preview)
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `inline; filename="${pdfFile.original_file_name}"`);
         res.setHeader('Content-Length', fs.statSync(pdfFile.file_path).size);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Accept-Ranges', 'bytes');
 
         // Stream the PDF file
         const fileStream = fs.createReadStream(pdfFile.file_path);

@@ -86,7 +86,15 @@ export default function PDFPreviewModal({
 
       // Use custom URL for linked PDFs, otherwise use default preview endpoint
       const url = customPreviewUrl || `/api/invoices/${invoiceId}/preview/file`;
-      const loadingTask = window.pdfjsLib.getDocument(url);
+      
+      // Configure PDF.js to include credentials for authentication
+      const loadingTask = window.pdfjsLib.getDocument({
+        url: url,
+        withCredentials: true,
+        httpHeaders: {
+          'Credentials': 'include'
+        }
+      });
       
       const pdf = await loadingTask.promise;
       setPdfDoc(pdf);
@@ -99,12 +107,22 @@ export default function PDFPreviewModal({
       }
     } catch (err) {
       console.error('Error loading PDF:', err);
-      setError('Failed to load PDF. The file may not be available or is corrupted.');
-      toast({
-        title: "PDF Load Error",
-        description: "Failed to load the PDF file",
-        variant: "destructive",
-      });
+      // Check if this is a linked PDF that's missing
+      if (customPreviewUrl && customPreviewUrl.includes('preview-pdf')) {
+        setError('The linked PDF file is missing from storage. This may happen when the RPA import process fails to save the PDF file properly.');
+        toast({
+          title: "Linked PDF Missing",
+          description: "The PDF file associated with this invoice is missing. Please re-run the RPA import to restore it.",
+          variant: "destructive",
+        });
+      } else {
+        setError('Failed to load PDF. The file may not be available or is corrupted.');
+        toast({
+          title: "PDF Load Error",
+          description: "Failed to load the PDF file",
+          variant: "destructive",
+        });
+      }
     } finally {
       setIsLoading(false);
     }
