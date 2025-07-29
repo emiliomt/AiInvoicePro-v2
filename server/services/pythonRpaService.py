@@ -366,12 +366,16 @@ class InvoiceRPAService:
 
             # Enter credentials
             self.log("Entering username...")
+            self.log(f"🔐 Using username: {self.username}")
             username_field = self.wait.until(
                 EC.element_to_be_clickable((By.ID, "txtUsuario")))
             username_field.clear()
             username_field.send_keys(self.username)
 
             self.log("Entering password...")
+            self.log(f"🔐 Using password: {self.password}")
+            self.log(f"🔐 Password length: {len(self.password) if self.password else 0}")
+            self.log(f"🔐 Password type: {type(self.password)}")
             password_field = self.wait.until(
                 EC.element_to_be_clickable((By.ID, "txtContrasena")))
             password_field.clear()

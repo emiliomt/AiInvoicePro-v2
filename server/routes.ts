@@ -3454,8 +3454,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }, 20 * 60 * 1000);
 
     try {
-      // Decrypt password
-      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+      // Debug logging for password decryption
+      console.log(`🔐 Starting password decryption for connection: ${connection.name}`);
+      console.log(`🔐 Encrypted password (first 20 chars): ${connection.password ? connection.password.substring(0, 20) + '...' : 'null/undefined'}`);
+      console.log(`🔐 Encrypted password length: ${connection.password ? connection.password.length : 0}`);
+      
+      // Validate base64 format before decryption
+      const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!base64Pattern.test(connection.password)) {
+        console.error(`🔐 ERROR: Password does not appear to be valid base64: ${connection.password}`);
+        throw new Error(`Password decryption failed: Invalid base64 format`);
+      }
+      
+      // Decrypt password with error handling
+      let decryptedPassword: string;
+      try {
+        decryptedPassword = Buffer.from(connection.password, 'base64').toString('utf8');
+      } catch (decryptError) {
+        console.error(`🔐 ERROR: Failed to decrypt password:`, decryptError);
+        throw new Error(`Password decryption failed: ${decryptError instanceof Error ? decryptError.message : 'Unknown decryption error'}`);
+      }
+      
+      // Log decrypted password with security prefix
+      console.log(`🔐 Using decrypted password: ${decryptedPassword}`);
+      console.log(`🔐 Decrypted password length: ${decryptedPassword.length}`);
+      console.log(`🔐 Decrypted password type: ${typeof decryptedPassword}`);
+      
+      // Validation check: ensure password is not empty and looks valid
+      if (!decryptedPassword || decryptedPassword.trim().length === 0) {
+        const errorMsg = `🔐 ERROR: Decrypted password is empty or invalid!`;
+        console.error(errorMsg);
+        throw new Error(`Password decryption failed: Empty password after decryption`);
+      }
+      
+      // Check if password contains only valid characters (not base64 or corrupted)
+      if (decryptedPassword === connection.password) {
+        console.log(`🔐 WARNING: Decrypted password is identical to encrypted password - decryption may have failed`);
+      }
 
       const connectionData = {
         id: connection.id,

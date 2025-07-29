@@ -460,8 +460,12 @@ class ERPAutomationService {
         let valueToType = step.value;
         if (step.value === '{{username}}') {
           valueToType = connection.username;
+          logs.push(`🔐 Using username for typing: ${valueToType}`);
         } else if (step.value === '{{password}}') {
           valueToType = connection.password;
+          logs.push(`🔐 Using password for typing: ${valueToType}`);
+          logs.push(`🔐 Password length in Playwright: ${valueToType ? valueToType.length : 0}`);
+          logs.push(`🔐 Password type in Playwright: ${typeof valueToType}`);
         }
 
         const typeSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
@@ -614,6 +618,10 @@ class ERPAutomationService {
       if (hasPasswordField && hasUsernameField) {
         try {
           console.log('Testing login credentials...');
+          console.log(`🔐 Test connection - Using username: ${connection.username}`);
+          console.log(`🔐 Test connection - Using password: ${connection.password}`);
+          console.log(`🔐 Test connection - Password length: ${connection.password ? connection.password.length : 0}`);
+          console.log(`🔐 Test connection - Password type: ${typeof connection.password}`);
 
           // Find username field using comprehensive selectors
           const usernameSelector = await this.findUsernameField(page);
