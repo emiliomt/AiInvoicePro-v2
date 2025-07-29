@@ -519,18 +519,11 @@ class PostgresStorage implements IStorage {
     return await db.select().from(erpConnections).orderBy(desc(erpConnections.createdAt));
   }
 
-  async updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<ErpConnection> {
+  async updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<void> {
     await db.update(erpConnections).set({
       ...updates,
       updatedAt: new Date()
     }).where(eq(erpConnections.id, id));
-
-    // Return the updated connection
-    const [result] = await db.select().from(erpConnections).where(eq(erpConnections.id, id));
-    if (!result) {
-      throw new Error('Connection not found after update');
-    }
-    return result;
   }
 
   async deleteErpConnection(id: number): Promise<void> {
@@ -769,7 +762,6 @@ class PostgresStorage implements IStorage {
 
       const [totalInvoices, pendingInvoices, approvedInvoices, totalProjects] = await Promise.all([
         totalInvoicesPromise,
-```text
         pendingInvoicesPromise,
         approvedInvoicesPromise,
         totalProjectsPromise
@@ -1035,27 +1027,7 @@ class PostgresStorage implements IStorage {
       const query = db
         .select({
           invoice: invoices,
-          matches: sql<any[]>`
-            COALESCE(
-              json_agg(
-                json_build_object(
-                  'id', ${invoiceProjectMatches.id},
-                  'projectId', ${invoiceProjectMatches.projectId},
-                  'matchScore', ${invoiceProjectMatches.matchScore},
-                  'status', ${invoiceProjectMatches.status},
-                  'matchDetails', ${invoiceProjectMatches.matchDetails},
-                  'isActive', ${invoiceProjectMatches.isActive},
-                  'project', json_build_object(
-                    'projectId', ${projects.projectId},
-                    'name', ${projects.name},
-                    'city', ${projects.city},
-                    'address', ${projects.address}
-                  )
-                )
-              ) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL),
-              '[]'::json
-            )
-          `
+          matches: sql<any[]>`COALESCE(json_agg(json_build_object('id', ${invoiceProjectMatches.id}, 'projectId', ${invoiceProjectMatches.projectId}, 'matchScore', ${invoiceProjectMatches.matchScore}, 'status', ${invoiceProjectMatches.status}, 'matchDetails', ${invoiceProjectMatches.matchDetails}, 'isActive', ${invoiceProjectMatches.isActive}, 'project', json_build_object('projectId', ${projects.projectId}, 'name', ${projects.name}, 'city', ${projects.city}, 'address', ${projects.address}))) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL), '[]'::json)`
         })
         .from(invoices)
         .leftJoin(
@@ -1087,27 +1059,7 @@ class PostgresStorage implements IStorage {
       const query = db
         .select({
           invoice: invoices,
-          matches: sql<any[]>`
-            COALESCE(
-              json_agg(
-                json_build_object(
-                  'id', ${invoiceProjectMatches.id},
-                  'projectId', ${invoiceProjectMatches.projectId},
-                  'matchScore', ${invoiceProjectMatches.matchScore},
-                  'status', ${invoiceProjectMatches.status},
-                  'matchDetails', ${invoiceProjectMatches.matchDetails},
-                  'isActive', ${invoiceProjectMatches.isActive},
-                  'project', json_build_object(
-                    'projectId', ${projects.projectId},
-                    'name', ${projects.name},
-                    'city', ${projects.city},
-                    'address', ${projects.address}
-                  )
-                )
-              ) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL),
-              '[]'::json
-            )
-          `
+          matches: sql<any[]>`COALESCE(json_agg(json_build_object('id', ${invoiceProjectMatches.id}, 'projectId', ${invoiceProjectMatches.projectId}, 'matchScore', ${invoiceProjectMatches.matchScore}, 'status', ${invoiceProjectMatches.status}, 'matchDetails', ${invoiceProjectMatches.matchDetails}, 'isActive', ${invoiceProjectMatches.isActive}, 'project', json_build_object('projectId', ${projects.projectId}, 'name', ${projects.name}, 'city', ${projects.city}, 'address', ${projects.address}))) FILTER (WHERE ${invoiceProjectMatches.id} IS NOT NULL), '[]'::json)`
         })
         .from(invoices)
         .leftJoin(
