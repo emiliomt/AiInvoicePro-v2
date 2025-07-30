@@ -4839,6 +4839,50 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Progress update endpoint for real-time counter updates from Python RPA
+  app.post('/api/invoice-importer/progress-update', async (req: any, res) => {
+    try {
+      const { configId, processedInvoices, successfulImports, failedImports, progress, currentStep } = req.body;
+      
+      if (!configId) {
+        return res.status(400).json({ error: 'Missing configId in request' });
+      }
+
+      // Find the most recent log for this config and update it
+      const logs = await storage.getInvoiceImporterLogs(parseInt(configId));
+      const latestLog = logs[0]; // Most recent log
+      
+      if (latestLog) {
+        await storage.updateInvoiceImporterLog(latestLog.id, {
+          processedInvoices: processedInvoices || 0,
+          successfulImports: successfulImports || 0,
+          failedImports: failedImports || 0,
+          progress: progress || 0,
+          currentStep: currentStep || 'Processing files...'
+        });
+
+        console.log(`📊 Progress update: Config ${configId} - Processed: ${processedInvoices}, Success: ${successfulImports}, Failed: ${failedImports}`);
+        
+        res.json({ 
+          success: true, 
+          message: 'Progress updated successfully',
+          stats: {
+            processedInvoices,
+            successfulImports, 
+            failedImports,
+            progress
+          }
+        });
+      } else {
+        console.log(`⚠️ No log found for configId ${configId}`);
+        res.status(404).json({ error: 'No active import log found for this configuration' });
+      }
+    } catch (error) {
+      console.error('Error handling progress update:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // Custom error handler middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
