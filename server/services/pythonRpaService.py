@@ -137,7 +137,8 @@ class InvoiceRPAService:
             
             # Normalize emisor for consistent comparison
             safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))
-            normalized_emisor = emisor.replace("_", " ").replace(".", "").upper().strip()
+            # Enhanced normalization to handle HTML entities and variations
+            normalized_emisor = emisor.replace("_", " ").replace(".", "").replace("&AMP;", "&").replace("&amp;", "&").upper().strip()
             
             # Helper function to validate valor_total when available
             def validate_total_amount(db_total: str) -> bool:
@@ -163,8 +164,8 @@ class InvoiceRPAService:
                 AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
                 AND extracted_data->>'invoiceNumber' = %s
                 AND (
-                    UPPER(REPLACE(REPLACE(vendor_name, '_', ' '), '.', '')) = %s OR
-                    UPPER(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', '')) = %s
+                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(vendor_name, '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s OR
+                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s
                 )
                 LIMIT 1
             """, (
