@@ -1849,10 +1849,27 @@ class InvoiceRPAService:
             )
 
             if response.status_code == 200:
-                self.log(f"Successfully triggered manual processing for {filename} ({file_type})")
-                return True
+                # Check the actual response content for success/failure
+                try:
+                    response_data = response.json()
+                    if response_data.get('success', False):
+                        self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
+                        return True
+                    else:
+                        error_msg = response_data.get('error', 'Unknown processing error')
+                        self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
+                        return False
+                except Exception as json_error:
+                    self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
+                    return False
             else:
-                self.log(f"Failed to trigger manual processing for {filename}: {response.status_code} - {response.text}")
+                self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
+                try:
+                    error_data = response.json()
+                    if error_data.get('error'):
+                        self.log(f"Server error: {error_data['error']}", "ERROR")
+                except:
+                    pass
                 return False
 
         except Exception as e:
