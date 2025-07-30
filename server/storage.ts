@@ -1422,6 +1422,7 @@ class PostgresStorage implements IStorage {
         processedInvoices: invoiceImporterLogs.processedInvoices,
         successfulImports: invoiceImporterLogs.successfulImports,
         failedImports: invoiceImporterLogs.failedImports,
+        skippedImports: invoiceImporterLogs.skippedImports,
         fileType: invoiceImporterConfigs.fileTypes,
         logs: invoiceImporterLogs.logs,
         errorMessage: invoiceImporterLogs.errorMessage,

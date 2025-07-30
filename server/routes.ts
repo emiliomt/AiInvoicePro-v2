@@ -4426,6 +4426,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           processed: log.processedInvoices || 0,
           success: log.successfulImports || 0,
           failed: log.failedImports || 0,
+          skipped: log.skippedImports || 0,
           error: log.errorMessage
         });
       } catch (dbError) {
@@ -4814,7 +4815,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             total_invoices: activeProgress.totalInvoices,
             processed_invoices: activeProgress.processedInvoices,
             successful_imports: activeProgress.successfulImports,
-            failed_imports: activeProgress.failedImports
+            failed_imports: activeProgress.failedImports,
+            skipped_imports: activeProgress.skippedImports || 0
           }
         });
       }
@@ -4878,7 +4880,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           total_invoices: latestLog.totalInvoices || 0,
           processed_invoices: latestLog.processedInvoices || 0,
           successful_imports: latestLog.successfulImports || 0,
-          failed_imports: latestLog.failedImports || 0
+          failed_imports: latestLog.failedImports || 0,
+          skipped_imports: latestLog.skippedImports || 0
         }
       });
     } catch (error) {
