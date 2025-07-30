@@ -103,6 +103,7 @@ class InvoiceRPAService:
             'processed_invoices': 0,
             'successful_imports': 0,
             'failed_imports': 0,
+            'skipped_imports': 0,
             'current_step': 'Initializing',
             'progress': 0
         }
@@ -364,6 +365,7 @@ class InvoiceRPAService:
                 'processed_invoices': self.stats.get('processed_invoices', 0),
                 'successful_imports': self.stats.get('successful_imports', 0),
                 'failed_imports': self.stats.get('failed_imports', 0),
+                'skipped_imports': self.stats.get('skipped_imports', 0),
                 'current_step': step,
                 'progress': progress
             }
@@ -832,18 +834,20 @@ class InvoiceRPAService:
                         valor_total = columns[8].text.strip().replace(
                             ",", "").replace(".", "").split(" ")[0]
 
+                        # Always count total invoices found in ERP
+                        self.stats['total_invoices'] += 1
+
                         # Check if already successfully processed (only skip if successfully imported to main invoices table)
                         if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
+                            self.stats['skipped_imports'] += 1
                             self.log(
-                                f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor}"
+                                f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor} (Skipped: {self.stats['skipped_imports']})"
                             )
                             continue
 
                         self.log(
                             f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
                         )
-                        # Only count invoices that we actually attempt to process (not skipped duplicates)
-                        self.stats['total_invoices'] += 1
 
                         # Output progress stats before download attempt
                         self._output_download_progress(i + 1, len(rows), numero_documento)
@@ -2235,6 +2239,7 @@ class InvoiceRPAService:
                 'processed_invoices': current_item,
                 'successful_imports': self.stats.get('successful_imports', 0),
                 'failed_imports': self.stats.get('failed_imports', 0),
+                'skipped_imports': self.stats.get('skipped_imports', 0),
                 'current_step': self.stats['current_step'],
                 'progress': download_progress
             }
@@ -2260,6 +2265,7 @@ class InvoiceRPAService:
                 'processed_invoices': processed_count,
                 'successful_imports': successful_count,
                 'failed_imports': failed_count,
+                'skipped_imports': self.stats.get('skipped_imports', 0),
                 'progress': overall_progress
             }
             

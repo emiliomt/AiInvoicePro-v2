@@ -22,6 +22,7 @@ export interface ImporterProgress {
   processedInvoices: number;
   successfulImports: number;
   failedImports: number;
+  skippedImports: number;
   status: 'pending' | 'running' | 'completed' | 'failed';
   message?: string;
   startedAt: Date;
@@ -94,6 +95,7 @@ class InvoiceImporterService {
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
+        skippedImports: 0,
         steps: this.initializeSteps(),
       };
 
@@ -107,6 +109,7 @@ class InvoiceImporterService {
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
+        skippedImports: 0,
         logs: 'Import task started...',
       });
 
