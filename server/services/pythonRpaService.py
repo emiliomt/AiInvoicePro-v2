@@ -1674,6 +1674,10 @@ class InvoiceRPAService:
             # Ensure uploads directory exists
             uploads_dir = 'uploads'
             os.makedirs(uploads_dir, exist_ok=True)
+            
+            # Ensure PDF directory exists
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            os.makedirs(pdf_dir, exist_ok=True)
 
             processed_count = 0
             successful_count = 0

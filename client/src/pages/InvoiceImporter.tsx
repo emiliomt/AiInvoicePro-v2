@@ -369,6 +369,7 @@ export default function InvoiceImporter() {
               processed_invoices: data.data.totalInvoices || 0,
               successful_imports: data.data.successfulImports || 0,
               failed_imports: data.data.failedImports || 0,
+              skipped_imports: data.data.skippedImports || 0,
               current_step: 'Completed',
               progress: 100
             } : config.stats
@@ -389,6 +390,7 @@ export default function InvoiceImporter() {
           processed_invoices: data.data.totalInvoices || 0,
           successful_imports: data.data.successfulImports || 0,
           failed_imports: data.data.failedImports || 0,
+          skipped_imports: data.data.skippedImports || 0,
           current_step: 'Completed',
           progress: 100
         } : prev.stats
@@ -606,7 +608,7 @@ export default function InvoiceImporter() {
                   status: 'running', 
                   progress: 0, 
                   currentStep: 'Initializing import process...',
-                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, current_step: 'Initializing import process...', progress: 0 }
+                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, skipped_imports: 0, current_step: 'Initializing import process...', progress: 0 }
                 }
               : config
           )
@@ -665,6 +667,7 @@ export default function InvoiceImporter() {
                       processed_invoices: data.processed || 0,
                       successful_imports: data.success || 0,
                       failed_imports: data.failed || 0,
+                      skipped_imports: data.skipped || 0,
                       current_step: data.stage || 'Processing...',
                       progress: data.progressPercent || 0
                     }
