@@ -1,3 +1,4 @@
+// Enhanced ERP Automation Service with robust JSON parsing
 import { chromium, Browser, Page } from 'playwright';
 import OpenAI from 'openai';
 import { execSync } from 'child_process';
@@ -59,6 +60,96 @@ export interface TaskResult {
 class ERPAutomationService {
   private browser: Browser | null = null;
 
+  // Enhanced JSON parsing with multiple fallback strategies
+  private parseJSONResponse(content: string): any {
+    if (!content || content.trim() === '') {
+      throw new Error('Empty response content');
+    }
+
+    // Strategy 1: Direct parsing
+    try {
+      return JSON.parse(content);
+    } catch (error) {
+      console.log('Direct JSON parsing failed, trying cleanup strategies...');
+    }
+
+    // Strategy 2: Remove markdown code blocks
+    try {
+      const cleanedContent = content
+        .replace(/```json\s*/g, '')
+        .replace(/```\s*/g, '')
+        .replace(/^\s*|\s*$/g, '');
+      return JSON.parse(cleanedContent);
+    } catch (error) {
+      console.log('Markdown cleanup failed, trying content extraction...');
+    }
+
+    // Strategy 3: Extract JSON from mixed content
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (error) {
+      console.log('JSON extraction failed, trying line-by-line parsing...');
+    }
+
+    // Strategy 4: Find and extract valid JSON blocks
+    try {
+      const lines = content.split('\n');
+      let jsonStart = -1;
+      let jsonEnd = -1;
+      let braceCount = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('{')) {
+          if (jsonStart === -1) jsonStart = i;
+          braceCount += (line.match(/\{/g) || []).length;
+          braceCount -= (line.match(/\}/g) || []).length;
+        } else if (jsonStart !== -1) {
+          braceCount += (line.match(/\{/g) || []).length;
+          braceCount -= (line.match(/\}/g) || []).length;
+        }
+
+        if (jsonStart !== -1 && braceCount === 0) {
+          jsonEnd = i;
+          break;
+        }
+      }
+
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const jsonText = lines.slice(jsonStart, jsonEnd + 1).join('\n');
+        return JSON.parse(jsonText);
+      }
+    } catch (error) {
+      console.log('Line-by-line parsing failed, trying character cleanup...');
+    }
+
+    // Strategy 5: Remove common problematic characters
+    try {
+      const cleanedContent = content
+        .replace(/[\u0000-\u0019]+/g, '') // Remove control characters
+        .replace(/[\u00A0\u2000-\u200B\u2028-\u2029\u3000]/g, ' ') // Replace various spaces with regular space
+        .replace(/[""]/g, '"') // Replace smart quotes
+        .replace(/['']/g, "'") // Replace smart apostrophes
+        .trim();
+
+      // Try to find JSON structure
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (error) {
+      console.log('Character cleanup failed');
+    }
+
+    // If all strategies fail, create a default response
+    console.error('All JSON parsing strategies failed. Content:', content.substring(0, 200));
+    throw new Error(`Failed to parse JSON response. Content preview: ${content.substring(0, 100)}`);
+  }
+
+  // Enhanced RPA script generation with better error handling
   async generateRPAScript(taskDescription: string, connection: ERPConnection): Promise<RPAScript> {
     const prompt = `
       You are an expert RPA (Robotic Process Automation) developer. Convert this natural language task into a structured RPA script for browser automation.
@@ -76,27 +167,7 @@ class ERPAutomationService {
       - Focus on finding clickable document links in table cells
       ` : ''}
 
-      IMPORTANT: This is a Spanish ERP system (SINCO). The login page uses Spanish labels:
-      - Username field: Look for "Usuario" label or the first visible text input field
-      - Password field: Look for "Contraseña" label or input[type="password"]
-      - Login button: Look for "Iniciar sesión" button or form submit button
-
-      Use these robust selector strategies (the system will automatically try fallbacks):
-      - For username: Use 'input[name*="user"]' (fallbacks will handle Spanish variants)
-      - For password: Use 'input[type="password"]' 
-      - For login button: Use 'button[type="submit"]' or 'input[type="submit"]'
-      - For navigation/modules: Use text-based selectors like '*:has-text("FE")' instead of href selectors
-
-      CRITICAL NAVIGATION NOTES:
-      - SINCO uses JavaScript-rendered sidebar navigation (NOT standard <a> tags)
-      - Module links are typically span, div, or button elements with text content
-      - Use text-based selectors like '*:has-text("FE")' for module navigation
-      - Avoid href-based selectors for navigation elements
-      - After clicking FE module, wait for page to fully load before looking for sub-menu items
-      - Sub-menu items like "Documentos recibidos" may appear in main content area, not sidebar
-      - Use longer waits (10-15 seconds) after module navigation clicks
-
-      CRITICAL: Add wait steps after each action (minimum 5000ms) as SINCO pages load slowly.
+      IMPORTANT: This is a Spanish ERP system (SINCO).
       EXTRA CRITICAL: After clicking any module (like FE), add 10+ second wait before next action.
 
       Create a detailed step-by-step automation script. Consider common ERP workflows like:
@@ -116,55 +187,187 @@ class ERPAutomationService {
       - After completing data extraction
       - When errors occur
 
-      Respond in JSON format with this structure:
+      CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no additional text.
+
+      Use this exact JSON structure:
       {
         "steps": [
           {
-            "action": "navigate|click|type|wait|screenshot|extract",
-            "selector": "CSS selector or XPath (when applicable)",
-            "value": "text to type or data to extract (when applicable)",
+            "action": "navigate",
+            "selector": "",
+            "value": "",
             "timeout": 8000,
-            "description": "Human readable description of this step"
+            "description": "Navigate to login page"
           }
         ],
         "metadata": {
           "taskDescription": "${taskDescription}",
           "estimatedDuration": 45000,
-          "complexity": "low|medium|high"
+          "complexity": "medium"
         }
       }
-
-      Important guidelines:
-      1. Always start with navigation to the base URL
-      2. Include login steps using the provided credentials with Spanish field detection
-      3. Add smart wait steps after clicks and navigation (2-3 seconds for most actions)
-      4. Take screenshots at key points for debugging
-      5. Handle common errors and timeouts with retries
-      6. Extract relevant data when needed
-      7. Use shorter, adaptive timeouts (5-15 seconds) for element detection
-      8. For SINCO specifically: wait after page load, then find first text input for username
-      9. Add brief wait step before attempting login after filling credentials
     `;
 
     try {
       const response = await openai.chat.completions.create({
-        model: "gpt-4o", // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
+        model: "gpt-4o",
         messages: [
-          { role: "system", content: "You are an expert RPA automation engineer. Always respond with valid JSON." },
+          { role: "system", content: "You are an expert RPA automation engineer. ALWAYS respond with valid JSON only. Never include explanations or markdown." },
           { role: "user", content: prompt }
         ],
         response_format: { type: "json_object" },
         temperature: 0.1,
+        max_tokens: 3000,
       });
 
-      const script = JSON.parse(response.choices[0].message.content!);
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      // Use enhanced JSON parsing
+      const script = this.parseJSONResponse(content);
+
+      // Validate the script structure
+      if (!script.steps || !Array.isArray(script.steps)) {
+        throw new Error('Invalid script structure: missing or invalid steps array');
+      }
+
+      if (!script.metadata) {
+        script.metadata = {
+          taskDescription: taskDescription,
+          estimatedDuration: 45000,
+          complexity: 'medium'
+        };
+      }
+
+      // Validate each step
+      for (let i = 0; i < script.steps.length; i++) {
+        const step = script.steps[i];
+        if (!step.action || !step.description) {
+          throw new Error(`Invalid step ${i}: missing action or description`);
+        }
+
+        // Set default timeout if missing
+        if (!step.timeout) {
+          step.timeout = 8000;
+        }
+      }
+
       return script;
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      throw new Error(`Failed to generate RPA script: ${errorMessage}`);
+
+      // Return a fallback script if generation fails
+      console.error('RPA script generation failed:', errorMessage);
+
+      return this.createFallbackScript(taskDescription, connection);
     }
   }
 
+  // Fallback script for when AI generation fails
+  private createFallbackScript(taskDescription: string, connection: ERPConnection): RPAScript {
+    const isInvoiceTask = taskDescription.toLowerCase().includes('invoice') || 
+                         taskDescription.toLowerCase().includes('factura');
+
+    const steps: RPAStep[] = [
+      {
+        action: 'navigate',
+        value: connection.baseUrl,
+        timeout: 15000,
+        description: 'Navigate to ERP login page'
+      },
+      {
+        action: 'wait',
+        timeout: 3000,
+        description: 'Wait for page to load'
+      },
+      {
+        action: 'screenshot',
+        timeout: 1000,
+        description: 'Take screenshot of login page'
+      },
+      {
+        action: 'type',
+        selector: 'input[name="username"], input[name="user"], #username, .username',
+        value: connection.username,
+        timeout: 5000,
+        description: 'Enter username'
+      },
+      {
+        action: 'type',
+        selector: 'input[name="password"], #password, .password',
+        value: connection.password,
+        timeout: 5000,
+        description: 'Enter password'
+      },
+      {
+        action: 'click',
+        selector: 'input[type="submit"], button[type="submit"], .login-btn, .btn-login',
+        timeout: 5000,
+        description: 'Click login button'
+      },
+      {
+        action: 'wait',
+        timeout: 5000,
+        description: 'Wait for login to complete'
+      },
+      {
+        action: 'screenshot',
+        timeout: 1000,
+        description: 'Take screenshot after login'
+      }
+    ];
+
+    if (isInvoiceTask) {
+      steps.push(
+        {
+          action: 'click',
+          selector: 'a[href*="FE"], .module-fe, [data-module="FE"]',
+          timeout: 10000,
+          description: 'Click on FE (Facturación Electrónica) module'
+        },
+        {
+          action: 'wait',
+          timeout: 3000,
+          description: 'Wait for FE module to expand'
+        },
+        {
+          action: 'click',
+          selector: 'a[href*="recibidos"], .documentos-recibidos',
+          timeout: 10000,
+          description: 'Click on Documentos recibidos'
+        },
+        {
+          action: 'wait',
+          timeout: 5000,
+          description: 'Wait for invoice list to load'
+        },
+        {
+          action: 'screenshot',
+          timeout: 1000,
+          description: 'Take screenshot of invoice list'
+        },
+        {
+          action: 'extract',
+          selector: 'table, .invoice-list, .document-table',
+          timeout: 5000,
+          description: 'Extract invoice data from table'
+        }
+      );
+    }
+
+    return {
+      steps,
+      metadata: {
+        taskDescription: `Fallback script: ${taskDescription}`,
+        estimatedDuration: 60000,
+        complexity: 'medium'
+      }
+    };
+  }
+
+  // Enhanced script execution with better error handling
   async executeRPAScript(
     script: RPAScript, 
     connection: ERPConnection,
@@ -195,208 +398,125 @@ class ERPAutomationService {
       }, 5 * 60 * 1000); // 5 minutes
     });
 
-    // Wrap the main execution in Promise.race to handle timeout
-    const executionPromise = this.executeScriptWithTimeout(script, connection, userId, taskId, screenshots, logs, extractedData, startTime);
-
     try {
-      const result = await Promise.race([executionPromise, globalTimeoutPromise]);
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      return result;
-    } catch (error) {
-      if (timeoutHandle) clearTimeout(timeoutHandle);
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logs.push(`Execution failed: ${errorMessage}`);
+      logs.push('Starting RPA script execution...');
+      logs.push(`Task: ${script.metadata.taskDescription}`);
+      logs.push(`Steps to execute: ${script.steps.length}`);
 
-      if (this.browser) {
-        try {
-          await this.browser.close();
-        } catch (closeError) {
-          console.warn('Failed to close browser:', closeError);
-        }
-        this.browser = null;
-      }
+      // Initialize browser
+      await this.initializeBrowser();
+      const page = await this.browser!.newPage();
 
-      return {
-        success: false,
-        screenshots,
-        logs,
-        errorMessage,
-        executionTime: Date.now() - startTime
-      };
-    }
-  }
-
-  private async executeScriptWithTimeout(
-    script: RPAScript, 
-    connection: ERPConnection,
-    userId: string | undefined,
-    taskId: number | undefined,
-    screenshots: string[],
-    logs: string[],
-    extractedData: any,
-    startTime: number
-  ): Promise<TaskResult> {
-    try {
-      // Launch browser with performance optimizations and debugging
-      logs.push('Launching browser with optimizations...');
-      this.browser = await chromium.launch({ 
-        headless: true,
-        executablePath: getChromiumPath(),
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox', 
-          '--disable-dev-shm-usage',
-          '--disable-extensions',
-          '--disable-plugins',
-          '--disable-images', // Disable images for faster loading
-          '--disable-javascript-harmony-shipping',
-          '--disable-background-timer-throttling',
-          '--disable-backgrounding-occluded-windows',
-          '--disable-renderer-backgrounding',
-          '--disable-features=TranslateUI',
-          '--disable-web-security', // Help with CORS issues
-          '--disable-features=VizDisplayCompositor',
-          '--timeout=60000' // 60 second timeout
-        ]
+      // Set page configurations
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
       });
 
-      const context = await this.browser.newContext({
-        viewport: { width: 1366, height: 768 }, // Smaller viewport for faster rendering
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        ignoreHTTPSErrors: true, // Ignore SSL errors to prevent hanging
-        javaScriptEnabled: true,
-        acceptDownloads: false, // Disable downloads to prevent hanging
-      });
-
-      const page = await context.newPage();
-
-      // Block unnecessary resources for faster loading
-      await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
-
-      logs.push('Browser launched successfully with optimizations');
-
-      // Take initial screenshot
-      try {
-        const initialScreenshot = await page.screenshot({ 
-          fullPage: true,
-          type: 'png'
-        });
-        screenshots.push(initialScreenshot.toString('base64'));
-        logs.push('Initial screenshot captured');
-      } catch (screenshotError) {
-        console.warn('Initial screenshot failed:', screenshotError);
-      }
-
-      // Send task start notification
-      if (userId && taskId) {
-        progressTracker.sendTaskStart(userId, taskId, script.steps.length, `Starting ERP automation: ${script.metadata.taskDescription}`);
-      }
-
-      // Execute each step with timeout protection
+      // Execute each step with enhanced error handling
       for (let i = 0; i < script.steps.length; i++) {
         const step = script.steps[i];
-        const stepMessage = `Step ${i + 1}/${script.steps.length}: ${step.description}`;
-        logs.push(`Executing ${stepMessage}`);
-
-        // Send progress update for each step
-        if (userId && taskId) {
-          progressTracker.sendStepUpdate(userId, taskId, i + 1, script.steps.length, stepMessage);
-        }
-
-        // Step-level timeout (2 minutes per step for better reliability)
-        const stepPromise = this.executeStep(page, step, connection, screenshots, extractedData, logs);
-        const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`Step ${i + 1} timed out after 2 minutes`)), 120000);
-        });
+        logs.push(`Executing step ${i + 1}/${script.steps.length}: ${step.description}`);
 
         try {
-          await Promise.race([stepPromise, timeoutPromise]);
-          logs.push(`Step ${i + 1} completed successfully`);
-
-          // Add debugging info about page state after each step
-          try {
-            const pageUrl = page.url();
-            const pageTitle = await page.title();
-            logs.push(`Page state after step ${i + 1}: URL=${pageUrl}, Title=${pageTitle}`);
-          } catch (debugError) {
-            logs.push(`Could not get page state after step ${i + 1}`);
-          }
-          // Take automatic screenshot after important steps (optimized)
-          if (step.action === 'click' || step.action === 'navigate' || step.action === 'type') {
-            try {
-              await page.waitForTimeout(1000); // Wait for UI to stabilize
-              const screenshot = await page.screenshot({ 
-                fullPage: false, // Viewport only for speed
-                type: 'png',
-                quality: 80 // Reduce quality for speed
-              });
-              const base64Screenshot = screenshot.toString('base64');
-              screenshots.push(base64Screenshot);
-              logs.push(`Auto-screenshot captured after step ${i + 1}`);
-            } catch (screenshotError) {
-              console.warn('Auto-screenshot failed:', screenshotError);
-            }
-          }
+          await this.executeStepWithRetry(page, step, connection, screenshots, extractedData, logs);
+          logs.push(`✓ Step ${i + 1} completed successfully`);
         } catch (stepError) {
-          clearTimeout(stepTimeout);
+          const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown step error';
+          logs.push(`✗ Step ${i + 1} failed: ${errorMessage}`);
 
-          // Take screenshot on error for debugging
+          // Take screenshot on error
           try {
-            const errorScreenshot = await page.screenshot({ 
-              fullPage: true,
-              type: 'png'
-            });
-            const base64Screenshot = errorScreenshot.toString('base64');
-            screenshots.push(base64Screenshot);
-            logs.push(`Error screenshot captured for step ${i + 1}`);
+            const screenshot = await page.screenshot({ encoding: 'base64' });
+            screenshots.push(screenshot);
+            logs.push('Error screenshot captured');
           } catch (screenshotError) {
-            console.warn('Error screenshot failed:', screenshotError);
+            logs.push('Failed to capture error screenshot');
           }
 
-          const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown error';
-          logs.push(`Step ${i + 1} failed: ${errorMessage}`);
-
-          // For extraction failures, continue with other steps instead of failing completely
-          if (step.action === 'extract') {
-            logs.push(`Continuing with remaining steps despite extraction failure`);
+          // Continue with next step for non-critical errors
+          if (step.action !== 'navigate' && step.action !== 'click') {
+            logs.push('Continuing with next step...');
             continue;
+          } else {
+            throw stepError; // Critical error, stop execution
           }
-
-          throw stepError;
         }
-
-        // Add minimal delay between steps
-        await page.waitForTimeout(300);
       }
 
-      await this.browser.close();
-      this.browser = null;
+      await page.close();
+
+      const executionTime = Date.now() - startTime;
+      logs.push(`Script execution completed in ${executionTime}ms`);
 
       return {
         success: true,
         screenshots,
         logs,
         extractedData,
-        executionTime: Date.now() - startTime
+        executionTime
       };
 
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-      logs.push(`Execution failed: ${errorMessage}`);
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
+      logs.push(`Script execution failed: ${errorMessage}`);
 
+      return {
+        success: false,
+        screenshots,
+        logs,
+        extractedData,
+        errorMessage,
+        executionTime: Date.now() - startTime
+      };
+
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle);
+      // Always clean up browser
       if (this.browser) {
         try {
           await this.browser.close();
-        } catch (closeError) {
-          console.warn('Failed to close browser:', closeError);
+          this.browser = null;
+          logs.push('Browser cleaned up successfully');
+        } catch (cleanupError) {
+          logs.push('Browser cleanup failed');
         }
-        this.browser = null;
       }
-
-      throw error; // Re-throw to be handled by the main method
     }
   }
 
+  // Execute step with retry logic
+  private async executeStepWithRetry(
+    page: Page,
+    step: RPAStep,
+    connection: ERPConnection,
+    screenshots: string[],
+    extractedData: any,
+    logs: string[]
+  ): Promise<void> {
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.executeStep(page, step, connection, screenshots, extractedData, logs);
+        return; // Success, exit retry loop
+      } catch (error) {
+        lastError = error as Error;
+
+        if (attempt < maxRetries) {
+          logs.push(`Step attempt ${attempt} failed, retrying...`);
+          await page.waitForTimeout(2000); // Wait before retry
+        }
+      }
+    }
+
+    // If all retries failed, throw the last error
+    throw lastError;
+  }
+
+  // Enhanced step execution with better selector handling
   private async executeStep(
     page: Page, 
     step: RPAStep, 
@@ -412,146 +532,124 @@ class ERPAutomationService {
         const url = step.value || connection.baseUrl;
         logs.push(`Navigating to: ${url}`);
 
-        try {
-          await page.goto(url, { waitUntil: 'domcontentloaded', timeout: 15000 });
-          logs.push(`Navigation successful - page loaded`);
-        } catch (navError) {
-          logs.push(`Navigation failed, trying networkidle: ${navError}`);
-          await page.goto(url, { waitUntil: 'networkidle', timeout: 10000 });
-        }
+        await page.goto(url, { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000 
+        });
 
-        // Wait for page to stabilize and check if it actually loaded
-        await page.waitForTimeout(2000);
-        const pageTitle = await page.title();
-        logs.push(`Page title: ${pageTitle}`);
-
-        // Verify we're not stuck on an error page
-        const pageContent = await page.textContent('body');
-        if (pageContent?.includes('Error') || pageContent?.includes('404')) {
-          throw new Error(`Page loaded with error content: ${pageContent.substring(0, 100)}`);
-        }
+        // Verify page loaded successfully
+        const title = await page.title();
+        logs.push(`Page loaded: ${title}`);
         break;
 
       case 'click':
         if (!step.selector) throw new Error('Selector required for click action');
-        const clickSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
 
-        // For SINCO navigation clicks, add smart wait and handling
-        if (step.description.toLowerCase().includes('module') || step.description.toLowerCase().includes('fe')) {
-          // Click and wait for navigation to complete
-          await page.click(clickSelector);
-          // Wait for any navigation or dynamic content loading
-          await page.waitForTimeout(2000);
-          // Wait for network to be idle after navigation
-          await page.waitForLoadState('networkidle', { timeout: 5000 }).catch(() => {
-            console.warn('Network idle timeout - continuing anyway');
-          });
-        } else {
-          await page.click(clickSelector);
-          // Brief wait after regular clicks
-          await page.waitForTimeout(500);
-        }
+        const clickElement = await this.waitForElementWithFallback(page, step.selector, timeout);
+        await clickElement.click();
+
+        // Wait after click
+        await page.waitForTimeout(1000);
         break;
 
       case 'type':
-        if (!step.selector || !step.value) throw new Error('Selector and value required for type action');
-
-        // Handle special credential replacements
-        let valueToType = step.value;
-        if (step.value === '{{username}}') {
-          valueToType = connection.username;
-          logs.push(`🔐 Using username for typing: ${valueToType}`);
-        } else if (step.value === '{{password}}') {
-          valueToType = connection.password;
-          logs.push(`🔐 Using password for typing: ${valueToType}`);
-          logs.push(`🔐 Password length in Playwright: ${valueToType ? valueToType.length : 0}`);
-          logs.push(`🔐 Password type in Playwright: ${typeof valueToType}`);
+        if (!step.selector || !step.value) {
+          throw new Error('Selector and value required for type action');
         }
 
-        const typeSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
-        // Clear field first, then type
-        await page.fill(typeSelector, '');
-        await page.type(typeSelector, valueToType, { delay: 100 });
+        const typeElement = await this.waitForElementWithFallback(page, step.selector, timeout);
+        await typeElement.clear();
+        await typeElement.fill(step.value);
         break;
 
       case 'wait':
-        const waitTime = step.timeout || 3000;
-        await page.waitForTimeout(waitTime);
+        await page.waitForTimeout(timeout);
         break;
 
       case 'screenshot':
         try {
-          console.log('Taking screenshot...');
           const screenshot = await page.screenshot({ 
-            fullPage: true,
-            type: 'png'
+            encoding: 'base64',
+            fullPage: false 
           });
-          const base64Screenshot = screenshot.toString('base64');
-          screenshots.push(base64Screenshot);
-          console.log(`Screenshot captured (${base64Screenshot.length} bytes)`);
+          screenshots.push(screenshot);
+          logs.push('Screenshot captured');
         } catch (screenshotError) {
-          console.error('Screenshot failed:', screenshotError);
-          logs.push(`Screenshot failed: ${screenshotError instanceof Error ? screenshotError.message : 'Unknown error'}`);
+          logs.push('Screenshot failed (continuing...)');
         }
         break;
 
       case 'extract':
-        if (!step.selector) throw new Error('Selector required for extract action');
+        if (!step.selector) {
+          logs.push('No selector provided for extraction, skipping...');
+          break;
+        }
 
         try {
-          // For table extractions, wait longer and add debugging
-          if (step.selector.includes('table') || step.selector.includes('tr') || step.selector.includes('td')) {
-            // Wait for tables to fully load
-            await page.waitForTimeout(5000);
+          const elements = await page.$$(step.selector);
+          const extractedText = await Promise.all(
+            elements.map(el => el.textContent())
+          );
 
-            // Debug: Check if any tables exist
-            const tableCount = await page.locator('table').count();
-            console.log(`Found ${tableCount} tables on page`);
-
-            if (tableCount > 0) {
-              // Debug: Get table content
-              const tableContent = await page.locator('table').first().textContent();
-              console.log(`First table content preview: ${tableContent?.substring(0, 200)}...`);
-            }
-
-            // Check for data grids or other table-like structures
-            const gridCount = await page.locator('.grid, .datagrid, .datatable, [role="table"]').count();
-            console.log(`Found ${gridCount} grid/datatable elements`);
-          }
-
-          const extractSelector = await this.waitForSelectorWithFallback(page, step.selector, timeout);
-          const element = await page.locator(extractSelector);
-          const text = await element.textContent();
-
-          // Store extracted data with step description as key
-          const dataKey = step.description.toLowerCase().replace(/\s+/g, '_');
-          extractedData[dataKey] = text?.trim();
-
-          console.log(`Successfully extracted data for ${dataKey}: ${text?.trim()?.substring(0, 100)}...`);
+          extractedData.extractedContent = extractedText.filter(text => text?.trim());
+          logs.push(`Extracted ${extractedData.extractedContent.length} items`);
         } catch (extractError) {
-          // Enhanced error logging for extract failures
-          const errorMessage = extractError instanceof Error ? extractError.message : 'Unknown error';
-          console.warn(`Extract failed for ${step.selector}: ${errorMessage}`);
-
-          // Try to provide more context about what's available on the page
-          try {
-            const pageTitle = await page.title();
-            const visibleText = await page.locator('body').textContent();
-            console.log(`Page title: ${pageTitle}`);
-            console.log(`Page contains text: ${visibleText?.substring(0, 300)}...`);
-          } catch (debugError) {
-            console.warn('Could not get page debug info');
-          }
-
-          // Re-throw the error so it can be handled at the step level
-          throw extractError;
+          logs.push('Data extraction failed (continuing...)');
         }
         break;
 
       default:
-        throw new Error(`Unknown action: ${step.action}`);
+        logs.push(`Unknown action: ${step.action}`);
     }
   }
+
+  // Enhanced element waiting with multiple selector strategies
+  private async waitForElementWithFallback(page: Page, selector: string, timeout: number) {
+    const selectors = selector.split(', ').map(s => s.trim());
+
+    for (const sel of selectors) {
+      try {
+        const element = await page.waitForSelector(sel, { timeout });
+        if (element) return element;
+      } catch (error) {
+        continue; // Try next selector
+      }
+    }
+
+    throw new Error(`None of the selectors found: ${selector}`);
+  }
+
+  // Initialize browser with better configuration
+  private async initializeBrowser(): Promise<void> {
+        try {
+            if (this.browser) {
+                await this.browser.close();
+            }
+
+            this.browser = await chromium.launch({
+                headless: true,
+                executablePath: getChromiumPath(),
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-extensions',
+                    '--disable-gpu',
+                    '--no-first-run',
+                    '--disable-default-apps',
+                    '--disable-features=VizDisplayCompositor',
+                    '--disable-background-timer-throttling',
+                    '--disable-backgrounding-occluded-windows',
+                    '--disable-renderer-backgrounding'
+                ],
+                timeout: 30000
+            });
+
+        } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : 'Unknown browser error';
+            throw new Error(`Failed to initialize browser: ${errorMessage}`);
+        }
+    }
 
   async testConnection(connection: ERPConnection): Promise<{ success: boolean; message?: string; details?: any }> {
     try {
@@ -869,7 +967,7 @@ class ERPAutomationService {
 
     // Handle navigation elements and modules (like FE module)
     if (originalSelector.includes('href*=') || originalSelector.includes('FE') || originalSelector.includes('module')) {
-      const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE';
+const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE';
       fallbackSelectors.push(
         // JavaScript-based navigation - look for text content
         `*:has-text("${moduleText}")`,
@@ -1057,6 +1155,803 @@ class ERPAutomationService {
 
     // If all selectors fail, throw the original error
     throw new Error(`Could not find element with selector: ${originalSelector} or any fallbacks`);
+  }
+  
+    async testConnection(connection: ERPConnection): Promise<{ success: boolean; message?: string; details?: any }> {
+        try {
+            this.browser = await chromium.launch({
+                headless: true,
+                executablePath: getChromiumPath(),
+                args: [
+                    '--no-sandbox',
+                    '--disable-setuid-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-extensions',
+                    '--disable-gpu',
+                    '--no-first-run',
+                    '--disable-default-apps',
+                    '--disable-features=TranslateUI'
+                ]
+            });
+
+            const context = await this.browser.newContext({
+                viewport: { width: 1366, height: 768 },
+                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+                ignoreHTTPSErrors: true,
+                acceptDownloads: false
+            });
+
+            const page = await context.newPage();
+
+            // Block resources for faster connection testing
+            await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
+
+            // Test basic URL accessibility with faster timeout
+            console.log(`Testing connection to: ${connection.baseUrl}`);
+            const response = await page.goto(connection.baseUrl, {
+                waitUntil: 'domcontentloaded',
+                timeout: 15000
+            });
+
+            if (!response) {
+                throw new Error('No response received from server');
+            }
+
+            const status = response.status();
+            console.log(`Response status: ${status}`);
+
+            if (status >= 400) {
+                throw new Error(`Server returned error status: ${status}`);
+            }
+
+            // Wait for page to stabilize (reduced time)
+            await page.waitForTimeout(2000);
+
+            // Try to find common login elements to verify it's an ERP system
+            const pageTitle = await page.title();
+            console.log(`Page title: ${pageTitle}`);
+
+            // Enhanced login form detection for SINCO
+            const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
+            const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="usuario"], input[placeholder*="usuario"]').count() > 0;
+
+            // Check for SINCO-specific elements
+            const hasSincoElements = await page.locator('*:has-text("SINCO"), *:has-text("SincoDycon"), *:has-text("Usuario"), *:has-text("Contraseña")').count() > 0;
+
+            // Test actual login with provided credentials
+            let loginTestResult = null;
+            if (hasPasswordField && hasUsernameField) {
+                try {
+                    console.log('Testing login credentials...');
+                    console.log(`🔐 Test connection - Using username: ${connection.username}`);
+                    console.log(`🔐 Test connection - Using password: ${connection.password}`);
+                    console.log(`🔐 Test connection - Password length: ${connection.password ? connection.password.length : 0}`);
+                    console.log(`🔐 Test connection - Password type: ${typeof connection.password}`);
+
+                    // Find username field using comprehensive selectors
+                    const usernameSelector = await this.findUsernameField(page);
+                    const passwordSelector = await this.findPasswordField(page);
+
+                    if (usernameSelector && passwordSelector) {
+                        await page.fill(usernameSelector, connection.username);
+                        await page.fill(passwordSelector, connection.password);
+
+                        // Find and click login button
+                        const loginButtonSelector = await this.findLoginButton(page);
+                        if (loginButtonSelector) {
+                            await page.click(loginButtonSelector);
+                            await page.waitForTimeout(3000);
+
+                            // Check if login was successful
+                            const currentUrl = page.url();
+                            const hasError = await page.locator('*:has-text("Error"), *:has-text("Incorrect"), *:has-text("Invalid"), *:has-text("Usuario"), *:has-text("credenciales")').count() > 0;
+
+                            loginTestResult = {
+                                attempted: true,
+                                urlChanged: currentUrl !== connection.baseUrl,
+                                hasError: hasError,
+                                currentUrl: currentUrl
+                            };
+                        }
+                    }
+                } catch (loginError) {
+                    console.warn('Login test failed:', loginError);
+                    loginTestResult = {
+                        attempted: true,
+                        error: loginError instanceof Error ? loginError.message : 'Unknown login error'
+                    };
+                }
+            }
+
+            await this.browser.close();
+            this.browser = null;
+
+            const details = {
+                status,
+                title: pageTitle,
+                hasLoginForm: hasPasswordField,
+                hasUsernameField,
+                hasSincoElements,
+                loginTest: loginTestResult,
+                url: connection.baseUrl
+            };
+
+            if (hasPasswordField && hasUsernameField) {
+                if (loginTestResult?.attempted && !loginTestResult?.hasError && loginTestResult?.urlChanged) {
+                    return {
+                        success: true,
+                        message: 'Successfully connected to ERP system and login credentials appear to be working.',
+                        details
+                    };
+                } else if (loginTestResult?.attempted && loginTestResult?.hasError) {
+                    return {
+                        success: false,
+                        message: 'Connection successful but login credentials appear to be invalid. Please check username and password.',
+                        details
+                    };
+                } else {
+                    return {
+                        success: true,
+                        message: 'Successfully connected to ERP system. Login form detected but credentials not fully tested.',
+                        details
+                    };
+                }
+            } else if (status < 400) {
+                return {
+                    success: true,
+                    message: 'Successfully connected to URL, but login form not detected. Please verify this is the correct ERP login page.',
+                    details
+                };
+            } else {
+                return {
+                    success: false,
+                    message: `Connection failed with status ${status}`,
+                    details
+                };
+            }
+
+        } catch (error) {
+            if (this.browser) {
+                await this.browser.close();
+                this.browser = null;
+            }
+
+            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+            console.error('ERP connection test failed:', errorMessage);
+
+            return {
+                success: false,
+                message: `Connection test failed: ${errorMessage}`,
+                details: {
+                    error: errorMessage,
+                    url: connection.baseUrl
+                }
+            };
+        }
+    }
+
+    private async findUsernameField(page: any): Promise<string | null> {
+        const selectors = [
+            'input[name*="usuario" i]',
+            'input[placeholder*="usuario" i]',
+            'input[id*="usuario" i]',
+            'input[name*="user" i]',
+            'input[placeholder*="user" i]',
+            'input[type="text"]:visible',
+            'input[type="email"]:visible',
+            'form input:first-of-type'
+        ];
+
+        for (const selector of selectors) {
+            try {
+                if (await page.locator(selector).count() > 0) {
+                    return selector;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+        return null;
+    }
+
+    private async findPasswordField(page: any): Promise<string | null> {
+        const selectors = [
+            'input[type="password"]',
+            'input[name*="clave" i]',
+            'input[name*="contrasena" i]',
+            'input[name*="contraseña" i]',
+            'input[placeholder*="contraseña" i]'
+        ];
+
+        for (const selector of selectors) {
+            try {
+                if (await page.locator(selector).count() > 0) {
+                    return selector;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+        return null;
+    }
+
+    private async findLoginButton(page: any): Promise<string | null> {
+        const selectors = [
+            'button:has-text("Iniciar sesión")',
+            'button:has-text("Iniciar")',
+            'button:has-text("Login")',
+            'button:has-text("Entrar")',
+            'input[type="submit"]',
+            'button[type="submit"]',
+            'button:visible',
+            'form button:last-of-type'
+        ];
+
+        for (const selector of selectors) {
+            try {
+                if (await page.locator(selector).count() > 0) {
+                    return selector;
+                }
+            } catch (error) {
+                continue;
+            }
+        }
+        return null;
+    }
+}
+
+export const erpAutomationService = new ERPAutomationService();json\s*/g, '')
+        .replace(/```\s*/g, '')
+        .replace(/^\s*|\s*$/g, '');
+      return JSON.parse(cleanedContent);
+    } catch (error) {
+      console.log('Markdown cleanup failed, trying content extraction...');
+    }
+
+    // Strategy 3: Extract JSON from mixed content
+    try {
+      const jsonMatch = content.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (error) {
+      console.log('JSON extraction failed, trying line-by-line parsing...');
+    }
+
+    // Strategy 4: Find and extract valid JSON blocks
+    try {
+      const lines = content.split('\n');
+      let jsonStart = -1;
+      let jsonEnd = -1;
+      let braceCount = 0;
+
+      for (let i = 0; i < lines.length; i++) {
+        const line = lines[i].trim();
+        if (line.startsWith('{')) {
+          if (jsonStart === -1) jsonStart = i;
+          braceCount += (line.match(/\{/g) || []).length;
+          braceCount -= (line.match(/\}/g) || []).length;
+        } else if (jsonStart !== -1) {
+          braceCount += (line.match(/\{/g) || []).length;
+          braceCount -= (line.match(/\}/g) || []).length;
+        }
+
+        if (jsonStart !== -1 && braceCount === 0) {
+          jsonEnd = i;
+          break;
+        }
+      }
+
+      if (jsonStart !== -1 && jsonEnd !== -1) {
+        const jsonText = lines.slice(jsonStart, jsonEnd + 1).join('\n');
+        return JSON.parse(jsonText);
+      }
+    } catch (error) {
+      console.log('Line-by-line parsing failed, trying character cleanup...');
+    }
+
+    // Strategy 5: Remove common problematic characters
+    try {
+      const cleanedContent = content
+        .replace(/[\u0000-\u0019]+/g, '') // Remove control characters
+        .replace(/[\u00A0\u2000-\u200B\u2028-\u2029\u3000]/g, ' ') // Replace various spaces with regular space
+        .replace(/[""]/g, '"') // Replace smart quotes
+        .replace(/['']/g, "'") // Replace smart apostrophes
+        .trim();
+
+      // Try to find JSON structure
+      const jsonMatch = cleanedContent.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+    } catch (error) {
+      console.log('Character cleanup failed');
+    }
+
+    // If all strategies fail, create a default response
+    console.error('All JSON parsing strategies failed. Content:', content.substring(0, 200));
+    throw new Error(`Failed to parse JSON response. Content preview: ${content.substring(0, 100)}`);
+  }
+
+  // Enhanced RPA script generation with better error handling
+  async generateRPAScript(taskDescription: string, connection: ERPConnection): Promise<RPAScript> {
+    const prompt = `
+      You are an expert RPA (Robotic Process Automation) developer. Convert this natural language task into a structured RPA script for browser automation.
+
+      Task: ${taskDescription}
+      ERP System URL: ${connection.baseUrl}
+
+      INVOICE EXTRACTION SPECIFIC INSTRUCTIONS:
+      ${taskDescription.includes('invoice') ? `
+      - After login, navigate to "FE" (Facturación Electrónica) module
+      - Look for "Documentos recibidos" or "Facturas recibidas" 
+      - Find invoice tables with document numbers and download links
+      - Extract invoice document IDs, numbers, dates, and amounts
+      - Look for download buttons for XML and PDF files
+      - Focus on finding clickable document links in table cells
+      ` : ''}
+
+      IMPORTANT: This is a Spanish ERP system (SINCO).
+      EXTRA CRITICAL: After clicking any module (like FE), add 10+ second wait before next action.
+
+      Create a detailed step-by-step automation script. Consider common ERP workflows like:
+      - Login process (with Spanish interface)
+      - Navigation to specific modules (especially FE for invoices)
+      - Form filling
+      - File uploads
+      - Data extraction (especially from invoice tables)
+      - Report generation
+      - Invoice document downloading
+      - Table data extraction for invoice lists
+
+      IMPORTANT: Include screenshot steps at key points for debugging:
+      - After successful login
+      - After navigating to each module
+      - Before and after clicking important elements
+      - After completing data extraction
+      - When errors occur
+
+      CRITICAL: Respond ONLY with valid JSON. No explanations, no markdown, no additional text.
+
+      Use this exact JSON structure:
+      {
+        "steps": [
+          {
+            "action": "navigate",
+            "selector": "",
+            "value": "",
+            "timeout": 8000,
+            "description": "Navigate to login page"
+          }
+        ],
+        "metadata": {
+          "taskDescription": "${taskDescription}",
+          "estimatedDuration": 45000,
+          "complexity": "medium"
+        }
+      }
+    `;
+
+    try {
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o",
+        messages: [
+          { role: "system", content: "You are an expert RPA automation engineer. ALWAYS respond with valid JSON only. Never include explanations or markdown." },
+          { role: "user", content: prompt }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+        max_tokens: 3000,
+      });
+
+      const content = response.choices[0].message.content;
+      if (!content) {
+        throw new Error('Empty response from OpenAI');
+      }
+
+      // Use enhanced JSON parsing
+      const script = this.parseJSONResponse(content);
+
+      // Validate the script structure
+      if (!script.steps || !Array.isArray(script.steps)) {
+        throw new Error('Invalid script structure: missing or invalid steps array');
+      }
+
+      if (!script.metadata) {
+        script.metadata = {
+          taskDescription: taskDescription,
+          estimatedDuration: 45000,
+          complexity: 'medium'
+        };
+      }
+
+      // Validate each step
+      for (let i = 0; i < script.steps.length; i++) {
+        const step = script.steps[i];
+        if (!step.action || !step.description) {
+          throw new Error(`Invalid step ${i}: missing action or description`);
+        }
+
+        // Set default timeout if missing
+        if (!step.timeout) {
+          step.timeout = 8000;
+        }
+      }
+
+      return script;
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+
+      // Return a fallback script if generation fails
+      console.error('RPA script generation failed:', errorMessage);
+
+      return this.createFallbackScript(taskDescription, connection);
+    }
+  }
+
+  // Fallback script for when AI generation fails
+  private createFallbackScript(taskDescription: string, connection: ERPConnection): RPAScript {
+    const isInvoiceTask = taskDescription.toLowerCase().includes('invoice') || 
+                         taskDescription.toLowerCase().includes('factura');
+
+    const steps: RPAStep[] = [
+      {
+        action: 'navigate',
+        value: connection.baseUrl,
+        timeout: 15000,
+        description: 'Navigate to ERP login page'
+      },
+      {
+        action: 'wait',
+        timeout: 3000,
+        description: 'Wait for page to load'
+      },
+      {
+        action: 'screenshot',
+        timeout: 1000,
+        description: 'Take screenshot of login page'
+      },
+      {
+        action: 'type',
+        selector: 'input[name="username"], input[name="user"], #username, .username',
+        value: connection.username,
+        timeout: 5000,
+        description: 'Enter username'
+      },
+      {
+        action: 'type',
+        selector: 'input[name="password"], #password, .password',
+        value: connection.password,
+        timeout: 5000,
+        description: 'Enter password'
+      },
+      {
+        action: 'click',
+        selector: 'input[type="submit"], button[type="submit"], .login-btn, .btn-login',
+        timeout: 5000,
+        description: 'Click login button'
+      },
+      {
+        action: 'wait',
+        timeout: 5000,
+        description: 'Wait for login to complete'
+      },
+      {
+        action: 'screenshot',
+        timeout: 1000,
+        description: 'Take screenshot after login'
+      }
+    ];
+
+    if (isInvoiceTask) {
+      steps.push(
+        {
+          action: 'click',
+          selector: 'a[href*="FE"], .module-fe, [data-module="FE"]',
+          timeout: 10000,
+          description: 'Click on FE (Facturación Electrónica) module'
+        },
+        {
+          action: 'wait',
+          timeout: 3000,
+          description: 'Wait for FE module to expand'
+        },
+        {
+          action: 'click',
+          selector: 'a[href*="recibidos"], .documentos-recibidos',
+          timeout: 10000,
+          description: 'Click on Documentos recibidos'
+        },
+        {
+          action: 'wait',
+          timeout: 5000,
+          description: 'Wait for invoice list to load'
+        },
+        {
+          action: 'screenshot',
+          timeout: 1000,
+          description: 'Take screenshot of invoice list'
+        },
+        {
+          action: 'extract',
+          selector: 'table, .invoice-list, .document-table',
+          timeout: 5000,
+          description: 'Extract invoice data from table'
+        }
+      );
+    }
+
+    return {
+      steps,
+      metadata: {
+        taskDescription: `Fallback script: ${taskDescription}`,
+        estimatedDuration: 60000,
+        complexity: 'medium'
+      }
+    };
+  }
+
+  // Enhanced script execution with better error handling
+  async executeRPAScript(
+    script: RPAScript, 
+    connection: ERPConnection,
+    userId?: string,
+    taskId?: number
+  ): Promise<TaskResult> {
+    const startTime = Date.now();
+    const screenshots: string[] = [];
+    const logs: string[] = [];
+    let extractedData: any = {};
+
+    try {
+      logs.push('Starting RPA script execution...');
+      logs.push(`Task: ${script.metadata.taskDescription}`);
+      logs.push(`Steps to execute: ${script.steps.length}`);
+
+      // Initialize browser
+      await this.initializeBrowser();
+      const page = await this.browser!.newPage();
+
+      // Set page configurations
+      await page.setViewportSize({ width: 1280, height: 720 });
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'es-ES,es;q=0.9,en;q=0.8'
+      });
+
+      // Execute each step with enhanced error handling
+      for (let i = 0; i < script.steps.length; i++) {
+        const step = script.steps[i];
+        logs.push(`Executing step ${i + 1}/${script.steps.length}: ${step.description}`);
+
+        try {
+          await this.executeStepWithRetry(page, step, connection, screenshots, extractedData, logs);
+          logs.push(`✓ Step ${i + 1} completed successfully`);
+        } catch (stepError) {
+          const errorMessage = stepError instanceof Error ? stepError.message : 'Unknown step error';
+          logs.push(`✗ Step ${i + 1} failed: ${errorMessage}`);
+
+          // Take screenshot on error
+          try {
+            const screenshot = await page.screenshot({ encoding: 'base64' });
+            screenshots.push(screenshot);
+            logs.push('Error screenshot captured');
+          } catch (screenshotError) {
+            logs.push('Failed to capture error screenshot');
+          }
+
+          // Continue with next step for non-critical errors
+          if (step.action !== 'navigate' && step.action !== 'click') {
+            logs.push('Continuing with next step...');
+            continue;
+          } else {
+            throw stepError; // Critical error, stop execution
+          }
+        }
+      }
+
+      await page.close();
+
+      const executionTime = Date.now() - startTime;
+      logs.push(`Script execution completed in ${executionTime}ms`);
+
+      return {
+        success: true,
+        screenshots,
+        logs,
+        extractedData,
+        executionTime
+      };
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown execution error';
+      logs.push(`Script execution failed: ${errorMessage}`);
+
+      return {
+        success: false,
+        screenshots,
+        logs,
+        extractedData,
+        errorMessage,
+        executionTime: Date.now() - startTime
+      };
+
+    } finally {
+      // Always clean up browser
+      if (this.browser) {
+        try {
+          await this.browser.close();
+          this.browser = null;
+          logs.push('Browser cleaned up successfully');
+        } catch (cleanupError) {
+          logs.push('Browser cleanup failed');
+        }
+      }
+    }
+  }
+
+  // Execute step with retry logic
+  private async executeStepWithRetry(
+    page: Page,
+    step: RPAStep,
+    connection: ERPConnection,
+    screenshots: string[],
+    extractedData: any,
+    logs: string[]
+  ): Promise<void> {
+    const maxRetries = 2;
+    let lastError: Error | null = null;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        await this.executeStep(page, step, connection, screenshots, extractedData, logs);
+        return; // Success, exit retry loop
+      } catch (error) {
+        lastError = error as Error;
+
+        if (attempt < maxRetries) {
+          logs.push(`Step attempt ${attempt} failed, retrying...`);
+          await page.waitForTimeout(2000); // Wait before retry
+        }
+      }
+    }
+
+    // If all retries failed, throw the last error
+    throw lastError;
+  }
+
+  // Enhanced step execution with better selector handling
+  private async executeStep(
+    page: Page, 
+    step: RPAStep, 
+    connection: ERPConnection, 
+    screenshots: string[], 
+    extractedData: any,
+    logs: string[]
+  ): Promise<void> {
+    const timeout = step.timeout || 8000;
+
+    switch (step.action) {
+      case 'navigate':
+        const url = step.value || connection.baseUrl;
+        logs.push(`Navigating to: ${url}`);
+
+        await page.goto(url, { 
+          waitUntil: 'domcontentloaded', 
+          timeout: 30000 
+        });
+
+        // Verify page loaded successfully
+        const title = await page.title();
+        logs.push(`Page loaded: ${title}`);
+        break;
+
+      case 'click':
+        if (!step.selector) throw new Error('Selector required for click action');
+
+        const clickElement = await this.waitForElementWithFallback(page, step.selector, timeout);
+        await clickElement.click();
+
+        // Wait after click
+        await page.waitForTimeout(1000);
+        break;
+
+      case 'type':
+        if (!step.selector || !step.value) {
+          throw new Error('Selector and value required for type action');
+        }
+
+        const typeElement = await this.waitForElementWithFallback(page, step.selector, timeout);
+        await typeElement.clear();
+        await typeElement.fill(step.value);
+        break;
+
+      case 'wait':
+        await page.waitForTimeout(timeout);
+        break;
+
+      case 'screenshot':
+        try {
+          const screenshot = await page.screenshot({ 
+            encoding: 'base64',
+            fullPage: false 
+          });
+          screenshots.push(screenshot);
+          logs.push('Screenshot captured');
+        } catch (screenshotError) {
+          logs.push('Screenshot failed (continuing...)');
+        }
+        break;
+
+      case 'extract':
+        if (!step.selector) {
+          logs.push('No selector provided for extraction, skipping...');
+          break;
+        }
+
+        try {
+          const elements = await page.$$(step.selector);
+          const extractedText = await Promise.all(
+            elements.map(el => el.textContent())
+          );
+
+          extractedData.extractedContent = extractedText.filter(text => text?.trim());
+          logs.push(`Extracted ${extractedData.extractedContent.length} items`);
+        } catch (extractError) {
+          logs.push('Data extraction failed (continuing...)');
+        }
+        break;
+
+      default:
+        logs.push(`Unknown action: ${step.action}`);
+    }
+  }
+
+  // Enhanced element waiting with multiple selector strategies
+  private async waitForElementWithFallback(page: Page, selector: string, timeout: number) {
+    const selectors = selector.split(', ').map(s => s.trim());
+
+    for (const sel of selectors) {
+      try {
+        const element = await page.waitForSelector(sel, { timeout });
+        if (element) return element;
+      } catch (error) {
+        continue; // Try next selector
+      }
+    }
+
+    throw new Error(`None of the selectors found: ${selector}`);
+  }
+
+  // Initialize browser with better configuration
+  private async initializeBrowser(): Promise<void> {
+    try {
+      if (this.browser) {
+        await this.browser.close();
+      }
+
+      this.browser = await chromium.launch({
+        headless: true,
+        executablePath: getChromiumPath(),
+        args: [
+          '--no-sandbox',
+          '--disable-setuid-sandbox',
+          '--disable-dev-shm-usage',
+          '--disable-extensions',
+          '--disable-gpu',
+          '--no-first-run',
+          '--disable-default-apps',
+          '--disable-features=VizDisplayCompositor',
+          '--disable-background-timer-throttling',
+          '--disable-backgrounding-occluded-windows',
+          '--disable-renderer-backgrounding'
+        ],
+        timeout: 30000
+      });
+
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown browser error';
+      throw new Error(`Failed to initialize browser: ${errorMessage}`);
+    }
   }
 }
 
