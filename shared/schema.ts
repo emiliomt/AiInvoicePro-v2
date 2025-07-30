@@ -499,6 +499,7 @@ export const invoiceImporterLogs = pgTable("invoice_importer_logs", {
   processedInvoices: integer("processed_invoices").default(0),
   successfulImports: integer("successful_imports").default(0),
   failedImports: integer("failed_imports").default(0),
+  skippedImports: integer("skipped_imports").default(0),
   logs: text("logs"),
   screenshots: text("screenshots").array(),
   errorMessage: text("error_message"),

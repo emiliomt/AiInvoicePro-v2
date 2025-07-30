@@ -1296,15 +1296,51 @@ export default function InvoiceImporter() {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
-                                  <div className="flex items-center space-x-2">
-                                    <span className="text-blue-600 font-medium">{(log.successfulImports || 0) + (log.failedImports || 0)}</span>
-                                    <span className="text-gray-500">/</span>
-                                    <span className="text-green-600 font-medium">{log.successfulImports || 0}</span>
-                                    <span className="text-gray-500">/</span>
-                                    <span className="text-red-600 font-medium">{log.failedImports || 0}</span>
+                                  {/* Enhanced Statistics Display */}
+                                  <div className="grid grid-cols-2 gap-2 mb-2">
+                                    <div className="flex items-center space-x-1">
+                                      <Database size={12} className="text-blue-500" />
+                                      <span className="text-xs text-gray-600">Total:</span>
+                                      <span className="font-medium text-blue-600">{log.totalInvoices || 0}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                      <CheckCircle size={12} className="text-green-500" />
+                                      <span className="text-xs text-gray-600">Success:</span>
+                                      <span className="font-medium text-green-600">{log.successfulImports || 0}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                      <XCircle size={12} className="text-red-500" />
+                                      <span className="text-xs text-gray-600">Failed:</span>
+                                      <span className="font-medium text-red-600">{log.failedImports || 0}</span>
+                                    </div>
+                                    <div className="flex items-center space-x-1">
+                                      <Pause size={12} className="text-orange-500" />
+                                      <span className="text-xs text-gray-600">Skipped:</span>
+                                      <span className="font-medium text-orange-600">{log.skippedImports || 0}</span>
+                                    </div>
                                   </div>
-                                  <div className="text-xs text-gray-500">
-                                    Total / Success / Failed
+                                  {/* Progress bar for visual representation */}
+                                  <div className="w-full bg-gray-200 rounded-full h-2">
+                                    <div className="flex h-2 rounded-full overflow-hidden">
+                                      <div 
+                                        className="bg-green-500" 
+                                        style={{ 
+                                          width: `${log.totalInvoices > 0 ? ((log.successfulImports || 0) / log.totalInvoices) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                      <div 
+                                        className="bg-red-500" 
+                                        style={{ 
+                                          width: `${log.totalInvoices > 0 ? ((log.failedImports || 0) / log.totalInvoices) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                      <div 
+                                        className="bg-orange-500" 
+                                        style={{ 
+                                          width: `${log.totalInvoices > 0 ? ((log.skippedImports || 0) / log.totalInvoices) * 100 : 0}%` 
+                                        }}
+                                      ></div>
+                                    </div>
                                   </div>
                                 </div>
                               </td>

@@ -21,6 +21,7 @@ interface ImportProgress {
   processedInvoices: number;
   successfulImports: number;
   failedImports: number;
+  skippedImports: number;
   currentStep: string;
   progress: number;
   isComplete: boolean;
@@ -36,6 +37,7 @@ interface PythonRPAResult {
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;
+    skipped_imports: number;
     current_step: string;
     progress: number;
   };
@@ -92,6 +94,7 @@ class PythonInvoiceImporter {
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
+        skippedImports: 0,
         currentStep: 'Initializing Python RPA service',
         progress: 0,
         isComplete: false,
@@ -168,6 +171,7 @@ class PythonInvoiceImporter {
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
+        skippedImports: 0,
         currentStep: 'Initializing Python RPA service',
         progress: 0,
         isComplete: false,
@@ -300,6 +304,7 @@ class PythonInvoiceImporter {
         processedInvoices: result.stats.processed_invoices,
         successfulImports: result.stats.successful_imports,
         failedImports: result.stats.failed_imports,
+        skippedImports: result.stats.skipped_imports || 0,
       });
 
       // Update the configuration's lastRun timestamp
@@ -328,6 +333,7 @@ class PythonInvoiceImporter {
         processedInvoices: result.stats.processed_invoices,
         successfulImports: result.stats.successful_imports,
         failedImports: result.stats.failed_imports,
+        skippedImports: result.stats.skipped_imports || 0,
       });
 
       progress.isComplete = true;
@@ -539,6 +545,7 @@ class PythonInvoiceImporter {
               progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
               progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
+              progress.skippedImports = statsUpdate.skipped_imports || progress.skippedImports;
               progress.progress = statsUpdate.progress || progress.progress;
               
               console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
@@ -604,6 +611,7 @@ class PythonInvoiceImporter {
               totalInvoices: progress.totalInvoices,
               successfulImports: progress.successfulImports,
               failedImports: progress.failedImports,
+              skippedImports: progress.skippedImports,
             }).catch(console.error);
           }
         }
@@ -653,6 +661,7 @@ class PythonInvoiceImporter {
           progress.processedInvoices = result.stats.processed_invoices;
           progress.successfulImports = result.stats.successful_imports;
           progress.failedImports = result.stats.failed_imports;
+          progress.skippedImports = result.stats.skipped_imports || 0;
           progress.progress = 100;
           progress.isComplete = true;
           progress.currentStep = result.stats.current_step || 'Import process completed successfully';
@@ -664,6 +673,7 @@ class PythonInvoiceImporter {
             processedInvoices: progress.processedInvoices,
             successfulImports: progress.successfulImports,  
             failedImports: progress.failedImports,
+            skippedImports: progress.skippedImports,
             completedAt: new Date(),
             logs: progress.logs || '',
             currentStep: progress.currentStep
@@ -791,6 +801,7 @@ class PythonInvoiceImporter {
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;
+    skipped_imports: number;
     progress: number;
   }> | null {
     try {
