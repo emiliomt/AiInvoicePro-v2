@@ -43,12 +43,32 @@ interface PythonRPAResult {
 
 class PythonInvoiceImporter {
   private activeImports = new Map<number, ImportProgress>();
+  private logIdToConfigId = new Map<number, number>(); // Map logId to configId
 
   /**
-   * Get real-time import progress for a configuration
+   * Get real-time import progress for a configuration or log ID
    */
-  getImportProgress(configId: number): ImportProgress | null {
-    return this.activeImports.get(configId) || null;
+  getImportProgress(idOrConfigId: number): ImportProgress | null {
+    // First try direct lookup (configId)
+    let progress = this.activeImports.get(idOrConfigId);
+    if (progress) return progress;
+    
+    // Try logId lookup
+    const configId = this.logIdToConfigId.get(idOrConfigId);
+    if (configId) {
+      progress = this.activeImports.get(configId);
+      if (progress) return progress;
+    }
+    
+    return null;
+  }
+
+  /**
+   * Get import progress by log ID specifically
+   */
+  getImportProgressByLogId(logId: number): ImportProgress | null {
+    const configId = this.logIdToConfigId.get(logId);
+    return configId ? this.activeImports.get(configId) : null;
   }
 
   /**
@@ -89,6 +109,7 @@ class PythonInvoiceImporter {
       };
 
       this.activeImports.set(configId, progress);
+      this.logIdToConfigId.set(log.id, configId); // Map logId to configId for polling
 
       // Start progress tracking via WebSocket
       progressTracker.sendProgress(config.userId, {
@@ -217,10 +238,14 @@ class PythonInvoiceImporter {
       }
     } finally {
       // Keep progress tracking for longer so UI can see completion status
+      const logId = this.activeImports.get(configId)?.logId;
       setTimeout(() => {
         console.log(`Cleaning up progress tracking for config ${configId}`);
         this.activeImports.delete(configId);
-      }, 60000); // Keep progress for 60 seconds after completion for UI polling
+        if (logId) {
+          this.logIdToConfigId.delete(logId);
+        }
+      }, 120000); // Keep progress for 2 minutes after completion for UI polling
     }
   }
 

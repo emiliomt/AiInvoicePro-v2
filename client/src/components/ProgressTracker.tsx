@@ -37,9 +37,10 @@ interface ProgressTrackerProps {
   onClose: () => void;
   configId: number;
   configName: string;
+  jobId?: number; // logId for RPA progress tracking
 }
 
-export default function ProgressTracker({ isOpen, onClose, configId, configName }: ProgressTrackerProps) {
+export default function ProgressTracker({ isOpen, onClose, configId, configName, jobId }: ProgressTrackerProps) {
   const [progress, setProgress] = useState<ImportProgress | null>(null);
   const [selectedScreenshot, setSelectedScreenshot] = useState<string | null>(null);
   const [isPolling, setIsPolling] = useState(false);
@@ -178,7 +179,9 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
     if (!isPolling) return;
 
     try {
-      const response = await fetch(`/api/invoice-importer/progress/${configId}`, {
+      // Use the new RPA progress endpoint with jobId (logId)
+      const progressId = jobId || configId;
+      const response = await fetch(`/api/rpa/progress/${progressId}`, {
         credentials: 'include',
       });
 
@@ -187,20 +190,47 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
       }
 
       const data = await response.json();
-      console.log('Progress update received:', {
-        taskId: data.taskId,
+      console.log('RPA Progress update received:', {
         status: data.status,
-        currentStep: data.currentStep,
-        message: data.message,
-        totalInvoices: data.totalInvoices
+        stage: data.stage,
+        progressPercent: data.progressPercent,
+        total: data.total,
+        processed: data.processed,
+        success: data.success,
+        failed: data.failed
       });
 
-      setProgress(data);
+      // Convert RPA progress format to existing ProgressTracker format
+      const convertedProgress: ImportProgress = {
+        id: progressId,
+        configId: configId,
+        status: data.status as 'pending' | 'running' | 'completed' | 'failed',
+        totalInvoices: data.total || 0,
+        processedInvoices: data.processed || 0,
+        successfulImports: data.success || 0,
+        failedImports: data.failed || 0,
+        steps: [{
+          id: 'current',
+          title: data.stage || 'Processing...',
+          status: data.status === 'running' ? 'running' : 
+                  data.status === 'completed' ? 'completed' : 
+                  data.status === 'failed' ? 'failed' : 'pending',
+          timestamp: new Date().toISOString(),
+          details: `${data.processed || 0}/${data.total || 0} files processed`
+        }],
+        logs: data.stage || 'Processing...',
+        screenshots: [],
+        errorMessage: data.error,
+        startedAt: new Date().toISOString()
+      };
+
+      setProgress(convertedProgress);
 
       // Stop polling if completed or failed
       if (data.status === 'completed' || data.status === 'failed') {
-        console.log(`Import ${data.status}, stopping progress polling`);
+        console.log(`RPA import ${data.status}, stopping progress polling`);
         setIsPolling(false);
+        return;
       }
     } catch (error) {
       console.error('Error polling progress:', error);
@@ -231,6 +261,11 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName 
         });
         setIsPolling(false);
       }
+    }
+
+    // Continue polling if still running
+    if (isPolling) {
+      setTimeout(() => pollProgress(), 3000); // Poll every 3 seconds as requested
     }
   };
 

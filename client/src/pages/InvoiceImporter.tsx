@@ -108,6 +108,7 @@ export default function InvoiceImporter() {
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
   const [runningConfigName, setRunningConfigName] = useState<string>('');
+  const [runningJobId, setRunningJobId] = useState<number | null>(null);
   
   // Console view state
   const [showConsoleView, setShowConsoleView] = useState(false);
@@ -554,6 +555,17 @@ export default function InvoiceImporter() {
       });
 
       if (response.ok) {
+        const responseData = await response.json();
+        const logId = responseData.logId;
+        
+        // Store the logId for progress tracking
+        if (logId) {
+          setRunningJobId(logId);
+          console.log(`Started import job with logId: ${logId}`);
+          // Automatically show progress tracker
+          setShowProgressTracker(true);
+        }
+        
         toast({
           title: "Import Started",
           description: "Invoice import process has been initiated"
@@ -566,6 +578,7 @@ export default function InvoiceImporter() {
       }
     } catch (error) {
       setRunningConfigId(null);
+      setRunningJobId(null);
       stopProgressPolling();
       // Reset status on error
       setConfigs(prev => prev.map(c => 
@@ -2151,6 +2164,7 @@ export default function InvoiceImporter() {
             onClose={() => setShowProgressTracker(false)}
             configId={runningConfigId}
             configName={runningConfigName}
+            jobId={runningJobId || undefined}
           />
         )}
       </div>

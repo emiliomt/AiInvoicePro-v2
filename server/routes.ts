@@ -4324,6 +4324,81 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // RPA Progress tracking endpoint for polling-based updates
+  app.get('/api/rpa/progress/:jobId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const jobId = parseInt(req.params.jobId);
+      if (isNaN(jobId)) {
+        return res.status(400).json({ error: 'Invalid job ID' });
+      }
+
+      // Get progress from active imports or database
+      const activeProgress = pythonInvoiceImporter.getImportProgress(jobId);
+      
+      if (activeProgress) {
+        // Return real-time progress from active import
+        const status = activeProgress.isComplete 
+          ? (activeProgress.error ? 'failed' : 'completed')
+          : (activeProgress.progress === 0 ? 'initializing' : 'running');
+          
+        return res.json({
+          status: status,
+          stage: activeProgress.currentStep,
+          progressPercent: Math.round(activeProgress.progress),
+          total: activeProgress.totalInvoices,
+          processed: activeProgress.processedInvoices,
+          success: activeProgress.successfulImports,
+          failed: activeProgress.failedImports,
+          error: activeProgress.error
+        });
+      }
+
+      // Fallback to database for completed jobs
+      try {
+        const log = await storage.getInvoiceImporterLog(jobId);
+        if (!log) {
+          return res.status(404).json({ error: 'Import task not found' });
+        }
+
+        // Check if user has access to this log
+        const config = await storage.getInvoiceImporterConfig(log.configId);
+        const currentUser = await storage.getUser((user as any).claims.sub);
+        
+        if (!config || (config.userId !== (user as any).claims.sub && 
+            (!currentUser?.companyId || config.companyId !== currentUser.companyId))) {
+          return res.status(403).json({ error: 'Access denied to this import task' });
+        }
+
+        const status = log.status === 'completed' ? 'completed' : 
+                      log.status === 'failed' ? 'failed' : 'running';
+
+        return res.json({
+          status: status,
+          stage: log.status === 'completed' ? 'Import process completed successfully' : 
+                 log.status === 'failed' ? 'Import process failed' : 'Processing...',
+          progressPercent: log.status === 'completed' ? 100 : 
+                          log.status === 'failed' ? 0 : 50,
+          total: log.totalInvoices || 0,
+          processed: log.processedInvoices || 0,
+          success: log.successfulImports || 0,
+          failed: log.failedImports || 0,
+          error: log.errorMessage
+        });
+      } catch (dbError) {
+        console.error('Database error in RPA progress:', dbError);
+        return res.status(500).json({ error: 'Failed to fetch progress from database' });
+      }
+    } catch (error) {
+      console.error('Error in RPA progress endpoint:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
