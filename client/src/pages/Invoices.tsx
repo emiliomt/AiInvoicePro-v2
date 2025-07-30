@@ -133,7 +133,7 @@ export default function Invoices() {
 
         // Fetch linked files for RPA-imported invoices
         const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
-        console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map(i => i.id));
+        console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map((invoice: Invoice) => invoice.id));
         if (rpaInvoices.length > 0) {
           fetchLinkedFilesForInvoices(rpaInvoices);
         }
@@ -988,7 +988,7 @@ export default function Invoices() {
                       <label className="text-sm font-medium text-gray-700">Subtotal</label>
                       <p className="text-sm text-gray-900 mt-1">
                         {(() => {
-                          const subtotal = selectedInvoice.subtotal || selectedInvoice.extractedData?.subtotal;
+                          const subtotal = (selectedInvoice as any).subtotal || selectedInvoice.extractedData?.subtotal;
                           return formatAmount(subtotal, selectedInvoice.currency);
                         })()}
                       </p>
@@ -1135,7 +1135,7 @@ export default function Invoices() {
             }}
             invoiceId={previewInvoice.id}
             fileName={previewInvoice.fileName || 'Unknown File'}
-            invoiceNumber={previewInvoice.invoiceNumber}
+            invoiceNumber={previewInvoice.invoiceNumber || undefined}
             customPreviewUrl={(previewInvoice as any)._linkedPDFUrl}
           />
         )}
@@ -1148,7 +1148,7 @@ export default function Invoices() {
               setShowFeedbackModal(false);
               setFeedbackInvoice(null);
             }}
-            invoice={feedbackInvoice}
+            invoice={feedbackInvoice as any}
           />
         )}
       </div>
