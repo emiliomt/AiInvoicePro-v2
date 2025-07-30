@@ -60,7 +60,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
   const initializeConnection = () => {
     // Try WebSocket first, fallback to polling
     connectWebSocket();
-    // Also start polling as backup
+    // Also start polling as backup - start immediately to catch any existing progress
     startPolling();
   };
 
@@ -167,6 +167,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
   };
 
   const startPolling = () => {
+    console.log(`🚀 Starting progress polling for configId: ${configId}, jobId: ${jobId}`);
     setIsPolling(true);
     pollProgress();
   };
@@ -181,16 +182,19 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
     try {
       // Use the new RPA progress endpoint with jobId (logId)
       const progressId = jobId || configId;
+      console.log(`🔄 Polling RPA progress for ID: ${progressId} (jobId: ${jobId}, configId: ${configId})`);
+      
       const response = await fetch(`/api/rpa/progress/${progressId}`, {
         credentials: 'include',
       });
 
       if (!response.ok) {
+        console.error(`❌ RPA Progress API error: ${response.status} ${response.statusText}`);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('RPA Progress update received:', {
+      console.log('✅ RPA Progress update received:', {
         status: data.status,
         stage: data.stage,
         progressPercent: data.progressPercent,
@@ -265,7 +269,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
 
     // Continue polling if still running
     if (isPolling) {
-      setTimeout(() => pollProgress(), 3000); // Poll every 3 seconds as requested
+      setTimeout(() => pollProgress(), 1000); // Poll every 1 second for faster updates
     }
   };
 
