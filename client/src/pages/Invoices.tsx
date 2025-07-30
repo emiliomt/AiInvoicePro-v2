@@ -174,6 +174,7 @@ export default function Invoices() {
       }
     } catch (error) {
       console.error(`Failed to fetch linked files for invoice ${invoiceId}:`, error);
+      // Don't throw the error to prevent unhandled promise rejections
     }
   }, [linkedFilesMap]);
 
