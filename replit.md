@@ -34,6 +34,19 @@ The system uses PostgreSQL with the following key entities:
 - **Approvals**: Workflow and approval tracking
 - **Flags & Alerts**: Discrepancy detection and predictive analytics
 
+## Recent Changes
+
+### Performance Optimizations (July 30, 2025)
+- **Fixed excessive API calls**: Disabled aggressive refetchInterval settings (5-30 seconds) that were causing browser performance issues and server overload
+- **Optimized data fetching strategy**: Replaced automatic background refreshing with on-demand fetching for linked files
+- **Resolved memory leaks**: Fixed infinite loops in useEffect hooks that were causing cascading API requests
+- **Improved browser responsiveness**: Eliminated background tasks that were overwhelming the browser and causing crashes
+
+### Database & Error Handling
+- **Fixed TypeScript errors**: Resolved null value handling in classificationService.ts for database operations
+- **Enhanced error boundaries**: Improved global error handling and logging for better debugging
+- **Stabilized server startup**: Resolved port binding conflicts and server initialization issues
+
 ## Key Components
 
 ### AI-Powered Processing Pipeline

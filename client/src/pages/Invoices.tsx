@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link } from "lucide-react";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -130,14 +130,6 @@ export default function Invoices() {
         }
         const data = await response.json();
         console.log('Invoices fetched:', data.length, 'invoices');
-
-        // Fetch linked files for RPA-imported invoices
-        const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
-        console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map((invoice: Invoice) => invoice.id));
-        if (rpaInvoices.length > 0) {
-          fetchLinkedFilesForInvoices(rpaInvoices);
-        }
-
         return data;
       } catch (err: any) {
         console.error('Invoices query error:', err.message);
@@ -146,12 +138,12 @@ export default function Invoices() {
     },
     retry: 3,
     retryDelay: 1000,
-    refetchInterval: 5000,
+    refetchInterval: false, // Disable automatic refetching
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  // Function to fetch linked files for RPA invoices
+  // Function to fetch linked files for RPA invoices on demand
   const fetchLinkedFilesForInvoices = async (rpaInvoices: Invoice[]) => {
     const linkedFilesData: Record<number, LinkedFilesInfo> = {};
 
@@ -160,7 +152,6 @@ export default function Invoices() {
         const response = await apiRequest('GET', `/api/invoices/${invoice.id}/linked-files`);
         if (response.ok) {
           const linkedInfo: LinkedFilesInfo = await response.json();
-          console.log(`Linked files for invoice ${invoice.id}:`, linkedInfo);
           linkedFilesData[invoice.id] = linkedInfo;
         }
       } catch (error) {
@@ -168,9 +159,23 @@ export default function Invoices() {
       }
     }
 
-    console.log('Setting linkedFilesMap:', linkedFilesData);
-    setLinkedFilesMap(linkedFilesData);
+    setLinkedFilesMap(prev => ({ ...prev, ...linkedFilesData }));
   };
+
+  // Fetch linked files only when explicitly needed (on-demand)
+  const fetchLinkedFilesOnDemand = useCallback(async (invoiceId: number) => {
+    if (linkedFilesMap[invoiceId]) return; // Already fetched
+    
+    try {
+      const response = await apiRequest('GET', `/api/invoices/${invoiceId}/linked-files`);
+      if (response.ok) {
+        const linkedInfo: LinkedFilesInfo = await response.json();
+        setLinkedFilesMap(prev => ({ ...prev, [invoiceId]: linkedInfo }));
+      }
+    } catch (error) {
+      console.error(`Failed to fetch linked files for invoice ${invoiceId}:`, error);
+    }
+  }, [linkedFilesMap]);
 
   const deleteMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
