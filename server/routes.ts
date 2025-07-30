@@ -3022,83 +3022,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get real-time import progress for a specific config
-  app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
-    try {
-      const configId = parseInt(req.params.configId);
-      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
-      
-      const progress = pythonInvoiceImporter.getImportProgress(configId);
-      const activeImports = pythonInvoiceImporter.getActiveImports();
-      
-      // Add debug logging for specific config to verify API is working
-      if (configId === 18) {
-        console.log(`🔍 Progress request for config ${configId}:`, {
-          hasProgress: !!progress,
-          activeImportsCount: activeImports.length,
-          activeConfigIds: activeImports.map(imp => imp.configId),
-          progressData: progress ? {
-            progress: progress.progress,
-            currentStep: progress.currentStep,
-            isComplete: progress.isComplete
-          } : null
-        });
-      }
-      
-      if (!progress) {
-        // No active progress in memory, check database for latest completed results
-        const latestLog = await storage.getLatestInvoiceImporterLog(configId);
-        
-        if (latestLog && latestLog.status === 'completed') {
-          // Return completed stats from database
-          return res.json({
-            configId,
-            isRunning: false,
-            progress: 100,
-            currentStep: 'Import completed successfully',
-            stats: {
-              total_invoices: latestLog.totalInvoices || 0,
-              processed_invoices: latestLog.processedInvoices || 0,
-              successful_imports: latestLog.successfulImports || 0,
-              failed_imports: latestLog.failedImports || 0
-            }
-          });
-        }
-        
-        // No completed imports found, return default
-        return res.json({
-          configId,
-          isRunning: false,
-          progress: 0,
-          currentStep: 'Not running',
-          stats: {
-            total_invoices: 0,
-            processed_invoices: 0,
-            successful_imports: 0,
-            failed_imports: 0
-          }
-        });
-      }
-      
-      res.json({
-        configId,
-        isRunning: !progress.isComplete,
-        progress: progress.progress,
-        currentStep: progress.currentStep,
-        stats: {
-          total_invoices: progress.totalInvoices,
-          processed_invoices: progress.processedInvoices,
-          successful_imports: progress.successfulImports,
-          failed_imports: progress.failedImports
-        },
-        error: progress.error,
-        logs: progress.logs
-      });
-    } catch (error) {
-      console.error('Error fetching import progress:', error);
-      res.status(500).json({ message: 'Failed to fetch import progress' });
-    }
-  });
 
   // Test endpoint to simulate progress for demonstrating real-time updates
   app.post('/api/invoice-importer/test-progress/:configId', isAuthenticated, async (req: any, res) => {
@@ -4762,26 +4685,42 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
 
-      // Get the latest log for this configuration
+      // FIRST: Check for active in-memory progress (real-time updates from STATS output)
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      const activeProgress = pythonInvoiceImporter.getImportProgress(configId);
+      
+      if (activeProgress) {
+        // Return real-time progress from memory with proper format for frontend
+        return res.json({
+          configId,
+          isRunning: !activeProgress.isComplete,
+          progress: activeProgress.progress,
+          currentStep: activeProgress.currentStep,
+          stats: {
+            total_invoices: activeProgress.totalInvoices,
+            processed_invoices: activeProgress.processedInvoices,
+            successful_imports: activeProgress.successfulImports,
+            failed_imports: activeProgress.failedImports
+          }
+        });
+      }
+
+      // SECOND: Fall back to database for completed/failed imports
       const logs = await storage.getInvoiceImporterLogs(configId);
       const latestLog = logs[0]; // Most recent log
 
       if (!latestLog) {
         return res.json({
-          id: 0,
           configId,
-          status: 'pending',
-          totalInvoices: 0,
-          processedInvoices: 0,
-          successfulImports: 0,
-          failedImports: 0,
-          steps: [],
-          logs: '',
-          screenshots: [],
-          errorMessage: null,
-          startedAt: null,
-          completedAt: null,
-          executionTime: null
+          isRunning: false,
+          progress: 0,
+          currentStep: 'Not running',
+          stats: {
+            total_invoices: 0,
+            processed_invoices: 0,
+            successful_imports: 0,
+            failed_imports: 0
+          }
         });
       }
 
@@ -4814,24 +4753,20 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.error('Error parsing steps from logs:', error);
       }
 
-      const response = {
-        id: latestLog.id,
-        configId: latestLog.configId,
-        status: latestLog.status,
-        totalInvoices: latestLog.totalInvoices,
-        processedInvoices: latestLog.processedInvoices,
-        successfulImports: latestLog.successfulImports,
-        failedImports: latestLog.failedImports,
-        steps,
-        logs: latestLog.logs || '',
-        screenshots: latestLog.screenshots || [],
-        errorMessage: latestLog.errorMessage,
-        startedAt: latestLog.startedAt,
-        completedAt: latestLog.completedAt,
-        executionTime: latestLog.executionTime
-      };
-
-      res.json(response);
+      // Return database results in the same format as in-memory progress for UI compatibility
+      return res.json({
+        configId,
+        isRunning: latestLog.status === 'running',
+        progress: latestLog.status === 'completed' ? 100 : 0,
+        currentStep: latestLog.status === 'completed' ? 'Import completed successfully' : 
+                    latestLog.status === 'failed' ? 'Import failed' : 'Not running',
+        stats: {
+          total_invoices: latestLog.totalInvoices || 0,
+          processed_invoices: latestLog.processedInvoices || 0,
+          successful_imports: latestLog.successfulImports || 0,
+          failed_imports: latestLog.failedImports || 0
+        }
+      });
     } catch (error) {
       console.error('Error fetching import progress:', error);
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
