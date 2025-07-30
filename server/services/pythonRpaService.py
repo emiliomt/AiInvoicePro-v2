@@ -1304,10 +1304,10 @@ class InvoiceRPAService:
                         self.log(f"✅ XML processed for extraction: {xml_filename}")
                         
                         # Send real-time progress update for this successful processing
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                     else:
                         failed_count += 1
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                     
                     # Store PDF as reference ONLY - NO extraction pipeline
                     pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
@@ -1330,10 +1330,10 @@ class InvoiceRPAService:
                         self.log(f"✅ XML processed successfully: {xml_filename}")
                         
                         # Send real-time progress update
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                     else:
                         failed_count += 1
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                         
                 elif pdf_filename and not xml_filename:
                     # Case: Only PDF file present - process for OCR extraction (no XML available)
@@ -1347,10 +1347,10 @@ class InvoiceRPAService:
                         self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
                         
                         # Send real-time progress update
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                     else:
                         failed_count += 1
-                        self._send_realtime_progress_update(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
 
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
@@ -1793,42 +1793,31 @@ class InvoiceRPAService:
         self.stats['unmatched_xml'] = len(unmatched_xml)
         self.stats['unmatched_pdf'] = len(unmatched_pdf)
 
-    def _send_realtime_progress_update(self, processed_count: int, successful_count: int, failed_count: int, total_files: int):
-        """Send real-time progress update with counter information"""
+    def _output_progress_stats(self, processed_count: int, successful_count: int, failed_count: int, total_files: int):
+        """Output progress statistics in format that Node.js parser can read"""
         try:
-            import requests
-            
             # Calculate overall progress based on file processing
             file_progress = min(int((processed_count / total_files) * 100), 100) if total_files > 0 else 0
             overall_progress = 90 + int(file_progress * 0.08)  # Map to 90-98% range
             
-            # Send progress update to Node.js server
-            progress_payload = {
-                'configId': self.config_id,
-                'processedInvoices': processed_count,
-                'successfulImports': successful_count,
-                'failedImports': failed_count,
-                'progress': overall_progress,
-                'currentStep': f"Processing files: {processed_count}/{total_files} completed"
+            # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            stats_data = {
+                'total_invoices': total_files,
+                'processed_invoices': processed_count,
+                'successful_imports': successful_count,
+                'failed_imports': failed_count,
+                'progress': overall_progress
             }
             
-            try:
-                response = requests.post(
-                    'http://localhost:5000/api/invoice-importer/progress-update',
-                    json=progress_payload,
-                    timeout=5
-                )
-                
-                if response.status_code == 200:
-                    self.log(f"📊 Sent progress update: Processed={processed_count}, Success={successful_count}, Failed={failed_count}")
-                else:
-                    self.log(f"⚠️ Progress update failed: {response.status_code}")
-                    
-            except requests.exceptions.RequestException as e:
-                self.log(f"⚠️ Could not send progress update: {e}")
+            # Output with STATS: prefix so Node.js parser can find it
+            import json
+            print(f"STATS: {json.dumps(stats_data)}")
+            sys.stdout.flush()
+            
+            self.log(f"📊 Progress update: Processed={processed_count}/{total_files}, Success={successful_count}, Failed={failed_count}")
                 
         except Exception as e:
-            self.log(f"❌ Error sending progress update: {e}", "ERROR")
+            self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
     def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml'):
         """Trigger the manual upload processing pipeline via HTTP request"""
