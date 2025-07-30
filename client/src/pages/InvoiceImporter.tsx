@@ -123,7 +123,7 @@ export default function InvoiceImporter() {
   const wsRef = useRef<WebSocket | null>(null);
   
   // Progress polling state
-  const [progressPollingInterval, setProgressPollingInterval] = useState<NodeJS.Timeout | null>(null);
+  // Removed progressPollingInterval - now handled by ProgressTracker
   
   // User state for WebSocket
   const [user] = useState({ id: 'current-user' });
@@ -546,8 +546,7 @@ export default function InvoiceImporter() {
       c.id === configId ? { ...c, status: 'running', progress: 0, currentStep: 'Initializing...' } : c
     ));
 
-    // Start real-time progress polling
-    startProgressPolling(configId);
+    // Note: Progress tracking is now handled by ProgressTracker component
 
     try {
       const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
@@ -579,7 +578,6 @@ export default function InvoiceImporter() {
     } catch (error) {
       setRunningConfigId(null);
       setRunningJobId(null);
-      stopProgressPolling();
       // Reset status on error
       setConfigs(prev => prev.map(c => 
         c.id === configId ? { ...c, status: 'idle' } : c
@@ -592,106 +590,7 @@ export default function InvoiceImporter() {
     }
   };
 
-  // Start polling for progress updates
-  const startProgressPolling = (configId: number) => {
-    // Clear any existing interval
-    stopProgressPolling();
-    
-    console.log(`Starting progress polling for config ${configId}`);
-    
-    const pollProgress = async () => {
-      try {
-        const response = await fetch(`/api/invoice-importer/progress/${configId}`);
-        if (response.ok) {
-          const progressData = await response.json();
-          
-          // Update config with live progress data
-          setConfigs(prevConfigs => 
-            prevConfigs.map(config => {
-              if (config.id === configId) {
-                return {
-                  ...config,
-                  status: progressData.isRunning ? 'running' : 
-                          (progressData.progress === 100 ? 'completed' : 
-                           (progressData.error ? 'failed' : config.status)),
-                  progress: progressData.progress,
-                  currentStep: progressData.currentStep,
-                  stats: {
-                    total_invoices: progressData.stats.total_invoices,
-                    processed_invoices: progressData.stats.processed_invoices,
-                    successful_imports: progressData.stats.successful_imports,
-                    failed_imports: progressData.stats.failed_imports,
-                    current_step: progressData.currentStep,
-                    progress: progressData.progress
-                  }
-                };
-              }
-              return config;
-            })
-          );
-          
-          // Update console config if it's open for this config
-          if (consoleConfig && consoleConfig.id === configId) {
-            setConsoleConfig(prev => prev ? {
-              ...prev,
-              status: progressData.isRunning ? 'running' : 
-                      (progressData.progress === 100 ? 'completed' : 
-                       (progressData.error ? 'failed' : prev.status)),
-              progress: progressData.progress,
-              currentStep: progressData.currentStep,
-              stats: {
-                total_invoices: progressData.stats.total_invoices,
-                processed_invoices: progressData.stats.processed_invoices,
-                successful_imports: progressData.stats.successful_imports,
-                failed_imports: progressData.stats.failed_imports,
-                current_step: progressData.currentStep,
-                progress: progressData.progress
-              }
-            } : null);
-          }
-          
-          // Add logs to console if available
-          if (progressData.logs && consoleConfig && consoleConfig.id === configId) {
-            const logLines = progressData.logs.split('\n').filter((line: string) => line.trim());
-            setConsoleLogs(prev => {
-              const newLogs = [...prev, ...logLines.slice(-3)]; // Add last 3 lines
-              return newLogs.slice(-15); // Keep last 15 lines
-            });
-          }
-          
-          // Stop polling when complete
-          if (!progressData.isRunning || progressData.progress >= 100) {
-            console.log(`Progress polling completed for config ${configId}: ${progressData.progress}%`);
-            stopProgressPolling();
-            setRunningConfigId(null);
-          }
-        }
-      } catch (error) {
-        console.error('Error polling progress:', error);
-      }
-    };
-    
-    // Poll immediately and then every 2 seconds
-    pollProgress();
-    const interval = setInterval(pollProgress, 2000);
-    setProgressPollingInterval(interval);
-  };
-
-  // Stop progress polling
-  const stopProgressPolling = () => {
-    if (progressPollingInterval) {
-      clearInterval(progressPollingInterval);
-      setProgressPollingInterval(null);
-      console.log('Progress polling stopped');
-    }
-  };
-
-  // Clean up polling on unmount
-  useEffect(() => {
-    return () => {
-      stopProgressPolling();
-    };
-  }, [progressPollingInterval]);
+  // Old polling system removed - now handled by ProgressTracker component
 
   const validateMultipleDailySchedule = () => {
     if (newConfig.schedule !== 'multiple_daily') return true;
@@ -1010,8 +909,7 @@ export default function InvoiceImporter() {
           description: "Progress simulation started. Watch the progress bar update in real-time!"
         });
         
-        // Start polling for this config
-        startProgressPolling(configId);
+        // Note: Progress tracking handled by ProgressTracker component
         
         // Update config status to show it's running
         setConfigs(prevConfigs =>
