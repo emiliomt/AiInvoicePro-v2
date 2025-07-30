@@ -107,6 +107,12 @@ class InvoiceRPAService:
             'current_step': 'Initializing',
             'progress': 0
         }
+        
+        # Track files extracted in current session to prevent processing old files
+        self.current_session_files = {
+            'xml_files': set(),  # Track XML files extracted in current session
+            'pdf_files': set()   # Track PDF files extracted in current session
+        }
 
     def is_driver_ready(self) -> bool:
         """Check if driver and wait objects are properly initialized"""
@@ -1372,6 +1378,9 @@ class InvoiceRPAService:
             dst = os.path.join(self.xml_dir, new_name)
             shutil.move(src, dst)
             
+            # Track this XML file as part of current session
+            self.current_session_files['xml_files'].add(new_name)
+            
             self.log(f"📄 XML-ONLY PROCESSING: '{xml_file}' will be processed for structured data extraction")
             
             processed_files.append({
@@ -1400,6 +1409,9 @@ class InvoiceRPAService:
             src = os.path.join(temp_dir, pdf_file)
             dst = os.path.join(pdf_dir, new_name)
             shutil.move(src, dst)
+            
+            # Track this PDF file as part of current session
+            self.current_session_files['pdf_files'].add(new_name)
             
             self.log(f"📄 PDF-ONLY PROCESSING: '{pdf_file}' will be processed via OCR (no XML available)")
             
@@ -1438,6 +1450,9 @@ class InvoiceRPAService:
             xml_dst = os.path.join(self.xml_dir, xml_new_name)
             shutil.move(xml_src, xml_dst)
             
+            # Track this XML file as part of current session
+            self.current_session_files['xml_files'].add(xml_new_name)
+            
             xml_entry = {
                 'type': 'xml',
                 'original_name': xml_file,
@@ -1457,6 +1472,9 @@ class InvoiceRPAService:
                 pdf_src = os.path.join(temp_dir, pdf_file)
                 pdf_dst = os.path.join(pdf_dir, pdf_new_name)
                 shutil.move(pdf_src, pdf_dst)
+                
+                # Track this PDF file as part of current session
+                self.current_session_files['pdf_files'].add(pdf_new_name)
                 
                 pdf_entry = {
                     'type': 'pdf',
@@ -1662,21 +1680,20 @@ class InvoiceRPAService:
             failed_count = 0
             processed_files = []
 
-            # Build file inventory first with enhanced filename matching
+            # Build file inventory ONLY from current session files (not all files in directories)
             xml_files = {}
             pdf_files = {}
             
-            # Scan XML files
-            if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
-                for filename in os.listdir(self.xml_dir):
+            # Process ONLY XML files extracted in current session
+            if file_types in ['xml', 'both']:
+                for filename in self.current_session_files['xml_files']:
                     if filename.lower().endswith(".xml"):
                         base_name = os.path.splitext(filename)[0]
                         xml_files[base_name] = filename
 
-            # Scan PDF files with enhanced matching logic
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
-            if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
-                for filename in os.listdir(pdf_dir):
+            # Process ONLY PDF files extracted in current session  
+            if file_types in ['pdf', 'both']:
+                for filename in self.current_session_files['pdf_files']:
                     if filename.lower().endswith(".pdf"):
                         base_name = os.path.splitext(filename)[0]
                         pdf_files[base_name] = filename
@@ -1722,7 +1739,10 @@ class InvoiceRPAService:
             # as some invoices might not have extractable files or might be skipped
             total_processing_items = unique_invoices_to_process
             
-            self.log(f"📊 Starting to process {unique_invoices_to_process} unique invoices from extracted files...")
+            self.log(f"📊 SESSION FILE TRACKING: Found {len(self.current_session_files['xml_files'])} XML files, {len(self.current_session_files['pdf_files'])} PDF files from current session")
+            self.log(f"📊 CURRENT SESSION XML FILES: {list(self.current_session_files['xml_files'])}")
+            self.log(f"📊 CURRENT SESSION PDF FILES: {list(self.current_session_files['pdf_files'])}")
+            self.log(f"📊 Starting to process {unique_invoices_to_process} unique invoices from CURRENT SESSION extracted files only...")
             self.log(f"📊 Breakdown: {len(matched_pairs)} XML+PDF pairs, {len(unmatched_xmls)} XML-only, {len(unmatched_pdfs)} PDF-only")
             
             for index, base_name in enumerate(all_base_names):
