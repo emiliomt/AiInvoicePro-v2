@@ -84,14 +84,6 @@ export default function Header() {
       ]
     },
     {
-      title: "ERP Automation",
-      items: [
-        { label: "ERP Connections", href: "/erp-connect", icon: Zap },
-        { label: "AI Workflows", href: "/ai-workflow", icon: Bot },
-        { label: "ERP Invoice Importer", href: "/invoice-importer", icon: FileText },
-      ]
-    },
-    {
       title: "Purchases",
       items: [
         { label: "Purchase Orders", href: "/purchase-orders", icon: FileText },
@@ -102,6 +94,14 @@ export default function Header() {
       title: "Reports",
       items: [
         { label: "Reports", href: "/reports", icon: FileText },
+      ]
+    },
+    {
+      title: "ERP Automation",
+      items: [
+        { label: "ERP Connections", href: "/erp-connect", icon: Zap },
+        { label: "AI Workflows", href: "/ai-workflow", icon: Bot },
+        { label: "ERP Invoice Importer", href: "/invoice-importer", icon: FileText },
       ]
     },
   ];
