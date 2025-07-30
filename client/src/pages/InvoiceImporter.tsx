@@ -639,11 +639,32 @@ export default function InvoiceImporter() {
     }
   };
 
-  // In-card progress polling system
+  // Track active polling sessions to prevent duplicates
+  const pollingSessionsRef = useRef<Map<number, boolean>>(new Map());
+
+  // Cleanup function to stop all polling sessions
+  const stopAllPolling = () => {
+    console.log('🛑 Stopping all active polling sessions');
+    pollingSessionsRef.current.clear();
+  };
+
+  // In-card progress polling system with session management
   const startConfigProgressPolling = (configId: number, logId: number) => {
+    // Stop any existing polling for this config
+    if (pollingSessionsRef.current.has(configId)) {
+      console.log(`Stopping existing polling session for config ${configId}`);
+      pollingSessionsRef.current.delete(configId);
+    }
+
     console.log(`Starting in-card progress polling for config ${configId}, logId: ${logId}`);
+    pollingSessionsRef.current.set(configId, true);
 
     const pollProgress = async () => {
+      // Check if this polling session should continue
+      if (!pollingSessionsRef.current.get(configId)) {
+        console.log(`Polling session cancelled for config ${configId}`);
+        return;
+      }
       try {
         const response = await fetch(`/api/rpa/progress/${logId}`, {
           credentials: 'include',
@@ -681,18 +702,25 @@ export default function InvoiceImporter() {
             setTimeout(pollProgress, 4000); // Poll every 4 seconds to reduce UI flickering
           } else {
             console.log(`✅ Progress polling completed for config ${configId} with status: ${data.status}`);
+            // Clean up polling session
+            pollingSessionsRef.current.delete(configId);
           }
         } else {
           console.error(`❌ Progress polling failed for config ${configId}: ${response.status} ${response.statusText}`);
-          // Retry on error unless it's a 404 (job not found)
-          if (response.status !== 404) {
+          // For failed status, stop polling to prevent endless loops
+          if (response.status === 404 || data?.status === 'failed') {
+            console.log(`🛑 Stopping polling for config ${configId} due to failure or job not found`);
+            pollingSessionsRef.current.delete(configId);
+          } else {
+            // Only retry on temporary errors
             setTimeout(pollProgress, 5000);
           }
         }
       } catch (error) {
         console.error(`❌ Error polling progress for config ${configId}:`, error);
-        // Retry after longer delay on error
-        setTimeout(pollProgress, 8000);
+        // Clean up polling session on repeated errors
+        pollingSessionsRef.current.delete(configId);
+        console.log(`🛑 Stopped polling for config ${configId} due to error`);
       }
     };
 

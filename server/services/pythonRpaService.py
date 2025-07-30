@@ -1745,6 +1745,10 @@ class InvoiceRPAService:
             self.log(f"📊 Starting to process {unique_invoices_to_process} unique invoices from CURRENT SESSION extracted files only...")
             self.log(f"📊 Breakdown: {len(matched_pairs)} XML+PDF pairs, {len(unmatched_xmls)} XML-only, {len(unmatched_pdfs)} PDF-only")
             
+            # Define pdf_dir for PDF processing
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            os.makedirs(pdf_dir, exist_ok=True)
+            
             for index, base_name in enumerate(all_base_names):
                 # Update progress with current file being processed
                 progress_percent = 90 + int((index / total_processing_items) * 8)  # 90-98% range
