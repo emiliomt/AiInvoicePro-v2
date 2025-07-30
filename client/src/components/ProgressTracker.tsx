@@ -180,59 +180,103 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
     if (!isPolling) return;
 
     try {
-      // Use the new RPA progress endpoint with jobId (logId)
+      // Use jobId if available (for RPA progress), otherwise use configId
       const progressId = jobId || configId;
-      console.log(`🔄 Polling RPA progress for ID: ${progressId} (jobId: ${jobId}, configId: ${configId})`);
+      let apiEndpoint = '';
       
-      const response = await fetch(`/api/rpa/progress/${progressId}`, {
+      if (jobId) {
+        // Use RPA progress endpoint for jobId
+        apiEndpoint = `/api/rpa/progress/${jobId}`;
+        console.log(`🔄 Polling RPA progress for jobId: ${jobId}`);
+      } else {
+        // Use invoice importer progress endpoint for configId
+        apiEndpoint = `/api/invoice-importer/progress/${configId}`;
+        console.log(`🔄 Polling invoice importer progress for configId: ${configId}`);
+      }
+      
+      const response = await fetch(apiEndpoint, {
         credentials: 'include',
       });
 
       if (!response.ok) {
-        console.error(`❌ RPA Progress API error: ${response.status} ${response.statusText}`);
+        console.error(`❌ Progress API error: ${response.status} ${response.statusText}`);
         throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data = await response.json();
-      console.log('✅ RPA Progress update received:', {
-        status: data.status,
-        stage: data.stage,
-        progressPercent: data.progressPercent,
-        total: data.total,
-        processed: data.processed,
-        success: data.success,
-        failed: data.failed
-      });
+      
+      let convertedProgress: ImportProgress;
+      
+      if (jobId) {
+        // Handle RPA progress format
+        console.log('✅ RPA Progress update received:', {
+          status: data.status,
+          stage: data.stage,
+          progressPercent: data.progressPercent,
+          total: data.total,
+          processed: data.processed,
+          success: data.success,
+          failed: data.failed
+        });
 
-      // Convert RPA progress format to existing ProgressTracker format
-      const convertedProgress: ImportProgress = {
-        id: progressId,
-        configId: configId,
-        status: data.status as 'pending' | 'running' | 'completed' | 'failed',
-        totalInvoices: data.total || 0,
-        processedInvoices: data.processed || 0,
-        successfulImports: data.success || 0,
-        failedImports: data.failed || 0,
-        steps: [{
-          id: 'current',
-          title: data.stage || 'Processing...',
-          status: data.status === 'running' ? 'running' : 
-                  data.status === 'completed' ? 'completed' : 
-                  data.status === 'failed' ? 'failed' : 'pending',
-          timestamp: new Date().toISOString(),
-          details: `${data.processed || 0}/${data.total || 0} files processed`
-        }],
-        logs: data.stage || 'Processing...',
-        screenshots: [],
-        errorMessage: data.error,
-        startedAt: new Date().toISOString()
-      };
+        convertedProgress = {
+          id: progressId,
+          configId: configId,
+          status: data.status as 'pending' | 'running' | 'completed' | 'failed',
+          totalInvoices: data.total || 0,
+          processedInvoices: data.processed || 0,
+          successfulImports: data.success || 0,
+          failedImports: data.failed || 0,
+          steps: [{
+            id: 'current',
+            title: data.stage || 'Processing...',
+            status: data.status === 'running' ? 'running' : 
+                    data.status === 'completed' ? 'completed' : 
+                    data.status === 'failed' ? 'failed' : 'pending',
+            timestamp: new Date().toISOString(),
+            details: `${data.processed || 0}/${data.total || 0} files processed`
+          }],
+          logs: data.stage || 'Processing...',
+          screenshots: [],
+          errorMessage: data.error,
+          startedAt: new Date().toISOString()
+        };
+      } else {
+        // Handle invoice importer progress format
+        console.log('✅ Invoice Importer Progress update received:', {
+          isRunning: data.isRunning,
+          progress: data.progress,
+          currentStep: data.currentStep,
+          stats: data.stats
+        });
+
+        convertedProgress = {
+          id: progressId,
+          configId: configId,
+          status: data.isRunning ? 'running' : (data.progress === 100 ? 'completed' : 'pending'),
+          totalInvoices: data.stats?.total_invoices || 0,
+          processedInvoices: data.stats?.processed_invoices || 0,
+          successfulImports: data.stats?.successful_imports || 0,
+          failedImports: data.stats?.failed_imports || 0,
+          steps: [{
+            id: 'current',
+            title: data.currentStep || 'Processing...',
+            status: data.isRunning ? 'running' : (data.progress === 100 ? 'completed' : 'pending'),
+            timestamp: new Date().toISOString(),
+            details: `Progress: ${data.progress}%`
+          }],
+          logs: data.currentStep || 'Processing...',
+          screenshots: [],
+          errorMessage: undefined,
+          startedAt: new Date().toISOString()
+        };
+      }
 
       setProgress(convertedProgress);
 
       // Stop polling if completed or failed
-      if (data.status === 'completed' || data.status === 'failed') {
-        console.log(`RPA import ${data.status}, stopping progress polling`);
+      if (convertedProgress.status === 'completed' || convertedProgress.status === 'failed') {
+        console.log(`Import ${convertedProgress.status}, stopping progress polling`);
         setIsPolling(false);
         return;
       }
@@ -269,7 +313,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
 
     // Continue polling if still running
     if (isPolling) {
-      setTimeout(() => pollProgress(), 1000); // Poll every 1 second for faster updates
+      setTimeout(() => pollProgress(), 2000); // Poll every 2 seconds
     }
   };
 

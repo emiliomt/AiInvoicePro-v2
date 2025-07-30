@@ -73,7 +73,11 @@ export default function InvoiceImporter() {
   const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
   const [showLogDetails, setShowLogDetails] = useState(false);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
-  const [selectedConfig, setSelectedConfig] = useState<ImportConfig | null>(null);
+  const [selectedConfig, setSelectedConfig] = useState<{
+    id: number;
+    name: string;
+    jobId?: number;
+  } | null>(null);
   const [showCreateDialog, setShowCreateDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ImportConfig | null>(null);
@@ -109,26 +113,28 @@ export default function InvoiceImporter() {
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
   const [runningConfigName, setRunningConfigName] = useState<string>('');
   const [runningJobId, setRunningJobId] = useState<number | null>(null);
-  
+
   // Console view state
   const [showConsoleView, setShowConsoleView] = useState(false);
   const [consoleConfig, setConsoleConfig] = useState<ImportConfig | null>(null);
   const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
   const [autoScroll, setAutoScroll] = useState(true);
   const [clearOnComplete, setClearOnComplete] = useState(false);
-  
+
   // WebSocket state for real-time updates
   const [ws, setWs] = useState<WebSocket | null>(null);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const wsRef = useRef<WebSocket | null>(null);
-  
+
   // Progress polling state
   // Removed progressPollingInterval - now handled by ProgressTracker
-  
+
   // User state for WebSocket
   const [user] = useState({ id: 'current-user' });
-  
+
   const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [runningConfigs, setRunningConfigs] = useState<Set<number>>(new Set());
 
   useEffect(() => {
     fetchConfigs();
@@ -136,7 +142,7 @@ export default function InvoiceImporter() {
     fetchERPConnections();
     fetchImportLogs();
     initializeWebSocket();
-    
+
     return () => {
       // Clean up WebSocket connection
       if (wsRef.current) {
@@ -185,7 +191,7 @@ export default function InvoiceImporter() {
       websocket.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+
           if (data.type === 'progress') {
             handleRealTimeProgressUpdate(data);
           } else if (data.type === 'task_complete') {
@@ -229,7 +235,7 @@ export default function InvoiceImporter() {
     const configId = data.data?.configId || data.taskId;
     const currentStep = data.data?.currentStep || data.message;
     const progress = data.data?.progress || data.step || 0;
-    
+
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
         if (config.id === configId) {
@@ -254,20 +260,20 @@ export default function InvoiceImporter() {
         progress: progress,
         stats: { ...prev.stats, ...data.data }
       } : null);
-      
+
       // Handle real-time log streaming
       if (data.data?.currentLogLine) {
         // Add individual log line in real-time
         const timestamp = new Date().toLocaleTimeString();
         const cleanLine = data.data.currentLogLine.replace('Python RPA: ', '').trim();
         const formattedLogLine = `[${timestamp}] ${cleanLine}`;
-        
+
         setConsoleLogs(prev => {
           const newLogs = [...prev, formattedLogLine];
           // Keep only last 15 lines for performance and readability
           return newLogs.slice(-15);
         });
-        
+
         // Auto-scroll if enabled
         if (autoScroll) {
           setTimeout(() => {
@@ -287,20 +293,20 @@ export default function InvoiceImporter() {
     if (consoleConfig && data.data && data.data.configId === consoleConfig.id) {
       const timestamp = new Date(data.data.timestamp || new Date()).toLocaleTimeString();
       let logMessage = data.data.logs || data.message || 'Unknown message';
-      
+
       // Format Python RPA logs better
       if (logMessage.includes('Python RPA:')) {
         logMessage = logMessage.replace('Python RPA:', '').trim();
       }
-      
+
       const formattedLog = `[${timestamp}] ${logMessage}`;
-      
+
       // Keep only last 15 lines for performance
       setConsoleLogs(prev => {
         const newLogs = [...prev, formattedLog];
         return newLogs.slice(-15); // Always maintain 15-line limit
       });
-      
+
       // Auto-scroll to bottom if enabled
       if (autoScroll) {
         setTimeout(() => {
@@ -317,7 +323,7 @@ export default function InvoiceImporter() {
   // Handle task completion
   const handleTaskComplete = (data: any) => {
     const configId = data.data?.configId || data.configId;
-    
+
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
         if (config.id === configId) {
@@ -370,7 +376,7 @@ export default function InvoiceImporter() {
     }
 
     setRunningConfigId(null);
-    
+
     toast({
       title: data.success ? "Import Completed" : "Import Failed",
       description: data.message || (data.success ? "Invoice import completed successfully" : "Invoice import failed"),
@@ -456,7 +462,7 @@ export default function InvoiceImporter() {
     const hours = Math.floor(seconds / 3600);
     const minutes = Math.floor((seconds % 3600) / 60);
     const secs = seconds % 60;
-    
+
     if (hours > 0) {
       return `${hours}h ${minutes}m ${secs}s`;
     } else if (minutes > 0) {
@@ -485,7 +491,7 @@ export default function InvoiceImporter() {
     setConsoleConfig(config);
     setConsoleLogs([]); // Clear previous logs
     setShowConsoleView(true);
-    
+
     // Start fetching existing logs for this config
     fetchConfigLogs(config.id);
   };
@@ -535,57 +541,55 @@ export default function InvoiceImporter() {
   };
 
   const handleRunNow = async (configId: number) => {
-    const config = configs.find(c => c.id === configId);
-    if (!config) return;
-
-    setRunningConfigId(configId);
-    setRunningConfigName(config.taskName);
-    
-    // Update config status to running immediately
-    setConfigs(prev => prev.map(c => 
-      c.id === configId ? { ...c, status: 'running', progress: 0, currentStep: 'Initializing...' } : c
-    ));
-
-    // Note: Progress tracking is now handled by ProgressTracker component
-
     try {
-      const response = await fetch(`/api/invoice-importer/configs/${configId}/execute`, {
-        method: 'POST'
+      setRunningConfigs(prev => prev.add(configId));
+
+      const response = await fetch(`/api/invoice-importer/run/${configId}`, {
+        method: 'POST',
+        credentials: 'include',
       });
 
-      if (response.ok) {
-        const responseData = await response.json();
-        const logId = responseData.logId;
-        
-        // Store the logId for progress tracking
-        if (logId) {
-          setRunningJobId(logId);
-          console.log(`Started import job with logId: ${logId}`);
-          // Automatically show progress tracker
-          setShowProgressTracker(true);
-        }
-        
-        toast({
-          title: "Import Started",
-          description: "Invoice import process has been initiated"
-        });
-
-        fetchLogs();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to start import');
+      if (!response.ok) {
+        throw new Error('Failed to start import task');
       }
+
+      const result = await response.json();
+      console.log('Import task started:', result);
+
+      toast({
+        title: "Import Started",
+        description: result.message || "Invoice import process has been initiated.",
+      });
+
+      // Show progress tracker immediately with the logId from the response
+      if (result.logId) {
+        const config = configs?.find(c => c.id === configId);
+        setSelectedConfig({
+          id: configId,
+          name: config?.taskName || 'Import Task',
+          jobId: result.logId // Use the logId from the response
+        });
+        setShowProgressTracker(true);
+        console.log(`🚀 Starting progress tracking for configId: ${configId}, logId: ${result.logId}`);
+      }
+
+      // Refresh the logs after a short delay
+      setTimeout(() => {
+        queryClient.invalidateQueries({ queryKey: ['importLogs'] });
+      }, 1000);
+
     } catch (error) {
-      setRunningConfigId(null);
-      setRunningJobId(null);
-      // Reset status on error
-      setConfigs(prev => prev.map(c => 
-        c.id === configId ? { ...c, status: 'idle' } : c
-      ));
+      console.error('Error running import task:', error);
       toast({
         title: "Error",
-        description: error instanceof Error ? error.message : "Failed to start import process",
-        variant: "destructive"
+        description: "Failed to start the import task. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setRunningConfigs(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(configId);
+        return newSet;
       });
     }
   };
@@ -751,7 +755,7 @@ export default function InvoiceImporter() {
 
   const handleEditConfig = (config: ImportConfig) => {
     setEditingConfig(config);
-    
+
     // Populate form with existing config data
     setNewConfig({
       name: config.taskName,
@@ -780,7 +784,7 @@ export default function InvoiceImporter() {
       startTime: '09:00',
       headless: true
     });
-    
+
     setShowEditDialog(true);
   };
 
@@ -908,9 +912,9 @@ export default function InvoiceImporter() {
           title: "Test Progress Started",
           description: "Progress simulation started. Watch the progress bar update in real-time!"
         });
-        
+
         // Note: Progress tracking handled by ProgressTracker component
-        
+
         // Update config status to show it's running
         setConfigs(prevConfigs =>
           prevConfigs.map(config =>
@@ -991,14 +995,14 @@ export default function InvoiceImporter() {
                             variant="outline" 
                             size="sm" 
                             onClick={() => handleRunNow(config.id)}
-                            disabled={config.status === 'running'}
+                            disabled={runningConfigs.has(config.id)}
                           >
-                            {config.status === 'running' ? (
+                            {runningConfigs.has(config.id) ? (
                               <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                             ) : (
                               <Play className="w-4 h-4 mr-2" />
                             )}
-                            {config.status === 'running' ? 'Running...' : 'Run Now'}
+                            {runningConfigs.has(config.id) ? 'Running...' : 'Run Now'}
                           </Button>
                           <Button 
                             variant="outline" 
@@ -1051,7 +1055,7 @@ export default function InvoiceImporter() {
                           <p className="font-medium">{formatLastRun(config.lastRun)}</p>
                         </div>
                       </div>
-                      
+
                       {/* Progress bar for running tasks */}
                       {config.status === 'running' && (
                         <div className="space-y-2">
@@ -1073,8 +1077,8 @@ export default function InvoiceImporter() {
                           )}
                         </div>
                       )}
-                      
-                      
+
+
                     </CardContent>
                   </Card>
                 ))}
@@ -1277,7 +1281,7 @@ export default function InvoiceImporter() {
               {/* Dynamic Scheduling Interface */}
               <div className="space-y-4">
                 <Label>Schedule Configuration</Label>
-                
+
                 {/* Schedule Type Selector */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
@@ -1488,7 +1492,7 @@ export default function InvoiceImporter() {
                             </Button>
                           </div>
                         </div>
-                        
+
                         {/* Optional Filters */}
                         <div className="space-y-2">
                           <Label>Optional Filters</Label>
@@ -1588,7 +1592,7 @@ export default function InvoiceImporter() {
                           />
                         </div>
                       </div>
-                      
+
                       <div className="flex items-center space-x-2">
                         <Checkbox
                           id="pause-schedule"
@@ -1605,7 +1609,7 @@ export default function InvoiceImporter() {
               {/* Python RPA Configuration */}
               <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
                 <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
-                
+
                 {newConfig.connectionId && (
                   <div className="p-3 bg-white rounded border-l-4 border-blue-400">
                     <p className="text-sm text-gray-600">
@@ -1687,7 +1691,7 @@ export default function InvoiceImporter() {
                 </div>
               </div>
             </DialogHeader>
-            
+
             <div className="flex-1 flex flex-col min-h-0">
               {/* Stats Summary */}
               {consoleConfig?.stats && (
@@ -1801,7 +1805,7 @@ export default function InvoiceImporter() {
                         } else if (log.toLowerCase().includes('info') || log.toLowerCase().includes('starting')) {
                           colorClass = 'text-cyan-400';
                         }
-                        
+
                         return (
                           <div key={index} className={`whitespace-pre-wrap ${colorClass}`}>
                             {log}
@@ -1836,7 +1840,7 @@ export default function InvoiceImporter() {
                 )}
               </DialogTitle>
             </DialogHeader>
-            
+
             {selectedLogDetails && (
               <div className="flex-1 min-h-0 space-y-4">
                 {/* Log Overview */}
@@ -1959,7 +1963,7 @@ export default function InvoiceImporter() {
             <DialogHeader>
               <DialogTitle>Edit Import Configuration</DialogTitle>
             </DialogHeader>
-            
+
             <div className="space-y-4">
               {/* Configuration Name */}
               <div>
@@ -2056,13 +2060,16 @@ export default function InvoiceImporter() {
         </Dialog>
 
         {/* Progress Tracker */}
-        {runningConfigId && (
+        {showProgressTracker && selectedConfig && (
           <ProgressTracker
             isOpen={showProgressTracker}
-            onClose={() => setShowProgressTracker(false)}
-            configId={runningConfigId}
-            configName={runningConfigName}
-            jobId={runningJobId || undefined}
+            onClose={() => {
+              setShowProgressTracker(false);
+              setSelectedConfig(null);
+            }}
+            configId={selectedConfig.id}
+            configName={selectedConfig.name}
+            jobId={selectedConfig.jobId}
           />
         )}
       </div>
@@ -2089,7 +2096,7 @@ function ScheduleOverview() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ isPaused }),
       });
-      
+
       if (!response.ok) {
         throw new Error('Failed to toggle schedule');
       }
@@ -2150,16 +2157,16 @@ function ScheduleOverview() {
 
   const getTimeUntilNextRun = (nextRunTime: string | null) => {
     if (!nextRunTime) return null;
-    
+
     const now = new Date();
     const nextRun = new Date(nextRunTime);
     const diff = nextRun.getTime() - now.getTime();
-    
+
     if (diff <= 0) return 'Overdue';
-    
+
     const hours = Math.floor(diff / (1000 * 60 * 60));
     const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-    
+
     if (hours > 24) {
       const days = Math.floor(hours / 24);
       return `${days} day${days > 1 ? 's' : ''}`;
