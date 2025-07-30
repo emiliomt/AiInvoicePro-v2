@@ -307,7 +307,7 @@ class InvoiceRPAService:
             )
             pg_cursor = pg_conn.cursor()
             
-            filename = file_info.get('upload_filename', file_info.get('filename', ''))
+            filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', '')))
             
             # Update status in imported_invoices table
             if status == 'completed':
@@ -2299,18 +2299,18 @@ class InvoiceRPAService:
                     if response_data.get('success', False):
                         self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
                         # Update status to completed on successful processing
-                        self._update_imported_invoice_status({'upload_filename': filename}, 'completed')
+                        self._update_imported_invoice_status({'original_file_name': filename}, 'completed')
                         return True
                     else:
                         error_msg = response_data.get('error', 'Unknown processing error')
                         self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
                         # Update status to failed with error message
-                        self._update_imported_invoice_status({'upload_filename': filename}, 'failed', error_msg)
+                        self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
                         return False
                 except Exception as json_error:
                     self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
                     # Update status to failed with parsing error
-                    self._update_imported_invoice_status({'upload_filename': filename}, 'failed', f"Response parsing error: {json_error}")
+                    self._update_imported_invoice_status({'original_file_name': filename}, 'failed', f"Response parsing error: {json_error}")
                     return False
             else:
                 error_msg = f"HTTP error {response.status_code}"
@@ -2323,13 +2323,13 @@ class InvoiceRPAService:
                 
                 self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
                 # Update status to failed with HTTP error
-                self._update_imported_invoice_status({'upload_filename': filename}, 'failed', error_msg)
+                self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
                 return False
 
         except Exception as e:
             self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
             # Update status to failed with exception error
-            self._update_imported_invoice_status({'upload_filename': filename}, 'failed', str(e))
+            self._update_imported_invoice_status({'original_file_name': filename}, 'failed', str(e))
             return False
 
     def run_import_process(self) -> Dict[str, Any]:
