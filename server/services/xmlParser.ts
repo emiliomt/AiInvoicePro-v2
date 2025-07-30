@@ -39,6 +39,9 @@ function cleanAmount(value: string | null): string | null {
   if (!numericMatch) return null;
 
   let numericValue = numericMatch[0];
+  
+  // Validate maximum value to prevent database overflow (10,2 precision = max 99,999,999.99)
+  const MAX_DB_VALUE = 99999999.99;
 
   // Enhanced Colombian number format handling
   if (numericValue.includes(',') && numericValue.includes('.')) {
@@ -66,17 +69,40 @@ function cleanAmount(value: string | null): string | null {
       numericValue = numericValue.replace(/,/g, '');
     }
   } else if (numericValue.includes('.')) {
-    // Only periods - could be thousands separators in European format
+    // Only periods - check if it's a valid decimal or thousands separators
     const parts = numericValue.split('.');
-    if (parts.length > 2 || (parts.length === 2 && parts[1].length > 2)) {
-      // Thousands separator: 1.234.567 -> 1234567
+    if (parts.length > 2) {
+      // Multiple periods: thousands separator (1.234.567) -> 1234567
       numericValue = numericValue.replace(/\./g, '');
+    } else if (parts.length === 2 && parts[1].length > 2) {
+      // Special case: check if it looks like a valid decimal with extra zeros (11600.000000)
+      const decimalPart = parts[1];
+      if (/^0+$/.test(decimalPart)) {
+        // All zeros after decimal: 11600.000000 -> 11600.00
+        numericValue = parts[0] + '.00';
+      } else {
+        // Thousands separator: 1.234.567 -> 1234567
+        numericValue = numericValue.replace(/\./g, '');
+      }
     }
     // Otherwise keep as decimal: 1234.56
   }
 
+  // Handle edge cases where extraction results in invalid strings
+  if (numericValue === '.' || numericValue === '' || numericValue.length === 0) {
+    return null;
+  }
+
   const num = parseFloat(numericValue);
-  return !isNaN(num) && num >= 0 ? num.toFixed(2) : null;
+  if (isNaN(num) || num < 0) return null;
+  
+  // Cap at maximum database value to prevent overflow
+  const cappedNum = Math.min(num, MAX_DB_VALUE);
+  if (cappedNum !== num) {
+    console.warn(`⚠️ Amount capped from ${num} to ${cappedNum} to prevent database overflow`);
+  }
+  
+  return cappedNum.toFixed(2);
 }
 
 function extractTextFromXMLTag(xmlContent: string, tagName: string): string | null {

@@ -4254,6 +4254,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
       
+      console.log(`🔄 PRIORITY EXTRACTION: Request body:`, req.body);
       console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
       
       // Get import configuration to determine company ID
@@ -4281,6 +4282,11 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       }
       
       // Check for existing invoice with same document number to prevent duplicates
+      if (!filename) {
+        console.error(`❌ No filename provided in request body`);
+        return res.status(400).json({ error: 'Filename is required' });
+      }
+      
       const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
       const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
       if (existingInvoices.length > 0) {
@@ -4314,7 +4320,11 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         invoiceNumber: extractedData.invoiceNumber
       });
       
-      // Create invoice record in the same way as manual upload
+      // Create invoice record in the same way as manual upload - sanitize numeric values
+      const sanitizedTaxAmount = extractedData.taxAmount && extractedData.taxAmount !== '.' && extractedData.taxAmount !== '' ? extractedData.taxAmount : '0';
+      const sanitizedSubtotal = extractedData.subtotal && extractedData.subtotal !== '.' && extractedData.subtotal !== '' ? extractedData.subtotal : '0';
+      const sanitizedTotalAmount = extractedData.totalAmount && extractedData.totalAmount !== '.' && extractedData.totalAmount !== '' ? extractedData.totalAmount : '0';
+      
       const invoiceData = {
         userId: 'rpa-system', // Special user for RPA imports
         companyId: companyId, // Set company ID from import configuration
@@ -4325,9 +4335,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         invoiceNumber: extractedData.invoiceNumber,
         invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
         dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-        totalAmount: extractedData.totalAmount,
-        taxAmount: extractedData.taxAmount,
-        subtotal: extractedData.subtotal,
+        totalAmount: sanitizedTotalAmount,
+        taxAmount: sanitizedTaxAmount,
+        subtotal: sanitizedSubtotal,
         currency: extractedData.currency || 'COP',
         ocrText: xmlContent,
         extractedData: extractedData,
