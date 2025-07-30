@@ -150,60 +150,115 @@ async function processPDFAlternative(fileBuffer: Buffer, invoiceId: number): Pro
   }
 }
 
-// Helper function to process images with OCR
+// Enhanced image preprocessing for better OCR quality
+async function enhanceImageForOCR(imageBuffer: Buffer): Promise<Buffer> {
+  try {
+    // Apply image enhancements using Sharp for better OCR recognition
+    const enhancedImage = await sharp(imageBuffer)
+      .resize(2400, 3200, { 
+        fit: 'inside',
+        withoutEnlargement: false,
+        kernel: sharp.kernel.lanczos3
+      })
+      .normalize() // Normalize contrast
+      .modulate({
+        brightness: 1.1, // Slightly brighten
+        saturation: 0.8  // Reduce saturation to focus on text
+      })
+      .linear(1.2, -(128 * 1.2) + 128) // Increase contrast manually
+      .sharpen(1, 1, 2) // Apply sharpening for crisp text edges
+      .gamma(0.9) // Adjust gamma for better text visibility
+      .png({ quality: 100, compressionLevel: 0 }) // High quality PNG output
+      .toBuffer();
+
+    console.log('Image enhancement completed for better OCR quality');
+    return enhancedImage;
+  } catch (error) {
+    console.warn('Image enhancement failed, using original:', error);
+    return imageBuffer;
+  }
+}
+
+// Helper function to process images with OCR - Enhanced for higher quality
 async function processImageOCR(fileBuffer: Buffer, invoiceId: number): Promise<string> {
   const fileType = detectFileType(fileBuffer);
 
   if (fileType === 'PDF') {
-    // Convert PDF to image first
+    // Enhanced PDF to image conversion with higher quality settings
     const convert = fromBuffer(fileBuffer, {
-      density: 150,
+      density: 300, // Increased density for better quality
       saveFilename: `invoice_${invoiceId}_page`,
       savePath: "/tmp",
       format: "png",
-      width: 1200,
-      height: 1200
+      width: 2400,  // Higher resolution
+      height: 3200, // Higher resolution
+      quality: 100  // Maximum quality
     });
 
     const result = await convert(1) as PDFConvertResult;
 
     if (result && result.path && fs.existsSync(result.path)) {
-      const imageBuffer = fs.readFileSync(result.path);
+      let imageBuffer = fs.readFileSync(result.path);
+      
+      // Apply image enhancement before OCR
+      imageBuffer = await enhanceImageForOCR(imageBuffer);
 
-      const { data: { text } } = await Tesseract.recognize(imageBuffer, 'eng', {
-        logger: (m) => {
-          if (m.status === 'recognizing text' && m.progress % 0.1 === 0) {
-            console.log(`OCR Progress for invoice ${invoiceId}: ${Math.round(m.progress * 100)}%`);
-          }
-        },
-        tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+      // Enhanced Tesseract configuration for better Latin American invoice recognition
+      const worker = await createWorker('spa+eng');
+      await worker.setParameters({
+        tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD, // Automatic orientation and script detection
         tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+        preserve_interword_spaces: '1',
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñÜü.,;:()-$%/@#& ',
+        user_defined_dpi: '300',
+        textord_heavy_nr: '1',
+        textord_tabfind_find_tables: '1'
       });
+      
+      const { data: { text } } = await worker.recognize(imageBuffer);
+      await worker.terminate();
 
-      console.log(`OCR completed. Extracted text length: ${text.length}`);
+      // Cleanup temporary file
+      try {
+        fs.unlinkSync(result.path);
+      } catch (cleanupError) {
+        console.warn(`Failed to cleanup temp file: ${result.path}`);
+      }
 
-      // Clean and preprocess OCR text for better AI extraction
-      const cleanedText = preprocessOCRText(text);
+      console.log(`Enhanced OCR completed. Extracted text length: ${text.length}`);
+
+      // Enhanced preprocessing for better AI extraction
+      const cleanedText = preprocessOCRTextEnhanced(text);
       return cleanedText;
     } else {
       throw new Error(`PDF conversion failed for invoice ${invoiceId} - no valid image path returned`);
     }
   } else {
-    // Process image directly
-    const { data: { text } } = await Tesseract.recognize(fileBuffer, 'eng', {
-      logger: (m) => {
-        if (m.status === 'recognizing text' && m.progress % 0.1 === 0) {
-          console.log(`OCR Progress for invoice ${invoiceId}: ${Math.round(m.progress * 100)}%`);
-        }
-      },
-      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK,
+    // Process image directly with enhancements
+    let processBuffer = fileBuffer;
+    
+    // Apply image enhancement for direct image processing
+    processBuffer = await enhanceImageForOCR(fileBuffer);
+
+    // Enhanced Tesseract configuration for images
+    const worker = await createWorker('spa+eng');
+    await worker.setParameters({
+      tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
       tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+      preserve_interword_spaces: '1',
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñÜü.,;:()-$%/@#& ',
+      user_defined_dpi: '300',
+      textord_heavy_nr: '1',
+      textord_tabfind_find_tables: '1'
     });
+    
+    const { data: { text } } = await worker.recognize(processBuffer);
+    await worker.terminate();
 
-    console.log(`OCR completed. Extracted text length: ${text.length}`);
+    console.log(`Enhanced OCR completed. Extracted text length: ${text.length}`);
 
-    // Clean and preprocess OCR text for better AI extraction
-    const cleanedText = preprocessOCRText(text);
+    // Enhanced preprocessing for better AI extraction
+    const cleanedText = preprocessOCRTextEnhanced(text);
     return cleanedText;
   }
 }
@@ -223,14 +278,15 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
         confidence: 1.0, // 100% confidence for XML files
       };
     } else if (fileType === 'PDF') {
-      // Convert PDF to images and process with OCR
+      // Enhanced PDF to image conversion for better quality
       const convert = fromBuffer(fileBuffer, {
         density: 300,
         saveFilename: "page",
         savePath: "/tmp",
         format: "png",
-        width: 2048,
-        height: 2048
+        width: 2400,  // Higher resolution
+        height: 3200, // Higher resolution
+        quality: 100
       });
 
       try {
@@ -238,9 +294,22 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
         const result = await convert(1) as PDFConvertResult;
 
         if (result && result.path) {
-          // Read the converted image file
-          const imageBuffer = fs.readFileSync(result.path);
-          const { data } = await Tesseract.recognize(imageBuffer, 'eng');
+          // Read and enhance the converted image file
+          let imageBuffer = fs.readFileSync(result.path);
+          imageBuffer = await enhanceImageForOCR(imageBuffer);
+          
+          // Enhanced Tesseract recognition
+          const worker = await createWorker('spa+eng');
+          await worker.setParameters({
+            tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
+            tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+            preserve_interword_spaces: '1',
+            tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñÜü.,;:()-$%/@#& ',
+            user_defined_dpi: '300'
+          });
+          
+          const { data } = await worker.recognize(imageBuffer);
+          await worker.terminate();
 
           // Clean up temporary file
           try {
@@ -249,8 +318,11 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
             console.warn(`Failed to cleanup temp file: ${result.path}`);
           }
 
+          // Apply enhanced preprocessing
+          const enhancedText = preprocessOCRTextEnhanced(data.text);
+
           return {
-            text: data.text,
+            text: enhancedText,
             confidence: data.confidence / 100, // Convert to 0-1 scale
           };
         } else {
@@ -261,11 +333,27 @@ export async function processInvoiceOCRWithConfidence(fileBuffer: Buffer): Promi
         throw new Error(`PDF conversion failed: ${pdfError?.message || 'Unknown PDF error'}`);
       }
     } else {
-      // Process as image directly
-      const { data } = await Tesseract.recognize(fileBuffer, 'eng');
+      // Process as image directly with enhancements
+      let processBuffer = await enhanceImageForOCR(fileBuffer);
+      
+      // Enhanced Tesseract recognition for images
+      const worker = await createWorker('spa+eng');
+      await worker.setParameters({
+        tessedit_pageseg_mode: Tesseract.PSM.AUTO_OSD,
+        tessedit_ocr_engine_mode: Tesseract.OEM.LSTM_ONLY,
+        preserve_interword_spaces: '1',
+        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789ÁÉÍÓÚáéíóúÑñÜü.,;:()-$%/@#& ',
+        user_defined_dpi: '300'
+      });
+      
+      const { data } = await worker.recognize(processBuffer);
+      await worker.terminate();
+
+      // Apply enhanced preprocessing
+      const enhancedText = preprocessOCRTextEnhanced(data.text);
 
       return {
-        text: data.text,
+        text: enhancedText,
         confidence: data.confidence / 100, // Convert to 0-1 scale
       };
     }
@@ -285,43 +373,96 @@ export const ocrService = {
   }
 };
 
-// Preprocess OCR text to improve AI extraction accuracy
-function preprocessOCRText(text: string): string {
+// Enhanced preprocessing for better AI extraction accuracy
+function preprocessOCRTextEnhanced(text: string): string {
   let cleaned = text;
 
-  // Remove excessive whitespace and normalize line breaks
+  // Step 1: Fix common OCR character recognition errors
+  cleaned = cleaned.replace(/[òó]/g, 'o');
+  cleaned = cleaned.replace(/[àá]/g, 'a');
+  cleaned = cleaned.replace(/[èé]/g, 'e');
+  cleaned = cleaned.replace(/[ìí]/g, 'i');
+  cleaned = cleaned.replace(/[ùú]/g, 'u');
+  cleaned = cleaned.replace(/[0O]/g, '0'); // Distinguish 0 from O
+  cleaned = cleaned.replace(/[Il1|]/g, '1'); // Fix common 1/I/l confusion
+  cleaned = cleaned.replace(/[S5]/g, (match, offset, string) => {
+    // Context-aware S vs 5 replacement
+    const before = string.charAt(offset - 1);
+    const after = string.charAt(offset + 1);
+    if (/\d/.test(before) || /\d/.test(after)) return '5';
+    return 'S';
+  });
+
+  // Step 2: Normalize whitespace and line breaks
   cleaned = cleaned.replace(/\s+/g, ' ');
   cleaned = cleaned.replace(/\n\s*\n/g, '\n');
 
-  // Fix common OCR errors in Spanish/Latin American invoices
-  cleaned = cleaned.replace(/\bEmisor\b/gi, 'Emisor');
-  cleaned = cleaned.replace(/\bFactura\b/gi, 'Factura');
-  cleaned = cleaned.replace(/\bFecha\b/gi, 'Fecha');
-  cleaned = cleaned.replace(/\bTotal\b/gi, 'Total');
-  cleaned = cleaned.replace(/\bSubtotal\b/gi, 'Subtotal');
-  cleaned = cleaned.replace(/\bIVA\b/gi, 'IVA');
-  cleaned = cleaned.replace(/\bNIT\b/gi, 'NIT');
-  cleaned = cleaned.replace(/\bRFC\b/gi, 'RFC');
-  cleaned = cleaned.replace(/\bCUIT\b/gi, 'CUIT');
-  cleaned = cleaned.replace(/\bProveedor\b/gi, 'Proveedor');
-  cleaned = cleaned.replace(/\bCliente\b/gi, 'Cliente');
-  cleaned = cleaned.replace(/\bAdquiriente\b/gi, 'Adquiriente');
-  cleaned = cleaned.replace(/\bObra\b/gi, 'Obra');
-  cleaned = cleaned.replace(/\bProyecto\b/gi, 'Proyecto');
+  // Step 3: Fix Spanish/Latin American invoice terminology with better patterns
+  const termCorrections = {
+    'Eml50r|Em150r|EmI50r': 'Emisor',
+    'Factur4|F4ctura|Fáctura': 'Factura',
+    'Fech4|Fécha': 'Fecha',
+    'Tot4l|Tótāl': 'Total',
+    'Subtot4l|Sub-total': 'Subtotal',
+    'lVA|IVÁ': 'IVA',
+    'NlT|N1T': 'NIT',
+    'RFC|RFG': 'RFC',
+    'CUlT|CU1T': 'CUIT',
+    'Proveed0r|Prōveedor': 'Proveedor',
+    'Cllente|ClIente': 'Cliente',
+    'Adquirlente|Adquiriénte': 'Adquiriente',
+    '0bra|Óbra': 'Obra',
+    'Proyect0|Próyecto': 'Proyecto',
+    'Compañl4|Compañía': 'Compañía',
+    'Dlrección|Dirécción': 'Dirección'
+  };
 
-  // Fix common number formatting issues
-  cleaned = cleaned.replace(/([0-9])\.([0-9]{3})/g, '$1$2'); // Remove thousands separators
-  cleaned = cleaned.replace(/([0-9]),([0-9]{2})\b/g, '$1.$2'); // Fix decimal separators
+  for (const [pattern, replacement] of Object.entries(termCorrections)) {
+    const regex = new RegExp(`\\b(${pattern})\\b`, 'gi');
+    cleaned = cleaned.replace(regex, replacement);
+  }
 
-  // Fix date formatting
-  cleaned = cleaned.replace(/(\d{1,2})\/(\d{1,2})\/(\d{4})/g, '$3-$2-$1'); // DD/MM/YYYY to YYYY-MM-DD
-  cleaned = cleaned.replace(/(\d{1,2})-(\d{1,2})-(\d{4})/g, '$3-$2-$1'); // DD-MM-YYYY to YYYY-MM-DD
+  // Step 4: Enhanced number formatting corrections
+  // Fix Colombian peso formatting
+  cleaned = cleaned.replace(/\$\s*([0-9]{1,3}(?:[.,][0-9]{3})*)[.,]([0-9]{2})/g, '$$1.$2');
+  // Remove thousands separators in amounts
+  cleaned = cleaned.replace(/([0-9]{1,3})\.([0-9]{3})\.([0-9]{3})/g, '$1$2$3');
+  cleaned = cleaned.replace(/([0-9]{1,3})\.([0-9]{3})/g, '$1$2');
+  // Fix decimal separators (Colombian format uses comma)
+  cleaned = cleaned.replace(/([0-9]+),([0-9]{2})\b/g, '$1.$2');
 
-  // Add structure markers to help AI identify sections
-  cleaned = cleaned.replace(/\bEmisor\b/gi, '\n--- EMISOR ---\nEmisor');
-  cleaned = cleaned.replace(/\bAdquiriente\b/gi, '\n--- ADQUIRIENTE ---\nAdquiriente');
-  cleaned = cleaned.replace(/\bFactura\s+No?\s*[:.]?\s*(\S+)/gi, '\n--- FACTURA INFO ---\nFactura No: $1');
-  cleaned = cleaned.replace(/\bTotal\s*[:.]?\s*(\S+)/gi, '\n--- TOTALES ---\nTotal: $1');
+  // Step 5: Enhanced date formatting with Colombian patterns
+  cleaned = cleaned.replace(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g, '$3-$2-$1');
+  cleaned = cleaned.replace(/(\d{1,2})\s+de\s+(\w+)\s+de\s+(\d{4})/gi, (match, day, month, year) => {
+    const months: { [key: string]: string } = {
+      'enero': '01', 'febrero': '02', 'marzo': '03', 'abril': '04',
+      'mayo': '05', 'junio': '06', 'julio': '07', 'agosto': '08',
+      'septiembre': '09', 'octubre': '10', 'noviembre': '11', 'diciembre': '12'
+    };
+    const monthNum = months[month.toLowerCase()] || month;
+    return `${year}-${monthNum.padStart(2, '0')}-${day.padStart(2, '0')}`;
+  });
 
-  return cleaned.trim();
+  // Step 6: Add enhanced structure markers for Colombian invoices
+  cleaned = cleaned.replace(/\b(Emisor|EMISOR)\b/gi, '\n=== INFORMACIÓN DEL EMISOR ===\nEmisor');
+  cleaned = cleaned.replace(/\b(Adquiriente|ADQUIRIENTE|Cliente|CLIENTE)\b/gi, '\n=== INFORMACIÓN DEL ADQUIRIENTE ===\nAdquiriente');
+  cleaned = cleaned.replace(/\b(Factura|FACTURA)\s+(No\.?|N[oº]\.?|Número)\s*[:.]?\s*([A-Z0-9-]+)/gi, '\n=== DATOS DE LA FACTURA ===\nFactura Número: $3');
+  cleaned = cleaned.replace(/\b(NIT|Nit)\s*[:.]?\s*([0-9]{6,12}[-]?[0-9]?)/gi, '\n--- NIT ---\nNIT: $2');
+  cleaned = cleaned.replace(/\b(Total|TOTAL|Total\s+a\s+Pagar)\s*[:.]?\s*\$?\s*([0-9.,]+)/gi, '\n=== TOTALES ===\nTotal: $2');
+  cleaned = cleaned.replace(/\b(IVA|Iva)\s*[:.]?\s*\$?\s*([0-9.,]+)/gi, '\n--- IMPUESTOS ---\nIVA: $2');
+  cleaned = cleaned.replace(/\b(Subtotal|Sub-total|SUBTOTAL)\s*[:.]?\s*\$?\s*([0-9.,]+)/gi, '\n--- SUBTOTAL ---\nSubtotal: $2');
+
+  // Step 7: Fix common Colombian address patterns
+  cleaned = cleaned.replace(/\b(Calle|CLL|Cl)\s+([0-9]+[A-Z]?)\s+#\s*([0-9]+)\s*-\s*([0-9]+)/gi, 'Calle $2 #$3-$4');
+  cleaned = cleaned.replace(/\b(Carrera|CRA|Cr)\s+([0-9]+[A-Z]?)\s+#\s*([0-9]+)\s*-\s*([0-9]+)/gi, 'Carrera $2 #$3-$4');
+
+  // Step 8: Clean up extra spaces and normalize
+  cleaned = cleaned.replace(/\s+/g, ' ').replace(/\n\s+/g, '\n').trim();
+
+  return cleaned;
+}
+
+// Keep the original function for backward compatibility and alternative PDF processing
+function preprocessOCRText(text: string): string {
+  return preprocessOCRTextEnhanced(text);
 }
