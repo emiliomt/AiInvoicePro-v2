@@ -270,6 +270,7 @@ class PythonInvoiceImporter {
       xmlPath: config.xmlPath || '/tmp/xml_invoices',
       headless: config.headless !== undefined ? config.headless : true,
       fileTypes: config.fileTypes || 'both',
+      zipDownloadTimeout: config.zipDownloadTimeout || 60,
     };
 
     // Validate required fields
@@ -282,6 +283,9 @@ class PythonInvoiceImporter {
       erpUsername: pythonConfig.erpUsername,
       downloadPath: pythonConfig.downloadPath,
       xmlPath: pythonConfig.xmlPath,
+      zipDownloadTimeout: pythonConfig.zipDownloadTimeout,
+      headless: pythonConfig.headless,
+      fileTypes: pythonConfig.fileTypes,
     });
 
     // Execute Python RPA process
