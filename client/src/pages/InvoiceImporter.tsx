@@ -8,7 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Badge } from '../components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap, Edit3, RotateCcw, TimerIcon, Database } from 'lucide-react';
+import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap, Edit3, RotateCcw, TimerIcon, Database, Info } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
 import { ProgressTracker } from '../components/ProgressTracker';
@@ -16,6 +16,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from '../components/ui/progress';
 import { ScrollArea } from '../components/ui/scroll-area';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
 
 interface ImportConfig {
   id: number;
@@ -36,6 +37,7 @@ interface ImportConfig {
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;
+    skipped_imports: number;
     current_step: string;
     progress: number;
   };
@@ -1183,11 +1185,69 @@ export default function InvoiceImporter() {
                           </div>
                           <Progress value={config.progress || 0} className="w-full" />
                           {config.stats && (
-                            <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                              <span>Total: {(config.stats.successful_imports || 0) + (config.stats.failed_imports || 0)}</span>
-                              <span>Processed: {config.stats.processed_invoices}</span>
-                              <span>Success: {config.stats.successful_imports}</span>
-                            </div>
+                            <TooltipProvider>
+                              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-600 bg-gray-50 dark:bg-gray-800 p-2 rounded">
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-medium cursor-help flex items-center gap-1">
+                                      Total: <span className="text-blue-600">{config.stats.total_invoices || 0}</span>
+                                      <Info className="w-3 h-3 opacity-60" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Total invoices found in ERP system</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-gray-400">|</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-medium cursor-help flex items-center gap-1">
+                                      Processed: <span className="text-yellow-600">{config.stats.processed_invoices || 0}</span>
+                                      <Info className="w-3 h-3 opacity-60" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Invoices attempted for processing</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-gray-400">|</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-medium cursor-help flex items-center gap-1">
+                                      Success: <span className="text-green-600">{config.stats.successful_imports || 0}</span>
+                                      <Info className="w-3 h-3 opacity-60" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Successfully imported and processed invoices</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-gray-400">|</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-medium cursor-help flex items-center gap-1">
+                                      Failed: <span className="text-red-600">{config.stats.failed_imports || 0}</span>
+                                      <Info className="w-3 h-3 opacity-60" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Invoices that failed to process due to errors</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                                <span className="text-gray-400">|</span>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <span className="font-medium cursor-help flex items-center gap-1">
+                                      Skipped: <span className="text-orange-600">{config.stats.skipped_imports || 0}</span>
+                                      <Info className="w-3 h-3 opacity-60" />
+                                    </span>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <p>Invoices skipped (already imported previously)</p>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </div>
+                            </TooltipProvider>
                           )}
                         </div>
                       )}
