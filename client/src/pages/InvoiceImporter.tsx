@@ -567,7 +567,7 @@ export default function InvoiceImporter() {
       // Update the config status to show it's running and start real-time updates
       if (result.logId) {
         console.log(`🚀 Starting in-card progress tracking for configId: ${configId}, logId: ${result.logId}`);
-        
+
         // Update config status immediately to show running state
         setConfigs(prevConfigs => 
           prevConfigs.map(config => 
@@ -582,7 +582,7 @@ export default function InvoiceImporter() {
               : config
           )
         );
-        
+
         // Start polling for progress updates as backup to WebSocket
         startConfigProgressPolling(configId, result.logId);
       }
@@ -611,17 +611,17 @@ export default function InvoiceImporter() {
   // In-card progress polling system
   const startConfigProgressPolling = (configId: number, logId: number) => {
     console.log(`Starting in-card progress polling for config ${configId}, logId: ${logId}`);
-    
+
     const pollProgress = async () => {
       try {
         const response = await fetch(`/api/rpa/progress/${logId}`, {
           credentials: 'include',
         });
-        
+
         if (response.ok) {
           const data = await response.json();
           console.log(`📊 Progress poll result for config ${configId}, logId ${logId}:`, data);
-          
+
           // Update the config with progress data
           setConfigs(prevConfigs => 
             prevConfigs.map(config => 
@@ -641,7 +641,7 @@ export default function InvoiceImporter() {
                 : config
             )
           );
-          
+
           // Continue polling if still running or initializing
           if (data.status === 'running' || data.status === 'processing' || data.status === 'initializing' || data.progressPercent < 100) {
             setTimeout(pollProgress, 1500); // Poll every 1.5 seconds for faster updates
@@ -661,7 +661,7 @@ export default function InvoiceImporter() {
         setTimeout(pollProgress, 5000);
       }
     };
-    
+
     // Start polling immediately
     pollProgress();
   };
