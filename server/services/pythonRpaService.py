@@ -117,12 +117,12 @@ class InvoiceRPAService:
 
     def _is_invoice_successfully_processed(self, numero_documento: str, emisor: str, valor_total: str) -> bool:
         """
-        Check if an invoice was successfully processed through the manual pipeline
-        Only skip invoices that exist in the main PostgreSQL invoices table
-        Failed downloads/processing attempts should be retried
+        Check if an invoice was successfully processed or already downloaded
+        Checks both main invoices table (fully processed) and imported_invoices table (downloaded)
+        Only process invoices that haven't been successfully handled before
         """
         try:
-            # Connect to PostgreSQL to check main invoices table
+            # Connect to PostgreSQL to check both tables
             import os
             database_url = os.environ.get('DATABASE_URL')
             if not database_url:
@@ -132,54 +132,91 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
             
-            # Primary check: exact invoice number match from extracted data
+            # Normalize emisor for consistent comparison
+            safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))
+            normalized_emisor = emisor.replace("_", " ").replace(".", "").upper().strip()
+            
+            # Check 1: Main invoices table (fully processed invoices)
             pg_cursor.execute("""
                 SELECT id, file_name FROM invoices 
                 WHERE user_id = 'rpa-system'
+                AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
                 AND extracted_data->>'invoiceNumber' = %s
                 AND (
-                    vendor_name = %s OR
-                    extracted_data->>'vendorName' = %s
+                    UPPER(REPLACE(REPLACE(vendor_name, '_', ' '), '.', '')) = %s OR
+                    UPPER(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', '')) = %s
                 )
                 LIMIT 1
             """, (
+                self.config_id,
                 numero_documento, 
-                emisor.replace("_", " ").replace(".", ""),  # Clean emisor for comparison
-                emisor.replace("_", " ").replace(".", "")
+                normalized_emisor,
+                normalized_emisor
             ))
             
             result = pg_cursor.fetchone()
+            if result:
+                self.log(f"✅ Invoice {numero_documento} from {emisor} already fully processed in main table (ID: {result[0]}, File: {result[1]})")
+                pg_conn.close()
+                return True
             
-            # If exact match not found, try fallback with normalized names
-            if not result:
-                # Normalize emisor for more flexible matching
-                normalized_emisor = emisor.replace("_", " ").replace(".", "").upper().strip()
+            # Check 2: imported_invoices table (downloaded but not yet fully processed)
+            original_filename = f"{numero_documento}_{safe_emisor}.xml"
+            pg_cursor.execute("""
+                SELECT id, original_file_name FROM imported_invoices 
+                WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
+                AND file_type = 'xml' 
+                AND (
+                    original_file_name = %s OR
+                    original_file_name ILIKE %s
+                )
+                LIMIT 1
+            """, (
+                self.config_id,
+                original_filename,
+                f"%{numero_documento}%"
+            ))
+            
+            imported_result = pg_cursor.fetchone()
+            if imported_result:
+                self.log(f"✅ Invoice {numero_documento} from {emisor} already downloaded in previous import (ID: {imported_result[0]}, File: {imported_result[1]})")
+                pg_conn.close()
+                return True
+            
+            # Check 3: Alternative filename patterns in imported_invoices
+            alternative_patterns = [
+                f"NO{numero_documento}_{safe_emisor}.xml",  # Common ERP pattern
+                f"{numero_documento}_*.xml"  # Wildcard pattern
+            ]
+            
+            for pattern in alternative_patterns:
                 pg_cursor.execute("""
-                    SELECT id, file_name FROM invoices 
-                    WHERE user_id = 'rpa-system'
-                    AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
-                    AND extracted_data->>'invoiceNumber' = %s
-                    AND (
-                        UPPER(REPLACE(REPLACE(vendor_name, '_', ' '), '.', '')) = %s OR
-                        UPPER(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', '')) = %s
-                    )
+                    SELECT id, original_file_name FROM imported_invoices 
+                    WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
+                    AND file_type = 'xml' 
+                    AND original_file_name ILIKE %s
                     LIMIT 1
                 """, (
-                    self.config_id,  # Add company filtering to fallback as well
-                    numero_documento, 
-                    normalized_emisor,
-                    normalized_emisor
+                    self.config_id,
+                    pattern.replace("*", "%")
                 ))
-                result = pg_cursor.fetchone()
+                
+                pattern_result = pg_cursor.fetchone()
+                if pattern_result:
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern (ID: {pattern_result[0]}, File: {pattern_result[1]})")
+                    pg_conn.close()
+                    return True
             
             pg_conn.close()
             
-            if result:
-                self.log(f"✅ Invoice {numero_documento} from {emisor} already successfully processed (ID: {result[0]}, File: {result[1]})")
-                return True
-            else:
-                self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in main invoices table - will process")
-                return False
+            # Log exact match conditions for debugging
+            self.log(f"🔄 Invoice {numero_documento} from {emisor} (total: {valor_total}) not found in either table:")
+            self.log(f"   - Looking for invoice number: {numero_documento}")
+            self.log(f"   - Looking for vendor (normalized): {normalized_emisor}")
+            self.log(f"   - Looking for filename: {original_filename}")
+            self.log(f"   - Config ID: {self.config_id}")
+            self.log("   - Will process this invoice")
+            return False
                 
         except Exception as e:
             self.log(f"❌ Error checking processed invoices: {e}", "ERROR")
