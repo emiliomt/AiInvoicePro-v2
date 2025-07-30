@@ -1729,7 +1729,7 @@ export default function InvoiceImporter() {
                   <Input
                     id="zip-timeout"
                     type="number"
-                    min="30"
+                    min="10"
                     max="300"
                     value={newConfig.zipDownloadTimeout || 60}
                     onChange={(e) => setNewConfig(prev => ({ 
@@ -1740,7 +1740,7 @@ export default function InvoiceImporter() {
                     className="mt-1"
                   />
                   <p className="text-xs text-gray-500 mt-1">
-                    Time to wait for ZIP files to download (30-300 seconds). Default: 60 seconds.
+                    Time to wait for ZIP files to download (10-300 seconds). Default: 60 seconds.
                   </p>
                 </div>
               </div>
@@ -2149,7 +2149,7 @@ export default function InvoiceImporter() {
                 <Input
                   id="edit-zip-timeout"
                   type="number"
-                  min="30"
+                  min="10"
                   max="300"
                   value={newConfig.zipDownloadTimeout || 60}
                   onChange={(e) => setNewConfig(prev => ({ 
@@ -2159,7 +2159,7 @@ export default function InvoiceImporter() {
                   placeholder="60"
                 />
                 <p className="text-xs text-gray-500 mt-1">
-                  Time to wait for ZIP files to download (30-300 seconds). Default: 60 seconds.
+                  Time to wait for ZIP files to download (10-300 seconds). Default: 60 seconds.
                 </p>
               </div>
             </div>
