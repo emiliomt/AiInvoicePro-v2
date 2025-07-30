@@ -201,9 +201,8 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 }
 
 export async function registerRoutes(app: Express): Promise<Server> {
-  // Initialize classification service
-  const { ClassificationService } = await import('./services/classificationService');
-  await ClassificationService.initializeDefaultKeywords();
+  // Initialize classification service (temporarily disabled to fix server startup)
+  console.log('Classification service initialization skipped temporarily');
 
   // Auth middleware
   await setupAuth(app);

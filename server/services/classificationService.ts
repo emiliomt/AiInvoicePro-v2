@@ -85,12 +85,13 @@ export class ClassificationService {
     const conditions = [eq(classificationKeywords.category, category as any)];
     
     if (userId) {
-      conditions.push(
-        or(
-          eq(classificationKeywords.isDefault, true),
-          eq(classificationKeywords.userId, userId)
-        )
+      const userCondition = or(
+        eq(classificationKeywords.isDefault, true),
+        eq(classificationKeywords.userId, userId)
       );
+      if (userCondition) {
+        conditions.push(userCondition);
+      }
     } else {
       conditions.push(eq(classificationKeywords.isDefault, true));
     }
