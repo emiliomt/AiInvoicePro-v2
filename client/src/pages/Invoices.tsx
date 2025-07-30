@@ -856,20 +856,9 @@ export default function Invoices() {
                               Good Job AI!
                             </Button>
                             
-                            {/* Report a Problem button - only for PDF files with isDataSource = true */}
-                            {isEligibleForProblemReport(invoice) && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                onClick={() => handleFeedbackClick(invoice)}
-                                className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                              >
-                                <AlertTriangle size={14} className="mr-1" />
-                                Report a Problem
-                              </Button>
-                            )}
-                            {/* Only show Report Error for AI-extracted invoices (confidence < 0.9) */}
-                            {(!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9) && (
+                            {/* Report Error button - show for all AI-extracted invoices, with enhanced logic for RPA */}
+                            {(isEligibleForProblemReport(invoice) || 
+                              (!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9)) && (
                               <Button
                                 variant="outline"
                                 size="sm"
