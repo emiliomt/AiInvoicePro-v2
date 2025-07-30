@@ -73,6 +73,8 @@ export default function LineItemClassification() {
   const [newKeyword, setNewKeyword] = useState("");
   const [bulkKeywords, setBulkKeywords] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<number | null>(null);
+  const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
+  const [bulkMode, setBulkMode] = useState(false);
 
   // Fetch classification keywords
   const { data: keywords = {} as ClassificationKeywords } = useQuery<ClassificationKeywords>({
@@ -220,6 +222,40 @@ export default function LineItemClassification() {
     },
   });
 
+  // Bulk AI classify mutation
+  const bulkAiClassifyMutation = useMutation({
+    mutationFn: async (invoiceIds: number[]) => {
+      const results = [];
+      for (const invoiceId of invoiceIds) {
+        try {
+          const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
+            method: "POST",
+          });
+          if (!response.ok) throw new Error(`Failed to AI classify invoice ${invoiceId}`);
+          results.push(await response.json());
+        } catch (error) {
+          console.error(`Error classifying invoice ${invoiceId}:`, error);
+        }
+      }
+      return results;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      toast({
+        title: "Success",
+        description: `AI classification completed for ${selectedInvoices.length} invoices`,
+      });
+      setSelectedInvoices([]);
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to AI classify some invoices",
+        variant: "destructive",
+      });
+    },
+  });
+
   // Single line item AI classify mutation
   const aiClassifyLineItemMutation = useMutation({
     mutationFn: async (lineItemId: number) => {
@@ -348,6 +384,22 @@ export default function LineItemClassification() {
     link.download = `${activeCategory}_keywords.json`;
     link.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleSelectAllInvoices = () => {
+    if (selectedInvoices.length === invoices.length) {
+      setSelectedInvoices([]);
+    } else {
+      setSelectedInvoices(invoices.map((invoice: any) => invoice.id));
+    }
+  };
+
+  const handleInvoiceToggle = (invoiceId: number) => {
+    setSelectedInvoices(prev => 
+      prev.includes(invoiceId)
+        ? prev.filter(id => id !== invoiceId)
+        : [...prev, invoiceId]
+    );
   };
 
   return (
@@ -534,47 +586,115 @@ export default function LineItemClassification() {
               {/* Invoice Selection */}
               <Card>
                 <CardHeader>
-                  <CardTitle>Select Invoice</CardTitle>
+                  <CardTitle className="flex items-center justify-between">
+                    Select Invoice(s)
+                    <div className="flex items-center gap-2">
+                      <Label className="text-sm font-normal">Bulk Mode</Label>
+                      <input
+                        type="checkbox"
+                        checked={bulkMode}
+                        onChange={(e) => {
+                          setBulkMode(e.target.checked);
+                          if (!e.target.checked) {
+                            setSelectedInvoices([]);
+                          } else {
+                            setSelectedInvoice(null);
+                          }
+                        }}
+                        className="h-4 w-4"
+                      />
+                    </div>
+                  </CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="flex gap-4 items-end">
-                    <div className="flex-1">
-                      <Label>Invoice</Label>
-                      <Select value={selectedInvoice?.toString() || ""} onValueChange={(value) => setSelectedInvoice(parseInt(value))}>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select an invoice" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {invoices.map((invoice: any) => (
-                            <SelectItem key={invoice.id} value={invoice.id.toString()}>
-                              {invoice.fileName} - {invoice.vendorName || 'Unknown Vendor'}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
+                  {!bulkMode ? (
+                    <div className="flex gap-4 items-end">
+                      <div className="flex-1">
+                        <Label>Invoice</Label>
+                        <Select value={selectedInvoice?.toString() || ""} onValueChange={(value) => setSelectedInvoice(parseInt(value))}>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select an invoice" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {invoices.map((invoice: any) => (
+                              <SelectItem key={invoice.id} value={invoice.id.toString()}>
+                                {invoice.fileName} - {invoice.vendorName || 'Unknown Vendor'}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <Button
+                        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
+                        disabled={!selectedInvoice || autoClassifyMutation.isPending}
+                        variant="outline"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Keyword Classify
+                      </Button>
+                      <Button
+                        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
+                        disabled={!selectedInvoice || aiClassifyMutation.isPending}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+                      >
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
+                      </Button>
                     </div>
-                    <Button
-                      onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
-                      disabled={!selectedInvoice || autoClassifyMutation.isPending}
-                      variant="outline"
-                    >
-                      <RefreshCw className="w-4 h-4 mr-2" />
-                      Keyword Classify
-                    </Button>
-                    <Button
-                      onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
-                      disabled={!selectedInvoice || aiClassifyMutation.isPending}
-                      className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
-                    >
-                      <AlertCircle className="w-4 h-4 mr-2" />
-                      {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
-                    </Button>
-                  </div>
+                  ) : (
+                    <div className="space-y-4">
+                      <div className="flex gap-4 items-center">
+                        <Button
+                          onClick={handleSelectAllInvoices}
+                          variant="outline"
+                          className="w-fit"
+                        >
+                          {selectedInvoices.length === invoices.length ? "Deselect All" : "Select All"}
+                        </Button>
+                        {selectedInvoices.length > 0 && (
+                          <span className="text-sm text-gray-600">
+                            {selectedInvoices.length} selected
+                          </span>
+                        )}
+                        <Button
+                          onClick={() => bulkAiClassifyMutation.mutate(selectedInvoices)}
+                          disabled={selectedInvoices.length === 0 || bulkAiClassifyMutation.isPending}
+                          className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white ml-auto"
+                        >
+                          <Bot className="w-4 h-4 mr-2" />
+                          {bulkAiClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
+                        </Button>
+                      </div>
+                      
+                      <div className="max-h-60 overflow-y-auto border rounded-lg">
+                        {invoices.map((invoice: any) => (
+                          <div
+                            key={invoice.id}
+                            className={`p-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 flex items-center gap-3 ${
+                              selectedInvoices.includes(invoice.id) ? 'bg-blue-50 border-blue-200' : ''
+                            }`}
+                            onClick={() => handleInvoiceToggle(invoice.id)}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedInvoices.includes(invoice.id)}
+                              onChange={() => handleInvoiceToggle(invoice.id)}
+                              className="h-4 w-4"
+                            />
+                            <div className="flex-1">
+                              <div className="font-medium text-sm">{invoice.fileName}</div>
+                              <div className="text-xs text-gray-500">{invoice.vendorName || 'Unknown Vendor'}</div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                 </CardContent>
               </Card>
 
               {/* Line Items Classification */}
-              {selectedInvoice && (
+              {selectedInvoice && !bulkMode && (
                 <Card>
                   <CardHeader>
                     <CardTitle>Line Item Classifications</CardTitle>
