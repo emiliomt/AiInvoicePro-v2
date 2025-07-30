@@ -1137,7 +1137,7 @@ export default function InvoiceImporter() {
                           <Progress value={config.progress || 0} className="w-full" />
                           {config.stats && (
                             <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                              <span>Total: {config.stats.total_invoices}</span>
+                              <span>Total: {(config.stats.successful_imports || 0) + (config.stats.failed_imports || 0)}</span>
                               <span>Processed: {config.stats.processed_invoices}</span>
                               <span>Success: {config.stats.successful_imports}</span>
                             </div>
@@ -1250,7 +1250,7 @@ export default function InvoiceImporter() {
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
                                   <div className="flex items-center space-x-2">
-                                    <span className="text-blue-600 font-medium">{log.totalInvoices || 0}</span>
+                                    <span className="text-blue-600 font-medium">{(log.successfulImports || 0) + (log.failedImports || 0)}</span>
                                     <span className="text-gray-500">/</span>
                                     <span className="text-green-600 font-medium">{log.successfulImports || 0}</span>
                                     <span className="text-gray-500">/</span>
@@ -1764,8 +1764,8 @@ export default function InvoiceImporter() {
               {consoleConfig?.stats && (
                 <div className="grid grid-cols-4 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">{consoleConfig.stats.total_invoices}</p>
-                    <p className="text-sm text-gray-600">Total Invoices</p>
+                    <p className="text-2xl font-bold text-blue-600">{(consoleConfig.stats.successful_imports || 0) + (consoleConfig.stats.failed_imports || 0)}</p>
+                    <p className="text-sm text-gray-600">Total Processed</p>
                   </div>
                   <div className="text-center">
                     <p className="text-2xl font-bold text-orange-600">{consoleConfig.stats.processed_invoices}</p>
