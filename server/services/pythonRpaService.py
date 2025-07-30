@@ -133,12 +133,11 @@ class InvoiceRPAService:
             pg_cursor = pg_conn.cursor()
             
             # Check if invoice exists in main invoices table (successfully processed)
-            # Look for invoices with matching document number and vendor info
+            # Look for invoices with matching invoice number and vendor info
             pg_cursor.execute("""
                 SELECT id FROM invoices 
                 WHERE user_id = 'rpa-system'
                 AND (
-                    extracted_data->>'documentNumber' = %s OR
                     extracted_data->>'invoiceNumber' = %s OR
                     file_name ILIKE %s
                 )
@@ -148,7 +147,6 @@ class InvoiceRPAService:
                 )
                 LIMIT 1
             """, (
-                numero_documento, 
                 numero_documento, 
                 f"%{numero_documento}%",
                 f"%{emisor}%",
