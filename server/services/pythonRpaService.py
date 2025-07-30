@@ -947,6 +947,28 @@ class InvoiceRPAService:
         match = re.search(r'(\d{20,26})', base)
         return match.group(1) if match else None
 
+    def _extract_invoice_token_from_filename(self, filename: str) -> str:
+        """Extract invoice token from filename for matching purposes"""
+        try:
+            # Extract the base filename parts before extensions and descriptive text
+            base = filename.split('.')[0]  # Remove extension
+            
+            # Split by underscore and take first two parts (document_number_tax_id pattern)
+            parts = base.split('_')
+            if len(parts) >= 2:
+                # Try first part (document number)
+                doc_num = parts[0]
+                tax_id = parts[1]
+                
+                # Create composite token from document number + tax ID
+                if doc_num and tax_id:
+                    return f'{doc_num}_{tax_id}'
+            
+            return ""
+        except Exception as e:
+            self.log(f"Error extracting token from filename '{filename}': {e}", "ERROR")
+            return ""
+
     def _extract_invoice_token(self, filename, file_path=None, file_type='xml'):
         """Extract unique invoice token from filename with enhanced regex-based matching"""
         try:
@@ -1514,7 +1536,7 @@ class InvoiceRPAService:
             failed_count = 0
             processed_files = []
 
-            # Build file inventory first
+            # Build file inventory first with enhanced filename matching
             xml_files = {}
             pdf_files = {}
             
@@ -1525,7 +1547,7 @@ class InvoiceRPAService:
                         base_name = os.path.splitext(filename)[0]
                         xml_files[base_name] = filename
 
-            # Scan PDF files  
+            # Scan PDF files with enhanced matching logic
             pdf_dir = os.path.join(self.download_dir, 'pdfs')
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
                 for filename in os.listdir(pdf_dir):
@@ -1533,23 +1555,58 @@ class InvoiceRPAService:
                         base_name = os.path.splitext(filename)[0]
                         pdf_files[base_name] = filename
 
-            # Apply conditional file storage logic
-            all_base_names = set(xml_files.keys()) | set(pdf_files.keys())
+            # Enhanced file matching: match PDFs to XMLs by invoice token
+            matched_pairs = {}
+            unmatched_xmls = set(xml_files.keys())
+            unmatched_pdfs = set(pdf_files.keys())
+            
+            # First pass: exact base name matching
+            for xml_base in list(unmatched_xmls):
+                if xml_base in unmatched_pdfs:
+                    matched_pairs[xml_base] = {
+                        'xml_file': xml_files[xml_base],
+                        'pdf_file': pdf_files[xml_base],
+                        'match_type': 'exact'
+                    }
+                    unmatched_xmls.remove(xml_base)
+                    unmatched_pdfs.remove(xml_base)
+            
+            # Second pass: token-based matching for filename variations
+            for xml_base in list(unmatched_xmls):
+                xml_token = self._extract_invoice_token_from_filename(xml_base)
+                if xml_token:
+                    for pdf_base in list(unmatched_pdfs):
+                        pdf_token = self._extract_invoice_token_from_filename(pdf_base)
+                        if pdf_token and xml_token == pdf_token:
+                            matched_pairs[xml_base] = {
+                                'xml_file': xml_files[xml_base],
+                                'pdf_file': pdf_files[pdf_base],
+                                'match_type': 'token'
+                            }
+                            unmatched_xmls.remove(xml_base)
+                            unmatched_pdfs.remove(pdf_base)
+                            self.log(f"🔗 Matched by token: XML '{xml_files[xml_base]}' <-> PDF '{pdf_files[pdf_base]}'")
+                            break
+
+            # Build final processing list
+            all_base_names = set(matched_pairs.keys()) | unmatched_xmls | unmatched_pdfs
             total_processing_items = len(all_base_names)
             
             self.log(f"📊 Starting to process {total_processing_items} invoice files...")
             
             for index, base_name in enumerate(all_base_names):
-                xml_filename = xml_files.get(base_name)
-                pdf_filename = pdf_files.get(base_name)
-                
                 # Update progress with current file being processed
                 progress_percent = 90 + int((index / total_processing_items) * 8)  # 90-98% range
                 self.update_progress(f"Processing file {index + 1}/{total_processing_items}: {base_name}", progress_percent)
                 
-                if xml_filename and pdf_filename:
-                    # ✅ PRIORITY RULE: Both XML and PDF present - ONLY process XML for data extraction
-                    self.log(f"🔄 EXTRACTION PRIORITY: XML '{xml_filename}' will be processed for data, PDF '{pdf_filename}' stored as reference ONLY")
+                if base_name in matched_pairs:
+                    # ✅ MATCHED PAIR: Both XML and PDF present - ONLY process XML for data extraction
+                    pair_info = matched_pairs[base_name]
+                    xml_filename = pair_info['xml_file']
+                    pdf_filename = pair_info['pdf_file']
+                    match_type = pair_info['match_type']
+                    
+                    self.log(f"🔄 EXTRACTION PRIORITY ({match_type}): XML '{xml_filename}' will be processed for data, PDF '{pdf_filename}' stored as reference ONLY")
                     
                     # Process XML (data source) - ONLY this triggers extraction
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
@@ -1576,8 +1633,9 @@ class InvoiceRPAService:
                         processed_files.append(pdf_info)
                         self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION, will link to XML invoice)")
                     
-                elif xml_filename and not pdf_filename:
+                elif base_name in unmatched_xmls:
                     # Case: Only XML file present - store XML, set isDataSource = true
+                    xml_filename = xml_files[base_name]
                     self.log(f"📄 Processing XML only: {base_name}")
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
@@ -1593,8 +1651,9 @@ class InvoiceRPAService:
                         failed_count += 1
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
                         
-                elif pdf_filename and not xml_filename:
+                elif base_name in unmatched_pdfs:
                     # Case: Only PDF file present - process for OCR extraction (no XML available)
+                    pdf_filename = pdf_files[base_name]
                     self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
                     pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
                     if pdf_info:
