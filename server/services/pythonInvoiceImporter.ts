@@ -443,6 +443,12 @@ class PythonInvoiceImporter {
               progress.progress = statsUpdate.progress || progress.progress;
               
               console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
+              console.log(`📊 Stats update:`, statsUpdate);
+            }
+
+            // Debug: Log STATS lines when detected
+            if (trimmedLine.includes('STATS:')) {
+              console.log(`🔍 STATS line detected:`, trimmedLine);
             }
 
             // Manual progress milestones based on key log statements

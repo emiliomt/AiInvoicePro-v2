@@ -120,6 +120,23 @@ class InvoiceRPAService:
         self.stats['current_step'] = step
         self.stats['progress'] = progress
         self.log(f"Progress: {progress}% - {step}")
+        
+        # Output STATS for Node.js parser to capture
+        try:
+            stats_data = {
+                'total_invoices': self.stats.get('total_invoices', 0),
+                'processed_invoices': self.stats.get('processed_invoices', 0),
+                'successful_imports': self.stats.get('successful_imports', 0),
+                'failed_imports': self.stats.get('failed_imports', 0),
+                'current_step': step,
+                'progress': progress
+            }
+            
+            import json
+            print(f"STATS: {json.dumps(stats_data)}")
+            sys.stdout.flush()
+        except Exception as e:
+            self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
     def setup_driver(self):
         """Initialize Chrome WebDriver with download preferences"""
@@ -598,6 +615,9 @@ class InvoiceRPAService:
                         )
                         self.stats['total_invoices'] += 1
 
+                        # Output progress stats before download attempt
+                        self._output_download_progress(i + 1, len(rows), numero_documento)
+
                         # Download invoice
                         if self.download_invoice(row, numero_documento,
                                                  safe_emisor, valor_total,
@@ -613,6 +633,9 @@ class InvoiceRPAService:
                             )
 
                         self.stats['processed_invoices'] += 1
+
+                        # Output progress stats after processing
+                        self._output_download_progress(i + 1, len(rows), f"Completed {numero_documento}")
 
                     except Exception as e:
                         self.log(f"❌ Error processing row {i}: {e}", "ERROR")
@@ -1792,6 +1815,34 @@ class InvoiceRPAService:
         self.stats['matched_pairs'] = len(matched_pairs)
         self.stats['unmatched_xml'] = len(unmatched_xml)
         self.stats['unmatched_pdf'] = len(unmatched_pdf)
+
+    def _output_download_progress(self, current_item: int, total_items: int, current_step: str):
+        """Output progress statistics during download phase"""
+        try:
+            # Calculate download progress (30-90% range for download phase)
+            download_progress = 30 + int((current_item / total_items) * 60) if total_items > 0 else 30
+            
+            # Update internal stats
+            self.stats['current_step'] = f"Downloading {current_item}/{total_items}: {current_step}"
+            self.stats['progress'] = download_progress
+            
+            # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            stats_data = {
+                'total_invoices': total_items,
+                'processed_invoices': current_item,
+                'successful_imports': self.stats.get('successful_imports', 0),
+                'failed_imports': self.stats.get('failed_imports', 0),
+                'current_step': self.stats['current_step'],
+                'progress': download_progress
+            }
+            
+            # Output with STATS: prefix so Node.js parser can find it
+            import json
+            print(f"STATS: {json.dumps(stats_data)}")
+            sys.stdout.flush()
+            
+        except Exception as e:
+            self.log(f"❌ Error outputting download progress: {e}", "ERROR")
 
     def _output_progress_stats(self, processed_count: int, successful_count: int, failed_count: int, total_files: int):
         """Output progress statistics in format that Node.js parser can read"""
