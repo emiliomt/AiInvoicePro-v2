@@ -1167,3 +1167,35 @@ export default function Invoices() {
     </div>
   );
 }
+
+const handleInitiateAutomaticProcess = useCallback(async () => {
+  try {
+    const response = await fetch('/api/invoices/process-batch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.error || 'Processing failed');
+    }
+
+    toast({
+      title: "Processing Started",
+      description: `Started processing ${data.processedInvoices} invoice(s)`,
+    });
+
+    setTimeout(() => refetch(), 2000);
+
+  } catch (error: any) {
+    toast({
+      title: "Processing Failed",
+      description: error.message,
+      variant: "destructive",
+    });
+  }
+}, [toast, refetch]);

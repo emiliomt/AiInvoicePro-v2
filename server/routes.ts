@@ -5503,3 +5503,63 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
   return httpServer;
 }
 
+// Batch process selected invoices automatically
+app.post('/api/invoices/process-batch', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    console.log('Request body:', req.body);
+
+    // Get all processable invoices for this user
+    const allInvoices = await storage.getInvoicesByUserId(user.claims.sub);
+    const processableInvoices = allInvoices.filter(invoice => 
+      invoice.status === 'uploaded' || invoice.status === 'failed'
+    );
+
+    if (processableInvoices.length === 0) {
+      return res.status(400).json({ 
+        error: 'No invoices available for processing' 
+      });
+    }
+
+    // Mark all invoices as processing
+    await Promise.all(
+      processableInvoices.map(invoice => 
+        storage.updateInvoice(invoice.id, { status: 'processing' })
+      )
+    );
+
+    // Send immediate response
+    res.json({
+      success: true,
+      message: `Started batch processing of ${processableInvoices.length} invoices`,
+      processedInvoices: processableInvoices.length
+    });
+
+    // Process in background
+    setImmediate(async () => {
+      for (const invoice of processableInvoices) {
+        try {
+          if (invoice.fileUrl && require('fs').existsSync(invoice.fileUrl)) {
+            const fs = require('fs');
+            const fileBuffer = fs.readFileSync(invoice.fileUrl);
+            await processInvoiceAsync(invoice, fileBuffer);
+          }
+        } catch (error) {
+          console.error(`Failed to process invoice ${invoice.id}:`, error);
+          await storage.updateInvoice(invoice.id, { status: 'failed' });
+        }
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Batch processing error:', error);
+    res.status(500).json({ 
+      error: 'Failed to initiate batch processing',
+      success: false
+    });
+  }
+});
