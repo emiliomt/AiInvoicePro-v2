@@ -98,11 +98,9 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
     return isAIExtractedInvoice(invoice);
   }
 
-  // For RPA imports, only show if isDataSource = true (primary extraction source)
-  // This excludes reference PDFs that are linked to XML-derived invoices
-  const isDataSource = invoice.isDataSource === true;
-  
-  return isDataSource && isAIExtractedInvoice(invoice);
+  // For RPA imports, show the button for all PDF files since they used OCR extraction
+  // Even if isDataSource is null/undefined, we still want to show the button for RPA PDFs
+  return isAIExtractedInvoice(invoice);
 };
 
 export default function Invoices() {
@@ -856,9 +854,8 @@ export default function Invoices() {
                               Good Job AI!
                             </Button>
                             
-                            {/* Report Error button - show for all AI-extracted invoices, with enhanced logic for RPA */}
-                            {(isEligibleForProblemReport(invoice) || 
-                              (!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9)) && (
+                            {/* Report Error button - show for all eligible PDF invoices */}
+                            {isEligibleForProblemReport(invoice) && (
                               <Button
                                 variant="outline"
                                 size="sm"
