@@ -135,147 +135,221 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
             
+            # Ensure we have a valid config_id for company filtering
+            if not self.config_id:
+                self.log("⚠️ No config_id available for duplicate detection - using fallback lookup", "WARNING")
+                # Try to get a valid config_id from any active config
+                pg_cursor.execute("SELECT id FROM invoice_importer_configs WHERE company_id = 1 LIMIT 1")
+                fallback_result = pg_cursor.fetchone()
+                if fallback_result:
+                    self.config_id = fallback_result[0]
+                    self.log(f"📋 Using fallback config_id: {self.config_id}")
+                else:
+                    self.log("❌ No valid config found for duplicate detection", "ERROR")
+                    pg_conn.close()
+                    return False
+            
             # Normalize emisor for consistent comparison
             safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))
             # Enhanced normalization to handle HTML entities and variations
             normalized_emisor = emisor.replace("_", " ").replace(".", "").replace("&AMP;", "&").replace("&amp;", "&").upper().strip()
             
-            # Helper function to validate valor_total when available
-            def validate_total_amount(db_total: str) -> bool:
-                """Validate valor_total with 0.01 threshold if both values are available"""
-                if valor_total is None or valor_total == '' or valor_total == 'N/A':
-                    return True  # No valor_total provided - skip anyway assuming same invoice
-                
-                if db_total is None or db_total == '' or db_total == 'N/A':
-                    return True  # DB has no total but we have one - still skip assuming same invoice
-                
-                try:
-                    input_total = float(valor_total.replace(',', '').replace('$', '').strip())
-                    stored_total = float(db_total.replace(',', '').replace('$', '').strip())
-                    return abs(input_total - stored_total) <= 0.01
-                except (ValueError, AttributeError):
-                    return True  # If we can't parse either total, skip anyway
-            
             # Check 1: Main invoices table (fully processed and completed invoices)
+            # Use exact invoice number matching with vendor validation
             pg_cursor.execute("""
-                SELECT id, file_name, extracted_data->>'totalAmount' as total_amount 
+                SELECT id, file_name, vendor_name, extracted_data->>'totalAmount' as total_amount 
                 FROM invoices 
                 WHERE user_id = 'rpa-system'
                 AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
-                AND extracted_data->>'invoiceNumber' = %s
                 AND (
-                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(vendor_name, '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s OR
-                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s
+                    extracted_data->>'invoiceNumber' = %s OR
+                    extracted_data->>'documentNumber' = %s OR
+                    invoice_number = %s
                 )
-                LIMIT 1
+                ORDER BY created_at DESC
+                LIMIT 5
             """, (
                 self.config_id,
                 numero_documento, 
-                normalized_emisor,
-                normalized_emisor
+                numero_documento,
+                numero_documento
             ))
             
-            result = pg_cursor.fetchone()
-            if result:
-                db_id, db_filename, db_total = result
-                if validate_total_amount(db_total):
-                    valor_msg = f" (valor_total not validated - assuming same invoice)" if valor_total is None else f" (valor_total validated within 0.01 threshold)"
-                    self.log(f"✅ Invoice {numero_documento} from {emisor} already fully processed in main table (ID: {db_id}, File: {db_filename}){valor_msg}")
-                    pg_conn.close()
-                    return True
-                else:
-                    self.log(f"⚠️ Invoice {numero_documento} from {emisor} found but valor_total mismatch (Expected: {valor_total}, Found: {db_total}) - will process as different invoice")
+            main_results = pg_cursor.fetchall()
+            if main_results:
+                for db_id, db_filename, db_vendor, db_total in main_results:
+                    # Normalize database vendor name for comparison
+                    db_vendor_normalized = (db_vendor or "").replace("_", " ").replace(".", "").replace("&AMP;", "&").replace("&amp;", "&").upper().strip()
+                    
+                    # Check if vendors match (allowing for variations)
+                    vendor_match = (
+                        normalized_emisor in db_vendor_normalized or 
+                        db_vendor_normalized in normalized_emisor or
+                        abs(len(normalized_emisor) - len(db_vendor_normalized)) <= 3  # Allow minor length differences
+                    )
+                    
+                    if vendor_match:
+                        self.log(f"✅ DUPLICATE FOUND: Invoice {numero_documento} from {emisor} already exists in main table (ID: {db_id}, File: {db_filename})")
+                        self.log(f"   📊 Vendor match: '{normalized_emisor}' ≈ '{db_vendor_normalized}'")
+                        pg_conn.close()
+                        return True
             
-            # Check 2: imported_invoices table - check for completed status in metadata or processing_status
-            # Only skip if any record has processing_status = 'completed'
+            # Check 2: imported_invoices table - look for completed processing status
             pg_cursor.execute("""
-                SELECT metadata->>'processing_status', processing_status, id, original_file_name
+                SELECT processing_status, metadata->>'processing_status', id, original_file_name, erp_document_id
                 FROM imported_invoices 
-                WHERE original_file_name LIKE %s
+                WHERE log_id IN (
+                    SELECT id FROM invoice_importer_logs 
+                    WHERE config_id = %s
+                ) 
+                AND (
+                    erp_document_id = %s OR
+                    original_file_name LIKE %s
+                )
                 ORDER BY created_at DESC
-            """, (f"%{numero_documento}%",))
+                LIMIT 10
+            """, (
+                self.config_id,
+                numero_documento,
+                f"%{numero_documento}%"
+            ))
             
             imported_results = pg_cursor.fetchall()
             if imported_results:
-                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
-                    # Check both metadata and processing_status columns for 'completed'
-                    if metadata_status == 'completed' or processing_status == 'completed':
-                        valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
-                        self.log(f"✅ Invoice {numero_documento} from {emisor} already completed successfully (ID: {imp_id}, File: {imp_filename}){valor_msg}")
+                for processing_status, metadata_status, imp_id, imp_filename, erp_doc_id in imported_results:
+                    # Check both processing_status column and metadata for 'completed'
+                    is_completed = (
+                        processing_status == 'completed' or 
+                        metadata_status == 'completed'
+                    )
+                    
+                    if is_completed:
+                        self.log(f"✅ DUPLICATE FOUND: Invoice {numero_documento} already completed in imported_invoices (ID: {imp_id}, File: {imp_filename})")
+                        self.log(f"   📊 Status: processing={processing_status}, metadata={metadata_status}")
                         pg_conn.close()
                         return True
-                
-                # If we reach here, no completed records found - log details and continue processing
-                self.log(f"🔄 Invoice {numero_documento} from {emisor} found in imported_invoices but not completed - will process")
-                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
-                    status_info = f"processing_status: {processing_status}, metadata_status: {metadata_status}"
-                    self.log(f"   - Record ID {imp_id}: {imp_filename} ({status_info})")
-            else:
-                self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in imported_invoices - will process")
-
+            
+            # Check 3: Enhanced filename-based search in main invoices table
+            pg_cursor.execute("""
+                SELECT id, file_name, vendor_name
+                FROM invoices 
+                WHERE user_id = 'rpa-system'
+                AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
+                AND (
+                    file_name LIKE %s OR
+                    file_name LIKE %s
+                )
+                ORDER BY created_at DESC
+                LIMIT 3
+            """, (
+                self.config_id,
+                f"%{numero_documento}%",
+                f"{numero_documento}_%"
+            ))
+            
+            filename_results = pg_cursor.fetchall()
+            if filename_results:
+                for db_id, db_filename, db_vendor in filename_results:
+                    # Check if this looks like the same invoice
+                    if numero_documento in db_filename:
+                        self.log(f"✅ DUPLICATE FOUND: Invoice {numero_documento} found by filename match (ID: {db_id}, File: {db_filename})")
+                        pg_conn.close()
+                        return True
             
             pg_conn.close()
             
-            # Log exact match conditions for debugging
-            valor_info = f"(valor_total: {valor_total if valor_total else 'None - will not be used for validation'})"
-            self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found or available for retry:")
-            self.log(f"   - Looking for invoice number: {numero_documento}")
-            self.log(f"   - Looking for vendor (normalized): {normalized_emisor}")
-            self.log(f"   - Config ID: {self.config_id}")
-            self.log("   - Will process this invoice")
+            # Log that no duplicates were found
+            self.log(f"🔄 No duplicates found for Invoice {numero_documento} from {emisor} - will process")
+            self.log(f"   📋 Config ID: {self.config_id}")
+            self.log(f"   🔍 Searched: main invoices, imported_invoices, filename patterns")
             return False
                 
         except Exception as e:
             self.log(f"❌ Error checking processed invoices: {e}", "ERROR")
+            import traceback
+            self.log(f"❌ Stack trace: {traceback.format_exc()}", "ERROR")
             # If we can't check, assume not processed to be safe
             return False
 
     def _update_imported_invoice_status(self, file_info, status: str, error_message: str = None):
         """Update processing status of imported invoice with lifecycle tracking"""
         try:
-            pg_conn = psycopg2.connect(
-                host=os.getenv("PGHOST"),
-                port=int(os.getenv("PGPORT", 5432)),
-                database=os.getenv("PGDATABASE"),
-                user=os.getenv("PGUSER"),
-                password=os.getenv("PGPASSWORD"),
-            )
+            # Use the database URL directly
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                self.log("DATABASE_URL not found for status update", "ERROR")
+                return
+                
+            pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
             
-            filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', '')))
+            # Get filename with multiple fallback options
+            filename = file_info.get('original_file_name') or file_info.get('upload_filename') or file_info.get('filename', '')
             
-            # Update status in imported_invoices table
+            if not filename:
+                self.log("❌ No filename found in file_info for status update", "ERROR")
+                return
+            
+            # Ensure we have a log_id
+            if not self.log_id:
+                self.log("❌ No log_id available for status update", "ERROR")
+                return
+            
+            # Update status in imported_invoices table with enhanced matching
             if status == 'completed':
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
-                    SET processing_status = %s, processed_at = NOW()
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, filename, self.log_id))
+                    SET processing_status = %s, processed_at = NOW(),
+                        metadata = COALESCE(metadata, '{}')::jsonb || '{"processing_status": "completed"}'::jsonb
+                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    AND log_id = %s
+                """, (status, filename, f"%{filename}%", self.log_id))
             elif status == 'failed':
+                error_metadata = json.dumps({'processing_status': 'failed', 'error_message': error_message})
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
                     SET processing_status = %s, processed_at = NOW(), 
                         metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, json.dumps({'error_message': error_message}), filename, self.log_id))
+                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    AND log_id = %s
+                """, (status, error_metadata, filename, f"%{filename}%", self.log_id))
             elif status == 'processing':
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
-                    SET processing_status = %s
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, filename, self.log_id))
+                    SET processing_status = %s,
+                        metadata = COALESCE(metadata, '{}')::jsonb || '{"processing_status": "processing"}'::jsonb
+                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    AND log_id = %s
+                """, (status, filename, f"%{filename}%", self.log_id))
             
             rows_affected = pg_cursor.rowcount
             pg_conn.commit()
             pg_conn.close()
             
             if rows_affected > 0:
-                self.log(f"📊 Updated {filename} status: {status}" + (f" ({error_message})" if error_message else ""))
+                self.log(f"📊 Updated {rows_affected} record(s) for {filename} status: {status}" + (f" ({error_message})" if error_message else ""))
             else:
-                self.log(f"⚠️ No records updated for {filename} status: {status}", "WARNING")
+                self.log(f"⚠️ No records updated for {filename} status: {status} (log_id: {self.log_id})", "WARNING")
+                # Try to find the record for debugging
+                pg_conn = psycopg2.connect(database_url)
+                pg_cursor = pg_conn.cursor()
+                pg_cursor.execute("""
+                    SELECT id, original_file_name, processing_status, log_id 
+                    FROM imported_invoices 
+                    WHERE original_file_name LIKE %s 
+                    ORDER BY created_at DESC LIMIT 3
+                """, (f"%{filename}%",))
+                debug_results = pg_cursor.fetchall()
+                if debug_results:
+                    self.log(f"🔍 Found similar records: {debug_results}")
+                else:
+                    self.log(f"🔍 No similar records found for pattern: {filename}")
+                pg_conn.close()
                 
         except Exception as e:
             self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
+            import traceback
+            self.log(f"❌ Status update stack trace: {traceback.format_exc()}", "ERROR")
 
     def update_progress(self, step: str, progress: int):
         """Update progress tracking"""
