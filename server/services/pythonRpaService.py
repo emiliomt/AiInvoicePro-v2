@@ -941,11 +941,74 @@ class InvoiceRPAService:
             self.log(f"Error extracting invoice files: {e}", "ERROR")
             return False
 
+    def extract_invoice_token(self, filename: str) -> str:
+        """Extract normalized invoice token using regex for dynamic matching"""
+        base = filename.rsplit('.', 1)[0].lower()
+        match = re.search(r'(\d{20,26})', base)
+        return match.group(1) if match else None
+
     def _extract_invoice_token(self, filename, file_path=None, file_type='xml'):
-        """Extract unique invoice token from filename and optionally file content"""
+        """Extract unique invoice token from filename with enhanced regex-based matching"""
         try:
-            # Parse filename components (format: DOCUMENT_NUMBER_TAX_ID_COMPANY_NAME)
             base_name = os.path.splitext(filename)[0]
+            
+            # Try new dynamic normalization first
+            normalized_token = self.extract_invoice_token(filename)
+            
+            if normalized_token:
+                # Use the normalized invoice ID as the primary token
+                document_number = normalized_token
+                
+                # For XML files, try to extract additional metadata from content
+                if file_type == 'xml' and file_path and os.path.exists(file_path):
+                    try:
+                        import xml.etree.ElementTree as ET
+                        tree = ET.parse(file_path)
+                        root = tree.getroot()
+                        
+                        # Find total amount in XML content (multiple possible tags)
+                        total_amount = None
+                        amount_tags = [
+                            './/{*}PayableAmount',
+                            './/{*}TotalAmount', 
+                            './/{*}LineExtensionAmount',
+                            './/{*}TaxExclusiveAmount'
+                        ]
+                        
+                        for tag in amount_tags:
+                            element = root.find(tag)
+                            if element is not None and element.text:
+                                try:
+                                    total_amount = float(element.text.strip())
+                                    break
+                                except:
+                                    continue
+                        
+                        # Create composite token with amount if available
+                        if total_amount is not None:
+                            # Normalize amount to avoid floating point precision issues
+                            normalized_amount = round(total_amount, 2)
+                            token = f"{normalized_token}_{normalized_amount}"
+                        else:
+                            token = normalized_token
+                            
+                    except Exception as e:
+                        self.log(f"Warning: Could not parse XML content for {filename}: {e}")
+                        token = normalized_token
+                else:
+                    # For PDF files or when XML parsing fails, use normalized token
+                    token = normalized_token
+                
+                self.log(f"🔗 Generated normalized token for {filename}: {token} (invoice ID: {normalized_token})")
+                return {
+                    'token': token,
+                    'document_number': normalized_token,
+                    'tax_id': '',  # Not used in normalized matching
+                    'base_name': base_name,
+                    'normalized_id': normalized_token
+                }
+            
+            # Fallback to legacy parsing for backward compatibility
             parts = base_name.split("_", 2)
             
             if len(parts) >= 2:
@@ -992,7 +1055,7 @@ class InvoiceRPAService:
                     # For PDF files or when XML parsing fails, use filename-based token
                     token = f"{document_number}_{tax_id}"
                 
-                self.log(f"Generated token for {filename}: {token}")
+                self.log(f"Generated legacy token for {filename}: {token}")
                 return {
                     'token': token,
                     'document_number': document_number,
@@ -1000,7 +1063,10 @@ class InvoiceRPAService:
                     'base_name': base_name
                 }
             else:
-                self.log(f"Warning: Could not parse filename format for {filename}")
+                # If neither normalized nor legacy parsing works, log and use base name
+                if not normalized_token:
+                    self.log(f"Info: Using filename-based token for {filename} (no numeric pattern found)")
+                
                 return {
                     'token': base_name,
                     'document_number': base_name,
@@ -1019,11 +1085,12 @@ class InvoiceRPAService:
             }
 
     def _match_files_by_token(self, xml_files, pdf_files, temp_dir):
-        """Match XML and PDF files by invoice token (enhanced matching)"""
+        """Match XML and PDF files by invoice token with enhanced normalized ID matching"""
         matches = {}
         
         # Extract tokens for all XML files
         xml_tokens = {}
+        xml_by_normalized_id = {}  # New: Track by normalized invoice ID
         for xml_file in xml_files:
             xml_path = os.path.join(temp_dir, xml_file)
             token_info = self._extract_invoice_token(xml_file, xml_path, 'xml')
@@ -1031,20 +1098,56 @@ class InvoiceRPAService:
                 'filename': xml_file,
                 'token_info': token_info
             }
+            
+            # Track by normalized ID if available
+            if 'normalized_id' in token_info and token_info['normalized_id']:
+                xml_by_normalized_id[token_info['normalized_id']] = {
+                    'filename': xml_file,
+                    'token_info': token_info
+                }
         
         # Extract tokens for all PDF files
         pdf_tokens = {}
+        pdf_by_normalized_id = {}  # New: Track by normalized invoice ID
         for pdf_file in pdf_files:
             token_info = self._extract_invoice_token(pdf_file, None, 'pdf')
             pdf_tokens[token_info['token']] = {
                 'filename': pdf_file,
                 'token_info': token_info
             }
+            
+            # Track by normalized ID if available
+            if 'normalized_id' in token_info and token_info['normalized_id']:
+                pdf_by_normalized_id[token_info['normalized_id']] = {
+                    'filename': pdf_file,
+                    'token_info': token_info
+                }
         
-        # Primary matching: Exact token match
+        # Primary matching: Normalized invoice ID match (new priority)
         matched_tokens = set()
+        matched_normalized_ids = set()
+        
+        for normalized_id in xml_by_normalized_id:
+            if normalized_id in pdf_by_normalized_id:
+                xml_data = xml_by_normalized_id[normalized_id]
+                pdf_data = pdf_by_normalized_id[normalized_id]
+                
+                base_name = xml_data['token_info']['base_name']
+                matches[base_name] = {
+                    'xml': xml_data['filename'],
+                    'pdf': pdf_data['filename'],
+                    'token': xml_data['token_info']['token'],
+                    'match_type': 'normalized_id'
+                }
+                matched_tokens.add(xml_data['token_info']['token'])
+                matched_tokens.add(pdf_data['token_info']['token'])
+                matched_normalized_ids.add(normalized_id)
+                
+                self.log(f"🔗 Linked files using normalized token: {normalized_id} -> XML: {xml_data['filename']}, PDF: {pdf_data['filename']}")
+        
+        # Secondary matching: Exact token match for remaining files
         for token in xml_tokens:
-            if token in pdf_tokens:
+            if token not in matched_tokens and token in pdf_tokens:
                 base_name = xml_tokens[token]['token_info']['base_name']
                 matches[base_name] = {
                     'xml': xml_tokens[token]['filename'],
@@ -1055,7 +1158,7 @@ class InvoiceRPAService:
                 matched_tokens.add(token)
                 self.log(f"✅ Exact token match: {token} -> XML: {xml_tokens[token]['filename']}, PDF: {pdf_tokens[token]['filename']}")
         
-        # Secondary matching: Fallback to document_number + tax_id for unmatched files
+        # Tertiary matching: Fallback to document_number + tax_id for unmatched files
         unmatched_xml = {k: v for k, v in xml_tokens.items() if k not in matched_tokens}
         unmatched_pdf = {k: v for k, v in pdf_tokens.items() if k not in matched_tokens}
         
@@ -1101,7 +1204,10 @@ class InvoiceRPAService:
                     }
                     self.log(f"📎 PDF-only file: {pdf_data['filename']}")
         
-        self.log(f"Token-based matching completed: {len(matches)} file groups, {sum(1 for m in matches.values() if m['xml'] and m['pdf'])} paired matches")
+        normalized_matches = sum(1 for m in matches.values() if m.get('match_type') == 'normalized_id')
+        total_paired_matches = sum(1 for m in matches.values() if m['xml'] and m['pdf'])
+        
+        self.log(f"Token-based matching completed: {len(matches)} file groups, {total_paired_matches} paired matches ({normalized_matches} using normalized IDs)")
         return matches
 
     def _match_files_by_name(self, xml_files, pdf_files):
