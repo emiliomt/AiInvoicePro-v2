@@ -9,6 +9,12 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script>
+      // Define global toast function early to prevent ReferenceError
+      window.toast = function(options) {
+        console.log('Early toast fallback:', options?.title || options?.description || 'Notification');
+      };
+    </script>
   </head>
   <body>
     <div id="root"></div>
