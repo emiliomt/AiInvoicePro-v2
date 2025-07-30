@@ -194,7 +194,7 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeyword: classification.matchedKeyword,
+            matchedKeyword: classification.matchedKeyword || 'unknown',
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -206,7 +206,7 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeyword: classification.matchedKeyword,
+        matchedKeyword: classification.matchedKeyword || 'unknown',
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -409,7 +409,7 @@ Respond with JSON in this format:
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeyword: classification.matchedKeyword,
+            matchedKeyword: classification.matchedKeyword || 'unknown',
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -421,7 +421,7 @@ Respond with JSON in this format:
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeyword: classification.matchedKeyword,
+        matchedKeyword: classification.matchedKeyword || 'unknown',
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
