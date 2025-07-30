@@ -1723,9 +1723,9 @@ class InvoiceRPAService:
                         xml_info['base_file_name'] = base_name
                         xml_info['matched_file_name'] = pdf_filename
                         processed_files.append(xml_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ XML processed for extraction: {xml_filename}")
+                        processed_count += 1  # Count this as one invoice processed (not individual files)
+                        successful_count += 1  # One successful invoice (XML+PDF pair counts as 1)
+                        self.log(f"✅ Invoice processed successfully (XML+PDF pair): {xml_filename} + {pdf_filename}")
                         
                         # Send real-time progress update for this successful processing
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
@@ -1745,14 +1745,14 @@ class InvoiceRPAService:
                 elif base_name in unmatched_xmls:
                     # Case: Only XML file present - store XML, set isDataSource = true
                     xml_filename = xml_files[base_name]
-                    self.log(f"📄 Processing XML only: {base_name}")
+                    self.log(f"📄 Processing XML-only invoice: {base_name}")
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
                         xml_info['base_file_name'] = base_name
                         processed_files.append(xml_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ XML processed successfully: {xml_filename}")
+                        processed_count += 1  # Count as one invoice processed
+                        successful_count += 1  # One successful invoice
+                        self.log(f"✅ XML-only invoice processed successfully: {xml_filename}")
                         
                         # Send real-time progress update
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
@@ -1763,14 +1763,14 @@ class InvoiceRPAService:
                 elif base_name in unmatched_pdfs:
                     # Case: Only PDF file present - process for OCR extraction (no XML available)
                     pdf_filename = pdf_files[base_name]
-                    self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
+                    self.log(f"📄 Processing PDF-only invoice: {base_name} (OCR extraction - no XML available)")
                     pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
                     if pdf_info:
                         pdf_info['base_file_name'] = base_name
                         processed_files.append(pdf_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
+                        processed_count += 1  # Count as one invoice processed
+                        successful_count += 1  # One successful invoice
+                        self.log(f"✅ PDF-only invoice processed successfully: {pdf_filename}")
                         
                         # Send real-time progress update
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
@@ -1788,10 +1788,18 @@ class InvoiceRPAService:
             # The manual pipeline creates records in the main 'invoices' table
             # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
-            # Update final stats - ensure Total = Success + Failed (Skipped are not processed)
+            # Update final stats - ensure processed_invoices represents invoices, not files
+            # Each successful/failed count represents one invoice processed (regardless of file count)
             self.stats['processed_invoices'] = successful_count + failed_count
             self.stats['successful_imports'] = successful_count
             self.stats['failed_imports'] = failed_count
+            
+            # Ensure total_invoices is consistent with what was found in ERP
+            # Don't let processed_invoices exceed total_invoices
+            if self.stats['processed_invoices'] > self.stats.get('total_invoices', 0):
+                self.log(f"⚠️ Warning: Processed count ({self.stats['processed_invoices']}) exceeds total found ({self.stats.get('total_invoices', 0)})")
+                # Adjust total_invoices to match reality of what was actually processed
+                self.stats['total_invoices'] = self.stats['processed_invoices'] + self.stats.get('skipped_imports', 0)
             
             # Recalculate total to show actual processing attempts (not ERP discovery count)
             actual_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
@@ -2240,9 +2248,10 @@ class InvoiceRPAService:
             self.stats['progress'] = download_progress
             
             # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            # During download phase, total_invoices should represent ERP rows found
             stats_data = {
-                'total_invoices': total_items,
-                'processed_invoices': current_item,
+                'total_invoices': total_items,  # ERP rows found
+                'processed_invoices': current_item,  # Current ERP row being downloaded
                 'successful_imports': self.stats.get('successful_imports', 0),
                 'failed_imports': self.stats.get('failed_imports', 0),
                 'skipped_imports': self.stats.get('skipped_imports', 0),
@@ -2265,10 +2274,14 @@ class InvoiceRPAService:
             file_progress = min(int((processed_count / total_files) * 100), 100) if total_files > 0 else 0
             overall_progress = 90 + int(file_progress * 0.08)  # Map to 90-98% range
             
+            # During file processing phase, use ERP rows as total_invoices for consistency
+            # processed_invoices should show how many invoices have been fully processed (not individual files)
+            total_invoices_processed = successful_count + failed_count
+            
             # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
             stats_data = {
-                'total_invoices': total_files,
-                'processed_invoices': processed_count,
+                'total_invoices': self.stats.get('total_invoices', total_invoices_processed + self.stats.get('skipped_imports', 0)),  # Use ERP row count
+                'processed_invoices': total_invoices_processed,  # Invoices fully processed (success + failed)
                 'successful_imports': successful_count,
                 'failed_imports': failed_count,
                 'skipped_imports': self.stats.get('skipped_imports', 0),
