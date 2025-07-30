@@ -1,5 +1,5 @@
-Debug Capture: 02_credentials_entered
-Timestamp: 20250730T024548
+Debug Capture: 01_login_page_loaded
+Timestamp: 20250730T025152
 Current URL: https://www3.sincoerp.com/SincoObycon_Nueva/V3/Marco/Login_iv.aspx
 Page Title: SINCO ERP - Ingreso a la aplicación
 Window Size: {'width': 1920, 'height': 1080}
