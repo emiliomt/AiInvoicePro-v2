@@ -450,6 +450,7 @@ export const feedbackLogs = pgTable("feedback_logs", {
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
 export const scheduleTypeEnum = pgEnum("schedule_type", ["manual", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
 export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled"]);
+export const processingStatusEnum = pgEnum("processing_status", ["downloaded", "processing", "completed", "failed"]);
 
 // Invoice Importer configurations
 export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
@@ -521,6 +522,7 @@ export const importedInvoices = pgTable("imported_invoices", {
   linkedInvoiceId: integer("linked_invoice_id").references(() => invoices.id), // Links PDF to main invoice record
   baseFileName: varchar("base_file_name", { length: 255 }), // Filename without extension for matching
   isDataSource: boolean("is_data_source").default(false), // True for XML used for extraction
+  processingStatus: processingStatusEnum("processing_status").default("downloaded"), // Track processing lifecycle
   downloadedAt: timestamp("downloaded_at"),
   processedAt: timestamp("processed_at"),
   metadata: jsonb("metadata"), // extracted invoice data

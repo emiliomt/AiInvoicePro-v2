@@ -120,9 +120,9 @@ class InvoiceRPAService:
 
     def _is_invoice_successfully_processed(self, numero_documento: str, emisor: str, valor_total: str) -> bool:
         """
-        Check if an invoice was successfully processed or already downloaded
-        Uses hierarchical matching: numero_documento + emisor first, then valor_total validation when available
-        Skips invoices even when valor_total is None if document and vendor match
+        Enhanced duplicate detection with processing status tracking
+        Checks processing lifecycle: downloaded -> processing -> completed -> failed
+        Only skips invoices that are successfully completed, allows retry of failed ones
         """
         try:
             # Connect to PostgreSQL to check both tables
@@ -143,22 +143,19 @@ class InvoiceRPAService:
             def validate_total_amount(db_total: str) -> bool:
                 """Validate valor_total with 0.01 threshold if both values are available"""
                 if valor_total is None or valor_total == '' or valor_total == 'N/A':
-                    # No valor_total provided - skip anyway assuming same invoice
-                    return True
+                    return True  # No valor_total provided - skip anyway assuming same invoice
                 
                 if db_total is None or db_total == '' or db_total == 'N/A':
-                    # DB has no total but we have one - still skip assuming same invoice
-                    return True
+                    return True  # DB has no total but we have one - still skip assuming same invoice
                 
                 try:
                     input_total = float(valor_total.replace(',', '').replace('$', '').strip())
                     stored_total = float(db_total.replace(',', '').replace('$', '').strip())
                     return abs(input_total - stored_total) <= 0.01
                 except (ValueError, AttributeError):
-                    # If we can't parse either total, skip anyway
-                    return True
+                    return True  # If we can't parse either total, skip anyway
             
-            # Check 1: Main invoices table (fully processed invoices)
+            # Check 1: Main invoices table (fully processed and completed invoices)
             pg_cursor.execute("""
                 SELECT id, file_name, extracted_data->>'totalAmount' as total_amount 
                 FROM invoices 
@@ -188,16 +185,20 @@ class InvoiceRPAService:
                 else:
                     self.log(f"⚠️ Invoice {numero_documento} from {emisor} found but valor_total mismatch (Expected: {valor_total}, Found: {db_total}) - will process as different invoice")
             
-            # Check 2: imported_invoices table (downloaded but not yet fully processed)
+            # Check 2: imported_invoices table with status-based logic
+            # Only skip if status is 'completed' or 'processing' (actively being processed)
+            # Allow retry if status is 'failed' or 'downloaded' (stuck in pipeline)
             original_filename = f"{numero_documento}_{safe_emisor}.xml"
             pg_cursor.execute("""
-                SELECT id, original_file_name FROM imported_invoices 
+                SELECT id, original_file_name, processing_status, processed_at 
+                FROM imported_invoices 
                 WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
                 AND file_type = 'xml' 
                 AND (
                     original_file_name = %s OR
                     original_file_name ILIKE %s
                 )
+                ORDER BY created_at DESC
                 LIMIT 1
             """, (
                 self.config_id,
@@ -207,12 +208,47 @@ class InvoiceRPAService:
             
             imported_result = pg_cursor.fetchone()
             if imported_result:
-                valor_msg = f" (valor_total not available for validation - assuming same invoice)" if valor_total is None else f" (with valor_total: {valor_total})"
-                self.log(f"✅ Invoice {numero_documento} from {emisor} already downloaded in previous import (ID: {imported_result[0]}, File: {imported_result[1]}){valor_msg}")
-                pg_conn.close()
-                return True
+                imp_id, imp_filename, processing_status, processed_at = imported_result
+                valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
+                
+                # Status-based decision logic
+                if processing_status == 'completed':
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} already completed successfully (ID: {imp_id}, File: {imp_filename}){valor_msg}")
+                    pg_conn.close()
+                    return True
+                elif processing_status == 'processing':
+                    self.log(f"⏳ Invoice {numero_documento} from {emisor} currently being processed (ID: {imp_id}, File: {imp_filename}){valor_msg}")
+                    pg_conn.close()
+                    return True
+                elif processing_status == 'failed':
+                    self.log(f"🔄 Invoice {numero_documento} from {emisor} previously failed - will retry (ID: {imp_id}, File: {imp_filename}){valor_msg}")
+                    # Mark for cleanup - delete failed record to allow fresh retry
+                    pg_cursor.execute("DELETE FROM imported_invoices WHERE id = %s", (imp_id,))
+                    pg_conn.commit()
+                    self.log(f"🗑️ Cleaned up failed import record {imp_id} to allow retry")
+                elif processing_status == 'downloaded':
+                    # Check if it's stuck in downloaded state for too long (>30 minutes)
+                    if processed_at:
+                        from datetime import datetime, timedelta
+                        now = datetime.now()
+                        downloaded_time = processed_at if isinstance(processed_at, datetime) else datetime.fromisoformat(str(processed_at))
+                        time_diff = now - downloaded_time
+                        if time_diff > timedelta(minutes=30):
+                            self.log(f"🔄 Invoice {numero_documento} from {emisor} stuck in downloaded state for {time_diff} - will retry (ID: {imp_id}){valor_msg}")
+                            # Clean up stuck record
+                            pg_cursor.execute("DELETE FROM imported_invoices WHERE id = %s", (imp_id,))
+                            pg_conn.commit()
+                            self.log(f"🗑️ Cleaned up stuck import record {imp_id} to allow retry")
+                        else:
+                            self.log(f"⏳ Invoice {numero_documento} from {emisor} recently downloaded, still processing (ID: {imp_id}){valor_msg}")
+                            pg_conn.close()
+                            return True
+                    else:
+                        self.log(f"⏳ Invoice {numero_documento} from {emisor} in downloaded state (ID: {imp_id}){valor_msg}")
+                        pg_conn.close()
+                        return True
             
-            # Check 3: Alternative filename patterns in imported_invoices
+            # Check 3: Alternative filename patterns with status-based logic
             alternative_patterns = [
                 f"NO{numero_documento}_{safe_emisor}.xml",  # Common ERP pattern
                 f"{numero_documento}_*.xml"  # Wildcard pattern
@@ -220,10 +256,13 @@ class InvoiceRPAService:
             
             for pattern in alternative_patterns:
                 pg_cursor.execute("""
-                    SELECT id, original_file_name FROM imported_invoices 
+                    SELECT id, original_file_name, processing_status 
+                    FROM imported_invoices 
                     WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
                     AND file_type = 'xml' 
                     AND original_file_name ILIKE %s
+                    AND processing_status IN ('completed', 'processing')
+                    ORDER BY created_at DESC
                     LIMIT 1
                 """, (
                     self.config_id,
@@ -232,8 +271,9 @@ class InvoiceRPAService:
                 
                 pattern_result = pg_cursor.fetchone()
                 if pattern_result:
-                    valor_msg = f" (valor_total not available for validation)" if valor_total is None else f" (with valor_total: {valor_total})"
-                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern (ID: {pattern_result[0]}, File: {pattern_result[1]}){valor_msg}")
+                    pat_id, pat_filename, pat_status = pattern_result
+                    valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern - status: {pat_status} (ID: {pat_id}, File: {pat_filename}){valor_msg}")
                     pg_conn.close()
                     return True
             
@@ -241,7 +281,7 @@ class InvoiceRPAService:
             
             # Log exact match conditions for debugging
             valor_info = f"(valor_total: {valor_total if valor_total else 'None - will not be used for validation'})"
-            self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found in either table:")
+            self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found or available for retry:")
             self.log(f"   - Looking for invoice number: {numero_documento}")
             self.log(f"   - Looking for vendor (normalized): {normalized_emisor}")
             self.log(f"   - Looking for filename: {original_filename}")
@@ -1524,6 +1564,61 @@ class InvoiceRPAService:
             except Exception as e:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
 
+    def _update_imported_invoice_status(self, filename: str, status: str, error_message: str = None):
+        """
+        Update processing status for imported invoice records
+        Status: downloaded -> processing -> completed/failed
+        """
+        try:
+            import os
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                self.log("DATABASE_URL not found, cannot update invoice status", "WARNING")
+                return
+                
+            pg_conn = psycopg2.connect(database_url)
+            pg_cursor = pg_conn.cursor()
+            
+            # Find imported invoice record by filename and log_id
+            pg_cursor.execute("""
+                SELECT id FROM imported_invoices 
+                WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
+                AND original_file_name = %s
+                ORDER BY created_at DESC
+                LIMIT 1
+            """, (self.config_id, filename))
+            
+            result = pg_cursor.fetchone()
+            if result:
+                invoice_id = result[0]
+                
+                # Update status and processed_at timestamp
+                if status == 'failed' and error_message:
+                    pg_cursor.execute("""
+                        UPDATE imported_invoices 
+                        SET processing_status = %s, 
+                            processed_at = NOW(),
+                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
+                        WHERE id = %s
+                    """, (status, json.dumps({'error': error_message}), invoice_id))
+                else:
+                    pg_cursor.execute("""
+                        UPDATE imported_invoices 
+                        SET processing_status = %s, processed_at = NOW()
+                        WHERE id = %s
+                    """, (status, invoice_id))
+                
+                pg_conn.commit()
+                self.log(f"Updated status for {filename} to '{status}' (ID: {invoice_id})")
+                
+            else:
+                self.log(f"Could not find imported invoice record for {filename}", "WARNING")
+                
+            pg_conn.close()
+                
+        except Exception as e:
+            self.log(f"Error updating invoice status for {filename}: {e}", "ERROR")
+
     def process_files_through_manual_pipeline(self) -> bool:
         """Process extracted files (XML/PDF) through manual upload pipeline with conditional storage logic"""
         try:
@@ -1724,6 +1819,9 @@ class InvoiceRPAService:
             with open(upload_path, 'w', encoding='utf-8') as dst:
                 dst.write(xml_content)
 
+            # Mark as processing before triggering manual pipeline
+            self._update_imported_invoice_status(upload_filename, 'processing')
+            
             # Call Node.js endpoint to process the file through manual pipeline
             success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
             
@@ -1773,6 +1871,9 @@ class InvoiceRPAService:
             # Copy PDF file to uploads directory
             shutil.copy2(pdf_file_path, upload_path)
 
+            # Mark as processing before triggering manual pipeline
+            self._update_imported_invoice_status(upload_filename, 'processing')
+            
             # Call Node.js endpoint to process the file through manual pipeline
             success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
             
@@ -1866,12 +1967,12 @@ class InvoiceRPAService:
                     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
                     base_name = file_info.get('base_file_name', file_info['base_name'])
                     
-                    # Insert into imported_invoices table
+                    # Insert into imported_invoices table with processing status
                     pg_cursor.execute("""
                         INSERT INTO imported_invoices 
                         (log_id, original_file_name, file_type, file_size, file_path, 
-                         erp_document_id, base_file_name, is_data_source, downloaded_at, metadata)
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                         erp_document_id, base_file_name, is_data_source, processing_status, downloaded_at, metadata)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                         RETURNING id
                     """, (
                         log_id,
@@ -1882,12 +1983,12 @@ class InvoiceRPAService:
                         file_info['numero'],  # ERP document ID
                         base_name,
                         file_info.get('is_data_source', True),
+                        'downloaded',  # Initial status is 'downloaded'
                         datetime.now(),
                         json.dumps({
                             'emisor': file_info['emisor'],
                             'valor': file_info['valor'],
                             'source': 'python_rpa',
-                            'processing_status': 'ready_for_upload_pipeline',
                             'matched_xml': file_info.get('matched_xml')
                         })
                     ))
@@ -2202,22 +2303,32 @@ class InvoiceRPAService:
                     response_data = response.json()
                     if response_data.get('success', False):
                         self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
+                        # Update status to completed on successful processing
+                        self._update_imported_invoice_status(filename, 'completed')
                         return True
                     else:
                         error_msg = response_data.get('error', 'Unknown processing error')
                         self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
+                        # Update status to failed with error message
+                        self._update_imported_invoice_status(filename, 'failed', error_msg)
                         return False
                 except Exception as json_error:
                     self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
+                    # Update status to failed with parsing error
+                    self._update_imported_invoice_status(filename, 'failed', f"Response parsing error: {json_error}")
                     return False
             else:
-                self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
+                error_msg = f"HTTP error {response.status_code}"
                 try:
                     error_data = response.json()
                     if error_data.get('error'):
-                        self.log(f"Server error: {error_data['error']}", "ERROR")
+                        error_msg += f": {error_data['error']}"
                 except:
                     pass
+                
+                self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
+                # Update status to failed with HTTP error
+                self._update_imported_invoice_status(filename, 'failed', error_msg)
                 return False
 
         except Exception as e:
