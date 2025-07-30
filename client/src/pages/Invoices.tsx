@@ -178,6 +178,16 @@ export default function Invoices() {
     }
   }, [linkedFilesMap]);
 
+  // Automatically fetch linked files for RPA invoices when they load
+  useEffect(() => {
+    if (invoices && invoices.length > 0) {
+      const rpaInvoices = invoices.filter(invoice => invoice.userId === 'rpa-system');
+      if (rpaInvoices.length > 0) {
+        fetchLinkedFilesForInvoices(rpaInvoices);
+      }
+    }
+  }, [invoices]);
+
   const deleteMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
       const response = await apiRequest('DELETE', `/api/invoices/${invoiceId}`);
