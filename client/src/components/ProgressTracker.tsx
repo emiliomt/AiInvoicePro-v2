@@ -313,7 +313,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
 
     // Continue polling if still running
     if (isPolling) {
-      setTimeout(() => pollProgress(), 2000); // Poll every 2 seconds
+      setTimeout(() => pollProgress(), 5000); // Poll every 5 seconds to reduce UI flickeringonds
     }
   };
 
