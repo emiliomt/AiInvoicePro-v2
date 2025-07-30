@@ -135,6 +135,10 @@ export default function InvoiceImporter() {
   // User state for WebSocket
   const [user] = useState({ id: 'current-user' });
 
+  // ZIP timeout input display state
+  const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
+  const [editZipTimeoutInput, setEditZipTimeoutInput] = useState('60');
+
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const [runningConfigs, setRunningConfigs] = useState<Set<number>>(new Set());
@@ -848,6 +852,9 @@ export default function InvoiceImporter() {
 
   const handleEditConfig = (config: ImportConfig) => {
     setEditingConfig(config);
+
+    // Initialize the edit input display state
+    setEditZipTimeoutInput(String(config.zipDownloadTimeout || 60));
 
     // Populate form with existing config data
     setNewConfig({
@@ -1752,17 +1759,26 @@ export default function InvoiceImporter() {
                     type="number"
                     min="10"
                     max="300"
-                    value={newConfig.zipDownloadTimeout || 60}
+                    value={zipTimeoutInput}
                     onChange={(e) => {
                       const value = e.target.value;
-                      setNewConfig(prev => ({ 
-                        ...prev, 
-                        zipDownloadTimeout: value === '' ? '' : parseInt(value) || 60 
-                      }));
+                      setZipTimeoutInput(value);
+                      
+                      // Update the config state with parsed value if valid
+                      if (value !== '') {
+                        const numValue = parseInt(value);
+                        if (!isNaN(numValue) && numValue >= 10 && numValue <= 300) {
+                          setNewConfig(prev => ({ 
+                            ...prev, 
+                            zipDownloadTimeout: numValue 
+                          }));
+                        }
+                      }
                     }}
                     onBlur={(e) => {
-                      // Apply fallback when field loses focus if empty
-                      if (e.target.value === '') {
+                      const value = e.target.value;
+                      if (value === '' || isNaN(parseInt(value))) {
+                        setZipTimeoutInput('60');
                         setNewConfig(prev => ({ 
                           ...prev, 
                           zipDownloadTimeout: 60 
@@ -2184,17 +2200,26 @@ export default function InvoiceImporter() {
                   type="number"
                   min="10"
                   max="300"
-                  value={newConfig.zipDownloadTimeout || 60}
+                  value={editZipTimeoutInput}
                   onChange={(e) => {
                     const value = e.target.value;
-                    setNewConfig(prev => ({ 
-                      ...prev, 
-                      zipDownloadTimeout: value === '' ? '' : parseInt(value) || 60 
-                    }));
+                    setEditZipTimeoutInput(value);
+                    
+                    // Update the config state with parsed value if valid
+                    if (value !== '') {
+                      const numValue = parseInt(value);
+                      if (!isNaN(numValue) && numValue >= 10 && numValue <= 300) {
+                        setNewConfig(prev => ({ 
+                          ...prev, 
+                          zipDownloadTimeout: numValue 
+                        }));
+                      }
+                    }
                   }}
                   onBlur={(e) => {
-                    // Apply fallback when field loses focus if empty
-                    if (e.target.value === '') {
+                    const value = e.target.value;
+                    if (value === '' || isNaN(parseInt(value))) {
+                      setEditZipTimeoutInput('60');
                       setNewConfig(prev => ({ 
                         ...prev, 
                         zipDownloadTimeout: 60 
