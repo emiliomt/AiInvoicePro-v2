@@ -294,6 +294,53 @@ class InvoiceRPAService:
             # If we can't check, assume not processed to be safe
             return False
 
+    def _update_imported_invoice_status(self, file_info, status: str, error_message: str = None):
+        """Update processing status of imported invoice with lifecycle tracking"""
+        try:
+            pg_conn = psycopg2.connect(
+                host=os.getenv("PGHOST"),
+                port=int(os.getenv("PGPORT", 5432)),
+                database=os.getenv("PGDATABASE"),
+                user=os.getenv("PGUSER"),
+                password=os.getenv("PGPASSWORD"),
+            )
+            pg_cursor = pg_conn.cursor()
+            
+            filename = file_info.get('upload_filename', file_info.get('filename', ''))
+            
+            # Update status in imported_invoices table
+            if status == 'completed':
+                pg_cursor.execute("""
+                    UPDATE imported_invoices 
+                    SET processing_status = %s, processed_at = NOW()
+                    WHERE original_file_name = %s AND log_id = %s
+                """, (status, filename, self.log_id))
+            elif status == 'failed':
+                pg_cursor.execute("""
+                    UPDATE imported_invoices 
+                    SET processing_status = %s, processed_at = NOW(), 
+                        metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
+                    WHERE original_file_name = %s AND log_id = %s
+                """, (status, json.dumps({'error_message': error_message}), filename, self.log_id))
+            elif status == 'processing':
+                pg_cursor.execute("""
+                    UPDATE imported_invoices 
+                    SET processing_status = %s
+                    WHERE original_file_name = %s AND log_id = %s
+                """, (status, filename, self.log_id))
+            
+            rows_affected = pg_cursor.rowcount
+            pg_conn.commit()
+            pg_conn.close()
+            
+            if rows_affected > 0:
+                self.log(f"📊 Updated {filename} status: {status}" + (f" ({error_message})" if error_message else ""))
+            else:
+                self.log(f"⚠️ No records updated for {filename} status: {status}", "WARNING")
+                
+        except Exception as e:
+            self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
+
     def update_progress(self, step: str, progress: int):
         """Update progress tracking"""
         self.stats['current_step'] = step
@@ -1564,60 +1611,7 @@ class InvoiceRPAService:
             except Exception as e:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
 
-    def _update_imported_invoice_status(self, filename: str, status: str, error_message: str = None):
-        """
-        Update processing status for imported invoice records
-        Status: downloaded -> processing -> completed/failed
-        """
-        try:
-            import os
-            database_url = os.environ.get('DATABASE_URL')
-            if not database_url:
-                self.log("DATABASE_URL not found, cannot update invoice status", "WARNING")
-                return
-                
-            pg_conn = psycopg2.connect(database_url)
-            pg_cursor = pg_conn.cursor()
-            
-            # Find imported invoice record by filename and log_id
-            pg_cursor.execute("""
-                SELECT id FROM imported_invoices 
-                WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
-                AND original_file_name = %s
-                ORDER BY created_at DESC
-                LIMIT 1
-            """, (self.config_id, filename))
-            
-            result = pg_cursor.fetchone()
-            if result:
-                invoice_id = result[0]
-                
-                # Update status and processed_at timestamp
-                if status == 'failed' and error_message:
-                    pg_cursor.execute("""
-                        UPDATE imported_invoices 
-                        SET processing_status = %s, 
-                            processed_at = NOW(),
-                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
-                        WHERE id = %s
-                    """, (status, json.dumps({'error': error_message}), invoice_id))
-                else:
-                    pg_cursor.execute("""
-                        UPDATE imported_invoices 
-                        SET processing_status = %s, processed_at = NOW()
-                        WHERE id = %s
-                    """, (status, invoice_id))
-                
-                pg_conn.commit()
-                self.log(f"Updated status for {filename} to '{status}' (ID: {invoice_id})")
-                
-            else:
-                self.log(f"Could not find imported invoice record for {filename}", "WARNING")
-                
-            pg_conn.close()
-                
-        except Exception as e:
-            self.log(f"Error updating invoice status for {filename}: {e}", "ERROR")
+
 
     def process_files_through_manual_pipeline(self) -> bool:
         """Process extracted files (XML/PDF) through manual upload pipeline with conditional storage logic"""
@@ -1820,7 +1814,7 @@ class InvoiceRPAService:
                 dst.write(xml_content)
 
             # Mark as processing before triggering manual pipeline
-            self._update_imported_invoice_status(upload_filename, 'processing')
+            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'processing')
             
             # Call Node.js endpoint to process the file through manual pipeline
             success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
@@ -1872,7 +1866,7 @@ class InvoiceRPAService:
             shutil.copy2(pdf_file_path, upload_path)
 
             # Mark as processing before triggering manual pipeline
-            self._update_imported_invoice_status(upload_filename, 'processing')
+            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'processing')
             
             # Call Node.js endpoint to process the file through manual pipeline
             success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
@@ -2304,18 +2298,18 @@ class InvoiceRPAService:
                     if response_data.get('success', False):
                         self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
                         # Update status to completed on successful processing
-                        self._update_imported_invoice_status(filename, 'completed')
+                        self._update_imported_invoice_status({'upload_filename': filename}, 'completed')
                         return True
                     else:
                         error_msg = response_data.get('error', 'Unknown processing error')
                         self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
                         # Update status to failed with error message
-                        self._update_imported_invoice_status(filename, 'failed', error_msg)
+                        self._update_imported_invoice_status({'upload_filename': filename}, 'failed', error_msg)
                         return False
                 except Exception as json_error:
                     self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
                     # Update status to failed with parsing error
-                    self._update_imported_invoice_status(filename, 'failed', f"Response parsing error: {json_error}")
+                    self._update_imported_invoice_status({'upload_filename': filename}, 'failed', f"Response parsing error: {json_error}")
                     return False
             else:
                 error_msg = f"HTTP error {response.status_code}"
@@ -2328,11 +2322,13 @@ class InvoiceRPAService:
                 
                 self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
                 # Update status to failed with HTTP error
-                self._update_imported_invoice_status(filename, 'failed', error_msg)
+                self._update_imported_invoice_status({'upload_filename': filename}, 'failed', error_msg)
                 return False
 
         except Exception as e:
             self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
+            # Update status to failed with exception error
+            self._update_imported_invoice_status({'upload_filename': filename}, 'failed', str(e))
             return False
 
     def run_import_process(self) -> Dict[str, Any]:
