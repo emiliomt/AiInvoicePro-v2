@@ -132,32 +132,50 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
             
-            # Check if invoice exists in main invoices table (successfully processed)
-            # Look for invoices with matching invoice number and vendor info
+            # Primary check: exact invoice number match from extracted data
             pg_cursor.execute("""
-                SELECT id FROM invoices 
+                SELECT id, file_name FROM invoices 
                 WHERE user_id = 'rpa-system'
+                AND extracted_data->>'invoiceNumber' = %s
                 AND (
-                    extracted_data->>'invoiceNumber' = %s OR
-                    file_name ILIKE %s
-                )
-                AND (
-                    vendor_name ILIKE %s OR
-                    extracted_data->>'vendorName' ILIKE %s
+                    vendor_name = %s OR
+                    extracted_data->>'vendorName' = %s
                 )
                 LIMIT 1
             """, (
                 numero_documento, 
-                f"%{numero_documento}%",
-                f"%{emisor}%",
-                f"%{emisor}%"
+                emisor.replace("_", " ").replace(".", ""),  # Clean emisor for comparison
+                emisor.replace("_", " ").replace(".", "")
             ))
             
             result = pg_cursor.fetchone()
+            
+            # If exact match not found, try fallback with normalized names
+            if not result:
+                # Normalize emisor for more flexible matching
+                normalized_emisor = emisor.replace("_", " ").replace(".", "").upper().strip()
+                pg_cursor.execute("""
+                    SELECT id, file_name FROM invoices 
+                    WHERE user_id = 'rpa-system'
+                    AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
+                    AND extracted_data->>'invoiceNumber' = %s
+                    AND (
+                        UPPER(REPLACE(REPLACE(vendor_name, '_', ' '), '.', '')) = %s OR
+                        UPPER(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', '')) = %s
+                    )
+                    LIMIT 1
+                """, (
+                    self.config_id,  # Add company filtering to fallback as well
+                    numero_documento, 
+                    normalized_emisor,
+                    normalized_emisor
+                ))
+                result = pg_cursor.fetchone()
+            
             pg_conn.close()
             
             if result:
-                self.log(f"✅ Invoice {numero_documento} from {emisor} already successfully processed (ID: {result[0]})")
+                self.log(f"✅ Invoice {numero_documento} from {emisor} already successfully processed (ID: {result[0]}, File: {result[1]})")
                 return True
             else:
                 self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in main invoices table - will process")
