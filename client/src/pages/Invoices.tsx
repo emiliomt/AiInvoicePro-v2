@@ -42,6 +42,7 @@ interface Invoice {
   createdAt: string;
   userId: string;
   ocrText?: string | null;
+  isDataSource?: boolean | null;
   extractedData?: {
     confidenceScore?: string;
     [key: string]: any;
@@ -77,6 +78,31 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   const hasOCRText = !!invoice.ocrText;
   
   return isPDFImageFile || hasOCRText;
+};
+
+// Helper function to check if invoice is eligible for "Report a Problem" button
+const isEligibleForProblemReport = (invoice: Invoice): boolean => {
+  // Only show for extracted invoices
+  if (invoice.status !== 'extracted') {
+    return false;
+  }
+
+  // Only show for PDF files (not XML files)
+  const isPDFFile = /\.pdf$/i.test(invoice.fileName || '');
+  if (!isPDFFile) {
+    return false;
+  }
+
+  // For manual uploads (non-RPA), always show the button if it's AI-extracted
+  if (invoice.userId !== 'rpa-system') {
+    return isAIExtractedInvoice(invoice);
+  }
+
+  // For RPA imports, only show if isDataSource = true (primary extraction source)
+  // This excludes reference PDFs that are linked to XML-derived invoices
+  const isDataSource = invoice.isDataSource === true;
+  
+  return isDataSource && isAIExtractedInvoice(invoice);
 };
 
 export default function Invoices() {
@@ -829,6 +855,19 @@ export default function Invoices() {
                               <ThumbsUp size={14} className="mr-1" />
                               Good Job AI!
                             </Button>
+                            
+                            {/* Report a Problem button - only for PDF files with isDataSource = true */}
+                            {isEligibleForProblemReport(invoice) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleFeedbackClick(invoice)}
+                                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                              >
+                                <AlertTriangle size={14} className="mr-1" />
+                                Report a Problem
+                              </Button>
+                            )}
                             {/* Only show Report Error for AI-extracted invoices (confidence < 0.9) */}
                             {(!invoice.extractedData?.confidenceScore || parseFloat(invoice.extractedData.confidenceScore) < 0.9) && (
                               <Button

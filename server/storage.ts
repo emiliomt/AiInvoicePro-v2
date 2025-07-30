@@ -52,7 +52,7 @@ import {
   type ScheduledTask,
   type InsertScheduledTask
 } from "@shared/schema";
-import { eq, desc, sql, and, or, ilike, isNull, inArray } from "drizzle-orm";
+import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -314,7 +314,20 @@ class PostgresStorage implements IStorage {
   }
 
   async getInvoices(): Promise<Invoice[]> {
-    return await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+    // Join with imported_invoices to get isDataSource information for RPA imports
+    const results = await db
+      .select({
+        ...getTableColumns(invoices),
+        isDataSource: importedInvoices.isDataSource,
+      })
+      .from(invoices)
+      .leftJoin(importedInvoices, eq(invoices.id, importedInvoices.invoiceId))
+      .orderBy(desc(invoices.createdAt));
+    
+    return results.map(result => ({
+      ...result,
+      isDataSource: result.isDataSource ?? null, // Convert undefined to null for consistency
+    }));
   }
 
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void> {
