@@ -561,16 +561,27 @@ export default function InvoiceImporter() {
         description: result.message || "Invoice import process has been initiated.",
       });
 
-      // Show progress tracker immediately with the logId from the response
+      // Update the config status to show it's running and start real-time updates
       if (result.logId) {
-        const config = configs?.find(c => c.id === configId);
-        setSelectedConfig({
-          id: configId,
-          name: config?.taskName || 'Import Task',
-          jobId: result.logId // Use the logId from the response
-        });
-        setShowProgressTracker(true);
-        console.log(`🚀 Starting progress tracking for configId: ${configId}, logId: ${result.logId}`);
+        console.log(`🚀 Starting in-card progress tracking for configId: ${configId}, logId: ${result.logId}`);
+        
+        // Update config status immediately to show running state
+        setConfigs(prevConfigs => 
+          prevConfigs.map(config => 
+            config.id === configId 
+              ? { 
+                  ...config, 
+                  status: 'running', 
+                  progress: 0, 
+                  currentStep: 'Initializing import process...',
+                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0 }
+                }
+              : config
+          )
+        );
+        
+        // Start polling for progress updates as backup to WebSocket
+        startConfigProgressPolling(configId, result.logId);
       }
 
       // Refresh the logs after a short delay
@@ -594,7 +605,57 @@ export default function InvoiceImporter() {
     }
   };
 
-  // Old polling system removed - now handled by ProgressTracker component
+  // In-card progress polling system
+  const startConfigProgressPolling = (configId: number, logId: number) => {
+    console.log(`Starting in-card progress polling for config ${configId}, logId: ${logId}`);
+    
+    const pollProgress = async () => {
+      try {
+        const response = await fetch(`/api/rpa/progress/${logId}`, {
+          credentials: 'include',
+        });
+        
+        if (response.ok) {
+          const data = await response.json();
+          console.log(`📊 Progress poll result for config ${configId}:`, data);
+          
+          // Update the config with progress data
+          setConfigs(prevConfigs => 
+            prevConfigs.map(config => 
+              config.id === configId 
+                ? {
+                    ...config,
+                    status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
+                    progress: data.progressPercent || 0,
+                    currentStep: data.stage || 'Processing...',
+                    stats: {
+                      total_invoices: data.total || 0,
+                      processed_invoices: data.processed || 0,
+                      successful_imports: data.success || 0,
+                      failed_imports: data.failed || 0
+                    }
+                  }
+                : config
+            )
+          );
+          
+          // Continue polling if still running
+          if (data.status === 'running' || data.status === 'processing') {
+            setTimeout(pollProgress, 2000); // Poll every 2 seconds
+          } else {
+            console.log(`Progress polling completed for config ${configId} with status: ${data.status}`);
+          }
+        }
+      } catch (error) {
+        console.error(`Error polling progress for config ${configId}:`, error);
+        // Retry after longer delay on error
+        setTimeout(pollProgress, 5000);
+      }
+    };
+    
+    // Start polling immediately
+    pollProgress();
+  };
 
   const validateMultipleDailySchedule = () => {
     if (newConfig.schedule !== 'multiple_daily') return true;
@@ -2059,19 +2120,7 @@ export default function InvoiceImporter() {
           </DialogContent>
         </Dialog>
 
-        {/* Progress Tracker */}
-        {showProgressTracker && selectedConfig && (
-          <ProgressTracker
-            isOpen={showProgressTracker}
-            onClose={() => {
-              setShowProgressTracker(false);
-              setSelectedConfig(null);
-            }}
-            configId={selectedConfig.id}
-            configName={selectedConfig.name}
-            jobId={selectedConfig.jobId}
-          />
-        )}
+        {/* Progress Tracker Modal - Removed for in-card progress */}
       </div>
     </div>
     </div>
