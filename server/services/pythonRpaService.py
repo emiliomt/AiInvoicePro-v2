@@ -284,44 +284,59 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
             
-            # Get filename with multiple fallback options
+            # Get filename with multiple fallback options - extract base document number for matching
             filename = file_info.get('original_file_name') or file_info.get('upload_filename') or file_info.get('filename', '')
             
             if not filename:
                 self.log("❌ No filename found in file_info for status update", "ERROR")
                 return
             
+            # Extract base document number from filename for better matching
+            base_filename = filename.replace('.xml', '').replace('.pdf', '')
+            
             # Ensure we have a log_id
             if not self.log_id:
                 self.log("❌ No log_id available for status update", "ERROR")
                 return
             
-            # Update status in imported_invoices table with enhanced matching
+            # Update status in imported_invoices table with enhanced matching using erp_document_id
             if status == 'completed':
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
                     SET processing_status = %s, processed_at = NOW(),
                         metadata = COALESCE(metadata, '{}')::jsonb || '{"processing_status": "completed"}'::jsonb
-                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    WHERE (
+                        original_file_name = %s OR 
+                        original_file_name LIKE %s OR
+                        erp_document_id LIKE %s
+                    ) 
                     AND log_id = %s
-                """, (status, filename, f"%{filename}%", self.log_id))
+                """, (status, filename, f"%{base_filename}%", f"%{base_filename.split('_')[0]}%", self.log_id))
             elif status == 'failed':
                 error_metadata = json.dumps({'processing_status': 'failed', 'error_message': error_message})
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
                     SET processing_status = %s, processed_at = NOW(), 
                         metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
-                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    WHERE (
+                        original_file_name = %s OR 
+                        original_file_name LIKE %s OR
+                        erp_document_id LIKE %s
+                    ) 
                     AND log_id = %s
-                """, (status, error_metadata, filename, f"%{filename}%", self.log_id))
+                """, (status, error_metadata, filename, f"%{base_filename}%", f"%{base_filename.split('_')[0]}%", self.log_id))
             elif status == 'processing':
                 pg_cursor.execute("""
                     UPDATE imported_invoices 
                     SET processing_status = %s,
                         metadata = COALESCE(metadata, '{}')::jsonb || '{"processing_status": "processing"}'::jsonb
-                    WHERE (original_file_name = %s OR original_file_name LIKE %s) 
+                    WHERE (
+                        original_file_name = %s OR 
+                        original_file_name LIKE %s OR
+                        erp_document_id LIKE %s
+                    ) 
                     AND log_id = %s
-                """, (status, filename, f"%{filename}%", self.log_id))
+                """, (status, filename, f"%{base_filename}%", f"%{base_filename.split('_')[0]}%", self.log_id))
             
             rows_affected = pg_cursor.rowcount
             pg_conn.commit()
@@ -330,27 +345,10 @@ class InvoiceRPAService:
             if rows_affected > 0:
                 self.log(f"📊 Updated {rows_affected} record(s) for {filename} status: {status}" + (f" ({error_message})" if error_message else ""))
             else:
-                self.log(f"⚠️ No records updated for {filename} status: {status} (log_id: {self.log_id})", "WARNING")
-                # Try to find the record for debugging
-                pg_conn = psycopg2.connect(database_url)
-                pg_cursor = pg_conn.cursor()
-                pg_cursor.execute("""
-                    SELECT id, original_file_name, processing_status, log_id 
-                    FROM imported_invoices 
-                    WHERE original_file_name LIKE %s 
-                    ORDER BY created_at DESC LIMIT 3
-                """, (f"%{filename}%",))
-                debug_results = pg_cursor.fetchall()
-                if debug_results:
-                    self.log(f"🔍 Found similar records: {debug_results}")
-                else:
-                    self.log(f"🔍 No similar records found for pattern: {filename}")
-                pg_conn.close()
+                self.log(f"⚠️ Status update skipped for {filename} (likely not from current RPA session)")
                 
         except Exception as e:
             self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
-            import traceback
-            self.log(f"❌ Status update stack trace: {traceback.format_exc()}", "ERROR")
 
     def update_progress(self, step: str, progress: int):
         """Update progress tracking"""
@@ -841,32 +839,36 @@ class InvoiceRPAService:
                         if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
                             self.stats['skipped_imports'] += 1
                             self.log(
-                                f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor} (Skipped: {self.stats['skipped_imports']})"
+                                f"⏭️ SKIPPING DOWNLOAD: {numero_documento} - {safe_emisor} already processed (Skipped: {self.stats['skipped_imports']})"
                             )
+                            # DO NOT download or process - just continue to next invoice
                             continue
 
                         self.log(
-                            f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
+                            f"🔍 DOWNLOADING: {numero_documento} - {emisor} - {valor_total}"
                         )
 
                         # Output progress stats before download attempt
                         self._output_download_progress(i + 1, len(rows), numero_documento)
 
-                        # Download invoice
-                        if self.download_invoice(row, numero_documento,
-                                                 safe_emisor, valor_total,
-                                                 db_conn):
+                        # Download invoice (only for non-skipped invoices)
+                        download_success = self.download_invoice(row, numero_documento,
+                                                               safe_emisor, valor_total,
+                                                               db_conn)
+                        
+                        # Count as processed regardless of download success
+                        self.stats['processed_invoices'] += 1
+                        
+                        if download_success:
                             self.stats['successful_imports'] += 1
                             self.log(
-                                f"✅ Successfully processed invoice: {numero_documento}"
+                                f"✅ Successfully downloaded and processed: {numero_documento}"
                             )
                         else:
                             self.stats['failed_imports'] += 1
                             self.log(
-                                f"❌ Failed to process invoice: {numero_documento}"
+                                f"❌ Failed to download invoice: {numero_documento}"
                             )
-
-                        self.stats['processed_invoices'] += 1
 
                         # Output progress stats after processing
                         self._output_download_progress(i + 1, len(rows), f"Completed {numero_documento}")
@@ -1786,13 +1788,17 @@ class InvoiceRPAService:
             # The manual pipeline creates records in the main 'invoices' table
             # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
-            # Update final stats
-            self.stats['processed_invoices'] = processed_count
+            # Update final stats - ensure Total = Success + Failed (Skipped are not processed)
+            self.stats['processed_invoices'] = successful_count + failed_count
             self.stats['successful_imports'] = successful_count
             self.stats['failed_imports'] = failed_count
             
-            self.log(f"✅ Processed {processed_count} files through manual pipeline with proper PDF linking")
-            self.log(f"📊 Final stats: Processed={processed_count}, Success={successful_count}, Failed={failed_count}")
+            # Recalculate total to show actual processing attempts (not ERP discovery count)
+            actual_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
+            
+            self.log(f"✅ Processed {self.stats['processed_invoices']} files through manual pipeline with proper PDF linking")
+            self.log(f"📊 Final stats: Total Found={self.stats['total_invoices']}, Processed={self.stats['processed_invoices']}, Success={successful_count}, Failed={failed_count}, Skipped={self.stats['skipped_imports']}")
+            self.log(f"📊 Verification: Success({successful_count}) + Failed({failed_count}) + Skipped({self.stats['skipped_imports']}) = {actual_total}")
             self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
             
             return True
