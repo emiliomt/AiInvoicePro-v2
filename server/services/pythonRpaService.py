@@ -118,8 +118,8 @@ class InvoiceRPAService:
     def _is_invoice_successfully_processed(self, numero_documento: str, emisor: str, valor_total: str) -> bool:
         """
         Check if an invoice was successfully processed or already downloaded
-        Checks both main invoices table (fully processed) and imported_invoices table (downloaded)
-        Only process invoices that haven't been successfully handled before
+        Uses hierarchical matching: numero_documento + emisor first, then valor_total validation when available
+        Skips invoices even when valor_total is None if document and vendor match
         """
         try:
             # Connect to PostgreSQL to check both tables
@@ -136,9 +136,29 @@ class InvoiceRPAService:
             safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))
             normalized_emisor = emisor.replace("_", " ").replace(".", "").upper().strip()
             
+            # Helper function to validate valor_total when available
+            def validate_total_amount(db_total: str) -> bool:
+                """Validate valor_total with 0.01 threshold if both values are available"""
+                if valor_total is None or valor_total == '' or valor_total == 'N/A':
+                    # No valor_total provided - skip anyway assuming same invoice
+                    return True
+                
+                if db_total is None or db_total == '' or db_total == 'N/A':
+                    # DB has no total but we have one - still skip assuming same invoice
+                    return True
+                
+                try:
+                    input_total = float(valor_total.replace(',', '').replace('$', '').strip())
+                    stored_total = float(db_total.replace(',', '').replace('$', '').strip())
+                    return abs(input_total - stored_total) <= 0.01
+                except (ValueError, AttributeError):
+                    # If we can't parse either total, skip anyway
+                    return True
+            
             # Check 1: Main invoices table (fully processed invoices)
             pg_cursor.execute("""
-                SELECT id, file_name FROM invoices 
+                SELECT id, file_name, extracted_data->>'totalAmount' as total_amount 
+                FROM invoices 
                 WHERE user_id = 'rpa-system'
                 AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
                 AND extracted_data->>'invoiceNumber' = %s
@@ -156,9 +176,14 @@ class InvoiceRPAService:
             
             result = pg_cursor.fetchone()
             if result:
-                self.log(f"✅ Invoice {numero_documento} from {emisor} already fully processed in main table (ID: {result[0]}, File: {result[1]})")
-                pg_conn.close()
-                return True
+                db_id, db_filename, db_total = result
+                if validate_total_amount(db_total):
+                    valor_msg = f" (valor_total not validated - assuming same invoice)" if valor_total is None else f" (valor_total validated within 0.01 threshold)"
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} already fully processed in main table (ID: {db_id}, File: {db_filename}){valor_msg}")
+                    pg_conn.close()
+                    return True
+                else:
+                    self.log(f"⚠️ Invoice {numero_documento} from {emisor} found but valor_total mismatch (Expected: {valor_total}, Found: {db_total}) - will process as different invoice")
             
             # Check 2: imported_invoices table (downloaded but not yet fully processed)
             original_filename = f"{numero_documento}_{safe_emisor}.xml"
@@ -179,7 +204,8 @@ class InvoiceRPAService:
             
             imported_result = pg_cursor.fetchone()
             if imported_result:
-                self.log(f"✅ Invoice {numero_documento} from {emisor} already downloaded in previous import (ID: {imported_result[0]}, File: {imported_result[1]})")
+                valor_msg = f" (valor_total not available for validation - assuming same invoice)" if valor_total is None else f" (with valor_total: {valor_total})"
+                self.log(f"✅ Invoice {numero_documento} from {emisor} already downloaded in previous import (ID: {imported_result[0]}, File: {imported_result[1]}){valor_msg}")
                 pg_conn.close()
                 return True
             
@@ -203,14 +229,16 @@ class InvoiceRPAService:
                 
                 pattern_result = pg_cursor.fetchone()
                 if pattern_result:
-                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern (ID: {pattern_result[0]}, File: {pattern_result[1]})")
+                    valor_msg = f" (valor_total not available for validation)" if valor_total is None else f" (with valor_total: {valor_total})"
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern (ID: {pattern_result[0]}, File: {pattern_result[1]}){valor_msg}")
                     pg_conn.close()
                     return True
             
             pg_conn.close()
             
             # Log exact match conditions for debugging
-            self.log(f"🔄 Invoice {numero_documento} from {emisor} (total: {valor_total}) not found in either table:")
+            valor_info = f"(valor_total: {valor_total if valor_total else 'None - will not be used for validation'})"
+            self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found in either table:")
             self.log(f"   - Looking for invoice number: {numero_documento}")
             self.log(f"   - Looking for vendor (normalized): {normalized_emisor}")
             self.log(f"   - Looking for filename: {original_filename}")
