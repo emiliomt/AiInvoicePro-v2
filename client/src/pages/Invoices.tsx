@@ -622,22 +622,10 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    variant="outline"
-                    size="sm"
-                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
-                    className="flex items-center space-x-2"
+                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
                   >
-                    {isProcessingAutomatic ? (
-                      <>
-                        <Loader2 className="h-4 w-4 animate-spin" />
-                        <span>Processing...</span>
-                      </>
-                    ) : (
-                      <>
-                        <Play className="h-4 w-4" />
-                        <span>Initiate Automatic Process ({selectedInvoices.length})</span>
-                      </>
-                    )}
+                    <Play size={16} className="mr-2" />
+                    Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
                   </Button>
             </div>
           </div>
