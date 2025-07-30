@@ -186,97 +186,33 @@ class InvoiceRPAService:
                 else:
                     self.log(f"⚠️ Invoice {numero_documento} from {emisor} found but valor_total mismatch (Expected: {valor_total}, Found: {db_total}) - will process as different invoice")
             
-            # Check 2: imported_invoices table with status-based logic
-            # Only skip if status is 'completed' or 'processing' (actively being processed)
-            # Allow retry if status is 'failed' or 'downloaded' (stuck in pipeline)
-            original_filename = f"{numero_documento}_{safe_emisor}.xml"
+            # Check 2: imported_invoices table - check for completed status in metadata or processing_status
+            # Only skip if any record has processing_status = 'completed'
             pg_cursor.execute("""
-                SELECT id, original_file_name, processing_status, processed_at 
+                SELECT metadata->>'processing_status', processing_status, id, original_file_name
                 FROM imported_invoices 
-                WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
-                AND file_type = 'xml' 
-                AND (
-                    original_file_name = %s OR
-                    original_file_name ILIKE %s
-                )
+                WHERE original_file_name LIKE %s
                 ORDER BY created_at DESC
-                LIMIT 1
-            """, (
-                self.config_id,
-                original_filename,
-                f"%{numero_documento}%"
-            ))
+            """, (f"%{numero_documento}%",))
             
-            imported_result = pg_cursor.fetchone()
-            if imported_result:
-                imp_id, imp_filename, processing_status, processed_at = imported_result
-                valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
-                
-                # Status-based decision logic
-                if processing_status == 'completed':
-                    self.log(f"✅ Invoice {numero_documento} from {emisor} already completed successfully (ID: {imp_id}, File: {imp_filename}){valor_msg}")
-                    pg_conn.close()
-                    return True
-                elif processing_status == 'processing':
-                    self.log(f"⏳ Invoice {numero_documento} from {emisor} currently being processed (ID: {imp_id}, File: {imp_filename}){valor_msg}")
-                    pg_conn.close()
-                    return True
-                elif processing_status == 'failed':
-                    self.log(f"🔄 Invoice {numero_documento} from {emisor} previously failed - will retry (ID: {imp_id}, File: {imp_filename}){valor_msg}")
-                    # Mark for cleanup - delete failed record to allow fresh retry
-                    pg_cursor.execute("DELETE FROM imported_invoices WHERE id = %s", (imp_id,))
-                    pg_conn.commit()
-                    self.log(f"🗑️ Cleaned up failed import record {imp_id} to allow retry")
-                elif processing_status == 'downloaded':
-                    # Check if it's stuck in downloaded state for too long (>30 minutes)
-                    if processed_at:
-                        from datetime import datetime, timedelta
-                        now = datetime.now()
-                        downloaded_time = processed_at if isinstance(processed_at, datetime) else datetime.fromisoformat(str(processed_at))
-                        time_diff = now - downloaded_time
-                        if time_diff > timedelta(minutes=30):
-                            self.log(f"🔄 Invoice {numero_documento} from {emisor} stuck in downloaded state for {time_diff} - will retry (ID: {imp_id}){valor_msg}")
-                            # Clean up stuck record
-                            pg_cursor.execute("DELETE FROM imported_invoices WHERE id = %s", (imp_id,))
-                            pg_conn.commit()
-                            self.log(f"🗑️ Cleaned up stuck import record {imp_id} to allow retry")
-                        else:
-                            self.log(f"⏳ Invoice {numero_documento} from {emisor} recently downloaded, still processing (ID: {imp_id}){valor_msg}")
-                            pg_conn.close()
-                            return True
-                    else:
-                        self.log(f"⏳ Invoice {numero_documento} from {emisor} in downloaded state (ID: {imp_id}){valor_msg}")
+            imported_results = pg_cursor.fetchall()
+            if imported_results:
+                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
+                    # Check both metadata and processing_status columns for 'completed'
+                    if metadata_status == 'completed' or processing_status == 'completed':
+                        valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
+                        self.log(f"✅ Invoice {numero_documento} from {emisor} already completed successfully (ID: {imp_id}, File: {imp_filename}){valor_msg}")
                         pg_conn.close()
                         return True
-            
-            # Check 3: Alternative filename patterns with status-based logic
-            alternative_patterns = [
-                f"NO{numero_documento}_{safe_emisor}.xml",  # Common ERP pattern
-                f"{numero_documento}_*.xml"  # Wildcard pattern
-            ]
-            
-            for pattern in alternative_patterns:
-                pg_cursor.execute("""
-                    SELECT id, original_file_name, processing_status 
-                    FROM imported_invoices 
-                    WHERE log_id IN (SELECT id FROM invoice_importer_logs WHERE config_id = %s)
-                    AND file_type = 'xml' 
-                    AND original_file_name ILIKE %s
-                    AND processing_status IN ('completed', 'processing')
-                    ORDER BY created_at DESC
-                    LIMIT 1
-                """, (
-                    self.config_id,
-                    pattern.replace("*", "%")
-                ))
                 
-                pattern_result = pg_cursor.fetchone()
-                if pattern_result:
-                    pat_id, pat_filename, pat_status = pattern_result
-                    valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
-                    self.log(f"✅ Invoice {numero_documento} from {emisor} found with alternative pattern - status: {pat_status} (ID: {pat_id}, File: {pat_filename}){valor_msg}")
-                    pg_conn.close()
-                    return True
+                # If we reach here, no completed records found - log details and continue processing
+                self.log(f"🔄 Invoice {numero_documento} from {emisor} found in imported_invoices but not completed - will process")
+                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
+                    status_info = f"processing_status: {processing_status}, metadata_status: {metadata_status}"
+                    self.log(f"   - Record ID {imp_id}: {imp_filename} ({status_info})")
+            else:
+                self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in imported_invoices - will process")
+
             
             pg_conn.close()
             
@@ -285,7 +221,6 @@ class InvoiceRPAService:
             self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found or available for retry:")
             self.log(f"   - Looking for invoice number: {numero_documento}")
             self.log(f"   - Looking for vendor (normalized): {normalized_emisor}")
-            self.log(f"   - Looking for filename: {original_filename}")
             self.log(f"   - Config ID: {self.config_id}")
             self.log("   - Will process this invoice")
             return False
