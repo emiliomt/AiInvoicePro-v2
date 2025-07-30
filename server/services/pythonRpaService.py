@@ -115,6 +115,61 @@ class InvoiceRPAService:
         print(f"[{timestamp}] {level}: {message}")
         sys.stdout.flush()
 
+    def _is_invoice_successfully_processed(self, numero_documento: str, emisor: str, valor_total: str) -> bool:
+        """
+        Check if an invoice was successfully processed through the manual pipeline
+        Only skip invoices that exist in the main PostgreSQL invoices table
+        Failed downloads/processing attempts should be retried
+        """
+        try:
+            # Connect to PostgreSQL to check main invoices table
+            import os
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                self.log("DATABASE_URL not found, cannot check for processed invoices", "WARNING")
+                return False
+                
+            pg_conn = psycopg2.connect(database_url)
+            pg_cursor = pg_conn.cursor()
+            
+            # Check if invoice exists in main invoices table (successfully processed)
+            # Look for invoices with matching document number and vendor info
+            pg_cursor.execute("""
+                SELECT id FROM invoices 
+                WHERE user_id = 'rpa-system'
+                AND (
+                    extracted_data->>'documentNumber' = %s OR
+                    extracted_data->>'invoiceNumber' = %s OR
+                    file_name ILIKE %s
+                )
+                AND (
+                    vendor_name ILIKE %s OR
+                    extracted_data->>'vendorName' ILIKE %s
+                )
+                LIMIT 1
+            """, (
+                numero_documento, 
+                numero_documento, 
+                f"%{numero_documento}%",
+                f"%{emisor}%",
+                f"%{emisor}%"
+            ))
+            
+            result = pg_cursor.fetchone()
+            pg_conn.close()
+            
+            if result:
+                self.log(f"✅ Invoice {numero_documento} from {emisor} already successfully processed (ID: {result[0]})")
+                return True
+            else:
+                self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in main invoices table - will process")
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ Error checking processed invoices: {e}", "ERROR")
+            # If we can't check, assume not processed to be safe
+            return False
+
     def update_progress(self, step: str, progress: int):
         """Update progress tracking"""
         self.stats['current_step'] = step
@@ -596,17 +651,10 @@ class InvoiceRPAService:
                         valor_total = columns[8].text.strip().replace(
                             ",", "").replace(".", "").split(" ")[0]
 
-                        # Check if already downloaded
-                        cursor = db_conn.cursor()
-                        cursor.execute(
-                            """
-                            SELECT 1 FROM downloaded_invoices 
-                            WHERE numero_documento = ? AND emisor = ? AND valor_total = ?
-                        """, (numero_documento, safe_emisor, valor_total))
-
-                        if cursor.fetchone():
+                        # Check if already successfully processed (only skip if successfully imported to main invoices table)
+                        if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
                             self.log(
-                                f"⏭️ Skipping duplicate: {numero_documento} - {safe_emisor}"
+                                f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor}"
                             )
                             continue
 
