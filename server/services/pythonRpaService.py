@@ -860,8 +860,8 @@ class InvoiceRPAService:
                                                                safe_emisor, valor_total,
                                                                db_conn)
                         
-                        # Count as processed regardless of download success
-                        self.stats['processed_invoices'] += 1
+                        # NOTE: Do not increment processed_invoices here - each ERP row is already counted
+                        # as either successful_imports, failed_imports, or skipped_imports
                         
                         if download_success:
                             self.stats['successful_imports'] += 1
@@ -899,6 +899,19 @@ class InvoiceRPAService:
                     break
 
             db_conn.close()
+            
+            # 🔒 LOCK total_invoices after ERP processing - DO NOT MODIFY AGAIN
+            self.stats['total_invoices'] = self.stats['erp_rows_found']
+            self.log(f"🔒 Locked total_invoices = {self.stats['total_invoices']} (ERP rows found)")
+            self.log(f"📊 ERP Processing Summary: Total={self.stats['total_invoices']}, Success={self.stats['successful_imports']}, Failed={self.stats['failed_imports']}, Skipped={self.stats['skipped_imports']}")
+            
+            # Verify invariant: total_invoices = successful_imports + failed_imports + skipped_imports
+            verification_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
+            if verification_total != self.stats['total_invoices']:
+                self.log(f"⚠️ WARNING: Invariant violation! Total={self.stats['total_invoices']}, Sum={verification_total}", "ERROR")
+            else:
+                self.log(f"✅ Invariant verified: {self.stats['total_invoices']} = {self.stats['successful_imports']} + {self.stats['failed_imports']} + {self.stats['skipped_imports']}")
+            
             return True
 
         except Exception as e:
@@ -1797,36 +1810,37 @@ class InvoiceRPAService:
             # The manual pipeline creates records in the main 'invoices' table
             # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
-            # Update final stats - ensure processed_invoices represents invoices, not files
-            # Each successful/failed count represents one invoice processed (regardless of file count)
-            self.stats['processed_invoices'] = successful_count + failed_count
-            self.stats['successful_imports'] = successful_count
-            self.stats['failed_imports'] = failed_count
+            # 🚫 DO NOT UPDATE ERP-level statistics here - they were locked after ERP processing
+            # File processing statistics are separate from ERP-level outcomes
             
-            # Keep total_invoices as the original ERP count - don't change it
-            # The math should be: ERP_ROWS_FOUND = PROCESSED + SKIPPED + (NOT_EXTRACTABLE)
-            erp_rows_found = self.stats.get('erp_rows_found', self.stats.get('total_invoices', 0))
-            processed_invoices = successful_count + failed_count
-            skipped_invoices = self.stats.get('skipped_imports', 0)
-            not_extractable = erp_rows_found - processed_invoices - skipped_invoices
+            # 🚫 DO NOT MODIFY total_invoices - it was locked after ERP processing
+            # The file processing statistics are separate from ERP-level statistics
             
-            self.log(f"📊 Invoice processing summary:")
-            self.log(f"  - ERP rows originally found: {erp_rows_found}")
-            self.log(f"  - Successfully processed: {successful_count}")
-            self.log(f"  - Failed to process: {failed_count}")
-            self.log(f"  - Skipped (duplicates): {skipped_invoices}")
-            self.log(f"  - Not extractable/downloadable: {max(0, not_extractable)}")
+            self.log(f"📊 File Processing Summary:")
+            self.log(f"  - Files successfully processed: {successful_count}")
+            self.log(f"  - Files failed to process: {failed_count}")
+            self.log(f"  - Total files processed through pipeline: {successful_count + failed_count}")
             
-            # Ensure total_invoices remains the original ERP count
-            self.stats['total_invoices'] = erp_rows_found
+            # Track file processing stats separately (not to be confused with ERP-level stats)
+            files_processed = successful_count + failed_count
             
-            # Recalculate total to show actual processing attempts (not ERP discovery count)
-            actual_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
+            # Clean up duplicate statistics display sections
             
-            self.log(f"✅ Processed {self.stats['processed_invoices']} files through manual pipeline with proper PDF linking")
-            self.log(f"📊 Final stats: Total Found={self.stats['total_invoices']}, Processed={self.stats['processed_invoices']}, Success={successful_count}, Failed={failed_count}, Skipped={self.stats['skipped_imports']}")
-            self.log(f"📊 Verification: Success({successful_count}) + Failed({failed_count}) + Skipped({self.stats['skipped_imports']}) = {actual_total}")
-            self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
+            self.log(f"✅ Processed {files_processed} files through manual pipeline with proper PDF linking")
+            
+            # 📊 Final import summary using LOCKED ERP-level statistics
+            self.log(f"📊 Final import summary:")
+            self.log(f"  - Total invoices found: {self.stats['total_invoices']}")
+            self.log(f"  - Successfully imported: {self.stats['successful_imports']}")
+            self.log(f"  - Failed imports: {self.stats['failed_imports']}")
+            self.log(f"  - Skipped (duplicates): {self.stats['skipped_imports']}")
+            
+            # Final verification of invariant
+            verification_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
+            if verification_total == self.stats['total_invoices']:
+                self.log(f"✅ Final verification: {self.stats['total_invoices']} = {self.stats['successful_imports']} + {self.stats['failed_imports']} + {self.stats['skipped_imports']}")
+            else:
+                self.log(f"❌ Final verification failed: {self.stats['total_invoices']} ≠ {verification_total}", "ERROR")
             
             return True
 
@@ -2293,17 +2307,14 @@ class InvoiceRPAService:
             file_progress = min(int((processed_count / total_files) * 100), 100) if total_files > 0 else 0
             overall_progress = 90 + int(file_progress * 0.08)  # Map to 90-98% range
             
-            # During file processing phase, use ERP rows as total_invoices for consistency
-            # processed_invoices should show how many invoices have been fully processed (not individual files)
-            total_invoices_processed = successful_count + failed_count
-            
-            # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            # Use LOCKED ERP-level statistics - do not calculate new values here
+            # All statistics were locked during ERP processing phase
             stats_data = {
-                'total_invoices': self.stats.get('total_invoices', total_invoices_processed + self.stats.get('skipped_imports', 0)),  # Use ERP row count
-                'processed_invoices': total_invoices_processed,  # Invoices fully processed (success + failed)
-                'successful_imports': successful_count,
-                'failed_imports': failed_count,
-                'skipped_imports': self.stats.get('skipped_imports', 0),
+                'total_invoices': self.stats.get('total_invoices', 0),  # Locked ERP row count
+                'processed_invoices': successful_count + failed_count,  # File processing count (for UI display)
+                'successful_imports': self.stats.get('successful_imports', 0),  # Locked ERP success count
+                'failed_imports': self.stats.get('failed_imports', 0),  # Locked ERP failure count
+                'skipped_imports': self.stats.get('skipped_imports', 0),  # Locked ERP skip count
                 'progress': overall_progress
             }
             
