@@ -4103,7 +4103,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       // Start the import process asynchronously but don't wait for it
       setImmediate(() => {
-        pythonInvoiceImporter.executeImportTask(configId)
+        pythonInvoiceImporter.executeImportTaskWithLogId(configId, log.id)
           .then(() => {
             console.log(`Import task ${configId} completed successfully`);
           })

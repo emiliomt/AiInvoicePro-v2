@@ -72,7 +72,72 @@ class PythonInvoiceImporter {
   }
 
   /**
-   * Execute Python RPA import task
+   * Execute Python RPA import task with existing log ID
+   */
+  async executeImportTaskWithLogId(configId: number, logId: number): Promise<void> {
+    console.log(`Starting Python RPA import task for config ${configId}, log ID: ${logId}`);
+
+    try {
+      // Get configuration
+      const config = await storage.getInvoiceImporterConfig(configId);
+      if (!config) {
+        throw new Error(`Configuration ${configId} not found`);
+      }
+
+      // Initialize progress tracking with existing logId
+      const progress: ImportProgress = {
+        configId,
+        logId,
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        currentStep: 'Initializing Python RPA service',
+        progress: 0,
+        isComplete: false,
+      };
+
+      this.activeImports.set(configId, progress);
+      this.logIdToConfigId.set(logId, configId); // Map logId to configId for polling
+
+      // Start progress tracking via WebSocket
+      progressTracker.sendProgress(config.userId, {
+        taskId: logId,
+        step: 1,
+        totalSteps: 100,
+        status: 'processing',
+        message: `Starting import: ${config.taskName}`,
+        timestamp: new Date(),
+        data: { configId, logId }
+      });
+
+      // Continue with the import process
+      await this._executeImportProcess(config, progress);
+
+    } catch (error) {
+      console.error(`Python RPA import task ${configId} failed:`, error);
+      
+      // Clean up progress tracking
+      this.activeImports.delete(configId);
+      this.logIdToConfigId.delete(logId);
+      
+      // Update database log with error
+      try {
+        await storage.updateInvoiceImporterLog(logId, {
+          status: 'failed',
+          completedAt: new Date(),
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      } catch (dbError) {
+        console.error('Failed to update log with error:', dbError);
+      }
+      
+      throw error;
+    }
+  }
+
+  /**
+   * Execute Python RPA import task (legacy method - creates its own log)
    */
   async executeImportTask(configId: number): Promise<void> {
     console.log(`Starting Python RPA import task for config ${configId}`);
@@ -145,65 +210,8 @@ class PythonInvoiceImporter {
         xmlPath: pythonConfig.xmlPath,
       });
 
-      // Execute Python RPA process
-      const result = await this.executePythonRPA(pythonConfig, progress);
-
-      // Update final status and save imported invoices to main database
-      if (result.success) {
-        await storage.updateInvoiceImporterLog(log.id, {
-          status: 'completed',
-          completedAt: new Date(),
-          totalInvoices: result.stats.total_invoices,
-          processedInvoices: result.stats.processed_invoices,
-          successfulImports: result.stats.successful_imports,
-          failedImports: result.stats.failed_imports,
-          executionTime: Date.now() - log.startedAt!.getTime(),
-        });
-
-        // Update the configuration's lastRun timestamp
-        await storage.updateInvoiceImporterConfig(configId, {
-          lastRun: new Date(),
-        });
-
-        progress.isComplete = true;
-        progress.currentStep = 'Import completed successfully';
-
-        // Complete progress tracking
-        progressTracker.sendTaskComplete(config.userId, log.id, true, 
-          'Import completed successfully', {
-            totalInvoices: progress.totalInvoices,
-            successfulImports: progress.successfulImports,
-            failedImports: progress.failedImports
-          });
-
-        console.log(`Python RPA import task ${configId} completed successfully`);
-      } else {
-        await storage.updateInvoiceImporterLog(log.id, {
-          status: 'failed',
-          completedAt: new Date(),
-          errorMessage: result.error || 'Unknown error occurred',
-          totalInvoices: result.stats.total_invoices,
-          processedInvoices: result.stats.processed_invoices,
-          successfulImports: result.stats.successful_imports,
-          failedImports: result.stats.failed_imports,
-          executionTime: Date.now() - log.startedAt!.getTime(),
-        });
-
-        progress.isComplete = true;
-        progress.error = result.error;
-        progress.currentStep = 'Import failed';
-
-        // Complete progress tracking with error
-        progressTracker.sendTaskComplete(config.userId, log.id, false, 
-          result.error || 'Import failed', {
-            totalInvoices: progress.totalInvoices,
-            successfulImports: progress.successfulImports,
-            failedImports: progress.failedImports,
-            error: result.error
-          });
-
-        console.error(`Python RPA import task ${configId} failed:`, result.error);
-      }
+      // Continue with the import process
+      await this._executeImportProcess(config, progress);
 
     } catch (error) {
       console.error(`Python RPA import task ${configId} error:`, error);
@@ -246,6 +254,93 @@ class PythonInvoiceImporter {
           this.logIdToConfigId.delete(logId);
         }
       }, 120000); // Keep progress for 2 minutes after completion for UI polling
+    }
+  }
+
+  /**
+   * Common import process logic shared by both methods
+   */
+  private async _executeImportProcess(config: InvoiceImporterConfig, progress: ImportProgress): Promise<void> {
+    // Prepare Python RPA configuration
+    const pythonConfig = {
+      erpUrl: config.erpUrl,
+      erpUsername: config.erpUsername,
+      erpPassword: config.erpPassword,
+      downloadPath: config.downloadPath || '/tmp/invoice_downloads',
+      xmlPath: config.xmlPath || '/tmp/xml_invoices',
+      headless: config.headless !== undefined ? config.headless : true,
+      fileTypes: config.fileTypes || 'both',
+    };
+
+    // Validate required fields
+    if (!pythonConfig.erpUrl || !pythonConfig.erpUsername || !pythonConfig.erpPassword) {
+      throw new Error('Missing required Python RPA configuration: ERP URL, username, or password');
+    }
+
+    console.log('Python RPA config prepared:', {
+      erpUrl: pythonConfig.erpUrl,
+      erpUsername: pythonConfig.erpUsername,
+      downloadPath: pythonConfig.downloadPath,
+      xmlPath: pythonConfig.xmlPath,
+    });
+
+    // Execute Python RPA process
+    const result = await this.executePythonRPA(pythonConfig, progress);
+
+    // Update final status
+    if (result.success) {
+      await storage.updateInvoiceImporterLog(progress.logId, {
+        status: 'completed',
+        completedAt: new Date(),
+        totalInvoices: result.stats.total_invoices,
+        processedInvoices: result.stats.processed_invoices,
+        successfulImports: result.stats.successful_imports,
+        failedImports: result.stats.failed_imports,
+      });
+
+      // Update the configuration's lastRun timestamp
+      await storage.updateInvoiceImporterConfig(progress.configId, {
+        lastRun: new Date(),
+      });
+
+      progress.isComplete = true;
+      progress.currentStep = 'Import completed successfully';
+
+      // Complete progress tracking
+      progressTracker.sendTaskComplete(config.userId, progress.logId, true, 
+        'Import completed successfully', {
+          totalInvoices: progress.totalInvoices,
+          successfulImports: progress.successfulImports,
+          failedImports: progress.failedImports
+        });
+
+      console.log(`Python RPA import task ${progress.configId} completed successfully`);
+    } else {
+      await storage.updateInvoiceImporterLog(progress.logId, {
+        status: 'failed',
+        completedAt: new Date(),
+        errorMessage: result.error || 'Unknown error occurred',
+        totalInvoices: result.stats.total_invoices,
+        processedInvoices: result.stats.processed_invoices,
+        successfulImports: result.stats.successful_imports,
+        failedImports: result.stats.failed_imports,
+      });
+
+      progress.isComplete = true;
+      progress.error = result.error;
+      progress.currentStep = 'Import failed';
+
+      // Complete progress tracking with error
+      progressTracker.sendTaskComplete(config.userId, progress.logId, false, 
+        result.error || 'Import failed', {
+          totalInvoices: progress.totalInvoices,
+          successfulImports: progress.successfulImports,
+          failedImports: progress.failedImports,
+          error: result.error
+        });
+
+      console.error(`Python RPA import task ${progress.configId} failed:`, result.error);
+      throw new Error(result.error || 'Import failed');
     }
   }
 
