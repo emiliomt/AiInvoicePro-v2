@@ -832,8 +832,12 @@ class InvoiceRPAService:
                         valor_total = columns[8].text.strip().replace(
                             ",", "").replace(".", "").split(" ")[0]
 
-                        # Always count total invoices found in ERP
+                        # Always count total invoices found in ERP (this is our baseline)
                         self.stats['total_invoices'] += 1
+                        # Also track this separately so we can preserve the original count
+                        if 'erp_rows_found' not in self.stats:
+                            self.stats['erp_rows_found'] = 0
+                        self.stats['erp_rows_found'] += 1
 
                         # Check if already successfully processed (only skip if successfully imported to main invoices table)
                         if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
@@ -1697,11 +1701,16 @@ class InvoiceRPAService:
                             self.log(f"🔗 Matched by token: XML '{xml_files[xml_base]}' <-> PDF '{pdf_files[pdf_base]}'")
                             break
 
-            # Build final processing list
+            # Build final processing list - this represents unique invoices to process
             all_base_names = set(matched_pairs.keys()) | unmatched_xmls | unmatched_pdfs
-            total_processing_items = len(all_base_names)
+            unique_invoices_to_process = len(all_base_names)
             
-            self.log(f"📊 Starting to process {total_processing_items} invoice files...")
+            # The total_processing_items should match unique invoices, not the original ERP count
+            # as some invoices might not have extractable files or might be skipped
+            total_processing_items = unique_invoices_to_process
+            
+            self.log(f"📊 Starting to process {unique_invoices_to_process} unique invoices from extracted files...")
+            self.log(f"📊 Breakdown: {len(matched_pairs)} XML+PDF pairs, {len(unmatched_xmls)} XML-only, {len(unmatched_pdfs)} PDF-only")
             
             for index, base_name in enumerate(all_base_names):
                 # Update progress with current file being processed
@@ -1794,12 +1803,22 @@ class InvoiceRPAService:
             self.stats['successful_imports'] = successful_count
             self.stats['failed_imports'] = failed_count
             
-            # Ensure total_invoices is consistent with what was found in ERP
-            # Don't let processed_invoices exceed total_invoices
-            if self.stats['processed_invoices'] > self.stats.get('total_invoices', 0):
-                self.log(f"⚠️ Warning: Processed count ({self.stats['processed_invoices']}) exceeds total found ({self.stats.get('total_invoices', 0)})")
-                # Adjust total_invoices to match reality of what was actually processed
-                self.stats['total_invoices'] = self.stats['processed_invoices'] + self.stats.get('skipped_imports', 0)
+            # Keep total_invoices as the original ERP count - don't change it
+            # The math should be: ERP_ROWS_FOUND = PROCESSED + SKIPPED + (NOT_EXTRACTABLE)
+            erp_rows_found = self.stats.get('erp_rows_found', self.stats.get('total_invoices', 0))
+            processed_invoices = successful_count + failed_count
+            skipped_invoices = self.stats.get('skipped_imports', 0)
+            not_extractable = erp_rows_found - processed_invoices - skipped_invoices
+            
+            self.log(f"📊 Invoice processing summary:")
+            self.log(f"  - ERP rows originally found: {erp_rows_found}")
+            self.log(f"  - Successfully processed: {successful_count}")
+            self.log(f"  - Failed to process: {failed_count}")
+            self.log(f"  - Skipped (duplicates): {skipped_invoices}")
+            self.log(f"  - Not extractable/downloadable: {max(0, not_extractable)}")
+            
+            # Ensure total_invoices remains the original ERP count
+            self.stats['total_invoices'] = erp_rows_found
             
             # Recalculate total to show actual processing attempts (not ERP discovery count)
             actual_total = self.stats['successful_imports'] + self.stats['failed_imports'] + self.stats['skipped_imports']
