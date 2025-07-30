@@ -5297,5 +5297,209 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     }
   });
 
+  // Batch process selected invoices automatically
+  app.post('/api/invoices/process-batch', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { invoiceIds } = req.body;
+
+    // Validate request body
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return res.status(400).json({ 
+        error: 'Invalid request: invoiceIds array is required and must not be empty' 
+      });
+    }
+
+    console.log(`Starting batch processing for ${invoiceIds.length} invoices`);
+
+    // Get all selected invoices
+    const invoices = await Promise.all(
+      invoiceIds.map(async (id: number) => {
+        const invoice = await storage.getInvoice(id);
+        if (!invoice || invoice.userId !== user.claims.sub) {
+          throw new Error(`Invoice ${id} not found or unauthorized`);
+        }
+        return invoice;
+      })
+    );
+
+    // Filter invoices that can be processed (uploaded but not yet processed)
+    const processableInvoices = invoices.filter(invoice => 
+      invoice.status === 'uploaded' || invoice.status === 'failed'
+    );
+
+    if (processableInvoices.length === 0) {
+      return res.status(400).json({ 
+        error: 'No invoices available for processing. Selected invoices may already be processed.' 
+      });
+    }
+
+    // Mark all invoices as processing
+    await Promise.all(
+      processableInvoices.map(invoice => 
+        storage.updateInvoice(invoice.id, { status: 'processing' })
+      )
+    );
+
+    // Send immediate response
+    res.json({
+      message: `Started batch processing of ${processableInvoices.length} invoices`,
+      processedInvoices: processableInvoices.length,
+      skippedInvoices: invoices.length - processableInvoices.length,
+      invoiceIds: processableInvoices.map(inv => inv.id)
+    });
+
+    // Process invoices in background with proper error handling
+    setImmediate(async () => {
+      console.log(`Background processing started for ${processableInvoices.length} invoices`);
+
+      // Process invoices in parallel with concurrency limit
+      const concurrencyLimit = 3; // Process 3 invoices at a time
+      const results = {
+        successful: 0,
+        failed: 0,
+        errors: [] as string[]
+      };
+
+      // Process in batches to avoid overwhelming the system
+      for (let i = 0; i < processableInvoices.length; i += concurrencyLimit) {
+        const batch = processableInvoices.slice(i, i + concurrencyLimit);
+
+        await Promise.allSettled(
+          batch.map(async (invoice) => {
+            try {
+              // Check if file exists
+              if (!invoice.fileUrl || !require('fs').existsSync(invoice.fileUrl)) {
+                throw new Error('Invoice file not found on disk');
+              }
+
+              const fs = require('fs');
+              const fileBuffer = fs.readFileSync(invoice.fileUrl);
+
+              console.log(`Processing invoice ${invoice.id} (${invoice.fileName})`);
+
+              // Use the same processing function as manual processing
+              await processInvoiceAsync(invoice, fileBuffer);
+
+              results.successful++;
+              console.log(`Successfully processed invoice ${invoice.id}`);
+
+            } catch (error: any) {
+              results.failed++;
+              const errorMessage = error?.message || 'Unknown processing error';
+              results.errors.push(`Invoice ${invoice.id}: ${errorMessage}`);
+
+              console.error(`Failed to process invoice ${invoice.id}:`, error);
+
+              // Update invoice status to failed
+              try {
+                await storage.updateInvoice(invoice.id, {
+                  status: 'failed',
+                  extractedData: { 
+                    error: errorMessage,
+                    processedAt: new Date().toISOString()
+                  }
+                });
+              } catch (updateError) {
+                console.error(`Failed to update failed invoice ${invoice.id}:`, updateError);
+              }
+            }
+          })
+        );
+
+        // Small delay between batches to prevent system overload
+        if (i + concurrencyLimit < processableInvoices.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log(`Batch processing completed: ${results.successful} successful, ${results.failed} failed`);
+
+      if (results.errors.length > 0) {
+        console.error('Batch processing errors:', results.errors);
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Batch processing initiation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to initiate batch processing',
+      details: error.message 
+    });
+  }
+});
+
+// Get invoices that can be processed automatically (uploaded status)
+app.get('/api/invoices/processable', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const invoices = await storage.getInvoicesByUserId(user.claims.sub);
+
+    // Filter invoices that can be processed
+    const processableInvoices = invoices.filter(invoice => 
+      invoice.status === 'uploaded' || invoice.status === 'failed'
+    );
+
+    res.json({
+      total: processableInvoices.length,
+      invoices: processableInvoices.map(invoice => ({
+        id: invoice.id,
+        fileName: invoice.fileName,
+        status: invoice.status,
+        uploadedAt: invoice.createdAt
+      }))
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching processable invoices:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch processable invoices',
+      details: error.message 
+    });
+  }
+});
+
+// Get processing status for batch operations
+app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const invoices = await storage.getInvoicesByUserId(user.claims.sub);
+
+    const statusCounts = invoices.reduce((counts, invoice) => {
+      counts[invoice.status] = (counts[invoice.status] || 0) + 1;
+      return counts;
+    }, {} as Record<string, number>);
+
+    res.json({
+      statusCounts,
+      processing: statusCounts.processing || 0,
+      uploaded: statusCounts.uploaded || 0,
+      extracted: statusCounts.extracted || 0,
+      failed: statusCounts.failed || 0,
+      total: invoices.length
+    });
+
+  } catch (error: any) {
+    console.error('Error fetching processing status:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch processing status',
+      details: error.message 
+    });
+  }
+});
+
   return httpServer;
 }
+

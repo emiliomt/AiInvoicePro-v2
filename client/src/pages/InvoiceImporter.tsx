@@ -138,6 +138,10 @@ export default function InvoiceImporter() {
   // ZIP timeout input display state
   const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
   const [editZipTimeoutInput, setEditZipTimeoutInput] = useState('60');
+  
+  // Refs for uncontrolled inputs
+  const zipTimeoutRef = useRef<HTMLInputElement>(null);
+  const editZipTimeoutRef = useRef<HTMLInputElement>(null);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -853,8 +857,15 @@ export default function InvoiceImporter() {
   const handleEditConfig = (config: ImportConfig) => {
     setEditingConfig(config);
 
-    // Initialize the edit input display state
+    // Initialize the edit input display state and ref value
     setEditZipTimeoutInput(String(config.zipDownloadTimeout || 60));
+    
+    // Set the ref value when dialog opens
+    setTimeout(() => {
+      if (editZipTimeoutRef.current) {
+        editZipTimeoutRef.current.value = String(config.zipDownloadTimeout || 60);
+      }
+    }, 100);
 
     // Populate form with existing config data
     setNewConfig({
@@ -1755,14 +1766,14 @@ export default function InvoiceImporter() {
                 <div>
                   <Label htmlFor="zip-timeout" className="text-sm">ZIP Download Timeout (seconds)</Label>
                   <Input
+                    ref={zipTimeoutRef}
                     id="zip-timeout"
                     type="number"
                     min="10"
                     max="300"
-                    value={zipTimeoutInput}
+                    defaultValue="60"
                     onChange={(e) => {
                       const value = e.target.value;
-                      setZipTimeoutInput(value);
                       
                       // Update the config state with parsed value if valid
                       if (value !== '') {
@@ -1778,7 +1789,9 @@ export default function InvoiceImporter() {
                     onBlur={(e) => {
                       const value = e.target.value;
                       if (value === '' || isNaN(parseInt(value))) {
-                        setZipTimeoutInput('60');
+                        if (zipTimeoutRef.current) {
+                          zipTimeoutRef.current.value = '60';
+                        }
                         setNewConfig(prev => ({ 
                           ...prev, 
                           zipDownloadTimeout: 60 
@@ -2196,14 +2209,14 @@ export default function InvoiceImporter() {
               <div>
                 <Label htmlFor="edit-zip-timeout">ZIP Download Timeout (seconds)</Label>
                 <Input
+                  ref={editZipTimeoutRef}
                   id="edit-zip-timeout"
                   type="number"
                   min="10"
                   max="300"
-                  value={editZipTimeoutInput}
+                  defaultValue="60"
                   onChange={(e) => {
                     const value = e.target.value;
-                    setEditZipTimeoutInput(value);
                     
                     // Update the config state with parsed value if valid
                     if (value !== '') {
@@ -2219,7 +2232,9 @@ export default function InvoiceImporter() {
                   onBlur={(e) => {
                     const value = e.target.value;
                     if (value === '' || isNaN(parseInt(value))) {
-                      setEditZipTimeoutInput('60');
+                      if (editZipTimeoutRef.current) {
+                        editZipTimeoutRef.current.value = '60';
+                      }
                       setNewConfig(prev => ({ 
                         ...prev, 
                         zipDownloadTimeout: 60 
