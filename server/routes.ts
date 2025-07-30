@@ -2734,6 +2734,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/invoices/:id/ai-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const invoiceId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.aiClassifyInvoiceLineItems(invoiceId, userId);
+
+      res.json({ message: "AI classification completed" });
+    } catch (error) {
+      console.error("Error AI classifying invoice:", error);
+      res.status(500).json({ message: "Failed to AI classify invoice" });
+    }
+  });
+
+  app.post('/api/line-items/:id/ai-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const lineItemId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.classifyAndStoreWithAI(lineItemId, true, userId);
+
+      res.json({ message: "AI classification completed for line item" });
+    } catch (error) {
+      console.error("Error AI classifying line item:", error);
+      res.status(500).json({ message: "Failed to AI classify line item" });
+    }
+  });
+
   app.post('/api/invoices/:id/approve-best-match', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);

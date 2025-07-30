@@ -312,4 +312,131 @@ export class ClassificationService {
       await this.classifyAndStore(lineItem.id, userId);
     }
   }
+
+  // AI-powered classification using OpenAI
+  static async classifyLineItemWithAI(lineItem: LineItem, userId?: string): Promise<ClassificationResult> {
+    try {
+      const { extractInvoiceData } = await import('./aiService');
+      
+      // Create a focused prompt for line item classification
+      const classificationPrompt = `Classify this invoice line item into one of these categories:
+1. consumable_materials - Materials that are used up during construction/operations (cement, sand, fuel, etc.)
+2. non_consumable_materials - Durable materials and equipment that are reusable (machinery, tools, equipment)
+3. labor - Human resources and professional services (workers, consultants, services)
+4. tools_equipment - Tools, machinery, and equipment for construction
+
+Line Item Details:
+- Description: ${lineItem.description}
+- Quantity: ${lineItem.quantity}
+- Unit Price: ${lineItem.unitPrice}
+- Total Price: ${lineItem.totalPrice}
+
+Respond with JSON in this format:
+{
+  "category": "one of the four categories above",
+  "confidence": "0.0-1.0 confidence score",
+  "reasoning": "brief explanation of classification decision",
+  "matchedKeywords": ["relevant keywords that influenced decision"]
+}`;
+
+      const OpenAI = (await import('openai')).default;
+      const openai = new OpenAI({ 
+        apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || ""
+      });
+
+      const response = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+          {
+            role: "system",
+            content: "You are an expert construction invoice line item classifier. Analyze line items and categorize them accurately based on construction industry standards."
+          },
+          {
+            role: "user",
+            content: classificationPrompt
+          }
+        ],
+        response_format: { type: "json_object" },
+        temperature: 0.1,
+        max_tokens: 500
+      });
+
+      const aiResult = JSON.parse(response.choices[0].message.content || '{}');
+      
+      return {
+        category: aiResult.category || 'consumable_materials',
+        matchedKeyword: aiResult.matchedKeywords?.[0] || 'AI Classification',
+        confidence: parseFloat(aiResult.confidence || '0.8'),
+        isManualOverride: false
+      };
+
+    } catch (error) {
+      console.error('AI classification failed:', error);
+      // Fallback to keyword-based classification
+      return await this.classifyLineItem(lineItem, userId);
+    }
+  }
+
+  // Classify and store with AI option
+  static async classifyAndStoreWithAI(lineItemId: number, useAI: boolean = false, userId?: string): Promise<void> {
+    // Get line item
+    const lineItem = await db
+      .select()
+      .from(lineItems)
+      .where(eq(lineItems.id, lineItemId))
+      .limit(1);
+
+    if (lineItem.length === 0) {
+      throw new Error('Line item not found');
+    }
+
+    const classification = useAI 
+      ? await this.classifyLineItemWithAI(lineItem[0], userId)
+      : await this.classifyLineItem(lineItem[0], userId);
+
+    // Check if classification already exists
+    const existingClassification = await db
+      .select()
+      .from(lineItemClassifications)
+      .where(eq(lineItemClassifications.lineItemId, lineItemId))
+      .limit(1);
+
+    if (existingClassification.length > 0) {
+      // Update existing classification (only if not manually overridden)
+      if (!existingClassification[0].isManualOverride) {
+        await db
+          .update(lineItemClassifications)
+          .set({
+            category: classification.category as any,
+            matchedKeyword: classification.matchedKeyword,
+            confidence: classification.confidence.toString(),
+            classifiedAt: new Date(),
+            classifiedBy: userId || 'system'
+          })
+          .where(eq(lineItemClassifications.lineItemId, lineItemId));
+      }
+    } else {
+      // Create new classification
+      await db.insert(lineItemClassifications).values({
+        lineItemId,
+        category: classification.category as any,
+        matchedKeyword: classification.matchedKeyword,
+        confidence: classification.confidence.toString(),
+        isManualOverride: false,
+        classifiedBy: userId || 'system'
+      });
+    }
+  }
+
+  // Bulk AI classify line items for an invoice
+  static async aiClassifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
+    const invoiceLineItems = await db
+      .select()
+      .from(lineItems)
+      .where(eq(lineItems.invoiceId, invoiceId));
+
+    for (const lineItem of invoiceLineItems) {
+      await this.classifyAndStoreWithAI(lineItem.id, true, userId);
+    }
+  }
 }

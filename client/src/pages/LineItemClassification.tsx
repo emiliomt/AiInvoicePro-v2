@@ -26,7 +26,8 @@ import {
   Users,
   RefreshCw,
   Check,
-  AlertCircle
+  AlertCircle,
+  Bot
 } from "lucide-react";
 
 interface ClassificationKeywords {
@@ -189,6 +190,56 @@ export default function LineItemClassification() {
       toast({
         title: "Error",
         description: "Failed to auto-classify invoice",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // AI classify mutation
+  const aiClassifyMutation = useMutation({
+    mutationFn: async (invoiceId: number) => {
+      const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to AI classify");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      toast({
+        title: "Success",
+        description: "AI classification completed",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to AI classify invoice",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Single line item AI classify mutation
+  const aiClassifyLineItemMutation = useMutation({
+    mutationFn: async (lineItemId: number) => {
+      const response = await fetch(`/api/line-items/${lineItemId}/ai-classify`, {
+        method: "POST",
+      });
+      if (!response.ok) throw new Error("Failed to AI classify line item");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      toast({
+        title: "Success",
+        description: "AI classification completed for line item",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to AI classify line item",
         variant: "destructive",
       });
     },
@@ -504,10 +555,19 @@ export default function LineItemClassification() {
                     </div>
                     <Button
                       onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
-                      disabled={!selectedInvoice}
+                      disabled={!selectedInvoice || autoClassifyMutation.isPending}
+                      variant="outline"
                     >
                       <RefreshCw className="w-4 h-4 mr-2" />
-                      Auto-Classify
+                      Keyword Classify
+                    </Button>
+                    <Button
+                      onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
+                      disabled={!selectedInvoice || aiClassifyMutation.isPending}
+                      className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+                    >
+                      <AlertCircle className="w-4 h-4 mr-2" />
+                      {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
                     </Button>
                   </div>
                 </CardContent>
@@ -554,6 +614,12 @@ export default function LineItemClassification() {
                                     Manual
                                   </Badge>
                                 )}
+                                {item.matchedKeyword === 'AI Classification' && (
+                                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                    <Bot className="w-3 h-3 mr-1" />
+                                    AI
+                                  </Badge>
+                                )}
                               </div>
                             </TableCell>
                             <TableCell>
@@ -576,24 +642,35 @@ export default function LineItemClassification() {
                               )}
                             </TableCell>
                             <TableCell>
-                              <Select
-                                value={item.category || ""}
-                                onValueChange={(category) => updateClassificationMutation.mutate({
-                                  lineItemId: item.lineItemId,
-                                  category
-                                })}
-                              >
-                                <SelectTrigger className="w-40">
-                                  <SelectValue placeholder="Classify" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {Object.entries(CATEGORY_INFO).map(([key, info]) => (
-                                    <SelectItem key={key} value={key}>
-                                      {info.label}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
+                              <div className="flex gap-2">
+                                <Select
+                                  value={item.category || ""}
+                                  onValueChange={(category) => updateClassificationMutation.mutate({
+                                    lineItemId: item.lineItemId,
+                                    category
+                                  })}
+                                >
+                                  <SelectTrigger className="w-40">
+                                    <SelectValue placeholder="Classify" />
+                                  </SelectTrigger>
+                                  <SelectContent>
+                                    {Object.entries(CATEGORY_INFO).map(([key, info]) => (
+                                      <SelectItem key={key} value={key}>
+                                        {info.label}
+                                      </SelectItem>
+                                    ))}
+                                  </SelectContent>
+                                </Select>
+                                <Button
+                                  size="sm"
+                                  variant="outline"
+                                  onClick={() => aiClassifyLineItemMutation.mutate(item.lineItemId)}
+                                  disabled={aiClassifyLineItemMutation.isPending}
+                                  title="AI Classify this item"
+                                >
+                                  <AlertCircle className="w-3 h-3" />
+                                </Button>
+                              </div>
                             </TableCell>
                           </TableRow>
                         ))}
