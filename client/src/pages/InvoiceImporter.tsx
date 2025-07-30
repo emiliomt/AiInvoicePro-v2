@@ -29,6 +29,8 @@ interface ImportConfig {
   status: 'idle' | 'running' | 'completed' | 'failed' | 'paused';
   currentStep?: string;
   progress?: number;
+  headless?: boolean;
+  zipDownloadTimeout?: number;
   stats?: {
     total_invoices: number;
     processed_invoices: number;
@@ -107,7 +109,8 @@ export default function InvoiceImporter() {
     spacingValue: 120,
     spacingUnit: 'minutes',
     startTime: '09:00',
-    headless: true // Default to true for Replit environment
+    headless: true, // Default to true for Replit environment
+    zipDownloadTimeout: 60 // Default ZIP download timeout in seconds
   });
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
@@ -735,6 +738,7 @@ export default function InvoiceImporter() {
         erpPassword: '', // Password will be retrieved from connection on server side
         isManualConfig: false, // Always false - only connection-based configs allowed
         headless: newConfig.headless,
+        zipDownloadTimeout: newConfig.zipDownloadTimeout,
         // Legacy fields for backward compatibility
         scheduleTime: newConfig.scheduleConfig.timeOfDay,
         scheduleDay: newConfig.scheduleConfig.daysOfWeek.join(',')
@@ -779,7 +783,8 @@ export default function InvoiceImporter() {
           spacingValue: 120,
           spacingUnit: 'minutes',
           startTime: '09:00',
-          headless: true
+          headless: true,
+          zipDownloadTimeout: 60
         });
         fetchConfigs();
       } else {
@@ -849,7 +854,8 @@ export default function InvoiceImporter() {
       spacingValue: 120,
       spacingUnit: 'minutes',
       startTime: '09:00',
-      headless: true
+      headless: config.headless !== undefined ? config.headless : true,
+      zipDownloadTimeout: config.zipDownloadTimeout || 60
     });
 
     setShowEditDialog(true);
@@ -907,6 +913,7 @@ export default function InvoiceImporter() {
         erpPassword: '', // Password will be retrieved from connection on server side
         isManualConfig: false, // Always false - only connection-based configs allowed
         headless: newConfig.headless,
+        zipDownloadTimeout: newConfig.zipDownloadTimeout,
         // Legacy fields for backward compatibility
         scheduleTime: newConfig.scheduleConfig.timeOfDay,
         scheduleDay: newConfig.scheduleConfig.daysOfWeek.join(',')
@@ -951,7 +958,8 @@ export default function InvoiceImporter() {
           spacingValue: 120,
           spacingUnit: 'minutes',
           startTime: '09:00',
-          headless: true
+          headless: true,
+          zipDownloadTimeout: 60
         });
         fetchConfigs();
       } else {
@@ -1714,6 +1722,27 @@ export default function InvoiceImporter() {
                   Headless mode runs the browser without a visible interface, which is more stable for automated tasks. 
                   Disable only for debugging purposes.
                 </p>
+
+                {/* ZIP Download Timeout */}
+                <div>
+                  <Label htmlFor="zip-timeout" className="text-sm">ZIP Download Timeout (seconds)</Label>
+                  <Input
+                    id="zip-timeout"
+                    type="number"
+                    min="30"
+                    max="300"
+                    value={newConfig.zipDownloadTimeout || 60}
+                    onChange={(e) => setNewConfig(prev => ({ 
+                      ...prev, 
+                      zipDownloadTimeout: parseInt(e.target.value) || 60 
+                    }))}
+                    placeholder="60"
+                    className="mt-1"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    Time to wait for ZIP files to download (30-300 seconds). Default: 60 seconds.
+                  </p>
+                </div>
               </div>
 
               <div className="flex justify-end space-x-2">
@@ -2112,6 +2141,26 @@ export default function InvoiceImporter() {
                   }
                 />
                 <Label htmlFor="edit-headless">Run in headless mode (recommended for Replit)</Label>
+              </div>
+
+              {/* ZIP Download Timeout */}
+              <div>
+                <Label htmlFor="edit-zip-timeout">ZIP Download Timeout (seconds)</Label>
+                <Input
+                  id="edit-zip-timeout"
+                  type="number"
+                  min="30"
+                  max="300"
+                  value={newConfig.zipDownloadTimeout || 60}
+                  onChange={(e) => setNewConfig(prev => ({ 
+                    ...prev, 
+                    zipDownloadTimeout: parseInt(e.target.value) || 60 
+                  }))}
+                  placeholder="60"
+                />
+                <p className="text-xs text-gray-500 mt-1">
+                  Time to wait for ZIP files to download (30-300 seconds). Default: 60 seconds.
+                </p>
               </div>
             </div>
 

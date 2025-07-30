@@ -54,6 +54,9 @@ class InvoiceRPAService:
 
         # Get headless mode from config (default to False for easier debugging)
         self.headless_mode = config.get('headless', False)
+        
+        # Get ZIP download timeout from config (default to 60 seconds)
+        self.zip_download_timeout = config.get('zipDownloadTimeout', 60)
 
         # Validate required config values early
         if not self.erp_url:
@@ -832,8 +835,8 @@ class InvoiceRPAService:
             ActionChains(self.driver).move_to_element(
                 download_button).click().perform()
 
-            # Wait for download to complete
-            downloaded_zip = self.wait_for_new_zip(timeout=60,
+            # Wait for download to complete with configurable timeout
+            downloaded_zip = self.wait_for_new_zip(timeout=self.zip_download_timeout,
                                                    before_files=existing_zips)
             self.log(f"Downloaded: {downloaded_zip}")
 

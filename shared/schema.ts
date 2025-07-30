@@ -480,6 +480,7 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   xmlPath: varchar("xml_path", { length: 500 }),
   isManualConfig: boolean("is_manual_config").default(false),
   headless: boolean('headless').default(true),
+  zipDownloadTimeout: integer("zip_download_timeout").default(60), // ZIP file download timeout in seconds
   isActive: boolean("is_active").default(true),
   isPaused: boolean("is_paused").default(false), // Allow pausing schedules
   lastRun: timestamp("last_run"),

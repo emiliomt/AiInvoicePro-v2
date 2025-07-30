@@ -1,5 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
+import { sql, eq, desc, gte } from 'drizzle-orm';
 import { 
   invoices, 
   lineItems, 
@@ -1452,3 +1453,87 @@ class PostgresStorage implements IStorage {
 }
 
 export const storage: IStorage = new PostgresStorage();
+
+// Helper function to get total invoice count
+export async function getInvoiceCount(): Promise<number> {
+  try {
+    const result = await db.select({ count: sql`count(*)` }).from(invoices);
+    return Number(result[0].count);
+  } catch (error) {
+    console.error('Error getting invoice count:', error);
+    return 0;
+  }
+}
+
+// Helper function to get invoice count from last 24 hours
+export async function getInvoicesCount24Hours(): Promise<number> {
+  try {
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const result = await db.select({ count: sql`count(*)` })
+      .from(invoices)
+      .where(gte(invoices.uploadedAt, yesterday));
+    return Number(result[0].count);
+  } catch (error) {
+    console.error('Error getting 24h invoice count:', error);
+    return 0;
+  }
+}
+
+// Helper function to get invoices by status
+export async function getInvoicesByStatus(status: string, limit: number = 50): Promise<any[]> {
+  try {
+    return await db.select()
+      .from(invoices)
+      .where(eq(invoices.status, status))
+      .orderBy(desc(invoices.uploadedAt))
+      .limit(limit);
+  } catch (error) {
+    console.error('Error getting invoices by status:', error);
+    return [];
+  }
+}
+
+// Helper function to get recent invoices
+export async function getRecentInvoices(limit: number = 50): Promise<any[]> {
+  try {
+    return await db.select()
+      .from(invoices)
+      .orderBy(desc(invoices.uploadedAt))
+      .limit(limit);
+  } catch (error) {
+    console.error('Error getting recent invoices:', error);
+    return [];
+  }
+}
+
+// Helper function to get database statistics
+export async function getDatabaseStats(): Promise<any> {
+  try {
+    const invoiceCount = await getInvoiceCount();
+    const recentCount = await getInvoicesCount24Hours();
+
+    // Get status distribution
+    const statusCounts = await db.select({
+      status: invoices.status,
+      count: sql`count(*)`
+    })
+    .from(invoices)
+    .groupBy(invoices.status);
+
+    return {
+      totalInvoices: invoiceCount,
+      recentInvoices: recentCount,
+      statusDistribution: statusCounts.reduce((acc: any, item: any) => {
+        acc[item.status] = Number(item.count);
+        return acc;
+      }, {})
+    };
+  } catch (error) {
+    console.error('Error getting database stats:', error);
+    return {
+      totalInvoices: 0,
+      recentInvoices: 0,
+      statusDistribution: {}
+    };
+  }
+}
