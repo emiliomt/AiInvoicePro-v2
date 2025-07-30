@@ -1753,10 +1753,22 @@ export default function InvoiceImporter() {
                     min="10"
                     max="300"
                     value={newConfig.zipDownloadTimeout || 60}
-                    onChange={(e) => setNewConfig(prev => ({ 
-                      ...prev, 
-                      zipDownloadTimeout: parseInt(e.target.value) || 60 
-                    }))}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setNewConfig(prev => ({ 
+                        ...prev, 
+                        zipDownloadTimeout: value === '' ? '' : parseInt(value) || 60 
+                      }));
+                    }}
+                    onBlur={(e) => {
+                      // Apply fallback when field loses focus if empty
+                      if (e.target.value === '') {
+                        setNewConfig(prev => ({ 
+                          ...prev, 
+                          zipDownloadTimeout: 60 
+                        }));
+                      }
+                    }}
                     placeholder="60"
                     className="mt-1"
                   />
@@ -2173,10 +2185,22 @@ export default function InvoiceImporter() {
                   min="10"
                   max="300"
                   value={newConfig.zipDownloadTimeout || 60}
-                  onChange={(e) => setNewConfig(prev => ({ 
-                    ...prev, 
-                    zipDownloadTimeout: parseInt(e.target.value) || 60 
-                  }))}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setNewConfig(prev => ({ 
+                      ...prev, 
+                      zipDownloadTimeout: value === '' ? '' : parseInt(value) || 60 
+                    }));
+                  }}
+                  onBlur={(e) => {
+                    // Apply fallback when field loses focus if empty
+                    if (e.target.value === '') {
+                      setNewConfig(prev => ({ 
+                        ...prev, 
+                        zipDownloadTimeout: 60 
+                      }));
+                    }
+                  }}
                   placeholder="60"
                 />
                 <p className="text-xs text-gray-500 mt-1">
