@@ -671,11 +671,12 @@ class PythonInvoiceImporter {
 
           console.log(`Python RPA import task ${config.id} completed successfully`);
 
-          // Clean up active imports after a short delay to allow final API calls
+          // Clean up active imports after longer delay to allow polling to retrieve final results
           setTimeout(() => {
             console.log(`Cleaning up progress tracking for config ${config.id}`);
             this.activeImports.delete(config.id);
-          }, 5000); // 5 second delay
+            this.logIdToConfigId.delete(progress.logId);
+          }, 60000); // 60 second delay for UI polling
 
           resolve(result);
         } else {

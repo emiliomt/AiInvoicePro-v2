@@ -617,7 +617,7 @@ export default function InvoiceImporter() {
         
         if (response.ok) {
           const data = await response.json();
-          console.log(`📊 Progress poll result for config ${configId}:`, data);
+          console.log(`📊 Progress poll result for config ${configId}, logId ${logId}:`, data);
           
           // Update the config with progress data
           setConfigs(prevConfigs => 
@@ -639,15 +639,21 @@ export default function InvoiceImporter() {
             )
           );
           
-          // Continue polling if still running
-          if (data.status === 'running' || data.status === 'processing') {
-            setTimeout(pollProgress, 2000); // Poll every 2 seconds
+          // Continue polling if still running or initializing
+          if (data.status === 'running' || data.status === 'processing' || data.status === 'initializing' || data.progressPercent < 100) {
+            setTimeout(pollProgress, 1500); // Poll every 1.5 seconds for faster updates
           } else {
-            console.log(`Progress polling completed for config ${configId} with status: ${data.status}`);
+            console.log(`✅ Progress polling completed for config ${configId} with status: ${data.status}`);
+          }
+        } else {
+          console.error(`❌ Progress polling failed for config ${configId}: ${response.status} ${response.statusText}`);
+          // Retry on error unless it's a 404 (job not found)
+          if (response.status !== 404) {
+            setTimeout(pollProgress, 3000);
           }
         }
       } catch (error) {
-        console.error(`Error polling progress for config ${configId}:`, error);
+        console.error(`❌ Error polling progress for config ${configId}:`, error);
         // Retry after longer delay on error
         setTimeout(pollProgress, 5000);
       }
