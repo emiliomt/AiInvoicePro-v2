@@ -130,16 +130,40 @@ const AppContent = React.memo(() => {
 });
 
 function App() {
-  // Add global error handler for unhandled promise rejections
+  // Add comprehensive global error handling for unhandled promise rejections and errors
   React.useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('Unhandled promise rejection:', event.reason);
-      // Prevent the default browser behavior
+      
+      // Check if it's a WebSocket error (common cause of crashes)
+      if (event.reason && typeof event.reason === 'object') {
+        const reasonStr = String(event.reason);
+        if (reasonStr.includes('WebSocket') || reasonStr.includes('Failed to construct') || reasonStr.includes('connection')) {
+          console.warn('WebSocket-related promise rejection handled gracefully');
+          event.preventDefault();
+          return;
+        }
+      }
+      
+      // Check if it's a fetch error (network issues)
+      if (event.reason instanceof TypeError && event.reason.message.includes('fetch')) {
+        console.warn('Network fetch error handled gracefully');
+        event.preventDefault();
+        return;
+      }
+      
+      // Prevent the default browser behavior for all unhandled rejections
       event.preventDefault();
     };
 
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
+      
+      // Don't let script errors crash the entire app
+      if (event.error && event.error.name === 'ChunkLoadError') {
+        console.warn('Chunk load error - possible network issue or cache problem');
+        return true; // Prevent default handling
+      }
     };
 
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
@@ -156,6 +180,7 @@ function App() {
       <QueryClientProvider client={queryClient}>
         <AppContent />
         <ReactQueryDevtools initialIsOpen={false} />
+        <Toaster />
       </QueryClientProvider>
     </ErrorBoundary>
   );

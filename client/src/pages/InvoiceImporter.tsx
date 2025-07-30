@@ -171,66 +171,85 @@ export default function InvoiceImporter() {
       wsRef.current.close();
     }
 
-    try {
-      setConnectionStatus('connecting');
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/ws`;
-
-      const websocket = new WebSocket(wsUrl);
-      wsRef.current = websocket;
-
-      websocket.onopen = () => {
-        console.log('WebSocket connected for Invoice Importer');
-        setConnectionStatus('connected');
-        setWs(websocket);
-
-        // Subscribe to progress updates with actual user ID
-        websocket.send(JSON.stringify({
-          type: 'subscribe',
-          userId: user?.id || 'current-user',
-        }));
-      };
-
-      websocket.onmessage = (event) => {
+    // Wrap WebSocket creation in a promise to handle errors properly
+    const connectWebSocket = () => {
+      return new Promise<void>((resolve, reject) => {
         try {
-          const data = JSON.parse(event.data);
+          setConnectionStatus('connecting');
+          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+          const wsUrl = `${protocol}//${window.location.host}/ws`;
 
-          if (data.type === 'progress') {
-            handleRealTimeProgressUpdate(data);
-          } else if (data.type === 'task_complete') {
-            handleTaskComplete(data);
-          } else if (data.type === 'logs') {
-            handleRealTimeLogs(data);
-          }
+          const websocket = new WebSocket(wsUrl);
+          wsRef.current = websocket;
+
+          websocket.onopen = () => {
+            console.log('WebSocket connected for Invoice Importer');
+            setConnectionStatus('connected');
+            setWs(websocket);
+
+            try {
+              // Subscribe to progress updates with actual user ID
+              websocket.send(JSON.stringify({
+                type: 'subscribe',
+                userId: user?.id || 'current-user',
+              }));
+              resolve();
+            } catch (sendError) {
+              console.error('Error sending WebSocket subscribe message:', sendError);
+              reject(sendError);
+            }
+          };
+
+          websocket.onmessage = (event) => {
+            try {
+              const data = JSON.parse(event.data);
+
+              if (data.type === 'progress') {
+                handleRealTimeProgressUpdate(data);
+              } else if (data.type === 'task_complete') {
+                handleTaskComplete(data);
+              } else if (data.type === 'logs') {
+                handleRealTimeLogs(data);
+              }
+            } catch (error) {
+              console.error('Error parsing WebSocket message:', error);
+            }
+          };
+
+          websocket.onclose = (event) => {
+            console.log('WebSocket disconnected', event.code, event.reason);
+            setConnectionStatus('disconnected');
+            setWs(null);
+            wsRef.current = null;
+
+            // Only retry if not manually closed and it's not a permanent failure
+            if (event.code !== 1000 && event.code !== 1001) {
+              setTimeout(() => {
+                initializeWebSocket();
+              }, 5000);
+            }
+          };
+
+          websocket.onerror = (error) => {
+            console.error('WebSocket error:', error);
+            setConnectionStatus('error');
+            wsRef.current = null;
+            reject(error);
+          };
+
         } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
+          console.error('Failed to create WebSocket connection:', error);
+          setConnectionStatus('error');
+          reject(error);
         }
-      };
+      });
+    };
 
-      websocket.onclose = () => {
-        console.log('WebSocket disconnected');
-        setConnectionStatus('disconnected');
-        setWs(null);
-        wsRef.current = null;
-
-        // Only retry if not manually closed
-        if (websocket.readyState !== WebSocket.CLOSED) {
-          setTimeout(() => {
-            initializeWebSocket();
-          }, 5000); // Increased timeout to reduce rapid reconnection attempts
-        }
-      };
-
-      websocket.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionStatus('error');
-        wsRef.current = null;
-      };
-
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
+    // Connect with proper error handling
+    connectWebSocket().catch((error) => {
+      console.warn('WebSocket connection failed, continuing without real-time updates:', error);
       setConnectionStatus('error');
-    }
+    });
   };
 
   // Handle real-time progress updates
@@ -577,7 +596,7 @@ export default function InvoiceImporter() {
                   status: 'running', 
                   progress: 0, 
                   currentStep: 'Initializing import process...',
-                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0 }
+                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, current_step: 'Initializing import process...', progress: 0 }
                 }
               : config
           )
@@ -635,7 +654,9 @@ export default function InvoiceImporter() {
                       total_invoices: data.total || 0,
                       processed_invoices: data.processed || 0,
                       successful_imports: data.success || 0,
-                      failed_imports: data.failed || 0
+                      failed_imports: data.failed || 0,
+                      current_step: data.stage || 'Processing...',
+                      progress: data.progressPercent || 0
                     }
                   }
                 : config
@@ -2187,7 +2208,7 @@ function ScheduleOverview() {
   const { toast } = useToast();
 
   // Fetch scheduled configurations
-  const { data: scheduleData = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery({
+  const { data: scheduleData = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery<any[]>({
     queryKey: ['/api/schedule-overview'],
     refetchInterval: 30000, // Refresh every 30 seconds
   });
