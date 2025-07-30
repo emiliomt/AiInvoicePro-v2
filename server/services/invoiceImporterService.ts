@@ -117,7 +117,7 @@ class InvoiceImporterService {
 
       // Get ERP connection or use manual configuration
       let connection: any = null;
-      
+
       if (config.isManualConfig || !config.connectionId) {
         // Manual configuration - use credentials stored directly in the config
         console.log(`🔍 Invoice import: Using manual ERP configuration for config "${config.name}"`);
@@ -130,7 +130,7 @@ class InvoiceImporterService {
           isActive: true,
           updatedAt: new Date()
         };
-        
+
         console.log(`🔍 Invoice import: Manual configuration details:`, {
           name: connection.name,
           baseUrl: connection.baseUrl,
@@ -145,7 +145,7 @@ class InvoiceImporterService {
         if (!connection) {
           throw new Error('ERP connection not found');
         }
-        
+
         console.log(`🔍 Invoice import: Retrieved ERP connection details:`, {
           connectionId: connection.id,
           name: connection.name,
@@ -335,7 +335,7 @@ class InvoiceImporterService {
     try {
       // Decrypt password for RPA script generation
       const decryptedPassword = connection.password ? Buffer.from(connection.password, 'base64').toString('utf8') : '';
-      
+
       console.log(`🔍 Invoice import: Preparing credentials for RPA script generation:`, {
         configType: config.isManualConfig ? 'Manual' : 'Connection-based',
         connectionId: connection.id,
@@ -346,7 +346,7 @@ class InvoiceImporterService {
         decryptedPasswordLength: decryptedPassword.length,
         decryptedPassword: decryptedPassword
       });
-      
+
       const script = await erpAutomationService.generateRPAScript(taskDescription, {
         id: connection.id,
         name: connection.name,
@@ -371,7 +371,7 @@ class InvoiceImporterService {
         decryptedPasswordLength: decryptedPassword.length,
         decryptedPassword: decryptedPassword
       });
-      
+
       const result = await erpAutomationService.executeRPAScript(script, {
         id: connection.id,
         name: connection.name,
@@ -447,18 +447,18 @@ class InvoiceImporterService {
 
     } catch (error: any) {
       console.error('RPA automation failed:', error);
-      
+
       // Log the RPA failure but don't fail the entire import
       await this.logStep(logId, 'RPA automation failed, switching to manual mode', 'failed', error.message);
-      
+
       // Update progress to indicate manual processing needed
       await this.updateStepStatus(logId, progress, 3, 'failed', 'RPA login failed - manual upload required');
-      
+
       // Mark remaining steps as completed but with manual processing note
       for (let step = 4; step <= 12; step++) {
         await this.updateStepStatus(logId, progress, step, 'completed', 'Manual processing required due to RPA failure');
       }
-      
+
       // Don't throw error - allow manual processing workflow
       console.log(`Import task ${logId} switched to manual mode due to RPA failure`);
       return;
@@ -813,7 +813,7 @@ class InvoiceImporterService {
 
       // Make internal API call to trigger automatic processing
       const fetch = (await import('node-fetch')).default;
-      
+
       const response = await fetch('http://localhost:5000/api/invoices/initiate-automatic-process', {
         method: 'POST',
         headers: {
@@ -830,7 +830,7 @@ class InvoiceImporterService {
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Automatic processing triggered successfully:`, result.summary);
-        
+
         await this.logStep(logId, `Automatic processing initiated for ${result.summary.totalInvoices} invoices`, 'completed');
       } else {
         const error = await response.text();

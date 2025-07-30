@@ -842,6 +842,7 @@ class InvoiceRPAService:
                         self.log(
                             f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
                         )
+                        # Only count invoices that we actually attempt to process (not skipped duplicates)
                         self.stats['total_invoices'] += 1
 
                         # Output progress stats before download attempt
