@@ -523,7 +523,7 @@ export default function Invoices() {
 
       toast({
         title: "Automatic Processing Initiated",
-        description: `Processing ${result.summary.totalInvoices} invoices. ${result.summary.successful} successful, ${result.summary.failed} failed.`,
+        description: `Processing ${result.summary.totalInvoices} invoices. Check the status updates on the invoices page.`,
       });
 
       // Refresh the invoices list
@@ -641,10 +641,10 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
                   >
                     <Play size={16} className="mr-2" />
-                    Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                    {isProcessingAutomatic ? "Processing..." : `Initiate Automatic Process (${selectedInvoices.length})`}
                   </Button>
             </div>
           </div>
