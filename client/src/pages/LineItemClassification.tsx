@@ -222,29 +222,29 @@ export default function LineItemClassification() {
     },
   });
 
-  // Bulk AI classify mutation
-  const bulkAiClassifyMutation = useMutation({
+  // Bulk classify mutation
+  const bulkClassifyMutation = useMutation({
     mutationFn: async (invoiceIds: number[]) => {
       const response = await fetch('/api/invoices/bulk-auto-classify', {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ invoiceIds }),
       });
-      if (!response.ok) throw new Error("Failed to bulk classify invoices");
+      if (!response.ok) throw new Error('Failed to bulk classify');
       return response.json();
     },
     onSuccess: (data) => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
-        description: data.message || `AI classification completed for ${selectedInvoices.length} invoices`,
+        description: data.message,
       });
       setSelectedInvoices([]);
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to AI classify some invoices",
+        description: "Failed to bulk classify invoices",
         variant: "destructive",
       });
     },
@@ -385,6 +385,14 @@ export default function LineItemClassification() {
       setSelectedInvoices([]);
     } else {
       setSelectedInvoices(invoices.map((invoice: any) => invoice.id));
+    }
+  };
+
+  const handleInvoiceSelection = (invoiceId: number, checked: boolean) => {
+    if (checked) {
+      setSelectedInvoices(prev => [...prev, invoiceId]);
+    } else {
+      setSelectedInvoices(prev => prev.filter(id => id !== invoiceId));
     }
   };
 
@@ -651,12 +659,12 @@ export default function LineItemClassification() {
                           </span>
                         )}
                         <Button
-                          onClick={() => bulkAiClassifyMutation.mutate(selectedInvoices)}
-                          disabled={selectedInvoices.length === 0 || bulkAiClassifyMutation.isPending}
+                          onClick={() => bulkClassifyMutation.mutate(selectedInvoices)}
+                          disabled={selectedInvoices.length === 0 || bulkClassifyMutation.isPending}
                           className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white ml-auto"
                         >
                           <Bot className="w-4 h-4 mr-2" />
-                          {bulkAiClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
+                          {bulkClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
                         </Button>
                       </div>
                       
@@ -672,7 +680,7 @@ export default function LineItemClassification() {
                             <input
                               type="checkbox"
                               checked={selectedInvoices.includes(invoice.id)}
-                              onChange={() => handleInvoiceToggle(invoice.id)}
+                              onChange={(e) => handleInvoiceSelection(invoice.id, e.target.checked)}
                               className="h-4 w-4"
                             />
                             <div className="flex-1">
