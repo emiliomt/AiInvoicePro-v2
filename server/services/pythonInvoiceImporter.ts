@@ -832,13 +832,19 @@ class PythonInvoiceImporter {
     failed_imports: number;
     skipped_imports: number;
     progress: number;
+    current_step: string;
   }> | null {
     try {
       // Look for STATS: or PROGRESS: tags in output
       if (output.includes('STATS:')) {
         const statsLine = output.split('STATS:')[1]?.split('\n')[0];
         if (statsLine) {
-          return JSON.parse(statsLine.trim());
+          console.log('🔍 PARSING STATS LINE:', statsLine.trim());
+          // Handle Python dictionary format with single quotes
+          const jsonString = statsLine.trim().replace(/'/g, '"');
+          const parsed = JSON.parse(jsonString);
+          console.log('✅ PARSED STATS:', parsed);
+          return parsed;
         }
       }
 
@@ -854,20 +860,34 @@ class PythonInvoiceImporter {
         }
       }
 
-      // Look for step indicators in output
-      const stepMatch = output.match(/Processing\s+(\d+)\s*\/\s*(\d+)/i);
-      if (stepMatch) {
-        const processed = parseInt(stepMatch[1]);
-        const total = parseInt(stepMatch[2]);
+      // Look for download progress indicators
+      const downloadMatch = output.match(/Downloading\s+(\d+)\/(\d+):\s*(.+)/i);
+      if (downloadMatch) {
+        const processed = parseInt(downloadMatch[1]);
+        const total = parseInt(downloadMatch[2]);
+        const fileName = downloadMatch[3];
         return {
           processed_invoices: processed,
           total_invoices: total,
-          progress: total > 0 ? Math.round((processed / total) * 100) : 0
+          progress: total > 0 ? Math.round(60 + (processed / total) * 20) : 60, // 60-80% range for downloads
+          current_step: `Downloading ${processed}/${total}: ${fileName}`
+        };
+      }
+
+      // Look for row count indicators
+      const rowMatch = output.match(/Found\s+(\d+)\s+rows/i);
+      if (rowMatch) {
+        const total = parseInt(rowMatch[1]);
+        return {
+          total_invoices: total,
+          progress: 45,
+          current_step: `Found ${total} invoices in table`
         };
       }
 
       return null;
     } catch (error) {
+      console.error('Error parsing stats from output:', error, 'Output:', output);
       return null;
     }
   }
