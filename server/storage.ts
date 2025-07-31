@@ -333,10 +333,31 @@ class PostgresStorage implements IStorage {
   }
 
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void> {
-    await db.update(invoices).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoices.id, id));
+    try {
+      console.log(`[STORAGE] Updating invoice ${id} with:`, updates);
+      
+      const result = await db
+        .update(invoices)
+        .set({
+          ...updates,
+          updatedAt: new Date()
+        })
+        .where(eq(invoices.id, id))
+        .returning();
+      
+      if (result.length === 0) {
+        throw new Error(`Invoice ${id} not found for update`);
+      }
+      
+      console.log(`[STORAGE] Invoice ${id} updated successfully:`, {
+        totalAmount: result[0].totalAmount,
+        currency: result[0].currency,
+        vendorName: result[0].vendorName
+      });
+    } catch (error) {
+      console.error(`[STORAGE] Error updating invoice ${id}:`, error);
+      throw error;
+    }
   }
 
   async deleteInvoice(id: number): Promise<void> {
@@ -1518,7 +1539,7 @@ export async function getInvoicesByStatus(status: string, limit: number = 50): P
   try {
     return await db.select()
       .from(invoices)
-      .where(eq(invoices.status, status))
+      .where(sql`${invoices.status} = ${status}`)
       .orderBy(desc(invoices.createdAt))
       .limit(limit);
   } catch (error) {
