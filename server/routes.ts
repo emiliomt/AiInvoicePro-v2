@@ -380,12 +380,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const userId = (req.user as any).claims.sub;
-      const stats = await storage.getDashboardStats(userId);
+      
+      const stats = await DatabaseTimeoutService.withTimeout(
+        storage.getDashboardStats(userId),
+        { timeoutMs: 10000, operation: 'getDashboardStats' }
+      );
+      
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
-      res.status(500).json({ message: "Failed to fetch dashboard stats" });
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ message: "Dashboard stats request timed out, please try again" });
+      } else {
+        res.status(500).json({ message: "Failed to fetch dashboard stats" });
+      }
     }
   });
 
@@ -437,6 +447,47 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(pettyCash);
     } catch (error) {
       console.error("Error fetching petty cash by invoice:", error);
+
+  // Database monitoring endpoint
+  app.get('/api/admin/database-stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
+      const user = req.user;
+      
+      // Simple admin check - in production you'd want proper role-based access
+      if (!user || !(user as any).claims.email?.endsWith('@company.com')) {
+        return res.status(403).json({ message: "Admin access required" });
+      }
+      
+      const stats = DatabaseTimeoutService.getOperationStats();
+      const activeOps = DatabaseTimeoutService.getActiveOperations();
+      
+      res.json({
+        activeOperations: stats.active,
+        operationTypes: stats.types,
+        activeOperationIds: activeOps,
+        timestamp: new Date().toISOString(),
+        monitoring: {
+          timeouts: {
+            default: '8s',
+            settings: '5s',
+            longOperations: '15s',
+            invoiceQueries: '10s'
+          },
+          recommendations: stats.active > 10 ? [
+            'High number of active operations detected',
+            'Consider scaling database resources',
+            'Review slow query performance'
+          ] : []
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching database stats:", error);
+      res.status(500).json({ message: "Failed to fetch database statistics" });
+    }
+  });
+
+
       res.status(500).json({ message: "Failed to fetch petty cash log" });
     }
   });
@@ -1149,8 +1200,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Settings routes
   app.get('/api/settings/:key', isAuthenticated, async (req, res) => {
     try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const key = req.params.key;
-      const setting = await storage.getSetting(key);
+      
+      const setting = await DatabaseTimeoutService.withTimeout(
+        storage.getSetting(key),
+        { timeoutMs: 5000, operation: `getSetting:${key}` }
+      );
 
       if (!setting) {
         return res.status(404).json({ message: "Setting not found" });
@@ -1159,12 +1215,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(setting);
     } catch (error) {
       console.error("Error fetching setting:", error);
-      res.status(500).json({ message: "Failed to fetch setting" });
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ message: "Setting request timed out, please try again" });
+      } else {
+        res.status(500).json({ message: "Failed to fetch setting" });
+      }
     }
   });
 
   app.put('/api/settings/:key', isAuthenticated, async (req, res) => {
     try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const key = req.params.key;
       const { value } = req.body;
 
@@ -1172,24 +1233,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Value is required" });
       }
 
-      const setting = await storage.updateSetting(key, value);
+      const setting = await DatabaseTimeoutService.withTimeout(
+        storage.updateSetting(key, value),
+        { 
+          timeoutMs: 8000, 
+          operation: `updateSetting:${key}`,
+          cleanup: () => console.log(`⚠️ Setting update for ${key} was cancelled due to timeout`)
+        }
+      );
+      
       res.json(setting);
     } catch (error) {
       console.error("Error updating setting:", error);
-      res.status(500).json({ message: "Failed to update setting" });
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ message: "Setting update timed out, please try again" });
+      } else {
+        res.status(500).json({ message: "Failed to update setting" });
+      }
     }
   });
 
   // User settings routes
   app.get('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
-      // Add timeout to prevent hanging database operations
-      const settingPromise = storage.getSetting('user_preferences');
-      const timeoutPromise = new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Settings fetch timeout')), 10000)
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
+      
+      const setting = await DatabaseTimeoutService.withTimeout(
+        storage.getSetting('user_preferences'),
+        { timeoutMs: 5000, operation: 'getUserPreferences' }
       );
-
-      const setting = await Promise.race([settingPromise, timeoutPromise]);
       
       if (!setting) {
         // Return default settings
@@ -1211,25 +1283,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: 'User preferences and settings'
         };
         
-        // Add timeout for default settings creation
-        const createPromise = storage.updateSetting('user_preferences', defaultSettings.value);
-        const createTimeoutPromise = new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Settings creation timeout')), 10000)
+        await DatabaseTimeoutService.withTimeout(
+          storage.updateSetting('user_preferences', defaultSettings.value),
+          { timeoutMs: 8000, operation: 'createDefaultUserPreferences' }
         );
         
-        await Promise.race([createPromise, createTimeoutPromise]);
         res.json(defaultSettings);
       } else {
         res.json(setting);
       }
     } catch (error) {
       console.error("Error fetching user settings:", error);
-      res.status(500).json({ message: "Failed to fetch user settings" });
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ message: "Settings request timed out, please try again" });
+      } else {
+        res.status(500).json({ message: "Failed to fetch user settings" });
+      }
     }
   });
 
   app.put('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const { value } = req.body;
 
       if (value === undefined || value === null) {
@@ -1252,7 +1327,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       try {
-        const existing = await storage.getSetting('user_preferences');
+        const existing = await DatabaseTimeoutService.withTimeout(
+          storage.getSetting('user_preferences'),
+          { timeoutMs: 5000, operation: 'getExistingUserPreferences' }
+        );
+        
         if (existing?.value) {
           try {
             const parsed = JSON.parse(existing.value);
@@ -1262,7 +1341,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } catch (error) {
-        console.log('No existing settings found, using defaults');
+        if (error.name === 'TimeoutError') {
+          console.warn('Timeout getting existing settings, using defaults');
+        } else {
+          console.log('No existing settings found, using defaults');
+        }
       }
 
       // Merge new settings with existing ones
@@ -1284,12 +1367,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settingsJson = JSON.stringify(newSettings);
       console.log('Saving merged settings:', settingsJson);
 
-      // Use setSetting instead of updateSetting to ensure upsert behavior
-      const setting = await storage.setSetting({
-        key: 'user_preferences',
-        value: settingsJson,
-        description: 'User preferences and settings'
-      });
+      // Use setSetting with timeout protection
+      const setting = await DatabaseTimeoutService.withTimeout(
+        storage.setSetting({
+          key: 'user_preferences',
+          value: settingsJson,
+          description: 'User preferences and settings'
+        }),
+        { 
+          timeoutMs: 8000, 
+          operation: 'updateUserPreferences',
+          cleanup: () => console.log('⚠️ User preferences update was cancelled due to timeout')
+        }
+      );
 
       res.json({ 
         message: "Settings updated successfully",
@@ -1297,10 +1387,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error updating user settings:", error);
-      res.status(500).json({ 
-        message: "Failed to update user settings",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ 
+          message: "Settings update timed out, please try again",
+          error: "Request timeout"
+        });
+      } else {
+        res.status(500).json({ 
+          message: "Failed to update user settings",
+          error: error instanceof Error ? error.message : "Unknown error"
+        });
+      }
     }
   });
 
@@ -2095,6 +2192,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user's invoices
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
+      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const userId = (req.user as any).claims.sub;
 
       if (!userId) {
@@ -2104,20 +2202,35 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const includeMatches = req.query.includeMatches === 'true';
 
       if (includeMatches) {
-        const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
+        const invoicesWithMatches = await DatabaseTimeoutService.withTimeout(
+          storage.getInvoicesWithProjectMatches(userId),
+          { timeoutMs: 15000, operation: 'getInvoicesWithProjectMatches' }
+        );
         res.json(invoicesWithMatches || []);
       } else {
-        const invoices = await storage.getInvoicesByUserId(userId);
+        const invoices = await DatabaseTimeoutService.withTimeout(
+          storage.getInvoicesByUserId(userId),
+          { timeoutMs: 10000, operation: 'getInvoicesByUserId' }
+        );
         res.json(invoices || []);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to fetch invoices";
-      res.status(500).json({ 
-        message: "Failed to fetch invoices",
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
+      
+      if (error.name === 'TimeoutError') {
+        res.status(504).json({ 
+          message: "Invoice request timed out, please try again",
+          error: "Request timeout",
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        res.status(500).json({ 
+          message: "Failed to fetch invoices",
+          error: errorMessage,
+          timestamp: new Date().toISOString()
+        });
+      }
     }
   });
 
