@@ -1486,6 +1486,101 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Initiate automatic processing for multiple invoices
+  app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req: any, res) => {
+    try {
+      const { invoiceIds, source = 'manual' } = req.body;
+      
+      if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return res.status(400).json({ error: "No invoice IDs provided" });
+      }
+
+      console.log(`🚀 Initiating automatic processing for ${invoiceIds.length} invoices from ${source}`);
+
+      // Validate all invoices exist
+      const invoices = await Promise.all(
+        invoiceIds.map(async (id: number) => {
+          const invoice = await storage.getInvoice(id);
+          if (!invoice) {
+            throw new Error(`Invoice with ID ${id} not found`);
+          }
+          return invoice;
+        })
+      );
+
+      // Filter invoices that can be processed (uploaded or failed status)
+      const processableInvoices = invoices.filter(inv => 
+        inv.status === 'uploaded' || inv.status === 'failed' || inv.status === 'pending'
+      );
+
+      if (processableInvoices.length === 0) {
+        return res.status(400).json({ 
+          error: "No invoices available for processing",
+          details: "Invoices must have 'uploaded', 'failed', or 'pending' status to be processed"
+        });
+      }
+
+      // Process each invoice asynchronously
+      let processedCount = 0;
+      let failedCount = 0;
+
+      const processPromises = processableInvoices.map(async (invoice) => {
+        try {
+          // Update status to processing
+          await storage.updateInvoice(invoice.id, { status: "processing" });
+
+          // Check if file exists
+          const fs = await import('fs');
+          if (!invoice.fileUrl || !fs.default.existsSync(invoice.fileUrl)) {
+            throw new Error("Invoice file not found on disk");
+          }
+
+          // Read file buffer
+          const fileBuffer = fs.default.readFileSync(invoice.fileUrl);
+          
+          // Process the invoice
+          await processInvoiceAsync(invoice, fileBuffer);
+          processedCount++;
+          console.log(`✅ Invoice ${invoice.id} processing completed`);
+        } catch (error) {
+          failedCount++;
+          console.error(`❌ Invoice ${invoice.id} processing failed:`, error);
+          // Update invoice status to failed
+          await storage.updateInvoice(invoice.id, { 
+            status: "failed",
+            extractedData: { error: error instanceof Error ? error.message : "Processing failed" }
+          });
+        }
+      });
+
+      // Start all processing in parallel (don't wait for completion)
+      Promise.all(processPromises).then(() => {
+        console.log(`🎯 Automatic processing completed: ${processedCount} successful, ${failedCount} failed`);
+      }).catch((error) => {
+        console.error(`💥 Automatic processing error:`, error);
+      });
+
+      // Return immediate response
+      res.json({
+        message: `Automatic processing initiated for ${processableInvoices.length} invoices`,
+        summary: {
+          totalRequested: invoiceIds.length,
+          totalInvoices: processableInvoices.length,
+          skipped: invoices.length - processableInvoices.length,
+          source: source
+        },
+        invoiceIds: processableInvoices.map(inv => inv.id)
+      });
+
+    } catch (error) {
+      console.error('Error initiating automatic processing:', error);
+      res.status(500).json({ 
+        error: 'Failed to initiate automatic processing',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Process invoice endpoint (for RPA and manual processing)
   app.post('/api/invoices/:id/process', async (req: any, res) => {
     try {
