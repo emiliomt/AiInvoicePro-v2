@@ -411,6 +411,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Recalculate petty cash classifications and create missing logs
+  app.post('/api/petty-cash/recalculate', isAuthenticated, async (req, res) => {
+    try {
+      console.log('[PETTY CASH RECALC] Starting recalculation process...');
+      
+      // Get current petty cash threshold
+      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
+      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
+      
+      console.log(`[PETTY CASH RECALC] Using threshold: ${threshold}`);
+      
+      // Get all invoices
+      const allInvoices = await storage.getInvoices();
+      let processed = 0;
+      let classified = 0;
+      let logsCreated = 0;
+      let updated = 0;
+      const errors = [];
+      
+      for (const invoice of allInvoices) {
+        try {
+          processed++;
+          
+          // Determine total amount from main table or extractedData
+          let amount = 0;
+          if (invoice.totalAmount && invoice.totalAmount !== 'null') {
+            amount = parseFloat(invoice.totalAmount);
+          } else {
+            const extractedData = invoice.extractedData as any;
+            if (extractedData?.totalAmount) {
+              amount = parseFloat(extractedData.totalAmount);
+            }
+          }
+          
+          // Check if invoice qualifies as petty cash
+          const isPetty = amount > 0 && amount < threshold;
+          
+          if (isPetty) {
+            classified++;
+            console.log(`[PETTY CASH RECALC] Invoice ${invoice.id} (${invoice.fileName}) qualifies as petty cash: ${amount} < ${threshold}`);
+            
+            // Update invoice to mark as petty cash
+            const invoiceUpdates: any = {
+              pettyCashFlag: true
+            };
+            
+            // Update status if currently pending
+            if (invoice.status === 'pending') {
+              invoiceUpdates.status = 'petty_cash';
+            }
+            
+            // Update extractedData to include petty cash flag
+            if (invoice.extractedData) {
+              const updatedExtractedData = {
+                ...invoice.extractedData,
+                isPettyCash: true,
+                pettyCashThreshold: threshold,
+                pettyCashAmount: amount
+              };
+              invoiceUpdates.extractedData = updatedExtractedData;
+            }
+            
+            await storage.updateInvoice(invoice.id, invoiceUpdates);
+            updated++;
+            
+            // Check if petty cash log already exists
+            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+            
+            if (!existingLog) {
+              // Create petty cash log
+              const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount}`;
+              
+              await storage.createPettyCashLog({
+                invoiceId: invoice.id,
+                status: 'pending_approval',
+                approvalNotes
+              });
+              
+              logsCreated++;
+              console.log(`[PETTY CASH RECALC] Created log for invoice ${invoice.id}`);
+            }
+          }
+          
+        } catch (error) {
+          console.error(`[PETTY CASH RECALC] Error processing invoice ${invoice.id}:`, error);
+          errors.push({
+            invoiceId: invoice.id,
+            fileName: invoice.fileName,
+            error: error instanceof Error ? error.message : 'Unknown error'
+          });
+        }
+      }
+      
+      const summary = {
+        totalInvoices: processed,
+        qualifiedForPettyCash: classified,
+        invoicesUpdated: updated,
+        logsCreated: logsCreated,
+        errors: errors.length,
+        threshold: threshold,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log(`[PETTY CASH RECALC] Completed:`, summary);
+      
+      const message = `Recalculation completed: ${processed} invoices processed, ${classified} qualified as petty cash, ${logsCreated} new logs created, ${updated} invoices updated`;
+      
+      res.json({
+        success: true,
+        message,
+        summary,
+        errors: errors.length > 0 ? errors : undefined
+      });
+      
+    } catch (error) {
+      console.error('[PETTY CASH RECALC] Error during recalculation:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Failed to recalculate petty cash classifications',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   app.put('/api/petty-cash/:id', isAuthenticated, async (req, res) => {
     try {
       const id = parseInt(req.params.id);
