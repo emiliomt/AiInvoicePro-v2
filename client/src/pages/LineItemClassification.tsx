@@ -87,8 +87,14 @@ export default function LineItemClassification() {
   });
 
   // Fetch line item classifications for selected invoice
-  const { data: lineItemClassifications = [] } = useQuery({
+  const { data: lineItemClassifications = [], isLoading: classificationsLoading, error: classificationsError } = useQuery({
     queryKey: ["/api/invoices", selectedInvoice, "classifications"],
+    queryFn: async () => {
+      if (!selectedInvoice) return [];
+      const response = await fetch(`/api/invoices/${selectedInvoice}/classifications`);
+      if (!response.ok) throw new Error("Failed to fetch classifications");
+      return response.json();
+    },
     enabled: !!selectedInvoice,
   });
 
@@ -702,21 +708,39 @@ export default function LineItemClassification() {
                     <CardTitle>Line Item Classifications</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Quantity</TableHead>
-                          <TableHead>Unit Price</TableHead>
-                          <TableHead>Total</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Matched Keyword</TableHead>
-                          <TableHead>Confidence</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lineItemClassifications.map((item: any) => (
+                    {classificationsError && (
+                      <div className="text-red-600 text-sm mb-4">
+                        Error loading classifications: {classificationsError.message}
+                      </div>
+                    )}
+                    {classificationsLoading ? (
+                      <div className="flex items-center justify-center py-8">
+                        <RefreshCw className="w-6 h-6 animate-spin mr-2" />
+                        Loading classifications...
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Quantity</TableHead>
+                            <TableHead>Unit Price</TableHead>
+                            <TableHead>Total</TableHead>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Matched Keyword</TableHead>
+                            <TableHead>Confidence</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {lineItemClassifications.length === 0 ? (
+                            <TableRow>
+                              <TableCell colSpan={8} className="text-center py-8 text-gray-500">
+                                No line items found for this invoice
+                              </TableCell>
+                            </TableRow>
+                          ) : (
+                            lineItemClassifications.map((item: any) => (
                           <TableRow key={item.lineItemId}>
                             <TableCell>{item.description}</TableCell>
                             <TableCell>{item.quantity}</TableCell>
@@ -795,9 +819,11 @@ export default function LineItemClassification() {
                               </div>
                             </TableCell>
                           </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
+                            ))
+                          )}
+                        </TableBody>
+                      </Table>
+                    )}
                   </CardContent>
                 </Card>
               )}
