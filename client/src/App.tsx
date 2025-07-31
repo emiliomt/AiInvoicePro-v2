@@ -141,8 +141,23 @@ function App() {
       // Check if it's a WebSocket error (common cause of crashes)
       if (event.reason && typeof event.reason === 'object') {
         const reasonStr = String(event.reason);
-        if (reasonStr.includes('WebSocket') || reasonStr.includes('Failed to construct') || reasonStr.includes('connection')) {
+        const errorMessage = event.reason.message || reasonStr;
+        
+        if (reasonStr.includes('WebSocket') || 
+            reasonStr.includes('Failed to construct') || 
+            reasonStr.includes('connection') ||
+            errorMessage.includes('WebSocket') ||
+            errorMessage.includes('ws://') ||
+            errorMessage.includes('wss://')) {
           console.warn('WebSocket-related promise rejection handled gracefully');
+          return;
+        }
+        
+        // Handle Vite HMR WebSocket errors
+        if (errorMessage.includes('vite') || 
+            errorMessage.includes('HMR') ||
+            errorMessage.includes('@vite/client')) {
+          console.warn('Vite HMR WebSocket error handled gracefully');
           return;
         }
       }
@@ -159,10 +174,18 @@ function App() {
         return;
       }
       
+      // Check for AbortError (common in React 18 with Strict Mode)
+      if (event.reason && event.reason.name === 'AbortError') {
+        console.warn('AbortError handled gracefully (likely from React Strict Mode)');
+        return;
+      }
+      
       // Log specific details for debugging but don't crash
       console.warn('Unhandled promise rejection prevented:', {
         reason: event.reason,
         type: typeof event.reason,
+        name: event.reason?.name,
+        message: event.reason?.message,
         stack: event.reason?.stack || 'No stack trace'
       });
     };
@@ -171,10 +194,28 @@ function App() {
       console.error('Global error:', event.error);
       
       // Don't let script errors crash the entire app
-      if (event.error && event.error.name === 'ChunkLoadError') {
-        console.warn('Chunk load error - possible network issue or cache problem');
+      if (event.error && (event.error.name === 'ChunkLoadError' || event.error.name === 'ScriptError')) {
+        console.warn('Chunk/Script load error - possible network issue or cache problem');
         return true; // Prevent default handling
       }
+      
+      // Handle ResizeObserver errors (common but harmless)
+      if (event.error && event.error.message && event.error.message.includes('ResizeObserver')) {
+        console.warn('ResizeObserver error handled gracefully');
+        return true;
+      }
+      
+      // Handle network-related errors
+      if (event.error && event.error.message && (
+          event.error.message.includes('Network Error') ||
+          event.error.message.includes('Failed to fetch') ||
+          event.error.message.includes('connection')
+        )) {
+        console.warn('Network error handled gracefully');
+        return true;
+      }
+      
+      return true; // Prevent default handling for all errors
     };
 
     window.addEventListener('unhandledrejection', handleUnhandledRejection);
