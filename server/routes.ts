@@ -219,6 +219,76 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
     console.log(`[INVOICE UPDATE] Invoice ${invoice.id} main table updated successfully`);
 
+    // AUTOMATIC PETTY CASH DETECTION AND LOG CREATION
+    try {
+      console.log(`[PETTY CASH] Checking if invoice ${invoice.id} qualifies as petty cash...`);
+      
+      // Get current petty cash threshold
+      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
+      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
+      
+      // Check if invoice amount qualifies as petty cash
+      const amount = cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount) : 0;
+      const isPettyCash = amount > 0 && amount < threshold;
+      
+      console.log(`[PETTY CASH] Invoice ${invoice.id}: Amount ${amount} ${cleanedData.currency}, Threshold ${threshold}, Qualifies: ${isPettyCash}`);
+      
+      if (isPettyCash) {
+        // Check if petty cash log already exists
+        const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+        
+        if (!existingLog) {
+          // Create petty cash log automatically
+          const approvalNotes = `${invoice.fileName} - Vendor: ${cleanedData.vendorName || 'Unknown'} - Amount: ${cleanedData.currency} ${amount.toLocaleString()}`;
+          
+          await storage.createPettyCashLog({
+            invoiceId: invoice.id,
+            status: 'pending_approval',
+            approvalNotes
+          });
+          
+          console.log(`[PETTY CASH] ✅ Created petty cash log for invoice ${invoice.id} - ${approvalNotes}`);
+          
+          // Update invoice to mark as petty cash
+          await storage.updateInvoice(invoice.id, {
+            status: "petty_cash",
+            pettyCashFlag: true,
+            extractedData: {
+              ...extractedData,
+              isPettyCash: true,
+              pettyCashThreshold: threshold,
+              pettyCashAmount: amount
+            }
+          });
+          
+          console.log(`[PETTY CASH] ✅ Updated invoice ${invoice.id} status to petty_cash`);
+        } else {
+          console.log(`[PETTY CASH] ⚠️ Petty cash log already exists for invoice ${invoice.id}`);
+          
+          // Still update the invoice flags if not already set
+          if (!invoice.pettyCashFlag) {
+            await storage.updateInvoice(invoice.id, {
+              status: "petty_cash",
+              pettyCashFlag: true,
+              extractedData: {
+                ...extractedData,
+                isPettyCash: true,
+                pettyCashThreshold: threshold,
+                pettyCashAmount: amount
+              }
+            });
+            console.log(`[PETTY CASH] ✅ Updated invoice ${invoice.id} petty cash flags`);
+          }
+        }
+      } else {
+        console.log(`[PETTY CASH] Invoice ${invoice.id} does not qualify as petty cash (${amount} >= ${threshold})`);
+      }
+      
+    } catch (pettyCashError) {
+      console.error(`[PETTY CASH] ❌ Error during petty cash processing for invoice ${invoice.id}:`, pettyCashError);
+      // Don't fail the entire processing for petty cash errors
+    }
+
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
@@ -258,27 +328,41 @@ async function processPostExtractionWorkflow(invoice: any) {
     
     if (isPettyCash) {
       console.log(`💰 Invoice ${invoice.id} classified as petty cash - skipping remaining steps`);
+      
+      // Check if petty cash log already exists before creating
+      const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+      
+      if (!existingLog) {
+        // Create petty cash log for approval with detailed notes
+        const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
+        
+        try {
+          await storage.createPettyCashLog({
+            invoiceId: invoice.id,
+            status: 'pending_approval',
+            approvalNotes: approvalNotes
+          });
+          console.log(`💰 ✅ Created petty cash log for invoice ${invoice.id} with notes: ${approvalNotes}`);
+        } catch (logError) {
+          console.error(`💰 ❌ Failed to create petty cash log for invoice ${invoice.id}:`, logError);
+          // Continue processing even if log creation fails
+        }
+      } else {
+        console.log(`💰 ⚠️ Petty cash log already exists for invoice ${invoice.id}`);
+      }
+      
+      // Update invoice status and flags
       await storage.updateInvoice(invoice.id, { 
         status: "petty_cash",
         pettyCashFlag: true,
         classifiedItems,
+        extractedData: {
+          ...invoice.extractedData,
+          isPettyCash: true,
+          pettyCashProcessedAt: new Date().toISOString()
+        },
         updatedAt: new Date()
       });
-      
-      // Create petty cash log for approval with detailed notes
-      const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
-      
-      try {
-        await storage.createPettyCashLog({
-          invoiceId: invoice.id,
-          status: 'pending_approval',
-          approvalNotes: approvalNotes
-        });
-        console.log(`💰 Created petty cash log for invoice ${invoice.id} with notes: ${approvalNotes}`);
-      } catch (logError) {
-        console.error(`💰 Failed to create petty cash log for invoice ${invoice.id}:`, logError);
-        // Continue processing even if log creation fails
-      }
       
       console.log(`✅ Invoice ${invoice.id} classified as PETTY CASH`);
       return; // Skip remaining steps for petty cash
@@ -2076,6 +2160,96 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error starting invoice processing:", error);
       res.status(500).json({ message: "Failed to start processing" });
+    }
+  });
+
+  // Manual petty cash detection endpoint
+  app.post('/api/invoices/:id/detect-petty-cash', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice || invoice.userId !== userId) {
+        return res.status(404).json({ message: "Invoice not found or access denied" });
+      }
+
+      console.log(`[MANUAL PETTY CASH] Starting detection for invoice ${invoiceId}`);
+
+      // Get current petty cash threshold
+      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
+      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
+
+      // Determine total amount from various sources
+      let amount = 0;
+      if (invoice.totalAmount && invoice.totalAmount !== 'null') {
+        amount = parseFloat(invoice.totalAmount);
+      } else if (invoice.extractedData) {
+        const data = invoice.extractedData as any;
+        if (data?.totalAmount) {
+          amount = parseFloat(data.totalAmount);
+        }
+      }
+
+      const isPettyCash = amount > 0 && amount < threshold;
+      
+      if (isPettyCash) {
+        // Check if log already exists
+        const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+        
+        if (!existingLog) {
+          const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount.toLocaleString()}`;
+          
+          await storage.createPettyCashLog({
+            invoiceId,
+            status: 'pending_approval',
+            approvalNotes
+          });
+
+          await storage.updateInvoice(invoiceId, {
+            status: "petty_cash",
+            pettyCashFlag: true,
+            extractedData: {
+              ...invoice.extractedData,
+              isPettyCash: true,
+              pettyCashThreshold: threshold,
+              pettyCashAmount: amount
+            }
+          });
+
+          res.json({
+            success: true,
+            message: `Invoice detected as petty cash and log created`,
+            amount,
+            threshold,
+            logCreated: true
+          });
+        } else {
+          res.json({
+            success: true,
+            message: `Invoice already has petty cash log`,
+            amount,
+            threshold,
+            logCreated: false
+          });
+        }
+      } else {
+        res.json({
+          success: false,
+          message: `Invoice does not qualify as petty cash (${amount} >= ${threshold})`,
+          amount,
+          threshold,
+          logCreated: false
+        });
+      }
+
+    } catch (error) {
+      console.error("Error in manual petty cash detection:", error);
+      res.status(500).json({ 
+        success: false,
+        message: "Failed to detect petty cash",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
