@@ -670,9 +670,8 @@ export default function InvoiceImporter() {
           credentials: 'include',
         });
 
-        let data: any = null;
         if (response.ok) {
-          data = await response.json();
+          const data = await response.json();
           console.log(`📊 Progress poll result for config ${configId}, logId ${logId}:`, data);
 
           // Update the config with progress data
