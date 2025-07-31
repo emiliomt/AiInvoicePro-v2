@@ -750,10 +750,10 @@ export default function LineItemClassification() {
                               <div className="flex items-center gap-2">
                                 {item.category ? (
                                   <Badge className={CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.color}>
-                                    {CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.label}
+                                    {CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.label || item.category.replace('_', ' ')}
                                   </Badge>
                                 ) : (
-                                  <Badge variant="secondary">Unclassified</Badge>
+                                  <span className="text-gray-400">Unclassified</span>
                                 )}
                                 {item.isManualOverride && (
                                   <Badge variant="outline" className="text-xs">
@@ -769,22 +769,26 @@ export default function LineItemClassification() {
                               </div>
                             </TableCell>
                             <TableCell>
-                              {item.matchedKeyword && (
+                              {item.matchedKeyword ? (
                                 <Badge variant="outline" className="text-xs">
                                   {item.matchedKeyword}
                                 </Badge>
+                              ) : (
+                                '-'
                               )}
                             </TableCell>
                             <TableCell>
-                              {item.confidence && (
+                              {item.confidence ? (
                                 <div className="flex items-center gap-1">
-                                  <span className="text-sm">{Math.round(parseFloat(item.confidence) * 100)}%</span>
-                                  {parseFloat(item.confidence) > 0.7 ? (
+                                  <span className="text-sm">{Math.round(item.confidence * 100)}%</span>
+                                  {item.confidence > 0.7 ? (
                                     <Check className="w-4 h-4 text-green-500" />
                                   ) : (
                                     <AlertCircle className="w-4 h-4 text-yellow-500" />
                                   )}
                                 </div>
+                              ) : (
+                                '-'
                               )}
                             </TableCell>
                             <TableCell>

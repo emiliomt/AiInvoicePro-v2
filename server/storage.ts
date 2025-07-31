@@ -4,6 +4,7 @@ import { neon } from "@neondatabase/serverless";
 import { 
   invoices, 
   lineItems, 
+  lineItemClassifications,
   approvals, 
   companies, 
   users,
@@ -144,7 +145,7 @@ export interface IStorage {
   getClassificationKeywords(): Promise<any[]>;
   addClassificationKeyword(keyword: any): Promise<any>;
   removeClassificationKeyword(id: number): Promise<void>;
-  getLineItemClassifications(): Promise<any[]>;
+  getLineItemClassifications(invoiceId: number): Promise<any[]>;
   updateLineItemClassification(id: number, updates: any): Promise<any>;
   createApprovedInvoiceProject(data: any): Promise<any>;
   getApprovedInvoiceProjects(): Promise<any[]>;
@@ -1406,8 +1407,42 @@ class PostgresStorage implements IStorage {
     // Placeholder implementation
   }
 
-  async getLineItemClassifications(): Promise<any[]> {
-    return [];
+  async getLineItemClassifications(invoiceId: number): Promise<any[]> {
+    const result = await db
+      .select({
+        lineItemId: lineItems.id,
+        description: lineItems.description,
+        quantity: lineItems.quantity,
+        unitPrice: lineItems.unitPrice,
+        totalPrice: lineItems.totalPrice,
+        category: lineItemClassifications.category,
+        matchedKeyword: lineItemClassifications.matchedKeyword,
+        confidence: lineItemClassifications.confidence,
+        isManualOverride: lineItemClassifications.isManualOverride,
+        classifiedAt: lineItemClassifications.classifiedAt,
+        classifiedBy: lineItemClassifications.classifiedBy,
+      })
+      .from(lineItems)
+      .leftJoin(
+        lineItemClassifications,
+        eq(lineItems.id, lineItemClassifications.lineItemId)
+      )
+      .where(eq(lineItems.invoiceId, invoiceId))
+      .orderBy(lineItems.id);
+
+    return result.map(item => ({
+      lineItemId: item.lineItemId,
+      description: item.description,
+      quantity: parseFloat(item.quantity),
+      unitPrice: parseFloat(item.unitPrice),
+      totalPrice: parseFloat(item.totalPrice),
+      category: item.category,
+      matchedKeyword: item.matchedKeyword,
+      confidence: item.confidence ? parseFloat(item.confidence) : null,
+      isManualOverride: item.isManualOverride || false,
+      classifiedAt: item.classifiedAt,
+      classifiedBy: item.classifiedBy,
+    }));
   }
 
   async updateLineItemClassification(id: number, updates: any): Promise<any> {
