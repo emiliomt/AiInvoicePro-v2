@@ -27,8 +27,15 @@ export default function ThresholdConfig() {
     queryKey: ["/api/settings/user_preferences"],
   });
 
-  const defaultCurrency = userSettings?.value ? 
-    JSON.parse(userSettings.value).defaultCurrency || 'USD' : 'USD';
+  const defaultCurrency = (() => {
+    try {
+      return userSettings?.value ? 
+        JSON.parse(userSettings.value).defaultCurrency || 'USD' : 'USD';
+    } catch (error) {
+      console.error('Error parsing user settings:', error);
+      return 'USD';
+    }
+  })();
 
   // Combined query for both user settings and threshold to reduce API calls
   const { data: configData, isLoading } = useQuery({
@@ -54,7 +61,14 @@ export default function ThresholdConfig() {
           })
         ]);
 
-        const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
+        const userSettings = (() => {
+          try {
+            return JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
+          } catch (error) {
+            console.error('Error parsing user settings in query:', error);
+            return { defaultCurrency: 'USD' };
+          }
+        })();
 
         return {
           userSettings,
@@ -132,10 +146,13 @@ export default function ThresholdConfig() {
     // Mutation to update the default currency
     const updateCurrency = useMutation({
       mutationFn: async (currency: string) => {
+          const currentSettings = configData?.userSettings || { defaultCurrency: 'USD' };
+          const updatedSettings = { ...currentSettings, defaultCurrency: currency };
+          
           const response = await fetch('/api/settings/user_preferences', {
               method: 'PUT',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ defaultCurrency: currency }),
+              body: JSON.stringify({ value: JSON.stringify(updatedSettings) }),
           });
   
           if (!response.ok) {
@@ -146,12 +163,21 @@ export default function ThresholdConfig() {
           const result = await response.json();
           return result;
       },
-      onSuccess: () => {
+      onSuccess: (data) => {
           toast({
               title: "Success",
               description: "Default currency updated successfully",
           });
+          
+          // Update cache with new settings
+          queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
+            ...oldData,
+            userSettings: JSON.parse(data.value)
+          }));
+          
           queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
+          queryClient.invalidateQueries({ queryKey: ['userSettings'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
       },
       onError: (error: Error) => {
           console.error('Currency update error:', error);
