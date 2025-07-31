@@ -6,9 +6,6 @@ import { Toaster } from "@/components/ui/toaster";
 import { useAuth } from "@/hooks/useAuth";
 import ErrorBoundary from "@/components/ErrorBoundary";
 
-// Components
-import Navigation from "@/components/Navigation";
-
 // Pages
 import Landing from "@/pages/Landing";
 import Dashboard from "@/pages/Dashboard";
@@ -52,7 +49,7 @@ const AppContent = React.memo(() => {
   }
 
   return (
-    <Navigation>
+    <div>
       <Switch>
         <Route path="/">
           {user ? <Dashboard /> : <Landing />}
@@ -127,7 +124,8 @@ const AppContent = React.memo(() => {
           <NotFound />
         </Route>
       </Switch>
-    </Navigation>
+      <Toaster />
+    </div>
   );
 });
 
