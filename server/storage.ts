@@ -82,6 +82,7 @@ export interface IStorage {
   updatePettyCashLog(id: number, updates: any): Promise<any>;
   getPettyCashLogs(status?: string): Promise<any[]>;
   getPettyCashLogByInvoiceId(invoiceId: number): Promise<any>;
+  isPettyCashInvoice(totalAmount: string): Promise<boolean>;
 
   // Settings
   getSetting(key: string): Promise<any>;
@@ -1504,6 +1505,32 @@ class PostgresStorage implements IStorage {
   // Get users by company for multi-tenant filtering
   async getUsersByCompany(companyId: number): Promise<User[]> {
     return await db.select().from(users).where(eq(users.companyId, companyId));
+  }
+
+  // Petty Cash Classification Function
+  async isPettyCashInvoice(totalAmount: string): Promise<boolean> {
+    try {
+      console.log(`Checking petty cash for amount: ${totalAmount}`);
+      
+      // Get threshold
+      const thresholdSetting = await this.getSetting('petty_cash_threshold');
+      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
+      
+      console.log(`Threshold: ${threshold}`);
+      
+      // Parse amount
+      const amount = parseFloat(totalAmount || '0');
+      console.log(`Parsed amount: ${amount}`);
+      
+      // Simple comparison
+      const result = amount < threshold && amount > 0;
+      console.log(`${amount} < ${threshold} = ${result}`);
+      
+      return result;
+    } catch (error) {
+      console.error('Petty cash check error:', error);
+      return false;
+    }
   }
 }
 
