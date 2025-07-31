@@ -3515,6 +3515,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  app.post('/api/invoices/bulk-auto-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const { invoiceIds } = req.body;
+
+      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return res.status(400).json({ message: "Invoice IDs array is required" });
+      }
+
+      const { ClassificationService } = await import('./services/classificationService');
+      
+      let successCount = 0;
+      let errorCount = 0;
+      
+      for (const invoiceId of invoiceIds) {
+        try {
+          await ClassificationService.classifyInvoiceLineItems(invoiceId, userId);
+          successCount++;
+        } catch (error) {
+          console.error(`Failed to classify invoice ${invoiceId}:`, error);
+          errorCount++;
+        }
+      }
+
+      res.json({ 
+        message: `Classification completed for ${successCount} invoices${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+        successCount,
+        errorCount
+      });
+    } catch (error) {
+      console.error("Error bulk classifying invoices:", error);
+      res.status(500).json({ message: "Failed to bulk classify invoices" });
+    }
+  });
+
   app.post('/api/invoices/:id/ai-classify', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
