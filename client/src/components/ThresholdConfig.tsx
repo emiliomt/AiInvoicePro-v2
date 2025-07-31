@@ -21,6 +21,7 @@ const CURRENCY_OPTIONS = [
 export default function ThresholdConfig() {
   const [isEditing, setIsEditing] = useState(false);
   const [thresholdValue, setThresholdValue] = useState("");
+  const [isUpdatingCurrency, setIsUpdatingCurrency] = useState(false);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -98,16 +99,19 @@ export default function ThresholdConfig() {
         description: `Currency updated to ${data.newCurrency}`,
       });
       
-      // CRITICAL: Properly invalidate and refetch all related queries
+      // CRITICAL: Force immediate update of ALL components using this data
       queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
         ...oldData,
         userSettings: data.updatedSettings
       }));
       
-      // Force immediate refetch of both threshold and currency data
+      // Force immediate refetch (don't wait for cache)
       queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
-      queryClient.invalidateQueries({ queryKey: ['userSettings'] });
-      queryClient.refetchQueries({ queryKey: ['thresholdConfig'] });
+      queryClient.refetchQueries({ queryKey: ['thresholdConfig'], type: 'active' });
+      
+      // Also invalidate petty cash stats to update Total Value card
+      queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
+      queryClient.refetchQueries({ queryKey: ['/api/petty-cash'], type: 'active' });
     },
     onError: (error: Error) => {
       toast({
@@ -231,8 +235,15 @@ export default function ThresholdConfig() {
         <div className="flex items-center space-x-2">
           <Select 
             value={defaultCurrency} 
-            onValueChange={(value) => updateCurrency.mutate(value)}
-            disabled={updateCurrency.isPending}
+            onValueChange={async (value) => {
+              setIsUpdatingCurrency(true);
+              try {
+                await updateCurrency.mutateAsync(value);
+              } finally {
+                setIsUpdatingCurrency(false);
+              }
+            }}
+            disabled={updateCurrency.isPending || isUpdatingCurrency}
           >
             <SelectTrigger className="w-48">
               <SelectValue placeholder="Select currency" />
@@ -248,8 +259,8 @@ export default function ThresholdConfig() {
               ))}
             </SelectContent>
           </Select>
-          {updateCurrency.isPending && (
-            <div className="text-xs text-gray-500">Updating...</div>
+          {(updateCurrency.isPending || isUpdatingCurrency) && (
+            <div className="text-xs text-blue-600 animate-pulse">Updating...</div>
           )}
         </div>
       </div>

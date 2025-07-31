@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import PettyCashManager from "@/components/PettyCashManager";
@@ -84,22 +84,48 @@ export default function PettyCash() {
     },
   });
 
-  // Fetch user settings to get default currency with caching
-  const { data: userSettings } = useQuery({
-    queryKey: ['userSettings'],
+  // Use the same query as ThresholdConfig for synchronized currency data
+  const { data: configData } = useQuery({
+    queryKey: ['thresholdConfig'],
     queryFn: async () => {
-      const response = await fetch('/api/settings/user_preferences');
-      if (!response.ok) {
-        return { defaultCurrency: 'USD' }; // Default fallback
+      try {
+        const [userSettingsRes, thresholdRes] = await Promise.all([
+          fetch('/api/settings/user_preferences').then(res => 
+            res.ok ? res.json() : { key: 'user_preferences', value: JSON.stringify({ defaultCurrency: 'USD' }) }
+          ),
+          fetch('/api/settings/petty_cash_threshold').then(async res => {
+            if (res.ok) {
+              return res.json();
+            } else {
+              const createResponse = await fetch('/api/settings/petty_cash_threshold', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ value: "100" }),
+              });
+              return createResponse.ok ? createResponse.json() : { key: 'petty_cash_threshold', value: "100" };
+            }
+          })
+        ]);
+
+        const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
+        
+        return {
+          userSettings,
+          threshold: thresholdRes
+        };
+      } catch (error) {
+        console.error('Error loading config:', error);
+        return {
+          userSettings: { defaultCurrency: 'USD' },
+          threshold: { key: 'petty_cash_threshold', value: "100" }
+        };
       }
-      const data = await response.json();
-      return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
     },
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
+    staleTime: 1000, // Short cache time for immediate updates
+    refetchOnWindowFocus: true,
   });
 
-  const defaultCurrency = (userSettings as { defaultCurrency?: string })?.defaultCurrency || 'USD';
+  const defaultCurrency = configData?.userSettings?.defaultCurrency || 'USD';
   
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
@@ -112,11 +138,11 @@ export default function PettyCash() {
     }
   };
 
-  const formatCurrency = (amount: string | number) => {
+  const formatCurrency = useCallback((amount: string | number) => {
     const symbol = getCurrencySymbol(defaultCurrency);
     const num = typeof amount === 'string' ? parseFloat(amount) : amount;
     return isNaN(num) ? `${symbol}0.00` : `${symbol}${num.toLocaleString()} ${defaultCurrency}`;
-  };
+  }, [defaultCurrency]);
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -175,11 +201,11 @@ export default function PettyCash() {
           </Card>
 
           <Card>
-            <CardContent className="p-6">
+            <CardContent className="p-6" key={defaultCurrency}>
               <div className="flex items-center justify-between">
                 <div>
                   <p className="text-sm font-medium text-gray-600">Total Value</p>
-                  <p className="text-3xl font-bold text-gray-900">{formatCurrency(stats?.totalValue || "0.00")}</p>
+                  <p className="text-3xl font-bold text-purple-600">{formatCurrency(stats?.totalValue || "0")}</p>
                 </div>
                 <div className="w-12 h-12 bg-purple-100 rounded-lg flex items-center justify-center">
                   <DollarSign className="text-purple-600" size={24} />
