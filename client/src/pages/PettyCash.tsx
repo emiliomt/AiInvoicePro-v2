@@ -114,11 +114,8 @@ export default function PettyCash() {
 
   const formatCurrency = (amount: string | number) => {
     const symbol = getCurrencySymbol(defaultCurrency);
-    if (typeof amount === 'string') {
-      const num = parseFloat(amount);
-      return isNaN(num) ? `${symbol}0.00` : `${symbol}${num.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-    }
-    return `${symbol}${amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+    const num = typeof amount === 'string' ? parseFloat(amount) : amount;
+    return isNaN(num) ? `${symbol}0.00` : `${symbol}${num.toLocaleString()} ${defaultCurrency}`;
   };
 
   return (

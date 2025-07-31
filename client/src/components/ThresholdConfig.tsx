@@ -67,12 +67,12 @@ export default function ThresholdConfig() {
     refetchOnWindowFocus: true, // Refetch when user returns to page
   });
 
-  // Update threshold value when data is loaded
+  // Update threshold value when data is loaded or currency changes
   useEffect(() => {
     if (configData?.threshold?.value) {
       setThresholdValue(configData.threshold.value);
     }
-  }, [configData?.threshold?.value]);
+  }, [configData?.threshold?.value, configData?.userSettings?.defaultCurrency]);
 
   // Update currency mutation
   const updateCurrency = useMutation({
@@ -90,15 +90,24 @@ export default function ThresholdConfig() {
         throw new Error('Failed to update currency');
       }
       
-      return response.json();
+      return { newCurrency, updatedSettings };
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       toast({
         title: "Success",
-        description: "Default currency updated successfully",
+        description: `Currency updated to ${data.newCurrency}`,
       });
+      
+      // CRITICAL: Properly invalidate and refetch all related queries
+      queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
+        ...oldData,
+        userSettings: data.updatedSettings
+      }));
+      
+      // Force immediate refetch of both threshold and currency data
       queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
       queryClient.invalidateQueries({ queryKey: ['userSettings'] });
+      queryClient.refetchQueries({ queryKey: ['thresholdConfig'] });
     },
     onError: (error: Error) => {
       toast({
@@ -132,19 +141,18 @@ export default function ThresholdConfig() {
         description: "Petty cash threshold updated successfully",
       });
       setIsEditing(false);
-      
-      // Update the local threshold value
       setThresholdValue(data.value);
       
-      // Optimistically update cache with the correct structure
+      // CRITICAL: Force immediate UI update
       queryClient.setQueryData(['thresholdConfig'], (oldData: any) => ({
         ...oldData,
         threshold: data
       }));
       
-      // Invalidate related queries
+      // Invalidate related queries to refresh stats
       queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
       queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
+      queryClient.refetchQueries({ queryKey: ['thresholdConfig'] });
     },
     onError: (error: Error) => {
       console.error('Threshold update error:', error);
@@ -240,6 +248,9 @@ export default function ThresholdConfig() {
               ))}
             </SelectContent>
           </Select>
+          {updateCurrency.isPending && (
+            <div className="text-xs text-gray-500">Updating...</div>
+          )}
         </div>
       </div>
 
@@ -259,7 +270,7 @@ export default function ThresholdConfig() {
           {isEditing ? (
             <>
               <div className="flex items-center space-x-1">
-                <span className="text-lg">{getCurrencySymbol(defaultCurrency)}</span>
+                <span className="text-lg font-semibold">{getCurrencySymbol(defaultCurrency)}</span>
                 <Input
                   type="number"
                   value={thresholdValue}
@@ -267,7 +278,7 @@ export default function ThresholdConfig() {
                   placeholder="Enter threshold amount"
                   className="w-32"
                 />
-                <span className="text-sm text-gray-600">{defaultCurrency}</span>
+                <span className="text-sm text-gray-600 font-medium">{defaultCurrency}</span>
               </div>
               <Button 
                 size="sm" 
