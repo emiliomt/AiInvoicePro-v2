@@ -4727,6 +4727,175 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Create missing petty cash logs for invoices classified as petty cash
+  app.post('/api/petty-cash/create-missing-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const userId = (user as any).claims.sub;
+      const currentUser = await storage.getUser(userId);
+
+      console.log(`[PETTY CASH] Creating missing petty cash logs for user ${userId}`);
+
+      // Get all invoices with status 'petty_cash' that don't have petty cash logs
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      try {
+        // Find invoices with petty_cash status that don't have logs
+        let query = `
+          SELECT i.id, i.file_name, i.currency, i.total_amount, i.vendor_name, i.user_id, i.company_id
+          FROM invoices i
+          LEFT JOIN petty_cash_log pcl ON i.id = pcl.invoice_id
+          WHERE i.status = 'petty_cash' 
+          AND pcl.invoice_id IS NULL
+        `;
+        
+        const params: any[] = [];
+        
+        // Filter by user access (own invoices or company invoices)
+        if (currentUser?.companyId) {
+          query += ` AND (i.user_id = $1 OR (i.user_id = 'rpa-system' AND i.company_id = $2))`;
+          params.push(userId, currentUser.companyId);
+        } else {
+          query += ` AND i.user_id = $1`;
+          params.push(userId);
+        }
+        
+        const result = await dbClient.query(query, params);
+        const missingLogInvoices = result.rows;
+        
+        console.log(`[PETTY CASH] Found ${missingLogInvoices.length} invoices with missing petty cash logs`);
+        
+        let createdCount = 0;
+        
+        // Create petty cash logs for each missing invoice
+        for (const invoice of missingLogInvoices) {
+          try {
+            const approvalNotes = `Auto-created for ${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
+            
+            await storage.createPettyCashLog({
+              invoiceId: invoice.id,
+              status: 'pending_approval',
+              approvalNotes: approvalNotes
+            });
+            
+            createdCount++;
+            console.log(`[PETTY CASH] Created log for invoice ${invoice.id}: ${invoice.file_name}`);
+          } catch (error) {
+            console.error(`[PETTY CASH] Failed to create log for invoice ${invoice.id}:`, error);
+          }
+        }
+        
+        await dbClient.end();
+        
+        console.log(`[PETTY CASH] Successfully created ${createdCount} petty cash logs`);
+        
+        res.json({
+          message: `Created ${createdCount} missing petty cash log entries`,
+          createdCount,
+          totalFound: missingLogInvoices.length
+        });
+        
+      } catch (error) {
+        await dbClient.end();
+        throw error;
+      }
+      
+    } catch (error) {
+      console.error('[PETTY CASH] Error creating missing logs:', error);
+      res.status(500).json({ 
+        error: 'Failed to create missing petty cash logs',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Recalculate petty cash classification for all invoices
+  app.post('/api/petty-cash/recalculate', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const userId = (user as any).claims.sub;
+      const currentUser = await storage.getUser(userId);
+
+      console.log(`[PETTY CASH] Recalculating petty cash classification for user ${userId}`);
+
+      // Get user's accessible invoices
+      let invoices;
+      if (currentUser?.companyId) {
+        invoices = await storage.getCompanyInvoicesWithProjectMatches(currentUser.companyId);
+      } else {
+        invoices = await storage.getInvoicesWithProjectMatches(userId);
+      }
+
+      let reclassifiedCount = 0;
+      let newPettyCashCount = 0;
+
+      for (const invoice of invoices) {
+        try {
+          const isPetty = await storage.isPettyCashInvoice(invoice.id);
+          const currentStatus = invoice.status;
+
+          if (isPetty && currentStatus !== 'petty_cash') {
+            // Reclassify as petty cash
+            await storage.updateInvoice(invoice.id, { 
+              status: 'petty_cash',
+              pettyCashFlag: true 
+            });
+
+            // Create petty cash log if it doesn't exist
+            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+            if (!existingLog) {
+              await storage.createPettyCashLog({
+                invoiceId: invoice.id,
+                status: 'pending_approval'
+              });
+              newPettyCashCount++;
+            }
+            
+            reclassifiedCount++;
+            console.log(`[PETTY CASH] Reclassified invoice ${invoice.id} as petty cash`);
+          } else if (!isPetty && currentStatus === 'petty_cash') {
+            // Remove petty cash classification
+            await storage.updateInvoice(invoice.id, { 
+              status: 'extracted',
+              pettyCashFlag: false 
+            });
+            reclassifiedCount++;
+            console.log(`[PETTY CASH] Removed petty cash classification from invoice ${invoice.id}`);
+          }
+        } catch (error) {
+          console.error(`[PETTY CASH] Error processing invoice ${invoice.id}:`, error);
+        }
+      }
+
+      res.json({
+        message: `Recalculation complete: ${reclassifiedCount} invoices reclassified, ${newPettyCashCount} new petty cash logs created`,
+        reclassifiedCount,
+        newPettyCashCount,
+        totalProcessed: invoices.length
+      });
+
+    } catch (error) {
+      console.error('[PETTY CASH] Error in recalculation:', error);
+      res.status(500).json({ 
+        error: 'Failed to recalculate petty cash classification',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
