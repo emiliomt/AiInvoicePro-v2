@@ -56,11 +56,8 @@ export class ClassificationService {
         .limit(1);
 
       if (existingDefaults.length > 0) {
-        console.log('Default classification keywords already exist, skipping initialization');
         return; // Defaults already initialized
       }
-
-      console.log('Initializing default classification keywords...');
 
       // Insert default keywords
       const defaultKeywordEntries: InsertClassificationKeyword[] = [];
@@ -76,20 +73,10 @@ export class ClassificationService {
         }
       }
 
-      console.log(`Inserting ${defaultKeywordEntries.length} default keywords...`);
       await db.insert(classificationKeywords).values(defaultKeywordEntries);
-      console.log('✅ Default classification keywords initialized successfully');
-      
-      // Verify insertion
-      const verifyCount = await db
-        .select()
-        .from(classificationKeywords)
-        .where(eq(classificationKeywords.isDefault, true));
-      console.log(`✅ Verification: ${verifyCount.length} default keywords now in database`);
-      
+      console.log('Default classification keywords initialized');
     } catch (error) {
-      console.error('❌ Error initializing default keywords:', error);
-      throw error;
+      console.error('Error initializing default keywords:', error);
     }
   }
 

@@ -57,7 +57,7 @@ app.use((req, res, next) => {
   }, 30000);
 
   console.log('Starting server initialization...');
-
+  
   try {
     const server = await registerRoutes(app);
     console.log('Routes registered successfully');
@@ -92,23 +92,9 @@ app.use((req, res, next) => {
     // It is the only port that is not firewalled.
     const port = 5000;
 
-    // Initialize classification keywords on startup
-    async function initializeClassificationSystem() {
-      try {
-        const { ClassificationService } = await import('./services/classificationService');
-        await ClassificationService.initializeDefaultKeywords();
-        console.log('✅ Classification system initialized with default keywords');
-      } catch (error) {
-        console.error('❌ Failed to initialize classification system:', error);
-      }
-    }
-
-    server.listen(port, "0.0.0.0", async () => {
+    server.listen(port, "0.0.0.0", () => {
       clearTimeout(serverTimeout);
       log(`serving on port ${port}`);
-
-      // Initialize classification keywords after server starts
-      await initializeClassificationSystem();
     }).on('error', (err: any) => {
       clearTimeout(serverTimeout);
       if (err.code === 'EADDRINUSE') {
@@ -119,7 +105,7 @@ app.use((req, res, next) => {
         process.exit(1);
       }
     });
-
+  
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
