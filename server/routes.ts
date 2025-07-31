@@ -265,11 +265,20 @@ async function processPostExtractionWorkflow(invoice: any) {
         updatedAt: new Date()
       });
       
-      // Create petty cash log for approval
-      await storage.createPettyCashLog({
-        invoiceId: invoice.id,
-        status: 'pending_approval'
-      });
+      // Create petty cash log for approval with detailed notes
+      const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
+      
+      try {
+        await storage.createPettyCashLog({
+          invoiceId: invoice.id,
+          status: 'pending_approval',
+          approvalNotes: approvalNotes
+        });
+        console.log(`💰 Created petty cash log for invoice ${invoice.id} with notes: ${approvalNotes}`);
+      } catch (logError) {
+        console.error(`💰 Failed to create petty cash log for invoice ${invoice.id}:`, logError);
+        // Continue processing even if log creation fails
+      }
       
       console.log(`✅ Invoice ${invoice.id} classified as PETTY CASH`);
       return; // Skip remaining steps for petty cash
@@ -4891,6 +4900,125 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       console.error('[PETTY CASH] Error in recalculation:', error);
       res.status(500).json({ 
         error: 'Failed to recalculate petty cash classification',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // Create petty cash logs for specific invoices
+  app.post('/api/petty-cash/create-for-invoices', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { invoiceIds } = req.body;
+      if (!invoiceIds || !Array.isArray(invoiceIds)) {
+        return res.status(400).json({ error: 'Invoice IDs array is required' });
+      }
+
+      const userId = (user as any).claims.sub;
+      const currentUser = await storage.getUser(userId);
+
+      console.log(`[PETTY CASH] Creating petty cash logs for specific invoices: ${invoiceIds.join(', ')}`);
+
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      let createdCount = 0;
+      const results = [];
+      
+      try {
+        for (const invoiceId of invoiceIds) {
+          // Get invoice details
+          const invoiceQuery = `
+            SELECT id, file_name, currency, total_amount, vendor_name, user_id, company_id, status
+            FROM invoices 
+            WHERE id = $1
+          `;
+          const invoiceResult = await dbClient.query(invoiceQuery, [invoiceId]);
+          
+          if (invoiceResult.rows.length === 0) {
+            results.push({ invoiceId, status: 'not_found', message: 'Invoice not found' });
+            continue;
+          }
+          
+          const invoice = invoiceResult.rows[0];
+          
+          // Check access permissions
+          const hasAccess = invoice.user_id === userId || 
+            (currentUser?.companyId && invoice.user_id === 'rpa-system' && 
+             invoice.company_id === currentUser.companyId);
+          
+          if (!hasAccess) {
+            results.push({ invoiceId, status: 'access_denied', message: 'Access denied to this invoice' });
+            continue;
+          }
+          
+          // Check if log already exists
+          const existingLogQuery = `
+            SELECT id FROM petty_cash_log WHERE invoice_id = $1
+          `;
+          const existingLog = await dbClient.query(existingLogQuery, [invoiceId]);
+          
+          if (existingLog.rows.length > 0) {
+            results.push({ invoiceId, status: 'already_exists', message: 'Petty cash log already exists' });
+            continue;
+          }
+          
+          // Create approval notes with invoice details
+          const approvalNotes = `${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
+          
+          // Insert petty cash log
+          const insertQuery = `
+            INSERT INTO petty_cash_log (
+              invoice_id, status, approval_notes, created_at, updated_at
+            ) VALUES ($1, $2, $3, NOW(), NOW())
+            RETURNING id
+          `;
+          
+          const insertResult = await dbClient.query(insertQuery, [
+            invoiceId,
+            'pending_approval',
+            approvalNotes
+          ]);
+          
+          createdCount++;
+          results.push({ 
+            invoiceId, 
+            status: 'created', 
+            logId: insertResult.rows[0].id,
+            approvalNotes 
+          });
+          
+          console.log(`[PETTY CASH] Created log for invoice ${invoiceId}: ${invoice.file_name}`);
+        }
+        
+        await dbClient.end();
+        
+        console.log(`[PETTY CASH] Successfully created ${createdCount} petty cash logs`);
+        
+        res.json({
+          message: `Created ${createdCount} petty cash logs`,
+          createdCount,
+          totalRequested: invoiceIds.length,
+          results
+        });
+        
+      } catch (error) {
+        await dbClient.end();
+        throw error;
+      }
+      
+    } catch (error) {
+      console.error('[PETTY CASH] Error creating logs for specific invoices:', error);
+      res.status(500).json({ 
+        error: 'Failed to create petty cash logs',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
