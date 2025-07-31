@@ -1,5 +1,6 @@
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import TestApp from "./test-app";
 import "./index.css";
 
 // Enhanced global error handlers with specific handling for Vite/WebSocket issues
@@ -64,7 +65,7 @@ if (!container) {
 // Enhanced error handling for React rendering
 try {
   const root = createRoot(container);
-  root.render(<App />);
+  root.render(<TestApp />);
 } catch (error) {
   console.error("Failed to render app:", error);
   
