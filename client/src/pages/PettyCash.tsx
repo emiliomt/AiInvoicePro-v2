@@ -22,11 +22,11 @@ function RecalculateButton() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
       });
-
+      
       if (!response.ok) {
         throw new Error('Failed to recalculate petty cash');
       }
-
+      
       return response.json();
     },
     onSuccess: (data) => {
@@ -100,7 +100,7 @@ export default function PettyCash() {
   });
 
   const defaultCurrency = userSettings?.defaultCurrency || 'USD';
-
+  
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
       case 'USD': return '$';
@@ -213,9 +213,6 @@ export default function PettyCash() {
               <span className="text-lg">Petty Cash Configuration</span>
               <RecalculateButton />
             </CardTitle>
-            <CardDescription>
-              Configure currency and threshold settings for petty cash classification
-            </CardDescription>
           </CardHeader>
           <CardContent>
             <ThresholdConfig />
