@@ -172,7 +172,7 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
         extractedData = JSON.parse(responseContent);
         console.log('✅ Direct JSON parsing successful');
 
-      } catch (directParseError) {
+      } catch (directParseError: any) {
         console.log('⚠️ Direct JSON parse failed, trying cleanup strategies...');
 
         try {
@@ -180,13 +180,13 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
           const cleaned = responseContent
             .replace(/```json\s*|\s*```/g, '')
             .replace(/```\s*|\s*```/g, '')
-            .replace(/^[^{]*({.*})[^}]*$/s, '$1')
+            .replace(/^[^{]*({.*})[^}]*$/gs, '$1')
             .trim();
 
           extractedData = JSON.parse(cleaned);
           console.log('✅ Cleanup parsing successful');
 
-        } catch (cleanupParseError) {
+        } catch (cleanupParseError: any) {
           console.log('⚠️ Cleanup parse failed, trying JSON extraction...');
 
           try {
@@ -199,7 +199,7 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
             extractedData = JSON.parse(jsonMatch[0]);
             console.log('✅ JSON extraction successful');
 
-          } catch (extractionError) {
+          } catch (extractionError: any) {
             // Strategy 4: Try to find the first { and last } and extract that
             try {
               const firstBrace = responseContent.indexOf('{');
@@ -213,7 +213,7 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
                 throw new Error('Could not locate JSON boundaries');
               }
 
-            } catch (braceError) {
+            } catch (braceError: any) {
               console.error('❌ All JSON parsing strategies failed:', {
                 original: directParseError.message,
                 cleanup: cleanupParseError.message,
@@ -277,8 +277,8 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
             cleanedData.currency = directAmounts.currency || cleanedData.currency;
             console.log('✅ Direct XML parsing found amounts:', directAmounts);
           }
-        } catch (xmlError) {
-          console.warn('⚠️ Direct XML parsing failed:', xmlError.message);
+        } catch (xmlError: any) {
+          console.warn('⚠️ Direct XML parsing failed:', xmlError?.message || xmlError);
         }
       }
 
@@ -509,4 +509,132 @@ export async function findBestProjectMatch(projectName: string, availableProject
   // Keep your existing implementation  
   console.log('Using existing project matching...');
   return null;
+}
+
+// POST-EXTRACTION WORKFLOW METHODS
+
+// Step 1: Classify line items using AI
+export async function classifyLineItems(extractedData: any): Promise<any> {
+  try {
+    console.log('🏷️ Classifying invoice line items...');
+    
+    if (!extractedData || !extractedData.lineItems || extractedData.lineItems.length === 0) {
+      return {
+        classifiedItems: [],
+        categories: [],
+        confidenceScore: 0.8
+      };
+    }
+
+    const systemPrompt = `You are an expert at categorizing invoice line items for business expense tracking.
+    Classify each line item into appropriate business categories and respond with valid JSON only.
+
+    Categories to use:
+    - Office Supplies
+    - Travel & Transportation
+    - Equipment & Hardware
+    - Software & Licenses
+    - Professional Services
+    - Marketing & Advertising
+    - Utilities & Communications
+    - Raw Materials
+    - Food & Beverages
+    - Other Expenses
+
+    Required JSON structure:
+    {
+      "classifiedItems": [
+        {
+          "description": "original description",
+          "category": "category name",
+          "subcategory": "optional subcategory",
+          "quantity": "quantity value",
+          "unitPrice": "unit price",
+          "totalPrice": "total price",
+          "confidence": "0.0-1.0"
+        }
+      ],
+      "summary": {
+        "totalCategories": "number",
+        "primaryCategory": "most common category",
+        "overallConfidence": "0.0-1.0"
+      }
+    }`;
+
+    const response = await openai.chat.completions.create({
+      model: 'gpt-3.5-turbo',
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `Classify these line items: ${JSON.stringify(extractedData.lineItems)}` }
+      ],
+      temperature: 0.1,
+      max_tokens: 2000
+    });
+
+    const result = JSON.parse(response.choices[0].message.content?.trim() || '{}');
+    console.log('✅ Line items classified successfully');
+    return result;
+
+  } catch (error) {
+    console.error('❌ Line item classification failed:', error);
+    return {
+      classifiedItems: extractedData.lineItems || [],
+      summary: { error: 'Classification failed', overallConfidence: 0.3 }
+    };
+  }
+}
+
+// Step 2A: Determine if invoice is petty cash
+export async function classifyPettyCash(invoice: any): Promise<boolean> {
+  try {
+    console.log('💰 Checking petty cash classification...');
+    
+    const totalAmount = parseFloat(invoice.totalAmount || '0');
+    const vendorName = invoice.vendorName || '';
+    const description = invoice.extractedData?.descriptionSummary || '';
+
+    // Simple rule-based petty cash classification
+    const isPettyCashAmount = totalAmount <= 200; // Under $200 USD equivalent
+    const isPettyCashVendor = /coffee|restaurant|taxi|uber|parking|store|market/i.test(vendorName);
+    const isPettyCashDescription = /office supplies|food|transportation|parking|small purchase/i.test(description);
+
+    const pettyCashScore = (isPettyCashAmount ? 0.4 : 0) + 
+                          (isPettyCashVendor ? 0.3 : 0) + 
+                          (isPettyCashDescription ? 0.3 : 0);
+
+    const isPettyCash = pettyCashScore >= 0.5;
+    
+    console.log(`✅ Petty cash classification: ${isPettyCash} (score: ${pettyCashScore})`);
+    return isPettyCash;
+
+  } catch (error) {
+    console.error('❌ Petty cash classification failed:', error);
+    return false;
+  }
+}
+
+// Step 2B: Match invoice to projects using AI
+export async function matchToProject(invoice: any): Promise<any> {
+  try {
+    console.log('🎯 Matching invoice to projects...');
+    
+    // This would integrate with your existing project matching logic
+    // For now, return a mock project match structure
+    return {
+      projectId: null,
+      projectName: null,
+      matchConfidence: 0.0,
+      matchReasons: [],
+      suggestedProjects: []
+    };
+
+  } catch (error) {
+    console.error('❌ Project matching failed:', error);
+    return {
+      projectId: null,
+      projectName: null,
+      matchConfidence: 0.0,
+      error: 'Project matching failed'
+    };
+  }
 }

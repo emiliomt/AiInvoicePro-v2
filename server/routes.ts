@@ -4,9 +4,11 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema, insertSavedWorkflowSchema, insertScheduledTaskSchema, insertInvoiceImporterConfigSchema } from "@shared/schema";
 import { processInvoiceOCR } from "./services/ocrService";
-import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
+import { extractInvoiceData, extractPurchaseOrderData, classifyLineItems, classifyPettyCash, matchToProject } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
+import { validateInvoice } from "./services/validationService";
+import { findMatches } from "./services/poMatchingService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -197,6 +199,90 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
     } catch (updateError) {
       console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
     }
+  }
+}
+
+// POST-EXTRACTION WORKFLOW FUNCTION
+async function processPostExtractionWorkflow(invoice: any) {
+  try {
+    console.log(`🚀 Starting post-extraction workflow for invoice ${invoice.id}`);
+
+    // Step 1: Line Item Classification
+    await storage.updateInvoice(invoice.id, { status: "classifying_items" });
+    console.log(`📋 Step 1: Classifying line items for invoice ${invoice.id}`);
+    
+    const classifiedItems = await classifyLineItems(invoice.extractedData);
+    
+    // Step 2A: Petty Cash Classification
+    await storage.updateInvoice(invoice.id, { status: "checking_petty_cash" });
+    console.log(`💰 Step 2A: Checking petty cash classification for invoice ${invoice.id}`);
+    
+    const isPettyCash = await classifyPettyCash(invoice);
+    
+    if (isPettyCash) {
+      console.log(`💰 Invoice ${invoice.id} classified as petty cash - skipping remaining steps`);
+      await storage.updateInvoice(invoice.id, { 
+        status: "petty_cash",
+        pettyCashFlag: true,
+        classifiedItems,
+        updatedAt: new Date()
+      });
+      return; // Skip remaining steps for petty cash
+    }
+
+    // Step 2B: Project Matching (Non-petty cash only)
+    await storage.updateInvoice(invoice.id, { status: "project_matching" });
+    console.log(`🎯 Step 2B: Matching invoice ${invoice.id} to projects`);
+    
+    const projectMatch = await matchToProject(invoice);
+    
+    // Step 3: Information Validation
+    await storage.updateInvoice(invoice.id, { status: "validating" });
+    console.log(`🔍 Step 3: Validating invoice ${invoice.id} data`);
+    
+    const validationResult = await validateInvoice(invoice);
+    
+    if (!validationResult.isValid) {
+      console.log(`❌ Invoice ${invoice.id} failed validation with errors:`, validationResult.errors);
+      await storage.updateInvoice(invoice.id, { 
+        status: "validation_failed",
+        validationErrors: validationResult.errors,
+        validationResult,
+        classifiedItems,
+        projectMatch,
+        updatedAt: new Date()
+      });
+      return;
+    }
+
+    // Step 4: PO Matching
+    await storage.updateInvoice(invoice.id, { status: "po_matching" });
+    console.log(`🎯 Step 4: Matching invoice ${invoice.id} to purchase orders`);
+    
+    const poMatches = await findMatches(invoice);
+    
+    // Final status determination
+    const finalStatus = poMatches.length > 0 ? "po_matched" : "no_po_match";
+    
+    console.log(`✅ Post-extraction workflow completed for invoice ${invoice.id} with status: ${finalStatus}`);
+    
+    await storage.updateInvoice(invoice.id, { 
+      status: finalStatus,
+      classifiedItems,
+      projectMatch,
+      poMatches,
+      validationResult,
+      updatedAt: new Date()
+    });
+
+  } catch (error) {
+    console.error(`❌ Post-extraction workflow failed for invoice ${invoice.id}:`, error);
+    
+    await storage.updateInvoice(invoice.id, { 
+      status: "processing_failed",
+      processingError: error instanceof Error ? error.message : 'Unknown error',
+      updatedAt: new Date()
+    });
   }
 }
 
@@ -1486,7 +1572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Initiate automatic processing for multiple invoices
+  // Initiate automatic processing for multiple invoices (POST-EXTRACTION WORKFLOW)
   app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req: any, res) => {
     try {
       const { invoiceIds, source = 'manual' } = req.body;
@@ -1495,7 +1581,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ error: "No invoice IDs provided" });
       }
 
-      console.log(`🚀 Initiating automatic processing for ${invoiceIds.length} invoices from ${source}`);
+      console.log(`🚀 Initiating post-extraction workflow for ${invoiceIds.length} invoices from ${source}`);
 
       // Validate all invoices exist
       const invoices = await Promise.all(
@@ -1508,74 +1594,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })
       );
 
-      // Filter invoices that can be processed (uploaded or failed status)
-      const processableInvoices = invoices.filter(inv => 
-        inv.status === 'uploaded' || inv.status === 'failed' || inv.status === 'pending'
-      );
+      // Filter invoices for post-extraction processing (extracted status only)
+      const extractedInvoices = invoices.filter(inv => inv.status === 'extracted');
 
-      if (processableInvoices.length === 0) {
+      if (extractedInvoices.length === 0) {
         return res.status(400).json({ 
           error: "No invoices available for processing",
-          details: "Invoices must have 'uploaded', 'failed', or 'pending' status to be processed"
+          details: "Invoices must have 'extracted' status for post-extraction workflow processing"
         });
       }
 
-      // Process each invoice asynchronously
-      let processedCount = 0;
-      let failedCount = 0;
-
-      const processPromises = processableInvoices.map(async (invoice) => {
-        try {
-          // Update status to processing
-          await storage.updateInvoice(invoice.id, { status: "processing" });
-
-          // Check if file exists
-          const fs = await import('fs');
-          if (!invoice.fileUrl || !fs.default.existsSync(invoice.fileUrl)) {
-            throw new Error("Invoice file not found on disk");
-          }
-
-          // Read file buffer
-          const fileBuffer = fs.default.readFileSync(invoice.fileUrl);
-          
-          // Process the invoice
-          await processInvoiceAsync(invoice, fileBuffer);
-          processedCount++;
-          console.log(`✅ Invoice ${invoice.id} processing completed`);
-        } catch (error) {
-          failedCount++;
-          console.error(`❌ Invoice ${invoice.id} processing failed:`, error);
-          // Update invoice status to failed
-          await storage.updateInvoice(invoice.id, { 
-            status: "failed",
-            extractedData: { error: error instanceof Error ? error.message : "Processing failed" }
-          });
-        }
-      });
-
-      // Start all processing in parallel (don't wait for completion)
-      Promise.all(processPromises).then(() => {
-        console.log(`🎯 Automatic processing completed: ${processedCount} successful, ${failedCount} failed`);
-      }).catch((error) => {
-        console.error(`💥 Automatic processing error:`, error);
-      });
+      console.log(`📋 Processing ${extractedInvoices.length} extracted invoices through post-extraction workflow`);
 
       // Return immediate response
       res.json({
-        message: `Automatic processing initiated for ${processableInvoices.length} invoices`,
+        message: `Post-extraction workflow initiated for ${extractedInvoices.length} invoices`,
         summary: {
           totalRequested: invoiceIds.length,
-          totalInvoices: processableInvoices.length,
-          skipped: invoices.length - processableInvoices.length,
+          totalInvoices: extractedInvoices.length,
+          skipped: invoices.length - extractedInvoices.length,
           source: source
         },
-        invoiceIds: processableInvoices.map(inv => inv.id)
+        invoiceIds: extractedInvoices.map(inv => inv.id)
+      });
+
+      // Start post-extraction workflow asynchronously
+      setImmediate(async () => {
+        for (const invoice of extractedInvoices) {
+          try {
+            await processPostExtractionWorkflow(invoice);
+          } catch (error) {
+            console.error(`Failed to process invoice ${invoice.id}:`, error);
+          }
+        }
       });
 
     } catch (error) {
-      console.error('Error initiating automatic processing:', error);
+      console.error('Error initiating post-extraction workflow:', error);
       res.status(500).json({ 
-        error: 'Failed to initiate automatic processing',
+        error: 'Failed to initiate post-extraction workflow',
         details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
