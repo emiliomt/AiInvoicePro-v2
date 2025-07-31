@@ -244,58 +244,69 @@ function extractWithRegexPatterns(content: string): Partial<ExtractedInvoiceData
 function extractAmountFromXMLTag(xmlContent: string, tagName: string): { amount: string | null, currency: string } {
   console.log(`🔍 Searching for amount tag: ${tagName}`);
 
-  // Enhanced patterns for better Colombian XML support
+  // Enhanced patterns for better Colombian XML support with priority order
   const patterns = [
-    // PRIMARY: Patterns for amounts within LegalMonetaryTotal context (with currency)
+    // HIGHEST PRIORITY: Patterns within LegalMonetaryTotal context (most reliable)
     new RegExp(`<cac:LegalMonetaryTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:LegalMonetaryTotal>`, 'gis'),
-
-    // CRITICAL ADDITION: LegalMonetaryTotal without currencyID attribute
     new RegExp(`<cac:LegalMonetaryTotal[^>]*>.*?<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:LegalMonetaryTotal>`, 'gis'),
 
-    // Patterns for amounts within TaxTotal context (with currency)
-    new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
+    // HIGH PRIORITY: InvoiceLine or CreditNoteLine context for line amounts
+    new RegExp(`<cac:(?:Invoice|CreditNote)Line[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:(?:Invoice|CreditNote)Line>`, 'gis'),
+    new RegExp(`<cac:(?:Invoice|CreditNote)Line[^>]*>.*?<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:(?:Invoice|CreditNote)Line>`, 'gis'),
 
-    // TaxTotal without currencyID
+    // MEDIUM PRIORITY: TaxTotal context for tax amounts
+    new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
     new RegExp(`<cac:TaxTotal[^>]*>.*?<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>.*?<\/cac:TaxTotal>`, 'gis'),
 
-    // Standard patterns with currency
+    // LOWER PRIORITY: Standard patterns with currency
     new RegExp(`<cbc:${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/cbc:${tagName}>`, 'gi'),
     new RegExp(`<${tagName}[^>]*currencyID="([^"]*)"[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
 
-    // CRITICAL ADDITION: Standard patterns without currencyID
+    // LOWEST PRIORITY: Standard patterns without currencyID
     new RegExp(`<cbc:${tagName}[^>]*>([^<]*)<\/cbc:${tagName}>`, 'gi'),
     new RegExp(`<${tagName}[^>]*>([^<]*)<\/${tagName}>`, 'gi'),
   ];
 
   for (let i = 0; i < patterns.length; i++) {
     const pattern = patterns[i];
-    // Reset regex state
+    // Reset regex state to ensure fresh matching
     pattern.lastIndex = 0;
-    const match = pattern.exec(xmlContent);
+    
+    let match;
+    const allMatches = [];
+    
+    // Collect all matches for this pattern
+    while ((match = pattern.exec(xmlContent)) !== null) {
+      allMatches.push([...match]);
+      // Prevent infinite loop for global patterns
+      if (!pattern.global) break;
+    }
 
-    if (match) {
-      console.log(`✓ Found match for ${tagName} using pattern ${i + 1}:`, match);
+    if (allMatches.length > 0) {
+      console.log(`✓ Found ${allMatches.length} match(es) for ${tagName} using pattern ${i + 1}`);
+      
+      // Process matches - prefer the first valid one
+      for (const match of allMatches) {
+        let currency = 'COP';
+        let amount = null;
 
-      // Determine currency and amount based on capture groups
-      let currency = 'COP';
-      let amount = null;
+        // Determine currency and amount based on capture groups
+        if (match.length === 3 && match[2]) {
+          // Pattern with currency: (currency, amount)
+          currency = match[1] || 'COP';
+          amount = match[2];
+        } else if (match.length === 2 && match[1]) {
+          // Pattern without currency: (amount)
+          amount = match[1];
+          currency = 'COP'; // Default to COP for Colombian invoices
+        }
 
-      // Check if this is a pattern with currency (3 groups) or without (2 groups)
-      if (match.length === 3 && match[2]) {
-        // Pattern with currency: (currency, amount)
-        currency = match[1] || 'COP';
-        amount = match[2];
-      } else if (match.length === 2 && match[1]) {
-        // Pattern without currency: (amount)
-        amount = match[1];
-        currency = 'COP'; // Default to COP for Colombian invoices
-      }
-
-      if (amount && amount.trim()) {
-        const cleanedAmount = cleanAmount(amount);
-        if (cleanedAmount && !isNaN(parseFloat(cleanedAmount))) {
-          console.log(`✅ ${tagName} extracted: ${cleanedAmount} ${currency}`);
-          return { amount: cleanedAmount, currency };
+        if (amount && amount.trim()) {
+          const cleanedAmount = cleanAmount(amount);
+          if (cleanedAmount && !isNaN(parseFloat(cleanedAmount)) && parseFloat(cleanedAmount) > 0) {
+            console.log(`✅ ${tagName} extracted: ${cleanedAmount} ${currency} (pattern ${i + 1}, match ${allMatches.indexOf(match) + 1})`);
+            return { amount: cleanedAmount, currency };
+          }
         }
       }
     }
@@ -482,20 +493,57 @@ function extractLineItems(xmlContent: string): Array<{
 }
 
 export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false): ExtractedInvoiceData {
-  console.log('Starting enhanced XML parsing...');
+  console.log('🚀 Starting enhanced XML parsing with improved subtotal extraction...');
 
-  if (enableDebug) {
-    console.log('DEBUG MODE: Detailed parsing information will be logged');
-    console.log(`XML content length: ${xmlContent.length} characters`);
-  }
-
-  // Validate XML content
+  // Enhanced XML content validation and detection
   if (!xmlContent || typeof xmlContent !== 'string' || xmlContent.trim().length === 0) {
     throw new Error('Invalid or empty XML content provided');
   }
 
-  // Clean XML content of any potential JSON parsing issues
-  const cleanedXmlContent = xmlContent.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
+  // Improved XML detection logic
+  const trimmedContent = xmlContent.trim();
+  const isValidXml = trimmedContent.startsWith('<?xml') || 
+                    trimmedContent.startsWith('<Invoice') || 
+                    trimmedContent.startsWith('<CreditNote') || 
+                    trimmedContent.startsWith('<AttachedDocument') ||
+                    /<[^>]+>/.test(trimmedContent.substring(0, 100));
+
+  if (!isValidXml) {
+    throw new Error('Content does not appear to be valid XML');
+  }
+
+  // Truncate XML content to prevent memory issues while preserving structure
+  const MAX_XML_LENGTH = 8000;
+  let processableContent = xmlContent;
+  
+  if (xmlContent.length > MAX_XML_LENGTH) {
+    console.log(`⚠️ XML content truncated from ${xmlContent.length} to ${MAX_XML_LENGTH} characters`);
+    
+    // Smart truncation - try to preserve complete tags
+    const truncated = xmlContent.substring(0, MAX_XML_LENGTH);
+    const lastCompleteTag = truncated.lastIndexOf('</');
+    
+    if (lastCompleteTag > MAX_XML_LENGTH * 0.8) { // If we found a tag close to the end
+      const nextClosingBracket = truncated.indexOf('>', lastCompleteTag);
+      if (nextClosingBracket !== -1) {
+        processableContent = truncated.substring(0, nextClosingBracket + 1);
+      } else {
+        processableContent = truncated;
+      }
+    } else {
+      processableContent = truncated;
+    }
+  }
+
+  if (enableDebug) {
+    console.log('DEBUG MODE: Detailed parsing information will be logged');
+    console.log(`Original XML content length: ${xmlContent.length} characters`);
+    console.log(`Processable XML content length: ${processableContent.length} characters`);
+    console.log(`XML starts with: ${processableContent.substring(0, 200)}...`);
+  }
+
+  // Clean XML content of any potential control characters that could cause parsing issues
+  const cleanedXmlContent = processableContent.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
 
   try {
     // Check if this is an AttachedDocument wrapper with embedded CDATA content
@@ -628,55 +676,143 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     let subtotal = null;
     let currency = 'COP';
 
-    // Enhanced subtotal extraction (TaxExclusiveAmount) - THIS FIXES THE N/A ISSUE
-    let amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxExclusiveAmount');
-    if (amountResult.amount) {
-      subtotal = amountResult.amount;
-      currency = amountResult.currency;
-    } else {
-      // Fallback to LineExtensionAmount
-      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'LineExtensionAmount');
-      if (amountResult.amount) {
-        subtotal = amountResult.amount;
-        currency = amountResult.currency || currency;
-      } else {
-        // Try TaxableAmount as last resort
-        amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxableAmount');
-        if (amountResult.amount) {
-          subtotal = amountResult.amount;
-          currency = amountResult.currency || currency;
+    // ENHANCED SUBTOTAL EXTRACTION with comprehensive fallback logic
+    console.log('🔍 Starting enhanced subtotal extraction...');
+    
+    // Priority order for subtotal extraction
+    const subtotalTags = [
+      'TaxExclusiveAmount',    // Most common subtotal tag
+      'LineExtensionAmount',   // Common in line items, sum for total subtotal
+      'TaxableAmount',         // Base amount for tax calculation
+      'PrepaidAmount',         // Sometimes used for subtotal
+      'ChargeTotalAmount'      // Alternative subtotal representation
+    ];
+
+    let subtotalCandidates = [];
+    
+    // Extract all possible subtotal values
+    for (const tag of subtotalTags) {
+      const result = extractAmountFromXMLTag(cleanedXmlContent, tag);
+      if (result.amount) {
+        const value = parseFloat(result.amount);
+        if (!isNaN(value) && value > 0) {
+          subtotalCandidates.push({
+            tag,
+            amount: result.amount,
+            value,
+            currency: result.currency
+          });
+          console.log(`📋 Found subtotal candidate from ${tag}: ${result.amount} ${result.currency}`);
         }
       }
     }
 
-    // Get total amount (TaxInclusiveAmount has priority)
-    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxInclusiveAmount');
-    if (amountResult.amount) {
-      totalAmount = amountResult.amount;
-      currency = amountResult.currency || currency;
+    // Select best subtotal candidate
+    if (subtotalCandidates.length > 0) {
+      // Prefer TaxExclusiveAmount if available
+      let bestCandidate = subtotalCandidates.find(c => c.tag === 'TaxExclusiveAmount') || subtotalCandidates[0];
+      
+      // Special handling for LineExtensionAmount - might need summing
+      const lineExtensionCandidates = subtotalCandidates.filter(c => c.tag === 'LineExtensionAmount');
+      if (lineExtensionCandidates.length > 1) {
+        // Sum all LineExtensionAmount values
+        const totalLineExtension = lineExtensionCandidates.reduce((sum, c) => sum + c.value, 0);
+        console.log(`📊 Summed LineExtensionAmount: ${totalLineExtension.toFixed(2)}`);
+        
+        bestCandidate = {
+          tag: 'LineExtensionAmount (summed)',
+          amount: totalLineExtension.toFixed(2),
+          value: totalLineExtension,
+          currency: lineExtensionCandidates[0].currency
+        };
+      }
+      
+      subtotal = bestCandidate.amount;
+      currency = bestCandidate.currency;
+      console.log(`✅ Selected subtotal: ${subtotal} ${currency} from ${bestCandidate.tag}`);
     } else {
-      // Fallback to PayableAmount
-      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'PayableAmount');
-      if (amountResult.amount) {
-        totalAmount = amountResult.amount;
-        currency = amountResult.currency || currency;
+      console.log('⚠️ No subtotal candidates found, will attempt calculation from total and tax');
+    }
+
+    // ENHANCED TOTAL AMOUNT EXTRACTION
+    console.log('🔍 Starting enhanced total amount extraction...');
+    
+    const totalTags = ['TaxInclusiveAmount', 'PayableAmount', 'DuePayableAmount', 'PayableRoundingAmount'];
+    
+    for (const tag of totalTags) {
+      const result = extractAmountFromXMLTag(cleanedXmlContent, tag);
+      if (result.amount) {
+        const value = parseFloat(result.amount);
+        if (!isNaN(value) && value > 0) {
+          totalAmount = result.amount;
+          currency = result.currency || currency;
+          console.log(`✅ Total amount extracted from ${tag}: ${totalAmount} ${currency}`);
+          break;
+        }
       }
     }
 
-    // Get tax amount
-    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxAmount');
-    if (amountResult.amount) {
-      taxAmount = amountResult.amount;
-      currency = amountResult.currency || currency;
+    // ENHANCED TAX AMOUNT EXTRACTION
+    console.log('🔍 Starting enhanced tax amount extraction...');
+    
+    const taxTags = ['TaxAmount', 'TaxInclusiveAmount', 'AllowanceTotalAmount'];
+    
+    for (const tag of taxTags) {
+      if (tag === 'TaxInclusiveAmount' && totalAmount) {
+        // Skip TaxInclusiveAmount for tax if we already used it for total
+        continue;
+      }
+      
+      const result = extractAmountFromXMLTag(cleanedXmlContent, tag);
+      if (result.amount) {
+        const value = parseFloat(result.amount);
+        if (!isNaN(value) && value > 0) {
+          taxAmount = result.amount;
+          currency = result.currency || currency;
+          console.log(`✅ Tax amount extracted from ${tag}: ${taxAmount} ${currency}`);
+          break;
+        }
+      }
     }
 
-    // Calculate subtotal if we have total and tax but no subtotal
+    // ENHANCED SUBTOTAL CALCULATION AND VALIDATION
+    console.log('🔍 Starting subtotal calculation and validation...');
+    
+    const totalNum = totalAmount ? parseFloat(totalAmount) : 0;
+    const taxNum = taxAmount ? parseFloat(taxAmount) : 0;
+    const subtotalNum = subtotal ? parseFloat(subtotal) : 0;
+    
+    // Calculate missing subtotal from total - tax
     if (totalAmount && taxAmount && !subtotal) {
-      const totalNum = parseFloat(totalAmount);
-      const taxNum = parseFloat(taxAmount);
       if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
         subtotal = (totalNum - taxNum).toFixed(2);
+        console.log(`✅ Calculated subtotal: ${subtotal} (${totalAmount} - ${taxAmount})`);
       }
+    }
+    
+    // Validate consistency and fix if needed
+    if (subtotal && totalAmount && taxAmount) {
+      const calculatedTotal = subtotalNum + taxNum;
+      const totalDifference = Math.abs(totalNum - calculatedTotal);
+      
+      if (totalDifference > 0.01) { // Allow small rounding differences
+        console.log(`⚠️ Amount inconsistency detected: subtotal(${subtotal}) + tax(${taxAmount}) = ${calculatedTotal.toFixed(2)}, but total is ${totalAmount}`);
+        
+        // Try to fix by recalculating subtotal
+        if (totalNum > taxNum) {
+          const correctedSubtotal = (totalNum - taxNum).toFixed(2);
+          console.log(`🔧 Correcting subtotal to: ${correctedSubtotal}`);
+          subtotal = correctedSubtotal;
+        }
+      } else {
+        console.log(`✅ Amount consistency verified: ${subtotal} + ${taxAmount} = ${totalAmount}`);
+      }
+    }
+    
+    // Final fallback: use subtotal as total if total is missing
+    if (!totalAmount && subtotal) {
+      totalAmount = subtotal;
+      console.log(`🔧 Using subtotal as total amount: ${totalAmount}`);
     }
 
     // Extract additional fields
@@ -711,6 +847,53 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
       for (const pattern of enhancedProjectPatterns) {
         const match = searchContent.match(pattern);
         if (match && match[1]) {
+
+
+// Test function for debugging XML parsing issues
+export function testXMLSubtotalExtraction(xmlContent: string): void {
+  console.log('🧪 TESTING XML SUBTOTAL EXTRACTION');
+  console.log('==================================');
+  
+  try {
+    const result = parseInvoiceXML(xmlContent, true);
+    
+    console.log('📋 TEST RESULTS:');
+    console.log(`   Vendor: ${result.vendorName || 'N/A'}`);
+    console.log(`   Invoice #: ${result.invoiceNumber || 'N/A'}`);
+    console.log(`   Total: ${result.totalAmount || 'N/A'} ${result.currency}`);
+    console.log(`   Tax: ${result.taxAmount || 'N/A'} ${result.currency}`);
+    console.log(`   Subtotal: ${result.subtotal || 'N/A'} ${result.currency}`);
+    console.log(`   Line Items: ${result.lineItems.length}`);
+    
+    // Validate subtotal extraction specifically
+    if (result.subtotal && result.subtotal !== 'N/A') {
+      console.log('✅ SUBTOTAL EXTRACTION: SUCCESS');
+    } else {
+      console.log('❌ SUBTOTAL EXTRACTION: FAILED - This will show as N/A in UI');
+      
+      // Debug: manually search for subtotal tags
+      const subtotalTags = ['TaxExclusiveAmount', 'LineExtensionAmount', 'TaxableAmount'];
+      console.log('🔍 Manual tag search in XML:');
+      
+      for (const tag of subtotalTags) {
+        const regex = new RegExp(`<[^>]*${tag}[^>]*>([^<]+)<\/[^>]*${tag}[^>]*>`, 'gi');
+        const matches = xmlContent.match(regex);
+        console.log(`   ${tag}: ${matches ? matches.length + ' found' : 'not found'}`);
+        if (matches) {
+          matches.slice(0, 3).forEach((match, i) => {
+            console.log(`      ${i + 1}. ${match}`);
+          });
+        }
+      }
+    }
+    
+  } catch (error) {
+    console.error('❌ XML parsing test failed:', error);
+  }
+  
+  console.log('==================================\n');
+}
+
           projectName = match[1].trim();
           // Remove common suffixes/prefixes that aren't part of project name
           projectName = projectName.replace(/^(DE\s+|THE\s+|EL\s+|LA\s+)/i, '');
@@ -789,7 +972,7 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     };
 
     if (enableDebug) {
-      console.log('DEBUG: Detailed extraction results:', {
+      console.log('🔍 DEBUG: Detailed extraction results:', {
         vendorName: result.vendorName,
         invoiceNumber: result.invoiceNumber,
         invoiceDate: result.invoiceDate,
@@ -803,19 +986,40 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
         customerTaxId: result.buyerTaxId,
         vendorAddress: result.vendorAddress ? 'Found' : 'Not found',
         buyerAddress: result.buyerAddress ? 'Found' : 'Not found',
-        projectAddress: result.projectAddress ? 'Found' : 'Not found'
+        projectAddress: result.projectAddress ? 'Found' : 'Not found',
+        confidenceScore: result.confidenceScore
+      });
+      
+      // Additional debug info for amounts
+      console.log('🔍 DEBUG: Amount validation:', {
+        subtotalValue: result.subtotal ? parseFloat(result.subtotal) : 'N/A',
+        taxValue: result.taxAmount ? parseFloat(result.taxAmount) : 'N/A',
+        totalValue: result.totalAmount ? parseFloat(result.totalAmount) : 'N/A',
+        calculatedTotal: (result.subtotal && result.taxAmount) ? 
+          (parseFloat(result.subtotal) + parseFloat(result.taxAmount)).toFixed(2) : 'N/A',
+        amountConsistency: (result.subtotal && result.taxAmount && result.totalAmount) ?
+          Math.abs(parseFloat(result.totalAmount) - (parseFloat(result.subtotal) + parseFloat(result.taxAmount))) < 0.01 ?
+            'CONSISTENT' : 'INCONSISTENT' : 'INCOMPLETE'
       });
     }
 
-    console.log('XML parsing completed successfully:', {
-      vendorName: result.vendorName,
-      invoiceNumber: result.invoiceNumber,
-      totalAmount: result.totalAmount,
+    console.log('✅ XML parsing completed successfully:', {
+      vendorName: result.vendorName || 'Not found',
+      invoiceNumber: result.invoiceNumber || 'Not found',
+      totalAmount: result.totalAmount || 'Not found',
+      taxAmount: result.taxAmount || 'Not found',
+      subtotal: result.subtotal || 'NOT FOUND - THIS IS THE ISSUE',
       currency: result.currency,
       lineItemsCount: result.lineItems.length,
       projectName: result.projectName ? 'Found' : 'Not found',
-      subtotal: result.subtotal ? 'Found' : 'Not found'
+      confidenceScore: result.confidenceScore
     });
+
+    // Log specific warning if subtotal is missing
+    if (!result.subtotal) {
+      console.log('⚠️ WARNING: Subtotal extraction failed! This will show as N/A in the UI');
+      console.log('🔧 Troubleshooting: Check if XML contains TaxExclusiveAmount, LineExtensionAmount, or TaxableAmount tags');
+    }
 
     return result;
 
