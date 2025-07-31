@@ -3,7 +3,7 @@ import { useAuth } from "@/hooks/useAuth";
 import Header from "@/components/Header";
 import PettyCashManager from "@/components/PettyCashManager";
 import ThresholdConfig from "@/components/ThresholdConfig";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -96,10 +96,10 @@ export default function PettyCash() {
       return JSON.parse(data.value || '{"defaultCurrency": "USD"}');
     },
     staleTime: 5 * 60 * 1000, // 5 minutes
-    cacheTime: 10 * 60 * 1000, // 10 minutes
+    gcTime: 10 * 60 * 1000, // 10 minutes (formerly cacheTime)
   });
 
-  const defaultCurrency = userSettings?.defaultCurrency || 'USD';
+  const defaultCurrency = (userSettings as { defaultCurrency?: string })?.defaultCurrency || 'USD';
   
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
@@ -213,6 +213,9 @@ export default function PettyCash() {
               <span className="text-lg">Petty Cash Configuration</span>
               <RecalculateButton />
             </CardTitle>
+            <CardDescription>
+              Configure currency and threshold settings for petty cash classification
+            </CardDescription>
           </CardHeader>
           <CardContent>
             <ThresholdConfig />
