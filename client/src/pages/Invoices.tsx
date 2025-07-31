@@ -25,18 +25,18 @@ import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
 
 interface Invoice {
-  id: string;
-  filename: string;
+  id: number;
+  fileName: string;
   status: string;
-  uploadedAt: string;
-  processedAt?: string;
+  createdAt: string;
+  updatedAt?: string;
   vendorName?: string;
   totalAmount?: string;
   invoiceDate?: string;
   currency?: string;
   extractedData?: any;
-  validationResults?: any;
-  processingErrors?: string[];
+  validationResult?: any;
+  processingError?: string;
 }
 
 export default function Invoices() {
@@ -124,9 +124,9 @@ export default function Invoices() {
 
   // Filter invoices
   const filteredInvoices = invoices.filter(invoice => {
-    const matchesSearch = invoice.filename.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    const matchesSearch = invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         invoice.id.toLowerCase().includes(searchTerm.toLowerCase());
+                         invoice.id.toString().includes(searchTerm.toLowerCase());
     const matchesStatus = statusFilter === 'all' || invoice.status === statusFilter;
     return matchesSearch && matchesStatus;
   });
@@ -235,10 +235,10 @@ export default function Invoices() {
                     <FileText className="w-5 h-5 text-blue-500" />
                     <div className="flex-1 min-w-0">
                       <CardTitle className="text-base truncate">
-                        {invoice.filename}
+                        {invoice.fileName}
                       </CardTitle>
                       <CardDescription className="text-xs">
-                        ID: {invoice.id.slice(0, 8)}...
+                        ID: {invoice.id}
                       </CardDescription>
                     </div>
                   </div>
@@ -304,22 +304,17 @@ export default function Invoices() {
 
                   {/* Upload Date */}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">Uploaded:</span>
+                    <span className="text-sm font-medium">Created:</span>
                     <span className="text-sm text-gray-600">
-                      {new Date(invoice.uploadedAt).toLocaleDateString()}
+                      {new Date(invoice.createdAt).toLocaleDateString()}
                     </span>
                   </div>
 
                   {/* Processing Errors */}
-                  {invoice.processingErrors && invoice.processingErrors.length > 0 && (
+                  {invoice.processingError && (
                     <div className="mt-2 p-2 bg-red-50 border border-red-200 rounded">
                       <p className="text-xs text-red-700">
-                        {invoice.processingErrors[0]}
-                        {invoice.processingErrors.length > 1 && (
-                          <span className="ml-1">
-                            (+{invoice.processingErrors.length - 1} more)
-                          </span>
-                        )}
+                        {invoice.processingError}
                       </p>
                     </div>
                   )}
