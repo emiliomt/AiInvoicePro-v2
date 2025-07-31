@@ -333,6 +333,10 @@ class PostgresStorage implements IStorage {
     }));
   }
 
+  async getAllInvoices(): Promise<Invoice[]> {
+    return await db.select().from(invoices).orderBy(desc(invoices.createdAt));
+  }
+
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void> {
     try {
       console.log(`[STORAGE] Updating invoice ${id} with:`, updates);
