@@ -7,13 +7,14 @@ InvoicePro is an AI-powered platform for invoice processing and procurement mana
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
-### July 31, 2025 - Critical Invoice Data Storage Fix
-- **Fixed urgent bug**: Invoice data was being stored in `extractedData` JSON field but not in main table columns
+### July 31, 2025 - Data Flow Issue Fix - COMPLETED ✅
+- **Fixed critical data transfer bug**: Invoice data from `imported_invoices` → `invoices` table transfer was not populating main table fields
 - **Updated invoice processing**: Modified `processInvoiceAsync` to populate both `extractedData` AND main table fields (totalAmount, currency, vendorName, etc.)
-- **Added repair endpoints**: Created force repair functionality for existing invoices with missing main field data
-- **Resolved storage errors**: Fixed LSP diagnostics in storage.ts including duplicate functions and column reference issues
-- **Verified fix**: Invoice 729 now correctly shows totalAmount: 57000.00, currency: COP
-- **Impact**: Petty cash classification and all features depending on main table fields now work correctly
+- **Added debug endpoints**: `/api/debug/database-columns` and `/api/invoices/:id/sql-fix` for troubleshooting and repair
+- **Verified complete fix**: Invoice 729 shows totalAmount: 57000.00, currency: COP in main table
+- **Data flow working**: Complete pipeline RPA → SQLite → PostgreSQL imported_invoices → main invoices → petty cash classification
+- **Test results confirmed**: 57,000 COP correctly classified as petty cash (below 400,000 threshold)
+- **Impact**: All downstream features (petty cash evaluation, PO matching, validation) now function properly
 
 ## System Architecture
 InvoicePro is built as a full-stack web application.

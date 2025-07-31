@@ -5917,5 +5917,147 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
+  // Debug endpoint to check database columns (as requested in uploaded file)
+  app.get('/api/debug/database-columns', async (req, res) => {
+    try {
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      // Get invoices table schema
+      const schemaQuery = `
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns 
+        WHERE table_name = 'invoices' 
+        ORDER BY ordinal_position
+      `;
+      
+      const result = await dbClient.query(schemaQuery);
+      await dbClient.end();
+      
+      res.json({
+        message: "Database schema for invoices table",
+        columns: result.rows,
+        mainColumns: result.rows.filter(col => 
+          ['total_amount', 'currency', 'vendor_name', 'invoice_number', 'tax_amount', 'subtotal'].includes(col.column_name)
+        )
+      });
+      
+    } catch (error) {
+      console.error("Error checking database schema:", error);
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  // SQL fix endpoint for invoice 729 (and other invoices) as requested
+  app.post('/api/invoices/:id/sql-fix', async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: 'Invalid invoice ID' });
+      }
+
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      // Get invoice current data
+      const invoiceQuery = 'SELECT * FROM invoices WHERE id = $1';
+      const invoiceResult = await dbClient.query(invoiceQuery, [invoiceId]);
+      
+      if (invoiceResult.rows.length === 0) {
+        await dbClient.end();
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+      
+      const invoice = invoiceResult.rows[0];
+      console.log(`[SQL-FIX] Processing invoice ${invoiceId}:`, {
+        currentTotalAmount: invoice.total_amount,
+        currentCurrency: invoice.currency,
+        hasExtractedData: !!invoice.extracted_data
+      });
+      
+      // Extract data from extractedData JSON if main columns are null
+      let updateValues: any = {};
+      
+      if (invoice.extracted_data) {
+        const extractedData = invoice.extracted_data;
+        
+        // Map extracted data to main table columns if they're missing
+        if (!invoice.total_amount && extractedData.totalAmount) {
+          updateValues.total_amount = extractedData.totalAmount;
+        }
+        if (!invoice.currency && extractedData.currency) {
+          updateValues.currency = extractedData.currency;
+        }
+        if (!invoice.vendor_name && extractedData.vendorName) {
+          updateValues.vendor_name = extractedData.vendorName;
+        }
+        if (!invoice.invoice_number && extractedData.invoiceNumber) {
+          updateValues.invoice_number = extractedData.invoiceNumber;
+        }
+        if (!invoice.tax_amount && extractedData.taxAmount) {
+          updateValues.tax_amount = extractedData.taxAmount;
+        }
+        if (!invoice.subtotal && extractedData.subtotal) {
+          updateValues.subtotal = extractedData.subtotal;
+        }
+        if (!invoice.invoice_date && extractedData.invoiceDate) {
+          updateValues.invoice_date = new Date(extractedData.invoiceDate);
+        }
+        if (!invoice.due_date && extractedData.dueDate) {
+          updateValues.due_date = new Date(extractedData.dueDate);
+        }
+      }
+      
+      if (Object.keys(updateValues).length === 0) {
+        await dbClient.end();
+        return res.json({ 
+          message: "No updates needed - main table columns already populated",
+          invoice: {
+            id: invoice.id,
+            total_amount: invoice.total_amount,
+            currency: invoice.currency,
+            vendor_name: invoice.vendor_name
+          }
+        });
+      }
+      
+      // Build update query dynamically
+      const setClause = Object.keys(updateValues)
+        .map((key, index) => `${key} = $${index + 2}`)
+        .join(', ');
+      
+      const updateQuery = `
+        UPDATE invoices 
+        SET ${setClause}, updated_at = NOW()
+        WHERE id = $1
+        RETURNING id, total_amount, currency, vendor_name, invoice_number
+      `;
+      
+      const values = [invoiceId, ...Object.values(updateValues)];
+      console.log(`[SQL-FIX] Executing update:`, { updateQuery, values });
+      
+      const updateResult = await dbClient.query(updateQuery, values);
+      await dbClient.end();
+      
+      res.json({ 
+        message: "SQL fix applied successfully",
+        updated: updateValues,
+        invoice: updateResult.rows[0]
+      });
+      
+    } catch (error) {
+      console.error(`Error applying SQL fix for invoice ${req.params.id}:`, error);
+      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
   return httpServer;
 }
