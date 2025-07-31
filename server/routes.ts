@@ -164,14 +164,32 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       return cleaned;
     };
 
+    // Smart totalAmount calculation
+    let finalTotalAmount = extractedData.totalAmount;
+    if (!finalTotalAmount && extractedData.subtotal && extractedData.taxAmount) {
+      // Calculate from subtotal + tax
+      const subtotal = parseFloat(extractedData.subtotal);
+      const tax = parseFloat(extractedData.taxAmount);
+      if (!isNaN(subtotal) && !isNaN(tax)) {
+        finalTotalAmount = (subtotal + tax).toFixed(2);
+        console.log(`[CALCULATION] Calculated totalAmount from subtotal + tax: ${subtotal} + ${tax} = ${finalTotalAmount}`);
+      }
+    } else if (!finalTotalAmount && extractedData.subtotal) {
+      // Use subtotal as fallback
+      finalTotalAmount = extractedData.subtotal;
+      console.log(`[CALCULATION] Using subtotal as totalAmount: ${finalTotalAmount}`);
+    }
+
     const cleanedData = {
       vendorName: sanitizeText(extractedData.vendorName),
       invoiceNumber: sanitizeText(extractedData.invoiceNumber),
       invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
       dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-      totalAmount: extractedData.totalAmount || null,
+      totalAmount: finalTotalAmount || null,
       taxAmount: extractedData.taxAmount || null,
-      currency: extractedData.currency || 'USD',
+      subtotal: extractedData.subtotal || null,
+      currency: extractedData.currency || 'COP',
+      taxId: extractedData.taxId || null,
     };
 
     // CRITICAL FIX: Update main invoice table with extracted data
@@ -186,7 +204,9 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       dueDate: cleanedData.dueDate || null,
       totalAmount: cleanedData.totalAmount || null,
       taxAmount: cleanedData.taxAmount || null,
-      currency: cleanedData.currency || 'COP'
+      subtotal: cleanedData.subtotal || null,
+      currency: cleanedData.currency || 'COP',
+      taxId: cleanedData.taxId || null
     };
 
     console.log(`[INVOICE UPDATE] Updating invoice ${invoice.id} with main table data:`, {
@@ -234,7 +254,7 @@ async function processPostExtractionWorkflow(invoice: any) {
     await storage.updateInvoice(invoice.id, { status: "checking_petty_cash" });
     console.log(`💰 Step 2A: Checking petty cash classification for invoice ${invoice.id}`);
     
-    const isPettyCash = await classifyPettyCash(invoice);
+    const isPettyCash = await storage.isPettyCashInvoice(invoice.id);
     
     if (isPettyCash) {
       console.log(`💰 Invoice ${invoice.id} classified as petty cash - skipping remaining steps`);
@@ -244,6 +264,14 @@ async function processPostExtractionWorkflow(invoice: any) {
         classifiedItems,
         updatedAt: new Date()
       });
+      
+      // Create petty cash log for approval
+      await storage.createPettyCashLog({
+        invoiceId: invoice.id,
+        status: 'pending_approval'
+      });
+      
+      console.log(`✅ Invoice ${invoice.id} classified as PETTY CASH`);
       return; // Skip remaining steps for petty cash
     }
 
@@ -439,6 +467,97 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating setting:", error);
       res.status(500).json({ message: "Failed to update setting", error: error instanceof Error ? error.message : "Unknown error" });
+    }
+  });
+
+  // Batch repair endpoint for all invoices
+  app.post('/api/invoices/batch-repair-all', isAuthenticated, async (req, res) => {
+    try {
+      console.log('[BATCH REPAIR] Starting repair for all invoices...');
+      
+      // Get all invoices
+      const allInvoices = await storage.getInvoices();
+      console.log(`[BATCH REPAIR] Found ${allInvoices.length} total invoices`);
+      
+      let repairedCount = 0;
+      let alreadyGoodCount = 0;
+      
+      for (const invoice of allInvoices) {
+        console.log(`[BATCH REPAIR] Checking invoice ${invoice.id}: ${invoice.fileName}`);
+        
+        // Check if main table fields need repair
+        const needsRepair = !invoice.totalAmount || invoice.totalAmount === 'null' || 
+                           !invoice.currency || invoice.currency === 'null' ||
+                           !invoice.vendorName || invoice.vendorName === 'null';
+        
+        if (!needsRepair) {
+          alreadyGoodCount++;
+          console.log(`[BATCH REPAIR] Invoice ${invoice.id} already has good data, skipping`);
+          continue;
+        }
+        
+        console.log(`[BATCH REPAIR] Invoice ${invoice.id} needs repair:`, {
+          totalAmount: invoice.totalAmount,
+          currency: invoice.currency,
+          vendorName: invoice.vendorName
+        });
+        
+        // Try to get data from extractedData field
+        const extractedData = invoice.extractedData as any;
+        
+        if (extractedData) {
+          const repairData: any = {};
+          
+          // Extract totalAmount (try multiple possible field names)
+          if (extractedData.totalAmount) {
+            repairData.totalAmount = extractedData.totalAmount;
+          } else if (extractedData.total_amount) {
+            repairData.totalAmount = extractedData.total_amount;
+          } else if (extractedData.subtotal && extractedData.taxAmount) {
+            // Calculate from subtotal + tax
+            const subtotal = parseFloat(extractedData.subtotal);
+            const tax = parseFloat(extractedData.taxAmount);
+            if (!isNaN(subtotal) && !isNaN(tax)) {
+              repairData.totalAmount = (subtotal + tax).toFixed(2);
+            }
+          } else if (extractedData.subtotal) {
+            // Use subtotal as fallback
+            repairData.totalAmount = extractedData.subtotal;
+          }
+          
+          // Extract other fields
+          if (extractedData.currency) repairData.currency = extractedData.currency;
+          if (extractedData.vendorName) repairData.vendorName = extractedData.vendorName;
+          if (extractedData.invoiceNumber) repairData.invoiceNumber = extractedData.invoiceNumber;
+          if (extractedData.taxAmount) repairData.taxAmount = extractedData.taxAmount;
+          if (extractedData.subtotal) repairData.subtotal = extractedData.subtotal;
+          if (extractedData.taxId) repairData.taxId = extractedData.taxId;
+          if (extractedData.invoiceDate) {
+            repairData.invoiceDate = new Date(extractedData.invoiceDate);
+          }
+          if (extractedData.dueDate) {
+            repairData.dueDate = new Date(extractedData.dueDate);
+          }
+          
+          if (Object.keys(repairData).length > 0) {
+            console.log(`[BATCH REPAIR] Updating invoice ${invoice.id} with:`, repairData);
+            await storage.updateInvoice(invoice.id, repairData);
+            repairedCount++;
+          }
+        }
+      }
+      
+      console.log(`[BATCH REPAIR] Completed: ${repairedCount} repaired, ${alreadyGoodCount} already good`);
+      
+      res.json({
+        message: `Batch repair completed: ${repairedCount} invoices repaired, ${alreadyGoodCount} were already correct`,
+        repairedCount,
+        alreadyGoodCount,
+        totalProcessed: allInvoices.length
+      });
+    } catch (error) {
+      console.error('[BATCH REPAIR] Error:', error);
+      res.status(500).json({ message: 'Batch repair failed', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -5822,17 +5941,22 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
   });
 
   // Test petty cash classification
-  app.get('/api/test/petty-cash/:amount', async (req, res) => {
+  app.get('/api/test/petty-cash/:invoiceId', async (req, res) => {
     try {
-      const amount = req.params.amount;
-      console.log(`Testing petty cash classification for amount: ${amount}`);
+      const invoiceId = parseInt(req.params.invoiceId);
+      console.log(`Testing petty cash classification for invoice: ${invoiceId}`);
       
-      const isPettyCash = await storage.isPettyCashInvoice(amount);
+      const isPettyCash = await storage.isPettyCashInvoice(invoiceId);
+      
+      // Get invoice details for response
+      const invoice = await storage.getInvoice(invoiceId);
       
       res.json({
-        amount: amount,
+        invoiceId: invoiceId,
+        amount: invoice?.totalAmount || 'not set',
+        currency: invoice?.currency || 'not set',
         isPettyCash: isPettyCash,
-        message: `Amount ${amount} is ${isPettyCash ? '' : 'NOT '}classified as petty cash`
+        message: `Invoice ${invoiceId} (${invoice?.totalAmount} ${invoice?.currency}) is ${isPettyCash ? '' : 'NOT '}classified as petty cash`
       });
     } catch (error) {
       console.error('Test petty cash error:', error);

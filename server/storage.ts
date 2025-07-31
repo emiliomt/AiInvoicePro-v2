@@ -82,7 +82,7 @@ export interface IStorage {
   updatePettyCashLog(id: number, updates: any): Promise<any>;
   getPettyCashLogs(status?: string): Promise<any[]>;
   getPettyCashLogByInvoiceId(invoiceId: number): Promise<any>;
-  isPettyCashInvoice(totalAmount: string): Promise<boolean>;
+  isPettyCashInvoice(invoiceId: number): Promise<boolean>;
 
   // Settings
   getSetting(key: string): Promise<any>;
@@ -1508,27 +1508,43 @@ class PostgresStorage implements IStorage {
   }
 
   // Petty Cash Classification Function
-  async isPettyCashInvoice(totalAmount: string): Promise<boolean> {
+  async isPettyCashInvoice(invoiceId: number): Promise<boolean> {
     try {
-      console.log(`Checking petty cash for amount: ${totalAmount}`);
+      // Get the full invoice record
+      const invoice = await this.getInvoice(invoiceId);
+      if (!invoice) {
+        console.log(`[PETTY CASH] Invoice ${invoiceId} not found`);
+        return false;
+      }
       
       // Get threshold
       const thresholdSetting = await this.getSetting('petty_cash_threshold');
       const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
       
-      console.log(`Threshold: ${threshold}`);
+      console.log(`[PETTY CASH] Invoice ${invoiceId} (${invoice.fileName})`);
+      console.log(`[PETTY CASH] Main table totalAmount: ${invoice.totalAmount}`);
+      console.log(`[PETTY CASH] Currency: ${invoice.currency}`);
+      console.log(`[PETTY CASH] Threshold: ${threshold}`);
       
-      // Parse amount
-      const amount = parseFloat(totalAmount || '0');
-      console.log(`Parsed amount: ${amount}`);
+      // Use main table totalAmount
+      let amount = 0;
+      if (invoice.totalAmount && invoice.totalAmount !== 'null') {
+        amount = parseFloat(invoice.totalAmount);
+      } else {
+        // Fallback to extractedData if main table is empty
+        const extractedData = invoice.extractedData as any;
+        if (extractedData?.totalAmount) {
+          amount = parseFloat(extractedData.totalAmount);
+          console.log(`[PETTY CASH] Using extractedData fallback: ${amount}`);
+        }
+      }
       
-      // Simple comparison
-      const result = amount < threshold && amount > 0;
-      console.log(`${amount} < ${threshold} = ${result}`);
+      const isPetty = amount > 0 && amount < threshold;
+      console.log(`[PETTY CASH] Final calculation: ${amount} < ${threshold} = ${isPetty}`);
       
-      return result;
+      return isPetty;
     } catch (error) {
-      console.error('Petty cash check error:', error);
+      console.error(`[PETTY CASH] Error checking invoice ${invoiceId}:`, error);
       return false;
     }
   }
