@@ -28,6 +28,7 @@ import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
 import ExtractionFeedbackModal from "@/components/ExtractionFeedbackModal";
+import { Checkbox } from "@/components/ui/checkbox"
 
 interface Invoice {
   id: number;
@@ -72,11 +73,11 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
     return false;
   }
-  
+
   // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
   const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
   const hasOCRText = !!invoice.ocrText;
-  
+
   return isPDFImageFile || hasOCRText;
 };
 
@@ -165,7 +166,7 @@ export default function Invoices() {
   // Fetch linked files only when explicitly needed (on-demand)
   const fetchLinkedFilesOnDemand = useCallback(async (invoiceId: number) => {
     if (linkedFilesMap[invoiceId]) return; // Already fetched
-    
+
     try {
       const response = await apiRequest('GET', `/api/invoices/${invoiceId}/linked-files`);
       if (response.ok) {
@@ -485,22 +486,6 @@ export default function Invoices() {
     }
   };
 
-  const handleSelectInvoice = (invoiceId: number) => {
-    setSelectedInvoices(prev => 
-      prev.includes(invoiceId) 
-        ? prev.filter(id => id !== invoiceId)
-        : [...prev, invoiceId]
-    );
-  };
-
-  const handleSelectAll = () => {
-    if (selectedInvoices.length === invoices.length) {
-      setSelectedInvoices([]);
-    } else {
-      setSelectedInvoices(invoices.map(invoice => invoice.id));
-    }
-  };
-
   const handleInitiateAutomaticProcess = async () => {
     if (selectedInvoices.length === 0) {
       toast({
@@ -554,6 +539,24 @@ export default function Invoices() {
       });
     } finally {
       setIsProcessingAutomatic(false);
+    }
+  };
+
+  const handleSelectInvoice = (invoiceId: number) => {
+    setSelectedInvoices(prev => {
+      if (prev.includes(invoiceId)) {
+        return prev.filter(id => id !== invoiceId);
+      } else {
+        return [...prev, invoiceId];
+      }
+    });
+  };
+
+  const handleSelectAll = () => {
+    if (selectedInvoices.length === invoices?.length) {
+      setSelectedInvoices([]);
+    } else {
+      setSelectedInvoices(invoices?.map(invoice => invoice.id) || []);
     }
   };
 
@@ -692,28 +695,15 @@ export default function Invoices() {
                 <CardContent className="py-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={handleSelectAll}
-                        className="flex items-center space-x-2"
-                      >
-                        {selectedInvoices.length === invoices.length ? (
-                          <CheckSquare className="h-4 w-4" />
-                        ) : (
-                          <Square className="h-4 w-4" />
-                        )}
-                        <span>
-                          {selectedInvoices.length === invoices.length 
-                            ? "Deselect All" 
-                            : `Select All (${invoices.length})`}
-                        </span>
-                      </Button>
-                      {selectedInvoices.length > 0 && (
-                        <span className="text-sm text-gray-600">
-                          {selectedInvoices.length} selected
-                        </span>
-                      )}
+                      <Checkbox 
+                        checked={selectedInvoices.length === invoices?.length && invoices.length > 0}
+                        indeterminate={selectedInvoices.length > 0 && selectedInvoices.length < (invoices?.length || 0)}
+                        onCheckedChange={handleSelectAll}
+                      />
+                      <span>{selectedInvoices.length === invoices?.length ? 'Deselect All' : 'Select All'}</span>
+                      <span className="text-gray-500">
+                        {selectedInvoices.length > 0 ? `${selectedInvoices.length} selected` : `${invoices?.length || 0} total`}
+                      </span>
                     </div>
                   </div>
                 </CardContent>
@@ -731,18 +721,10 @@ export default function Invoices() {
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <div className="flex items-start space-x-3">
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleSelectInvoice(invoice.id)}
-                            className="p-1 h-auto"
-                          >
-                            {selectedInvoices.includes(invoice.id) ? (
-                              <CheckSquare className="h-4 w-4" />
-                            ) : (
-                              <Square className="h-4 w-4" />
-                            )}
-                          </Button>
+                          <Checkbox 
+                            checked={selectedInvoices.includes(invoice.id)}
+                            onCheckedChange={() => handleSelectInvoice(invoice.id)}
+                          />
                           <div className="space-y-2">
                             <CardTitle className="flex items-center space-x-2">
                               <FileText className="text-blue-600" size={20} />
@@ -857,7 +839,7 @@ export default function Invoices() {
                               <ThumbsUp size={14} className="mr-1" />
                               Good Job AI!
                             </Button>
-                            
+
                             {/* Report Error button - show for all eligible PDF invoices */}
                             {isEligibleForProblemReport(invoice) && (
                               <Button
@@ -890,7 +872,7 @@ export default function Invoices() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() => deleteMutation.mutate(invoice.id)}
+                                onClick={() => deleteMutation.mutate(invoice.id)}```text
                                 className="bg-red-600 hover:bg-red-700"
                                 disabled={deleteMutation.isPending}
                               >
