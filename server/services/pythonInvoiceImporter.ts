@@ -54,14 +54,14 @@ class PythonInvoiceImporter {
     // First try direct lookup (configId)
     let progress = this.activeImports.get(idOrConfigId);
     if (progress) return progress;
-    
+
     // Try logId lookup
     const configId = this.logIdToConfigId.get(idOrConfigId);
     if (configId) {
       progress = this.activeImports.get(configId);
       if (progress) return progress;
     }
-    
+
     return null;
   }
 
@@ -119,11 +119,11 @@ class PythonInvoiceImporter {
 
     } catch (error) {
       console.error(`Python RPA import task ${configId} failed:`, error);
-      
+
       // Clean up progress tracking
       this.activeImports.delete(configId);
       this.logIdToConfigId.delete(logId);
-      
+
       // Update database log with error
       try {
         await storage.updateInvoiceImporterLog(logId, {
@@ -134,7 +134,7 @@ class PythonInvoiceImporter {
       } catch (dbError) {
         console.error('Failed to update log with error:', dbError);
       }
-      
+
       throw error;
     }
   }
@@ -547,7 +547,7 @@ class PythonInvoiceImporter {
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
               progress.skippedImports = statsUpdate.skipped_imports || progress.skippedImports;
               progress.progress = statsUpdate.progress || progress.progress;
-              
+
               console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
               console.log(`📊 Stats update:`, statsUpdate);
             }
@@ -557,8 +557,37 @@ class PythonInvoiceImporter {
               console.log(`🔍 STATS line detected:`, trimmedLine);
             }
 
-            // Manual progress milestones based on key log statements
-            if (trimmedLine.includes('Setting up Chrome WebDriver') || trimmedLine.includes('Initializing')) {
+            // Parse PROGRESS_STEP messages for detailed tracking
+            if (trimmedLine.includes('PROGRESS_STEP:')) {
+              const progressMatch = trimmedLine.match(/PROGRESS_STEP:(\w+):(\w+):(.+)/);
+              if (progressMatch) {
+                const [, stepId, status, message] = progressMatch;
+
+                // Map step IDs to progress percentages
+                const stepProgressMap: Record<string, number> = {
+                  'browser': 10,
+                  'login': 20,
+                  'navigate': 30,
+                  'search': 40,
+                  'extract': 50,
+                  'download': 60,
+                  'process': 70,
+                  'classify': 80,
+                  'validate': 90,
+                  'complete': 100
+                };
+
+                if (stepProgressMap[stepId]) {
+                  progress.progress = stepProgressMap[stepId];
+                  progress.currentStep = message;
+
+                  console.log(`📊 Progress Step Update: ${stepId} - ${status} - ${message}`);
+                }
+              }
+            }
+
+            // Manual progress milestones based on key log statements (fallback)
+            else if (trimmedLine.includes('Setting up Chrome WebDriver') || trimmedLine.includes('Initializing')) {
               progress.progress = 10;
               progress.currentStep = 'Initializing browser';
             } else if (trimmedLine.includes('Logging into ERP') || trimmedLine.includes('Login successful')) {
@@ -570,7 +599,7 @@ class PythonInvoiceImporter {
             } else if (trimmedLine.includes('Found') && trimmedLine.includes('rows')) {
               progress.progress = 40;
               progress.currentStep = 'Processing invoice rows';
-              
+
               // Extract row count for total invoices
               const rowMatch = trimmedLine.match(/Found\s+(\d+)\s+rows/i);
               if (rowMatch) {
@@ -579,13 +608,13 @@ class PythonInvoiceImporter {
             } else if (trimmedLine.includes('Downloaded:') || trimmedLine.includes('Processing:')) {
               progress.progress = Math.min(progress.progress + 5, 70); // Increment during processing
               progress.currentStep = 'Downloading invoice files';
-            } else if (trimmedLine.includes('Extracting XML') || trimmedLine.includes('Unzipping')) {
+            } else if (trimmedLine.includes('Extracting XML') || trimmedLine.includes('Unzip')) {
               progress.progress = 80;
-              progress.currentStep = 'Extracting XML files';
-            } else if (trimmedLine.includes('Processing XML') || trimmedLine.includes('manual upload pipeline')) {
-              progress.progress = 90;
-              progress.currentStep = 'Processing XML files through upload pipeline';
-            } else if (trimmedLine.includes('Import process completed') || trimmedLine.includes('RESULT:')) {
+              progress.currentStep = 'Processing XML files';
+            }
+
+            // Manual progress milestones based on key log statements
+            else if (trimmedLine.includes('Import process completed') || trimmedLine.includes('RESULT:')) {
               progress.progress = 100;
               progress.currentStep = 'Import completed successfully';
               progress.isComplete = true;

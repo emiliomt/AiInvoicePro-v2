@@ -360,6 +360,113 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
     return (progress.processedInvoices / progress.totalInvoices) * 100;
   };
 
+  const getAutomationSteps = () => {
+    const automationSteps = [
+      { id: 'browser', shortTitle: 'Browser', fullTitle: 'Initialize Browser' },
+      { id: 'login', shortTitle: 'Login', fullTitle: 'ERP Login' },
+      { id: 'navigate', shortTitle: 'Navigate', fullTitle: 'Navigate to FE Module' },
+      { id: 'search', shortTitle: 'Search', fullTitle: 'Find Invoice List' },
+      { id: 'extract', shortTitle: 'Extract', fullTitle: 'Extract Invoice Data' },
+      { id: 'download', shortTitle: 'Download', fullTitle: 'Download Invoices' },
+      { id: 'process', shortTitle: 'Process', fullTitle: 'Process XML Files' },
+      { id: 'classify', shortTitle: 'Classify', fullTitle: 'Classify Items' },
+      { id: 'validate', shortTitle: 'Validate', fullTitle: 'Validate Data' },
+      { id: 'complete', shortTitle: 'Complete', fullTitle: 'Finalize Import' }
+    ];
+
+    return automationSteps.map((step, index) => {
+      let status: 'pending' | 'running' | 'completed' | 'failed' = 'pending';
+      let details = '';
+
+      if (!progress?.steps || progress.steps.length === 0) {
+        return { ...step, status, details };
+      }
+
+      // Map current progress to automation steps
+      const currentLog = progress.logs || '';
+      const currentStep = progress.steps[progress.steps.length - 1];
+
+      // Determine status based on current progress
+      if (currentLog.includes('Initializing browser') || currentLog.includes('Setting up Chrome')) {
+        if (step.id === 'browser') status = 'running';
+        else if (index < 1) status = 'completed';
+      } else if (currentLog.includes('Logging into ERP') || currentLog.includes('Login successful')) {
+        if (step.id === 'login') status = 'running';
+        else if (index < 2) status = 'completed';
+      } else if (currentLog.includes('Navigating to') || currentLog.includes('Navigate to FE')) {
+        if (step.id === 'navigate') status = 'running';
+        else if (index < 3) status = 'completed';
+      } else if (currentLog.includes('Finding invoice') || currentLog.includes('Loading invoice list')) {
+        if (step.id === 'search') status = 'running';
+        else if (index < 4) status = 'completed';
+      } else if (currentLog.includes('Found') && currentLog.includes('rows')) {
+        if (step.id === 'extract') status = 'running';
+        else if (index < 5) status = 'completed';
+      } else if (currentLog.includes('Downloading') || currentLog.includes('Downloaded:')) {
+        if (step.id === 'download') status = 'running';
+        else if (index < 6) status = 'completed';
+        if (step.id === 'download') {
+          details = `${progress.processedInvoices}/${progress.totalInvoices} files`;
+        }
+      } else if (currentLog.includes('Processing XML') || currentLog.includes('Extracting XML')) {
+        if (step.id === 'process') status = 'running';
+        else if (index < 7) status = 'completed';
+      } else if (currentLog.includes('Classifying') || currentLog.includes('Classification')) {
+        if (step.id === 'classify') status = 'running';
+        else if (index < 8) status = 'completed';
+      } else if (currentLog.includes('Validating') || currentLog.includes('Validation')) {
+        if (step.id === 'validate') status = 'running';
+        else if (index < 9) status = 'completed';
+      } else if (progress.status === 'completed') {
+        if (index < 10) status = 'completed';
+      }
+
+      // Handle failures
+      if (progress.status === 'failed' && currentStep?.status === 'failed') {
+        const failedStepMap: Record<string, string[]> = {
+          'browser': ['browser', 'chrome', 'initialization'],
+          'login': ['login', 'credential', 'authentication'],
+          'navigate': ['navigate', 'navigation', 'module'],
+          'search': ['search', 'find', 'invoice list'],
+          'extract': ['extract', 'data extraction'],
+          'download': ['download', 'file'],
+          'process': ['process', 'xml', 'parsing'],
+          'classify': ['classify', 'classification'],
+          'validate': ['validate', 'validation']
+        };
+
+        for (const [stepId, keywords] of Object.entries(failedStepMap)) {
+          if (keywords.some(keyword => currentLog.toLowerCase().includes(keyword.toLowerCase()))) {
+            if (step.id === stepId) {
+              status = 'failed';
+              details = progress.errorMessage || 'Step failed';
+            }
+            break;
+          }
+        }
+      }
+
+      return { 
+        ...step, 
+        status, 
+        details: details || (currentStep?.details || ''),
+        title: step.fullTitle
+      };
+    });
+  };
+
+  const getAutomationStepNumber = () => {
+    const steps = getAutomationSteps();
+    const completedSteps = steps.filter(step => step.status === 'completed').length;
+    const runningSteps = steps.filter(step => step.status === 'running').length;
+    return completedSteps + (runningSteps > 0 ? 1 : 0);
+  };
+
+  const getCurrentStep = () => {
+    const steps = getAutomationSteps();
+    return steps.find(step => step.status === 'running');
+  };
+
   return (
     <>
       <Dialog open={isOpen} onOpenChange={onClose}>
@@ -435,38 +542,114 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
               {/* Step-by-Step Progress */}
               <Card>
                 <CardHeader>
-                  <CardTitle className="text-lg">Step-by-Step Progress</CardTitle>
+                  <CardTitle className="text-lg">Automation Steps Progress</CardTitle>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    {progress.steps && progress.steps.length > 0 ? (
-                      progress.steps.map((step, index) => (
-                        <div key={step.id} className="flex items-start space-x-3 p-3 rounded-lg bg-gray-50">
-                          <div className="flex-shrink-0 mt-1">
-                            {getStatusIcon(step.status)}
-                          </div>
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center justify-between">
-                              <h4 className="text-sm font-medium text-gray-900">{step.title}</h4>
-                              <Badge className={getStatusBadge(step.status)} variant="secondary">
-                                {step.status}
-                              </Badge>
+                  <div className="space-y-6">
+                    {/* Visual Step Progress Bar */}
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-4">
+                        <span className="text-sm font-medium text-gray-700">Automation Progress</span>
+                        <span className="text-sm text-gray-500">{getAutomationStepNumber()}/10 Steps</span>
+                      </div>
+                      
+                      {/* Progress Line */}
+                      <div className="relative">
+                        <div className="absolute top-5 left-0 w-full h-0.5 bg-gray-200"></div>
+                        <div 
+                          className="absolute top-5 left-0 h-0.5 bg-blue-500 transition-all duration-500"
+                          style={{ width: `${(getAutomationStepNumber() / 10) * 100}%` }}
+                        ></div>
+                        
+                        {/* Step Circles */}
+                        <div className="relative flex justify-between">
+                          {getAutomationSteps().map((step, index) => (
+                            <div key={step.id} className="flex flex-col items-center">
+                              <div className={`
+                                w-10 h-10 rounded-full border-2 flex items-center justify-center text-sm font-medium
+                                ${step.status === 'completed' ? 'bg-green-500 border-green-500 text-white' :
+                                  step.status === 'running' ? 'bg-blue-500 border-blue-500 text-white animate-pulse' :
+                                  step.status === 'failed' ? 'bg-red-500 border-red-500 text-white' :
+                                  'bg-white border-gray-300 text-gray-400'}
+                              `}>
+                                {step.status === 'completed' ? (
+                                  <CheckCircle className="w-5 h-5" />
+                                ) : step.status === 'running' ? (
+                                  <Loader2 className="w-5 h-5 animate-spin" />
+                                ) : step.status === 'failed' ? (
+                                  <AlertCircle className="w-5 h-5" />
+                                ) : (
+                                  index + 1
+                                )}
+                              </div>
+                              <div className="mt-2 text-center max-w-20">
+                                <div className="text-xs font-medium text-gray-700 leading-tight">
+                                  {step.shortTitle}
+                                </div>
+                                {step.status === 'running' && (
+                                  <div className="text-xs text-blue-600 mt-1">
+                                    {step.details && step.details.length > 30 
+                                      ? `${step.details.substring(0, 30)}...` 
+                                      : step.details}
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                            {step.details && (
-                              <p className="text-sm text-gray-600 mt-1">{step.details}</p>
-                            )}
-                            {step.timestamp && (
-                              <p className="text-xs text-gray-500 mt-1">
-                                {new Date(step.timestamp).toLocaleTimeString()}
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Detailed Step Information */}
+                    <div className="space-y-4 max-h-96 overflow-y-auto">
+                      {progress.steps && progress.steps.length > 0 ? (
+                        progress.steps.map((step, index) => (
+                          <div key={step.id} className="flex items-start space-x-3 p-3 rounded-lg bg-gray-50">
+                            <div className="flex-shrink-0 mt-1">
+                              {getStatusIcon(step.status)}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center justify-between">
+                                <h4 className="text-sm font-medium text-gray-900">{step.title}</h4>
+                                <Badge className={getStatusBadge(step.status)} variant="secondary">
+                                  {step.status}
+                                </Badge>
+                              </div>
+                              {step.details && (
+                                <p className="text-sm text-gray-600 mt-1">{step.details}</p>
+                              )}
+                              {step.timestamp && (
+                                <p className="text-xs text-gray-500 mt-1">
+                                  {new Date(step.timestamp).toLocaleTimeString()}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="text-center py-8 text-gray-500">
+                          <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
+                          <p>Initializing import process...</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Current Step Highlight */}
+                    {getCurrentStep() && (
+                      <div className="border-l-4 border-blue-500 bg-blue-50 p-4 rounded-r-lg">
+                        <div className="flex items-center">
+                          <Loader2 className="w-5 h-5 text-blue-500 animate-spin mr-2" />
+                          <div>
+                            <h4 className="text-sm font-medium text-blue-800">
+                              Currently Processing: {getCurrentStep()?.title}
+                            </h4>
+                            {getCurrentStep()?.details && (
+                              <p className="text-sm text-blue-600 mt-1">
+                                {getCurrentStep()?.details}
                               </p>
                             )}
                           </div>
                         </div>
-                      ))
-                    ) : (
-                      <div className="text-center py-8 text-gray-500">
-                        <Loader2 className="w-8 h-8 mx-auto mb-2 animate-spin" />
-                        <p>Initializing import process...</p>
                       </div>
                     )}
                   </div>
