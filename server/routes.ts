@@ -174,13 +174,30 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       currency: extractedData.currency || 'USD',
     };
 
-    // Update invoice with extracted data
-    await storage.updateInvoice(invoice.id, {
-      status: "extracted",
+    // CRITICAL FIX: Update main invoice table with extracted data
+    const updateData = {
+      status: "extracted" as const,
       ocrText,
       extractedData,
-      ...cleanedData
+      // Map extracted data to main table columns
+      vendorName: cleanedData.vendorName || null,
+      invoiceNumber: cleanedData.invoiceNumber || null,
+      invoiceDate: cleanedData.invoiceDate || null,
+      dueDate: cleanedData.dueDate || null,
+      totalAmount: cleanedData.totalAmount || null,
+      taxAmount: cleanedData.taxAmount || null,
+      currency: cleanedData.currency || 'COP'
+    };
+
+    console.log(`[INVOICE UPDATE] Updating invoice ${invoice.id} with main table data:`, {
+      totalAmount: updateData.totalAmount,
+      currency: updateData.currency,
+      vendorName: updateData.vendorName
     });
+
+    await storage.updateInvoice(invoice.id, updateData);
+
+    console.log(`[INVOICE UPDATE] Invoice ${invoice.id} main table updated successfully`);
 
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
@@ -5716,6 +5733,53 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
         error: 'Failed to initiate batch processing',
         success: false
       });
+    }
+  });
+
+  // URGENT FIX: Repair endpoint for existing invoices with data in extractedData but not in main fields
+  app.post('/api/invoices/repair-main-fields', isAuthenticated, async (req, res) => {
+    try {
+      console.log('[REPAIR] Starting invoice main fields repair...');
+      
+      const allInvoices = await storage.getInvoices();
+      let repairedCount = 0;
+      
+      for (const invoice of allInvoices) {
+        // Check if main fields are missing but extractedData has them
+        const hasMainData = invoice.totalAmount && invoice.vendorName;
+        const extractedData = invoice.extractedData as any;
+        const hasExtractedData = extractedData?.totalAmount || extractedData?.vendorName;
+        
+        if (!hasMainData && hasExtractedData) {
+          console.log(`[REPAIR] Repairing invoice ${invoice.id}: ${invoice.fileName}`);
+          
+          const updateData = {
+            vendorName: extractedData.vendorName || invoice.vendorName,
+            invoiceNumber: extractedData.invoiceNumber || invoice.invoiceNumber,
+            totalAmount: extractedData.totalAmount || invoice.totalAmount,
+            currency: extractedData.currency || invoice.currency || 'COP',
+            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : invoice.invoiceDate,
+            dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : invoice.dueDate,
+            taxAmount: extractedData.taxAmount || null,
+            subtotal: extractedData.subtotal || null,
+            taxId: extractedData.taxId || null
+          };
+          
+          await storage.updateInvoice(invoice.id, updateData);
+          repairedCount++;
+          
+          console.log(`[REPAIR] Invoice ${invoice.id} repaired: totalAmount=${updateData.totalAmount}, currency=${updateData.currency}`);
+        }
+      }
+      
+      console.log(`[REPAIR] Repaired ${repairedCount} invoices`);
+      res.json({ 
+        message: `Successfully repaired ${repairedCount} invoices`,
+        repairedCount 
+      });
+    } catch (error) {
+      console.error('[REPAIR] Error repairing invoices:', error);
+      res.status(500).json({ message: 'Failed to repair invoices', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
