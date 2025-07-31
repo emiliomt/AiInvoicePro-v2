@@ -4905,6 +4905,65 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Test endpoint to force create petty cash logs for specific invoices (730, 736)
+  app.post('/api/petty-cash/force-create-test-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      console.log('[PETTY CASH TEST] Force creating logs for invoices 730 and 736');
+
+      const testInvoiceIds = [730, 736];
+      const results = [];
+
+      for (const invoiceId of testInvoiceIds) {
+        try {
+          // Check if invoice exists
+          const invoice = await storage.getInvoice(invoiceId);
+          if (!invoice) {
+            results.push({ invoiceId, status: 'not_found' });
+            continue;
+          }
+
+          // Check if log already exists
+          const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+          if (existingLog) {
+            results.push({ invoiceId, status: 'already_exists', logId: existingLog.id });
+            continue;
+          }
+
+          // Create petty cash log regardless of amount (for testing)
+          const log = await storage.createPettyCashLog({
+            invoiceId,
+            status: 'pending_approval',
+            approvalNotes: `Test log for invoice ${invoiceId} - ${invoice.fileName} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`
+          });
+
+          results.push({ invoiceId, status: 'created', logId: log.id });
+          console.log(`[PETTY CASH TEST] Created log for invoice ${invoiceId}`);
+
+        } catch (error) {
+          console.error(`[PETTY CASH TEST] Error processing invoice ${invoiceId}:`, error);
+          results.push({ invoiceId, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
+        }
+      }
+
+      res.json({
+        message: `Test petty cash logs processed`,
+        results
+      });
+
+    } catch (error) {
+      console.error('[PETTY CASH TEST] Error:', error);
+      res.status(500).json({ 
+        error: 'Failed to create test petty cash logs',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Create petty cash logs for specific invoices
   app.post('/api/petty-cash/create-for-invoices', isAuthenticated, async (req: any, res) => {
     try {
