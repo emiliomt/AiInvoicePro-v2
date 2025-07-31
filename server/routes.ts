@@ -1101,21 +1101,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { action } = req.body;
       const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id || "unknown";
 
+      // Validate required fields
+      if (!projectId) {
+        return res.status(400).json({ message: "Project ID is required" });
+      }
+
+      if (!action || (action !== "validate" && action !== "reject")) {
+        return res.status(400).json({ message: "Action must be either 'validate' or 'reject'" });
+      }
+
+      // Check if project exists
+      const existingProject = await storage.getProject(parseInt(projectId));
+      if (!existingProject) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Determine validation status and validated flag
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
       // Update the project validation status
-      const updatedProject = await storage.updateProject(projectId, {
+      const updatedProject = await storage.updateProject(parseInt(projectId), {
         validationStatus,
         isValidated,
         validatedBy: userId,
         validatedAt: new Date()
       });
 
+      if (!updatedProject) {
+        return res.status(500).json({ message: "Failed to update project validation status" });
+      }
+
+      console.log(`Project ${projectId} ${action}d by user ${userId}`);
       res.json(updatedProject);
     } catch (error) {
       console.error("Error validating project:", error);
-      res.status(500).json({ message: "Failed to validate project" });
+      const errorMessage = error instanceof Error ? error.message : "Unknown error";
+      res.status(500).json({ 
+        message: "Failed to validate project",
+        error: errorMessage 
+      });
     }
   });
 
