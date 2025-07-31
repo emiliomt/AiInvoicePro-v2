@@ -420,12 +420,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const thresholdSetting = await storage.getSetting('petty_cash_threshold');
       const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
       
-      console.log(`[PETTY CASH RECALC] Using threshold: ${threshold}`);
+      console.log(`[PETTY CASH RECALC] Using threshold: ${threshold} COP`);
       
-      // Get all invoices
+      // Get all invoices from the database
       const allInvoices = await storage.getInvoices();
       let processed = 0;
-      let classified = 0;
+      let qualified = 0;
       let logsCreated = 0;
       let updated = 0;
       const errors = [];
@@ -445,14 +445,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           }
           
-          // Check if invoice qualifies as petty cash
+          // Check if invoice qualifies as petty cash (below threshold)
           const isPetty = amount > 0 && amount < threshold;
           
           if (isPetty) {
-            classified++;
+            qualified++;
             console.log(`[PETTY CASH RECALC] Invoice ${invoice.id} (${invoice.fileName}) qualifies as petty cash: ${amount} < ${threshold}`);
             
-            // Update invoice to mark as petty cash
+            // Check if petty cash log already exists
+            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+            
+            if (!existingLog) {
+              // Create petty cash log with status "pending_approval"
+              const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount.toLocaleString()}`;
+              
+              await storage.createPettyCashLog({
+                invoiceId: invoice.id,
+                status: 'pending_approval',
+                approvalNotes
+              });
+              
+              logsCreated++;
+              console.log(`[PETTY CASH RECALC] Created log for invoice ${invoice.id}`);
+            }
+            
+            // Update invoice extractedData to mark isPettyCash: true
             const invoiceUpdates: any = {
               pettyCashFlag: true
             };
@@ -471,27 +488,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 pettyCashAmount: amount
               };
               invoiceUpdates.extractedData = updatedExtractedData;
+            } else {
+              // Create extractedData if it doesn't exist
+              invoiceUpdates.extractedData = {
+                isPettyCash: true,
+                pettyCashThreshold: threshold,
+                pettyCashAmount: amount
+              };
             }
             
             await storage.updateInvoice(invoice.id, invoiceUpdates);
             updated++;
-            
-            // Check if petty cash log already exists
-            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-            
-            if (!existingLog) {
-              // Create petty cash log
-              const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount}`;
-              
-              await storage.createPettyCashLog({
-                invoiceId: invoice.id,
-                status: 'pending_approval',
-                approvalNotes
-              });
-              
-              logsCreated++;
-              console.log(`[PETTY CASH RECALC] Created log for invoice ${invoice.id}`);
-            }
           }
           
         } catch (error) {
@@ -506,7 +513,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       const summary = {
         totalInvoices: processed,
-        qualifiedForPettyCash: classified,
+        qualifiedForPettyCash: qualified,
         invoicesUpdated: updated,
         logsCreated: logsCreated,
         errors: errors.length,
@@ -516,7 +523,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       
       console.log(`[PETTY CASH RECALC] Completed:`, summary);
       
-      const message = `Recalculation completed: ${processed} invoices processed, ${classified} qualified as petty cash, ${logsCreated} new logs created, ${updated} invoices updated`;
+      const message = `Recalculation completed: ${processed} invoices processed, ${qualified} qualified as petty cash, ${logsCreated} new logs created, ${updated} invoices updated`;
       
       res.json({
         success: true,
