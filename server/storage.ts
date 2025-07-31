@@ -1735,6 +1735,165 @@ class PostgresStorage implements IStorage {
       return false;
     }
   }
+
+  // Automatically create petty cash log when invoice is classified as petty cash
+  async classifyAndCreatePettyCashLog(invoiceId: number): Promise<boolean> {
+    try {
+      const isPetty = await this.isPettyCashInvoice(invoiceId);
+      
+      if (isPetty) {
+        // Check if log already exists
+        const existingLog = await this.getPettyCashLogByInvoiceId(invoiceId);
+        
+        if (!existingLog) {
+          // Create petty cash log
+          const invoice = await this.getInvoice(invoiceId);
+          if (invoice) {
+            const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
+            
+            await this.createPettyCashLog({
+              invoiceId,
+              status: 'pending_approval',
+              approvalNotes
+            });
+            
+            console.log(`[PETTY CASH] Created log for invoice ${invoiceId}`);
+          }
+        }
+        
+        return true;
+      }
+      
+      return false;
+    } catch (error) {
+      console.error(`[PETTY CASH] Error classifying invoice ${invoiceId}:`, error);
+      return false;
+    }
+  }
+
+  // Sync existing petty cash invoices to create missing logs
+  async syncPettyCashLogs(): Promise<{ created: number; skipped: number; errors: number }> {
+    try {
+      console.log('[PETTY CASH SYNC] Starting sync of existing petty cash invoices...');
+      
+      // Get all invoices marked as petty cash
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      // Find invoices with petty_cash_flag = true OR status = 'petty_cash'
+      const result = await dbClient.query(`
+        SELECT id, file_name, vendor_name, total_amount, currency, created_at
+        FROM invoices 
+        WHERE petty_cash_flag = true OR status = 'petty_cash'
+        ORDER BY created_at DESC
+      `);
+      
+      let created = 0;
+      let skipped = 0;
+      let errors = 0;
+      
+      for (const invoice of result.rows) {
+        try {
+          // Check if log already exists
+          const existingLog = await this.getPettyCashLogByInvoiceId(invoice.id);
+          
+          if (existingLog) {
+            skipped++;
+            console.log(`[PETTY CASH SYNC] Log already exists for invoice ${invoice.id}`);
+            continue;
+          }
+          
+          // Create petty cash log
+          const approvalNotes = `${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
+          
+          await this.createPettyCashLog({
+            invoiceId: invoice.id,
+            status: 'pending_approval',
+            approvalNotes
+          });
+          
+          created++;
+          console.log(`[PETTY CASH SYNC] Created log for invoice ${invoice.id}`);
+          
+        } catch (error) {
+          console.error(`[PETTY CASH SYNC] Error processing invoice ${invoice.id}:`, error);
+          errors++;
+        }
+      }
+      
+      await dbClient.end();
+      
+      console.log(`[PETTY CASH SYNC] Completed: ${created} created, ${skipped} skipped, ${errors} errors`);
+      
+      return { created, skipped, errors };
+      
+    } catch (error) {
+      console.error('[PETTY CASH SYNC] Error during sync:', error);
+      throw error;
+    }
+  }
+
+  // Recalculate all invoices for petty cash classification
+  async recalculatePettyCashInvoices(): Promise<{ processed: number; classified: number; logs_created: number }> {
+    try {
+      console.log('[PETTY CASH RECALC] Starting recalculation of all invoices...');
+      
+      // Get all invoices
+      const allInvoices = await this.getInvoices();
+      let processed = 0;
+      let classified = 0;
+      let logsCreated = 0;
+      
+      for (const invoice of allInvoices) {
+        try {
+          processed++;
+          
+          // Check if invoice qualifies as petty cash
+          const isPetty = await this.isPettyCashInvoice(invoice.id);
+          
+          if (isPetty) {
+            classified++;
+            
+            // Update invoice flags
+            await this.updateInvoice(invoice.id, {
+              pettyCashFlag: true,
+              status: invoice.status === 'pending' ? 'petty_cash' : invoice.status
+            });
+            
+            // Check if log exists, create if not
+            const existingLog = await this.getPettyCashLogByInvoiceId(invoice.id);
+            
+            if (!existingLog) {
+              const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
+              
+              await this.createPettyCashLog({
+                invoiceId: invoice.id,
+                status: 'pending_approval',
+                approvalNotes
+              });
+              
+              logsCreated++;
+            }
+          }
+          
+        } catch (error) {
+          console.error(`[PETTY CASH RECALC] Error processing invoice ${invoice.id}:`, error);
+        }
+      }
+      
+      console.log(`[PETTY CASH RECALC] Completed: ${processed} processed, ${classified} classified as petty cash, ${logsCreated} logs created`);
+      
+      return { processed, classified, logs_created: logsCreated };
+      
+    } catch (error) {
+      console.error('[PETTY CASH RECALC] Error during recalculation:', error);
+      throw error;
+    }
+  }
 }
 
 export const storage: IStorage = new PostgresStorage();
