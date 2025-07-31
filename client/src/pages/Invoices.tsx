@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, CheckCircle, XCircle, Clock, Target } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   AlertDialog,
@@ -48,6 +48,17 @@ interface Invoice {
     confidenceScore?: string;
     [key: string]: any;
   };
+  // Post-extraction workflow outcome fields
+  classifiedItems?: any;
+  projectMatch?: any;
+  pettyCashFlag?: boolean;
+  validationResult?: {
+    isValid: boolean;
+    score: number;
+  };
+  poMatches?: any[];
+  validationErrors?: any[];
+  processingError?: string;
 }
 
 interface LinkedFile {
@@ -104,6 +115,73 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
   return isAIExtractedInvoice(invoice);
 };
 
+// Enhanced status badge component with icons and colors
+const getStatusBadge = (invoice: Invoice) => {
+  const status = invoice.status;
+  
+  switch (status) {
+    case 'po_matched':
+      return (
+        <Badge variant="default" className="bg-green-100 text-green-800 border-green-200">
+          <CheckCircle className="w-3 h-3 mr-1" />
+          PO Matched
+        </Badge>
+      );
+    case 'petty_cash':
+      return (
+        <Badge variant="secondary" className="bg-blue-100 text-blue-800 border-blue-200">
+          <DollarSign className="w-3 h-3 mr-1" />
+          Petty Cash
+        </Badge>
+      );
+    case 'validation_failed':
+      return (
+        <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">
+          <XCircle className="w-3 h-3 mr-1" />
+          Validation Failed
+        </Badge>
+      );
+    case 'no_po_match':
+      return (
+        <Badge variant="outline" className="bg-orange-100 text-orange-800 border-orange-200">
+          <AlertTriangle className="w-3 h-3 mr-1" />
+          No PO Match
+        </Badge>
+      );
+    case 'processing_failed':
+      return (
+        <Badge variant="destructive" className="bg-red-100 text-red-800 border-red-200">
+          <XCircle className="w-3 h-3 mr-1" />
+          Processing Error
+        </Badge>
+      );
+    case 'classifying_items':
+    case 'checking_petty_cash':
+    case 'project_matching':
+    case 'validating':
+    case 'po_matching':
+      return (
+        <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">
+          <Clock className="w-3 h-3 mr-1" />
+          Processing...
+        </Badge>
+      );
+    case 'extracted':
+      return (
+        <Badge variant="outline" className="bg-gray-100 text-gray-800 border-gray-200">
+          <FileText className="w-3 h-3 mr-1" />
+          Ready to Process
+        </Badge>
+      );
+    default:
+      return (
+        <Badge variant="outline">
+          {status.charAt(0).toUpperCase() + status.slice(1)}
+        </Badge>
+      );
+  }
+};
+
 export default function Invoices() {
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
@@ -117,6 +195,9 @@ export default function Invoices() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
   const [linkedFilesMap, setLinkedFilesMap] = useState<Record<number, LinkedFilesInfo>>({});
+  const [showProcessingSummary, setShowProcessingSummary] = useState(false);
+  const [showOutcomeModal, setShowOutcomeModal] = useState(false);
+  const [selectedInvoiceOutcome, setSelectedInvoiceOutcome] = useState<Invoice | null>(null);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -560,6 +641,32 @@ export default function Invoices() {
     }
   };
 
+  // Calculate processing summary
+  const getProcessingSummary = () => {
+    if (!invoices) return { poMatched: 0, pettyCash: 0, noPOMatch: 0, failed: 0 };
+    
+    return {
+      poMatched: invoices.filter(i => i.status === 'po_matched').length,
+      pettyCash: invoices.filter(i => i.status === 'petty_cash').length,
+      noPOMatch: invoices.filter(i => i.status === 'no_po_match').length,
+      failed: invoices.filter(i => ['validation_failed', 'processing_failed'].includes(i.status)).length,
+    };
+  };
+
+  const processingSummary = getProcessingSummary();
+
+  // Show processing summary if there are recent processing results
+  useEffect(() => {
+    if (invoices && invoices.length > 0) {
+      const hasProcessingResults = invoices.some(i => 
+        ['po_matched', 'petty_cash', 'no_po_match', 'validation_failed', 'processing_failed'].includes(i.status)
+      );
+      if (hasProcessingResults && !showProcessingSummary) {
+        setShowProcessingSummary(true);
+      }
+    }
+  }, [invoices, showProcessingSummary]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -650,6 +757,40 @@ export default function Invoices() {
           </div>
         </div>
 
+        {showProcessingSummary && (
+          <Card className="mb-6 border-l-4 border-l-blue-500">
+            <CardContent className="pt-4">
+              <h3 className="font-semibold text-lg mb-3">Latest Processing Results</h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{processingSummary.poMatched}</div>
+                  <div className="text-sm text-gray-600">PO Matched</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{processingSummary.pettyCash}</div>
+                  <div className="text-sm text-gray-600">Petty Cash</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{processingSummary.noPOMatch}</div>
+                  <div className="text-sm text-gray-600">No PO Match</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{processingSummary.failed}</div>
+                  <div className="text-sm text-gray-600">Failed/Errors</div>
+                </div>
+              </div>
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                onClick={() => setShowProcessingSummary(false)}
+                className="mt-2"
+              >
+                Dismiss
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         <div className="space-y-6">
           {error && (
             <Card className="border-red-200 bg-red-50">
@@ -697,7 +838,6 @@ export default function Invoices() {
                     <div className="flex items-center space-x-2">
                       <Checkbox 
                         checked={selectedInvoices.length === invoices?.length && invoices.length > 0}
-                        indeterminate={selectedInvoices.length > 0 && selectedInvoices.length < (invoices?.length || 0)}
                         onCheckedChange={handleSelectAll}
                       />
                       <span>{selectedInvoices.length === invoices?.length ? 'Deselect All' : 'Select All'}</span>
@@ -752,9 +892,44 @@ export default function Invoices() {
                             </div>
                           </div>
                         </div>
-                        <Badge className={getStatusColor(invoice.status)}>
-                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                        </Badge>
+                        <div className="flex items-center space-x-3">
+                          {/* Main Status Badge */}
+                          {getStatusBadge(invoice)}
+                          
+                          {/* Additional Outcome Info */}
+                          {invoice.status === 'po_matched' && invoice.poMatches && (
+                            <div className="text-xs text-gray-500">
+                              Matched to PO #{invoice.poMatches[0]?.poId || 'N/A'}
+                            </div>
+                          )}
+                          
+                          {invoice.status === 'petty_cash' && (
+                            <div className="text-xs text-gray-500">
+                              {formatAmount(invoice.totalAmount, invoice.currency)} petty cash
+                            </div>
+                          )}
+                          
+                          {invoice.status === 'validation_failed' && invoice.validationErrors && (
+                            <div className="text-xs text-red-600">
+                              {invoice.validationErrors.length} validation errors
+                            </div>
+                          )}
+
+                          {/* Outcome Details Button */}
+                          {['po_matched', 'petty_cash', 'validation_failed', 'no_po_match', 'processing_failed'].includes(invoice.status) && (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              onClick={() => {
+                                setSelectedInvoiceOutcome(invoice);
+                                setShowOutcomeModal(true);
+                              }}
+                              className="text-blue-600 hover:text-blue-800 p-1"
+                            >
+                              <Target className="w-3 h-3" />
+                            </Button>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -1149,6 +1324,82 @@ export default function Invoices() {
             invoice={feedbackInvoice as any}
           />
         )}
+
+        {/* Detailed Outcome Modal */}
+        <Dialog open={showOutcomeModal} onOpenChange={setShowOutcomeModal}>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>Processing Outcome Details</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              {selectedInvoiceOutcome && (
+                <>
+                  <div className="flex items-center space-x-2">
+                    {getStatusBadge(selectedInvoiceOutcome)}
+                    <span className="font-medium">{selectedInvoiceOutcome.fileName}</span>
+                  </div>
+                  
+                  {/* Step-by-step results */}
+                  <div className="space-y-3">
+                    <div className="border rounded p-3">
+                      <h4 className="font-medium">Line Item Classification</h4>
+                      <div className="text-sm text-gray-600 mt-1">
+                        {selectedInvoiceOutcome.classifiedItems?.length || 0} items classified
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded p-3">
+                      <h4 className="font-medium">Petty Cash Check</h4>
+                      <div className="text-sm text-gray-600 mt-1">
+                        {selectedInvoiceOutcome.pettyCashFlag ? 'Classified as petty cash' : 'Not petty cash'}
+                      </div>
+                    </div>
+                    
+                    {!selectedInvoiceOutcome.pettyCashFlag && (
+                      <>
+                        <div className="border rounded p-3">
+                          <h4 className="font-medium">Project Matching</h4>
+                          <div className="text-sm text-gray-600 mt-1">
+                            {selectedInvoiceOutcome.projectMatch ? 
+                              `Matched to project: ${selectedInvoiceOutcome.projectMatch}` : 
+                              'No project match found'}
+                          </div>
+                        </div>
+                        
+                        <div className="border rounded p-3">
+                          <h4 className="font-medium">Validation</h4>
+                          <div className="text-sm text-gray-600 mt-1">
+                            {selectedInvoiceOutcome.validationResult?.isValid ? 
+                              'Passed all validation rules' : 
+                              `Failed ${selectedInvoiceOutcome.validationErrors?.length || 0} validation rules`}
+                          </div>
+                        </div>
+                        
+                        <div className="border rounded p-3">
+                          <h4 className="font-medium">PO Matching</h4>
+                          <div className="text-sm text-gray-600 mt-1">
+                            {selectedInvoiceOutcome.poMatches?.length ? 
+                              `Matched to ${selectedInvoiceOutcome.poMatches.length} PO(s)` : 
+                              'No PO matches found'}
+                          </div>
+                        </div>
+                      </>
+                    )}
+
+                    {selectedInvoiceOutcome.processingError && (
+                      <div className="border rounded p-3 bg-red-50">
+                        <h4 className="font-medium text-red-800">Processing Error</h4>
+                        <div className="text-sm text-red-600 mt-1">
+                          {selectedInvoiceOutcome.processingError}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </div>
     </div>
   );
