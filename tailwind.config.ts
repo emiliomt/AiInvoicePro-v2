@@ -62,6 +62,10 @@ export default {
           ring: "var(--sidebar-ring)",
         },
       },
+      fontFamily: {
+        'sans': ['Recoleta', 'Inter', 'system-ui', 'sans-serif'],
+        'recoleta': ['Recoleta', 'serif'],
+      },
       keyframes: {
         "accordion-down": {
           from: {
