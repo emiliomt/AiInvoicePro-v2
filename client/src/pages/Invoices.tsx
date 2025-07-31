@@ -13,7 +13,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -72,11 +71,11 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
     return false;
   }
-  
+
   // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
   const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
   const hasOCRText = !!invoice.ocrText;
-  
+
   return isPDFImageFile || hasOCRText;
 };
 
@@ -165,7 +164,7 @@ export default function Invoices() {
   // Fetch linked files only when explicitly needed (on-demand)
   const fetchLinkedFilesOnDemand = useCallback(async (invoiceId: number) => {
     if (linkedFilesMap[invoiceId]) return; // Already fetched
-    
+
     try {
       const response = await apiRequest('GET', `/api/invoices/${invoiceId}/linked-files`);
       if (response.ok) {
@@ -638,7 +637,11 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
+                    disabled={isProcessingAutomatic || selectedInvoices.length === 0 || !invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length}
+                    className="bg-blue-600 hover:bg-blue-700"
+                    title={!invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length ? 
+                      "No eligible invoices (only 'uploaded' or 'failed' status can be processed)" : 
+                      "Process selected eligible invoices automatically"}
                   >
                     <Play size={16} className="mr-2" />
                     Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
@@ -857,7 +860,7 @@ export default function Invoices() {
                               <ThumbsUp size={14} className="mr-1" />
                               Good Job AI!
                             </Button>
-                            
+
                             {/* Report Error button - show for all eligible PDF invoices */}
                             {isEligibleForProblemReport(invoice) && (
                               <Button
