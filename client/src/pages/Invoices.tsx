@@ -872,7 +872,7 @@ export default function Invoices() {
                             <AlertDialogFooter>
                               <AlertDialogCancel>Cancel</AlertDialogCancel>
                               <AlertDialogAction
-                                onClick={() => deleteMutation.mutate(invoice.id)}```text
+                                onClick={() => deleteMutation.mutate(invoice.id)}
                                 className="bg-red-600 hover:bg-red-700"
                                 disabled={deleteMutation.isPending}
                               >
