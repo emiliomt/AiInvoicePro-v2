@@ -1327,22 +1327,7 @@ class PostgresStorage implements IStorage {
     };
   }
 
-  // Missing methods implementations
-  async createPettyCashLog(log: any): Promise<any> {
-    return { id: Date.now(), ...log, createdAt: new Date() };
-  }
-
-  async updatePettyCashLog(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
-  }
-
-  async getPettyCashLogs(status?: string): Promise<any[]> {
-    return [];
-  }
-
-  async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
-    return null;
-  }
+  
 
   async deleteAllProjects(): Promise<void> {
     await db.delete(projects);
@@ -1505,6 +1490,208 @@ class PostgresStorage implements IStorage {
   // Get users by company for multi-tenant filtering
   async getUsersByCompany(companyId: number): Promise<User[]> {
     return await db.select().from(users).where(eq(users.companyId, companyId));
+  }
+
+  // Petty Cash Log Management
+  async createPettyCashLog(log: {
+    invoiceId: number;
+    projectId?: string;
+    costCenter?: string;
+    approvedBy?: string;
+    approvalFileUrl?: string;
+    status?: 'pending_approval' | 'approved' | 'rejected';
+    approvalNotes?: string;
+    approvedAt?: Date;
+  }): Promise<any> {
+    try {
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      // Check if log already exists for this invoice
+      const existingLog = await dbClient.query(
+        'SELECT id FROM petty_cash_log WHERE invoice_id = $1',
+        [log.invoiceId]
+      );
+      
+      if (existingLog.rows.length > 0) {
+        console.log(`Petty cash log already exists for invoice ${log.invoiceId}`);
+        await dbClient.end();
+        return existingLog.rows[0];
+      }
+      
+      // Insert new petty cash log
+      const result = await dbClient.query(`
+        INSERT INTO petty_cash_log (
+          invoice_id, project_id, cost_center, approved_by, 
+          approval_file_url, status, approval_notes, approved_at,
+          created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW())
+        RETURNING *
+      `, [
+        log.invoiceId,
+        log.projectId || null,
+        log.costCenter || null,
+        log.approvedBy || null,
+        log.approvalFileUrl || null,
+        log.status || 'pending_approval',
+        log.approvalNotes || null,
+        log.approvedAt || null
+      ]);
+      
+      await dbClient.end();
+      console.log(`✅ Created petty cash log for invoice ${log.invoiceId}`);
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error creating petty cash log:', error);
+      throw error;
+    }
+  }
+
+  async updatePettyCashLog(id: number, updates: {
+    projectId?: string;
+    costCenter?: string;
+    approvedBy?: string;
+    approvalFileUrl?: string;
+    status?: 'pending_approval' | 'approved' | 'rejected';
+    approvalNotes?: string;
+    approvedAt?: Date;
+  }): Promise<any> {
+    try {
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      const setClause = [];
+      const values = [];
+      let paramIndex = 1;
+      
+      if (updates.projectId !== undefined) {
+        setClause.push(`project_id = $${paramIndex++}`);
+        values.push(updates.projectId);
+      }
+      if (updates.costCenter !== undefined) {
+        setClause.push(`cost_center = $${paramIndex++}`);
+        values.push(updates.costCenter);
+      }
+      if (updates.approvedBy !== undefined) {
+        setClause.push(`approved_by = $${paramIndex++}`);
+        values.push(updates.approvedBy);
+      }
+      if (updates.approvalFileUrl !== undefined) {
+        setClause.push(`approval_file_url = $${paramIndex++}`);
+        values.push(updates.approvalFileUrl);
+      }
+      if (updates.status !== undefined) {
+        setClause.push(`status = $${paramIndex++}`);
+        values.push(updates.status);
+      }
+      if (updates.approvalNotes !== undefined) {
+        setClause.push(`approval_notes = $${paramIndex++}`);
+        values.push(updates.approvalNotes);
+      }
+      if (updates.approvedAt !== undefined) {
+        setClause.push(`approved_at = $${paramIndex++}`);
+        values.push(updates.approvedAt);
+      }
+      
+      setClause.push(`updated_at = NOW()`);
+      values.push(id);
+      
+      const result = await dbClient.query(`
+        UPDATE petty_cash_log 
+        SET ${setClause.join(', ')}
+        WHERE id = $${paramIndex}
+        RETURNING *
+      `, values);
+      
+      await dbClient.end();
+      return result.rows[0];
+    } catch (error) {
+      console.error('Error updating petty cash log:', error);
+      throw error;
+    }
+  }
+
+  async getPettyCashLogs(status?: string): Promise<any[]> {
+    try {
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      let query = `
+        SELECT 
+          pcl.*,
+          json_build_object(
+            'id', i.id,
+            'vendorName', i.vendor_name,
+            'invoiceNumber', i.invoice_number,
+            'totalAmount', i.total_amount,
+            'fileName', i.file_name,
+            'createdAt', i.created_at
+          ) as invoice
+        FROM petty_cash_log pcl
+        JOIN invoices i ON pcl.invoice_id = i.id
+      `;
+      
+      const values = [];
+      if (status) {
+        query += ' WHERE pcl.status = $1';
+        values.push(status);
+      }
+      
+      query += ' ORDER BY pcl.created_at DESC';
+      
+      const result = await dbClient.query(query, values);
+      await dbClient.end();
+      
+      return result.rows;
+    } catch (error) {
+      console.error('Error fetching petty cash logs:', error);
+      return [];
+    }
+  }
+
+  async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
+    try {
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+      
+      await dbClient.connect();
+      
+      const result = await dbClient.query(`
+        SELECT 
+          pcl.*,
+          json_build_object(
+            'id', i.id,
+            'vendorName', i.vendor_name,
+            'invoiceNumber', i.invoice_number,
+            'totalAmount', i.total_amount,
+            'fileName', i.file_name,
+            'createdAt', i.created_at
+          ) as invoice
+        FROM petty_cash_log pcl
+        JOIN invoices i ON pcl.invoice_id = i.id
+        WHERE pcl.invoice_id = $1
+      `, [invoiceId]);
+      
+      await dbClient.end();
+      return result.rows[0] || null;
+    } catch (error) {
+      console.error('Error fetching petty cash log by invoice ID:', error);
+      return null;
+    }
   }
 
   // Petty Cash Classification Function
