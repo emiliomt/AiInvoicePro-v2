@@ -2559,7 +2559,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await applyColombianLearningUpdates(invoice, correctedData, feedbackLog.id);
       }
 
-      // Apply general learning improvements
+      // Apply general learning improvements with comprehensive error handling
       try {
         const { LearningTracker } = await import('./services/learningTracker');
         await LearningTracker.recordFeedback(
@@ -2570,8 +2570,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reason,
           invoice.fileName
         );
-      } catch (error) {
-        console.error('Error calling LearningTracker.recordFeedback:', error);
+        console.log(`✅ Learning feedback successfully recorded for invoice ${invoiceId}`);
+      } catch (learningError) {
+        console.error(`❌ Learning system error for invoice ${invoiceId}:`, learningError);
+        
+        // Log detailed error information for debugging Colombian invoice issues
+        try {
+          console.error('Learning system error details:', {
+            invoiceId,
+            userId,
+            fileName: invoice.fileName,
+            isColombianInvoice,
+            reason,
+            correctionFields: correctedData ? Object.keys(correctedData) : [],
+            error: learningError instanceof Error ? learningError.message : 'Unknown learning error',
+            stack: learningError instanceof Error ? learningError.stack : undefined,
+            timestamp: new Date().toISOString()
+          });
+        } catch (logError) {
+          console.error('Failed to log learning error details:', logError);
+        }
+        
+        // Continue processing - don't let learning system failures block feedback submission
+        console.log(`⚠️ Continuing feedback processing despite learning system failure for invoice ${invoiceId}`);
       }
 
       // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
@@ -2626,9 +2647,30 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileName: invoice.fileName,
       });
 
-      // Track positive feedback for learning system
-      const { LearningTracker } = await import('./services/learningTracker');
-      await LearningTracker.recordPositiveFeedback(invoiceId, userId);
+      // Track positive feedback for learning system with error handling
+      try {
+        const { LearningTracker } = await import('./services/learningTracker');
+        await LearningTracker.recordPositiveFeedback(invoiceId, userId);
+        console.log(`✅ Positive learning feedback recorded for invoice ${invoiceId}`);
+      } catch (learningError) {
+        console.error(`❌ Learning system error for positive feedback on invoice ${invoiceId}:`, learningError);
+        
+        // Log error details but don't fail the request
+        try {
+          console.error('Positive feedback learning error details:', {
+            invoiceId,
+            userId,
+            fileName: invoice.fileName,
+            error: learningError instanceof Error ? learningError.message : 'Unknown learning error',
+            timestamp: new Date().toISOString()
+          });
+        } catch (logError) {
+          console.error('Failed to log positive feedback learning error:', logError);
+        }
+        
+        // Continue processing - positive feedback submission should succeed even if learning fails
+        console.log(`⚠️ Continuing positive feedback processing despite learning system failure for invoice ${invoiceId}`);
+      }
 
       // Log successful extraction for model improvement
       console.log(`Positive feedback received for invoice ${invoiceId}:`, {
