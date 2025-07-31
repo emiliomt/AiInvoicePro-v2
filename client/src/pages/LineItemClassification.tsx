@@ -225,25 +225,19 @@ export default function LineItemClassification() {
   // Bulk AI classify mutation
   const bulkAiClassifyMutation = useMutation({
     mutationFn: async (invoiceIds: number[]) => {
-      const results = [];
-      for (const invoiceId of invoiceIds) {
-        try {
-          const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
-            method: "POST",
-          });
-          if (!response.ok) throw new Error(`Failed to AI classify invoice ${invoiceId}`);
-          results.push(await response.json());
-        } catch (error) {
-          console.error(`Error classifying invoice ${invoiceId}:`, error);
-        }
-      }
-      return results;
+      const response = await fetch('/api/invoices/bulk-auto-classify', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ invoiceIds }),
+      });
+      if (!response.ok) throw new Error("Failed to bulk classify invoices");
+      return response.json();
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
-        description: `AI classification completed for ${selectedInvoices.length} invoices`,
+        description: data.message || `AI classification completed for ${selectedInvoices.length} invoices`,
       });
       setSelectedInvoices([]);
     },
