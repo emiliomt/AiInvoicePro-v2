@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { sql, eq, desc, gte } from 'drizzle-orm';
+
 import { 
   invoices, 
   lineItems, 
@@ -19,6 +19,7 @@ import {
   savedWorkflows,
   scheduledTasks,
   feedbackLogs,
+  settings,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -53,7 +54,7 @@ import {
   type ScheduledTask,
   type InsertScheduledTask
 } from "@shared/schema";
-import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns } from "drizzle-orm";
+import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns, gte } from "drizzle-orm";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("DATABASE_URL environment variable is required");
@@ -1091,25 +1092,41 @@ class PostgresStorage implements IStorage {
   // Settings methods
   async getSetting(key: string): Promise<any> {
     try {
-      // For now, return default settings
-      const defaultSettings: Record<string, any> = {
-        petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
-        user_preferences: { 
-          key, 
-          value: JSON.stringify({
-            fullName: '',
-            department: '',
-            phoneNumber: '',
-            emailNotifications: true,
-            dashboardLayout: 'grid',
-            defaultCurrency: 'USD',
-            timezone: 'America/New_York'
-          }),
-          description: 'User preferences and settings'
+      const [result] = await db.select().from(settings).where(eq(settings.key, key));
+      
+      if (!result) {
+        // Return default settings if not found
+        const defaultSettings: Record<string, any> = {
+          petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
+          user_preferences: { 
+            key, 
+            value: JSON.stringify({
+              fullName: '',
+              department: '',
+              phoneNumber: '',
+              emailNotifications: true,
+              dashboardLayout: 'grid',
+              defaultCurrency: 'USD',
+              timezone: 'America/New_York',
+              aiProcessingMode: 'automatic',
+              aiCacheEnabled: true,
+              aiCacheExpiry: '24h',
+              aiAutoInvalidation: 'on_update'
+            }),
+            description: 'User preferences and settings'
+          }
+        };
+        
+        const defaultSetting = defaultSettings[key];
+        if (defaultSetting) {
+          // Create the default setting in the database
+          await this.setSetting(defaultSetting);
+          return defaultSetting;
         }
-      };
-
-      return defaultSettings[key] || null;
+        return null;
+      }
+      
+      return result;
     } catch (error) {
       console.error('Error in getSetting:', error);
       return null;
@@ -1118,8 +1135,23 @@ class PostgresStorage implements IStorage {
 
   async updateSetting(key: string, value: string): Promise<any> {
     try {
-      // For now, just return the setting object
-      return { key, value, description: 'Setting updated' };
+      // First try to update existing setting
+      const existing = await db.select().from(settings).where(eq(settings.key, key));
+      
+      if (existing.length > 0) {
+        await db.update(settings)
+          .set({ value, updatedAt: new Date() })
+          .where(eq(settings.key, key));
+        
+        const [updated] = await db.select().from(settings).where(eq(settings.key, key));
+        return updated;
+      } else {
+        // Create new setting if it doesn't exist
+        const [newSetting] = await db.insert(settings)
+          .values({ key, value, description: `Auto-created setting for ${key}` })
+          .returning();
+        return newSetting;
+      }
     } catch (error) {
       console.error('Error in updateSetting:', error);
       throw error;
@@ -1128,7 +1160,18 @@ class PostgresStorage implements IStorage {
 
   async setSetting(setting: { key: string; value: string; description: string }): Promise<any> {
     try {
-      return setting;
+      const [result] = await db.insert(settings)
+        .values(setting)
+        .onConflictDoUpdate({
+          target: settings.key,
+          set: { 
+            value: setting.value, 
+            description: setting.description,
+            updatedAt: new Date() 
+          }
+        })
+        .returning();
+      return result;
     } catch (error) {
       console.error('Error in setSetting:', error);
       throw error;
