@@ -1,0 +1,9 @@
+
+{
+  "name": "migration-scripts",
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "fix-petty-cash": "tsx run-petty-cash-migration.ts"
+  }
+}
