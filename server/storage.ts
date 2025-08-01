@@ -152,9 +152,9 @@ export interface IStorage {
   getPredictiveAlerts(): Promise<any[]>;
   getClassificationKeywords(): Promise<any[]>;
   addClassificationKeyword(keyword: any): Promise<any>;
-  removeClassificationKeyword(id: number): Promise<void>;
+  removeClassificationKeyword(keywordId: number, userId?: string): Promise<void>;
   getLineItemClassifications(invoiceId: number): Promise<any[]>;
-  updateLineItemClassification(id: number, updates: any): Promise<any>;
+  updateLineItemClassification(lineItemId: number, category: string, userId: string): Promise<void>;
   createApprovedInvoiceProject(data: any): Promise<any>;
   getApprovedInvoiceProjects(): Promise<any[]>;
   getVerifiedInvoiceProjects(): Promise<any[]>;
@@ -1420,12 +1420,30 @@ class PostgresStorage implements IStorage {
     return [];
   }
 
-  async addClassificationKeyword(keyword: any): Promise<any> {
-    return { id: Date.now(), ...keyword, createdAt: new Date() };
+  async addClassificationKeyword(keywordData: any): Promise<any> {
+    const [result] = await db
+      .insert(classificationKeywords)
+      .values(keywordData)
+      .returning();
+    return result;
   }
 
-  async removeClassificationKeyword(id: number): Promise<void> {
-    // Placeholder implementation
+  async removeClassificationKeyword(keywordId: number, userId?: string): Promise<void> {
+    if (userId) {
+      await db
+        .delete(classificationKeywords)
+        .where(
+          and(
+            eq(classificationKeywords.id, keywordId),
+            eq(classificationKeywords.userId, userId),
+            eq(classificationKeywords.isDefault, false)
+          )
+        );
+    } else {
+      await db
+        .delete(classificationKeywords)
+        .where(eq(classificationKeywords.id, keywordId));
+    }
   }
 
   async getLineItemClassifications(invoiceId: number): Promise<any[]> {
@@ -1466,8 +1484,37 @@ class PostgresStorage implements IStorage {
     }));
   }
 
-  async updateLineItemClassification(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+  async updateLineItemClassification(lineItemId: number, category: string, userId: string): Promise<void> {
+    // Check if classification already exists
+    const existingClassification = await db
+      .select()
+      .from(lineItemClassifications)
+      .where(eq(lineItemClassifications.lineItemId, lineItemId))
+      .limit(1);
+
+    if (existingClassification.length > 0) {
+      // Update existing classification
+      await db
+        .update(lineItemClassifications)
+        .set({
+          category: category as any,
+          isManualOverride: true,
+          classifiedBy: userId,
+          classifiedAt: new Date(),
+        })
+        .where(eq(lineItemClassifications.lineItemId, lineItemId));
+    } else {
+      // Insert new classification
+      await db.insert(lineItemClassifications).values({
+        lineItemId,
+        category: category as any,
+        isManualOverride: true,
+        classifiedBy: userId,
+        confidence: '1.00',
+        matchedKeyword: 'Manual Override',
+        classifiedAt: new Date(),
+      });
+    }
   }
 
   async createApprovedInvoiceProject(data: any): Promise<any> {
