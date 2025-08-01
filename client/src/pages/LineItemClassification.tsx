@@ -37,6 +37,15 @@ interface ClassificationKeywords {
   tools_equipment: { id: number; keyword: string; isDefault: boolean }[];
 }
 
+interface Invoice {
+  id: number;
+  fileName: string;
+  vendorName?: string;
+  totalAmount?: number;
+  status: string;
+  currency?: string;
+}
+
 const CATEGORY_INFO = {
   consumable_materials: {
     label: "Consumable Materials",
@@ -82,7 +91,7 @@ export default function LineItemClassification() {
   });
 
   // Fetch invoices for classification testing
-  const { data: invoices = [] } = useQuery({
+  const { data: invoices = [] } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
   });
 
