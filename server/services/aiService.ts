@@ -511,6 +511,14 @@ export async function findBestProjectMatch(projectName: string, availableProject
   return null;
 }
 
+// Helper function to extract city from address
+function extractCity(address: string): string {
+  if (!address) return '';
+  // Extract city from Colombian address format "CITY, DEPARTMENT, POSTAL"
+  const parts = address.split(',');
+  return parts.length > 0 ? parts[0].trim() : '';
+}
+
 // POST-EXTRACTION WORKFLOW METHODS
 
 // Step 1: Classify line items using AI
@@ -616,11 +624,10 @@ export async function classifyPettyCash(invoice: any): Promise<boolean> {
 // Step 2B: Match invoice to projects using AI
 export async function matchToProject(invoice: any): Promise<any> {
   try {
-    console.log('🎯 Matching invoice to projects...');
+    console.log(`🎯 Matching invoice ${invoice.id} (${invoice.fileName}) to projects...`);
     
     const { storage } = await import('../storage');
     const projects = await storage.getProjects();
-    
     if (!projects || projects.length === 0) {
       console.log('No projects available for matching');
       return {
@@ -633,9 +640,12 @@ export async function matchToProject(invoice: any): Promise<any> {
     }
     
     const extractedData = invoice.extractedData || {};
-    const invoiceAddress = extractedData.projectAddress || extractedData.address || '';
-    const invoiceCity = extractedData.projectCity || extractedData.city || '';
-    const invoiceProjectName = extractedData.projectName || '';
+    // Try multiple address sources for better matching
+    const invoiceAddress = extractedData.projectAddress || extractedData.address || extractedData.vendorAddress || extractedData.buyerAddress || '';
+    const invoiceCity = extractedData.projectCity || extractedData.city || extractCity(invoiceAddress) || '';
+    const invoiceProjectName = extractedData.projectName || extractedData.concept || extractedData.notes || '';
+    
+    console.log(`Matching invoice data - Address: "${invoiceAddress}", City: "${invoiceCity}", Project: "${invoiceProjectName}"`);
     
     let bestMatch = {
       project: null,
@@ -647,29 +657,33 @@ export async function matchToProject(invoice: any): Promise<any> {
     for (const project of projects) {
       let score = 0;
       const reasons = [];
-      
       // Project name matching (40% weight)
       if (invoiceProjectName && project.name) {
         const nameSimilarity = calculateStringSimilarity(invoiceProjectName, project.name);
-        if (nameSimilarity > 60) {
+        if (nameSimilarity > 40) { // Lowered threshold
           score += nameSimilarity * 0.4;
           reasons.push(`Project name similarity: ${nameSimilarity}%`);
         }
       }
       
-      // Address matching (35% weight)
+      // Address matching (35% weight) - More flexible matching
       if (invoiceAddress && project.address) {
         const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
-        if (addressSimilarity > 50) {
+        if (addressSimilarity > 30) { // Lowered threshold
           score += addressSimilarity * 0.35;
           reasons.push(`Address similarity: ${addressSimilarity}%`);
         }
       }
       
-      // City matching (25% weight)
+      // City matching (25% weight) - Case insensitive exact match first
       if (invoiceCity && project.city) {
         const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
-        if (citySimilarity > 70) {
+        
+        // Exact city match gets full score
+        if (invoiceCity.toLowerCase().trim() === project.city.toLowerCase().trim()) {
+          score += 100 * 0.25;
+          reasons.push(`City exact match: ${project.city}`);
+        } else if (citySimilarity > 60) { // Lowered threshold for partial matches
           score += citySimilarity * 0.25;
           reasons.push(`City similarity: ${citySimilarity}%`);
         }
@@ -684,7 +698,9 @@ export async function matchToProject(invoice: any): Promise<any> {
       }
     }
     
-    // Only return match if confidence is above threshold (60%)
+    console.log(`Best match found: ${bestMatch.project?.name || 'none'} with ${bestMatch.confidence}% confidence`);
+    
+    // Only return match if confidence is above threshold (60%) - Production threshold
     if (bestMatch.confidence >= 60 && bestMatch.project) {
       console.log(`✅ Found project match: ${bestMatch.project.name} (${bestMatch.confidence}% confidence)`);
       return {

@@ -7085,5 +7085,7 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
+
+
   return httpServer;
 }
