@@ -307,23 +307,57 @@ class PythonInvoiceImporter {
         skippedImports: result.stats.skipped_imports || 0,
       });
 
+      // CRITICAL FIX: Process downloaded files into main invoices table
+      try {
+        console.log(`🔄 PROCESSING DOWNLOADED FILES: Starting post-RPA processing for log ${progress.logId}`);
+        progress.currentStep = 'Processing downloaded files into main system...';
+        
+        await this.saveImportedInvoicesToDatabase(progress.logId, pythonConfig);
+        
+        console.log(`✅ PROCESSING COMPLETE: All downloaded files processed into main invoice system`);
+        progress.currentStep = 'Downloaded files processed successfully';
+      } catch (processError) {
+        console.error(`❌ PROCESSING ERROR: Failed to process downloaded files for log ${progress.logId}:`, processError);
+        
+        // Update log to reflect processing failure
+        await storage.updateInvoiceImporterLog(progress.logId, {
+          status: 'processing_failed',
+          errorMessage: `RPA completed but file processing failed: ${processError instanceof Error ? processError.message : 'Unknown error'}`,
+        });
+        
+        progress.error = `File processing failed: ${processError instanceof Error ? processError.message : 'Unknown error'}`;
+        progress.currentStep = 'File processing failed';
+        
+        // Complete progress tracking with processing error
+        progressTracker.sendTaskComplete(config.userId, progress.logId, false, 
+          `RPA completed but file processing failed: ${processError instanceof Error ? processError.message : 'Unknown error'}`, {
+            totalInvoices: progress.totalInvoices,
+            successfulImports: progress.successfulImports,
+            failedImports: progress.failedImports,
+            error: progress.error
+          });
+        
+        console.error(`Python RPA import task ${progress.configId} - RPA succeeded but processing failed:`, processError);
+        return; // Exit early to avoid success completion
+      }
+
       // Update the configuration's lastRun timestamp
       await storage.updateInvoiceImporterConfig(progress.configId, {
         lastRun: new Date(),
       });
 
       progress.isComplete = true;
-      progress.currentStep = 'Import completed successfully';
+      progress.currentStep = 'Import and processing completed successfully';
 
       // Complete progress tracking
       progressTracker.sendTaskComplete(config.userId, progress.logId, true, 
-        'Import completed successfully', {
+        'Import and processing completed successfully', {
           totalInvoices: progress.totalInvoices,
           successfulImports: progress.successfulImports,
           failedImports: progress.failedImports
         });
 
-      console.log(`Python RPA import task ${progress.configId} completed successfully`);
+      console.log(`Python RPA import task ${progress.configId} completed successfully with file processing`);
     } else {
       await storage.updateInvoiceImporterLog(progress.logId, {
         status: 'failed',

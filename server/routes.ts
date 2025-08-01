@@ -5053,41 +5053,171 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
-  // Process imported invoices through manual upload pipeline (for testing)
-  app.post('/api/invoice-importer/logs/:logId/process', isAuthenticated, async (req: any, res) => {
+  // Process all pending imported invoices into main invoices table
+  app.post('/api/invoice-importer/process-all-pending/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logId = parseInt(req.params.logId);
+      if (isNaN(logId)) {
+        return res.status(400).json({ error: 'Invalid log ID' });
+      }
+
+      console.log(`🔄 Processing all pending imported invoices for log ${logId}`);
+      
+      // Get all imported invoices with null invoice_id (not yet processed)
+      const importedInvoices = await storage.getImportedInvoicesByLog(logId);
+      const pendingInvoices = importedInvoices.filter(inv => !inv.invoiceId);
+      
+      if (pendingInvoices.length === 0) {
+        return res.json({ 
+          success: true, 
+          message: 'No pending imported invoices found',
+          processed: 0 
+        });
+      }
+
+      // Get log details to find user and config info
+      const log = await storage.getInvoiceImporterLog(logId);
+      if (!log) {
+        return res.status(404).json({ error: 'Import log not found' });
+      }
+
+      const config = await storage.getInvoiceImporterConfig(log.configId);
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      console.log(`📁 Found ${pendingInvoices.length} pending invoices to process`);
+
+      let successCount = 0;
+      let failureCount = 0;
+
+      // Process each pending imported invoice
+      for (const importedInvoice of pendingInvoices) {
+        try {
+          console.log(`📄 Processing: ${importedInvoice.originalFileName}`);
+          
+          // Create invoice record in main invoices table
+          const invoiceData = {
+            fileName: importedInvoice.originalFileName,
+            fileType: importedInvoice.fileType,
+            userId: config.userId,
+            companyId: config.companyId || null,
+            status: 'pending' as const,
+            uploadedAt: new Date(),
+            fileUrl: importedInvoice.filePath || undefined,
+            // Extract metadata if available
+            vendorName: importedInvoice.metadata?.valor || null,
+            invoiceNumber: importedInvoice.erpDocumentId || null,
+          };
+
+          const invoice = await storage.createInvoice(invoiceData);
+          console.log(`✅ Created invoice ${invoice.id} for ${importedInvoice.originalFileName}`);
+
+          // Link imported invoice to actual invoice
+          await storage.updateImportedInvoice(importedInvoice.id, {
+            invoiceId: invoice.id,
+            processedAt: new Date(),
+          });
+
+          // Start async processing if file exists
+          if (importedInvoice.filePath) {
+            setImmediate(async () => {
+              try {
+                const fs = await import('fs');
+                if (fs.existsSync(importedInvoice.filePath)) {
+                  const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+                  
+                  // Process with OCR and AI
+                  const { processInvoiceOCR } = await import('./services/ocrService');
+                  const { extractInvoiceData } = await import('./services/aiService');
+                  
+                  const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
+                  if (ocrText && ocrText.length > 10) {
+                    const extractedData = await extractInvoiceData(ocrText);
+                    
+                    await storage.updateInvoice(invoice.id, {
+                      status: 'extracted',
+                      ocrText,
+                      extractedData,
+                      vendorName: extractedData.vendorName || invoice.vendorName,
+                      invoiceNumber: extractedData.invoiceNumber || invoice.invoiceNumber,
+                      totalAmount: extractedData.totalAmount || null,
+                      currency: extractedData.currency || 'USD',
+                    });
+                    
+                    console.log(`✅ Completed processing invoice ${invoice.id}`);
+                  }
+                }
+              } catch (processingError) {
+                console.error(`❌ Error processing invoice ${invoice.id}:`, processingError);
+                await storage.updateInvoice(invoice.id, {
+                  status: 'rejected',
+                  processingError: processingError instanceof Error ? processingError.message : 'Processing failed'
+                });
+              }
+            });
+          }
+
+          successCount++;
+        } catch (error) {
+          console.error(`❌ Failed to process ${importedInvoice.originalFileName}:`, error);
+          failureCount++;
+        }
+      }
+
+      res.json({ 
+        success: true, 
+        message: `Processed ${successCount} invoices successfully, ${failureCount} failed`,
+        processed: successCount,
+        failed: failureCount,
+        total: pendingInvoices.length
+      });
+
+    } catch (error) {
+      console.error('Error processing pending imported invoices:', error);
+      res.status(500).json({ error: 'Failed to process pending imported invoices' });
+    }
+  });
+
+  // Test endpoint for processing logic (no auth required for testing)
+  app.post('/api/test/process-imported-invoices/:logId', async (req: any, res) => {
     try {
       const logId = parseInt(req.params.logId);
       if (isNaN(logId)) {
         return res.status(400).json({ error: 'Invalid log ID' });
       }
 
-      console.log(`🔄 Manually processing imported invoices for log ${logId}`);
+      console.log(`🧪 TEST: Processing imported invoices for log ${logId}`);
       
-      // Create a dummy progress object for storeImportedInvoicesFast
-      const progress = {
-        configId: 0,
-        logId: logId,
-        totalInvoices: 0,
-        processedInvoices: 0,
-        successfulImports: 0,
-        failedImports: 0,
-        currentStep: 'Manual processing',
-        progress: 0,
-        isComplete: false,
-        logs: ''
+      // Get the Python importer instance and call the processing method directly
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      
+      // Call the private saveImportedInvoicesToDatabase method using reflection
+      const pythonConfig = {
+        downloadPath: '/tmp/invoice_downloads',
+        xmlPath: '/tmp/xml_invoices',
       };
-
-      // Call the storeImportedInvoicesFast function to process through manual upload pipeline
-      // Note: storeImportedInvoicesFast is now private, using alternative approach
-      console.log('Processing imported invoices for log:', logId);
+      
+      // Use reflection to access the private method
+      const result = await (pythonInvoiceImporter as any).saveImportedInvoicesToDatabase(logId, pythonConfig);
       
       res.json({ 
         success: true, 
-        message: `Imported invoices processed for log ${logId}` 
+        message: `Test processing completed for log ${logId}`,
+        logId: logId
       });
+
     } catch (error) {
-      console.error('Error processing imported invoices:', error);
-      res.status(500).json({ error: 'Failed to process imported invoices' });
+      console.error('Error in test processing:', error);
+      res.status(500).json({ 
+        error: 'Test processing failed', 
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 

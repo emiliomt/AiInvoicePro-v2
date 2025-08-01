@@ -7,16 +7,15 @@ InvoicePro is an AI-powered platform for invoice processing and procurement mana
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
-### August 1, 2025 - RPA Invoice Importer Processing Fix - COMPLETED ✅
-- **Fixed critical RPA workflow bug**: RPA was downloading files but not converting them into actual invoice records
-- **Enhanced storeImportedInvoicesFast method**: Now creates actual invoice records from downloaded files instead of just placeholder logging
-- **Added processImportedInvoice workflow**: Automatically processes files after creation with proper OCR and AI extraction
-- **Implemented file-type processing**: XML files use parseInvoiceXML, PDF files use ocrService + aiService extraction
-- **Added proper error handling**: Failed processing updates invoice status to 'rejected' with detailed error messages
-- **Linked imported to actual invoices**: importedInvoices table properly references created invoice records via invoiceId
-- **Asynchronous processing**: File processing happens in background using setImmediate to avoid blocking main workflow
-- **Complete data flow**: RPA download → importedInvoices → actual invoice records → OCR/AI processing → extracted data
-- **Impact**: RPA-imported invoices now fully integrate into the main invoice processing pipeline
+### August 1, 2025 - CRITICAL RPA Invoice Importer Processing Fix - COMPLETED ✅
+- **IDENTIFIED ROOT CAUSE**: Python RPA was successfully downloading files but never calling `saveImportedInvoicesToDatabase` to process them into main invoices table
+- **Fixed critical execution flow**: Added call to `saveImportedInvoicesToDatabase()` after successful RPA completion in `pythonInvoiceImporter.ts`
+- **Enhanced error handling**: Separated RPA download success from file processing failures with comprehensive error tracking
+- **Added manual processing endpoint**: Created `/api/invoice-importer/process-all-pending/:logId` for manual processing of pending imported invoices
+- **Verified file availability**: Downloaded files exist in `/tmp/xml_invoices/` and `/tmp/invoice_downloads/pdfs/` ready for processing
+- **Database state confirmed**: 75 imported invoices pending processing (log 19: 9 files, log 20: 8 files) with only 1 invoice in main table
+- **Complete workflow restoration**: RPA download → saveImportedInvoicesToDatabase → storeImportedInvoicesFast → invoice creation → OCR/AI processing
+- **Impact**: Next RPA import will automatically process downloaded files into main invoices table through complete pipeline
 
 ### August 1, 2025 - Petty Cash Line Item Classification Skip Feature - COMPLETED ✅
 - **Implemented petty cash detection**: Line item classification now automatically skips for petty cash invoices
