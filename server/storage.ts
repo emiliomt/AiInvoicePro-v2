@@ -1,26 +1,33 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 
-import { 
-  invoices, 
-  lineItems, 
-  lineItemClassifications,
-  approvals, 
-  companies, 
+import {
   users,
-  projects,
+  invoices,
+  lineItems,
+  approvals,
   purchaseOrders,
   invoicePoMatches,
   invoiceProjectMatches,
+  projects,
+  approvedInvoiceProjects,
+  verifiedInvoiceProjects,
+  validationRules,
+  invoiceFlags,
+  predictiveAlerts,
+  feedbackLogs,
+  classificationKeywords,
+  lineItemClassifications,
+  learningInsights,
   erpConnections,
-  invoiceImporterConfigs,
-  invoiceImporterLogs,
-  importedInvoices,
   erpTasks,
   savedWorkflows,
   scheduledTasks,
-  feedbackLogs,
+  invoiceImporterConfigs,
+  invoiceImporterLogs,
+  importedInvoices,
   settings,
+  pettyCashLogs,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -327,7 +334,7 @@ class PostgresStorage implements IStorage {
       .from(invoices)
       .leftJoin(importedInvoices, eq(invoices.id, importedInvoices.invoiceId))
       .orderBy(desc(invoices.createdAt));
-    
+
     return results.map(result => ({
       ...result,
       isDataSource: result.isDataSource ?? null, // Convert undefined to null for consistency
@@ -341,7 +348,7 @@ class PostgresStorage implements IStorage {
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void> {
     try {
       console.log(`[STORAGE] Updating invoice ${id} with:`, updates);
-      
+
       const result = await db
         .update(invoices)
         .set({
@@ -350,11 +357,11 @@ class PostgresStorage implements IStorage {
         })
         .where(eq(invoices.id, id))
         .returning();
-      
+
       if (result.length === 0) {
         throw new Error(`Invoice ${id} not found for update`);
       }
-      
+
       console.log(`[STORAGE] Invoice ${id} updated successfully:`, {
         totalAmount: result[0].totalAmount,
         currency: result[0].currency,
@@ -372,10 +379,10 @@ class PostgresStorage implements IStorage {
     const dbClient = new Client({
       connectionString: process.env.DATABASE_URL,
     });
-    
+
     try {
       await dbClient.connect();
-      
+
       // First, get the linked files so we can delete the physical files
       const linkedFilesQuery = `
         SELECT file_path, original_file_name 
@@ -383,7 +390,7 @@ class PostgresStorage implements IStorage {
         WHERE linked_invoice_id = $1
       `;
       const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
-      
+
       // Delete physical files from disk
       const fs = await import('fs');
       for (const file of linkedFiles.rows) {
@@ -396,21 +403,21 @@ class PostgresStorage implements IStorage {
           console.error(`Error deleting physical file ${file.file_path}:`, fileError);
         }
       }
-      
+
       // Delete linked PDF files from imported_invoices table
       const deleteResult = await dbClient.query(
         'DELETE FROM imported_invoices WHERE linked_invoice_id = $1',
         [id]
       );
-      
+
       console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for invoice ${id}`);
-      
+
     } catch (error) {
       console.error(`Error deleting linked files for invoice ${id}:`, error);
     } finally {
       await dbClient.end();
     }
-    
+
     // Delete related line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
     // Delete feedback logs
@@ -423,7 +430,7 @@ class PostgresStorage implements IStorage {
     await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
     // Finally delete the main invoice
     await db.delete(invoices).where(eq(invoices.id, id));
-    
+
     console.log(`✅ Successfully deleted invoice ${id} and all related records`);
   }
 
@@ -965,10 +972,10 @@ class PostgresStorage implements IStorage {
         const dbClient = new Client({
           connectionString: process.env.DATABASE_URL,
         });
-        
+
         try {
           await dbClient.connect();
-          
+
           // Get linked files that will be deleted so we can remove physical files
           const linkedFilesQuery = `
             SELECT file_path, original_file_name 
@@ -976,7 +983,7 @@ class PostgresStorage implements IStorage {
             WHERE linked_invoice_id = ANY($1)
           `;
           const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
-          
+
           // Delete physical files from disk
           const fs = await import('fs');
           for (const file of linkedFiles.rows) {
@@ -989,15 +996,15 @@ class PostgresStorage implements IStorage {
               console.error(`Error deleting physical file ${file.file_path}:`, fileError);
             }
           }
-          
+
           // Delete linked PDF files from imported_invoices table
           const deleteResult = await dbClient.query(
             'DELETE FROM imported_invoices WHERE linked_invoice_id = ANY($1)',
             [invoiceIds]
           );
-          
+
           console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for ${count} invoices`);
-          
+
         } catch (error) {
           console.error(`Error deleting linked files for bulk deletion:`, error);
         } finally {
@@ -1011,9 +1018,12 @@ class PostgresStorage implements IStorage {
         await db.delete(invoicePoMatches).where(inArray(invoicePoMatches.invoiceId, invoiceIds));
         await db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds));
 
+        // delete petty cash logs before invoices
+        await db.delete(pettyCashLogs).where(inArray(pettyCashLogs.invoiceId, invoiceIds));
+
         // Finally delete the main invoices
         await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
-        
+
         console.log(`✅ Successfully deleted ${count} invoices and all related records`);
       }
 
@@ -1095,6 +1105,16 @@ class PostgresStorage implements IStorage {
             )
           );
 
+        // Delete petty cash logs
+        await db
+          .delete(pettyCashLogs)
+          .where(
+            inArray(
+              pettyCashLogs.invoiceId,
+              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+            )
+          );
+
         // Delete feedback logs
         // await db
         //   .delete(feedbackLogs)
@@ -1120,7 +1140,7 @@ class PostgresStorage implements IStorage {
   async getSetting(key: string): Promise<any> {
     try {
       const [result] = await db.select().from(settings).where(eq(settings.key, key));
-      
+
       if (!result) {
         // Return default settings if not found
         const defaultSettings: Record<string, any> = {
@@ -1143,7 +1163,7 @@ class PostgresStorage implements IStorage {
             description: 'User preferences and settings'
           }
         };
-        
+
         const defaultSetting = defaultSettings[key];
         if (defaultSetting) {
           // Create the default setting in the database
@@ -1152,7 +1172,7 @@ class PostgresStorage implements IStorage {
         }
         return null;
       }
-      
+
       return result;
     } catch (error) {
       console.error('Error in getSetting:', error);
@@ -1164,12 +1184,12 @@ class PostgresStorage implements IStorage {
     try {
       // First try to update existing setting
       const existing = await db.select().from(settings).where(eq(settings.key, key));
-      
+
       if (existing.length > 0) {
         await db.update(settings)
           .set({ value, updatedAt: new Date() })
           .where(eq(settings.key, key));
-        
+
         const [updated] = await db.select().from(settings).where(eq(settings.key, key));
         return updated;
       } else {
@@ -1332,7 +1352,7 @@ class PostgresStorage implements IStorage {
     };
   }
 
-  
+
 
   async deleteAllProjects(): Promise<void> {
     await db.delete(projects);
@@ -1547,21 +1567,21 @@ class PostgresStorage implements IStorage {
       const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
       });
-      
+
       await dbClient.connect();
-      
+
       // Check if log already exists for this invoice
       const existingLog = await dbClient.query(
         'SELECT id FROM petty_cash_log WHERE invoice_id = $1',
         [log.invoiceId]
       );
-      
+
       if (existingLog.rows.length > 0) {
         console.log(`Petty cash log already exists for invoice ${log.invoiceId}`);
         await dbClient.end();
         return existingLog.rows[0];
       }
-      
+
       // Insert new petty cash log
       const result = await dbClient.query(`
         INSERT INTO petty_cash_log (
@@ -1580,7 +1600,7 @@ class PostgresStorage implements IStorage {
         log.approvalNotes || null,
         log.approvedAt || null
       ]);
-      
+
       await dbClient.end();
       console.log(`✅ Created petty cash log for invoice ${log.invoiceId}`);
       return result.rows[0];
@@ -1604,13 +1624,13 @@ class PostgresStorage implements IStorage {
       const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
       });
-      
+
       await dbClient.connect();
-      
+
       const setClause = [];
       const values = [];
       let paramIndex = 1;
-      
+
       if (updates.projectId !== undefined) {
         setClause.push(`project_id = $${paramIndex++}`);
         values.push(updates.projectId);
@@ -1639,17 +1659,17 @@ class PostgresStorage implements IStorage {
         setClause.push(`approved_at = $${paramIndex++}`);
         values.push(updates.approvedAt);
       }
-      
+
       setClause.push(`updated_at = NOW()`);
       values.push(id);
-      
+
       const result = await dbClient.query(`
         UPDATE petty_cash_log 
         SET ${setClause.join(', ')}
         WHERE id = $${paramIndex}
         RETURNING *
       `, values);
-      
+
       await dbClient.end();
       return result.rows[0];
     } catch (error) {
@@ -1664,9 +1684,9 @@ class PostgresStorage implements IStorage {
       const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
       });
-      
+
       await dbClient.connect();
-      
+
       let query = `
         SELECT 
           pcl.*,
@@ -1681,18 +1701,18 @@ class PostgresStorage implements IStorage {
         FROM petty_cash_log pcl
         JOIN invoices i ON pcl.invoice_id = i.id
       `;
-      
+
       const values = [];
       if (status) {
         query += ' WHERE pcl.status = $1';
         values.push(status);
       }
-      
+
       query += ' ORDER BY pcl.created_at DESC';
-      
+
       const result = await dbClient.query(query, values);
       await dbClient.end();
-      
+
       return result.rows;
     } catch (error) {
       console.error('Error fetching petty cash logs:', error);
@@ -1706,9 +1726,9 @@ class PostgresStorage implements IStorage {
       const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
       });
-      
+
       await dbClient.connect();
-      
+
       const result = await dbClient.query(`
         SELECT 
           pcl.*,
@@ -1724,7 +1744,7 @@ class PostgresStorage implements IStorage {
         JOIN invoices i ON pcl.invoice_id = i.id
         WHERE pcl.invoice_id = $1
       `, [invoiceId]);
-      
+
       await dbClient.end();
       return result.rows[0] || null;
     } catch (error) {
@@ -1742,16 +1762,16 @@ class PostgresStorage implements IStorage {
         console.log(`[PETTY CASH] Invoice ${invoiceId} not found`);
         return false;
       }
-      
+
       // Get threshold
       const thresholdSetting = await this.getSetting('petty_cash_threshold');
       const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
-      
+
       console.log(`[PETTY CASH] Invoice ${invoiceId} (${invoice.fileName})`);
       console.log(`[PETTY CASH] Main table totalAmount: ${invoice.totalAmount}`);
       console.log(`[PETTY CASH] Currency: ${invoice.currency}`);
       console.log(`[PETTY CASH] Threshold: ${threshold}`);
-      
+
       // Use main table totalAmount
       let amount = 0;
       if (invoice.totalAmount && invoice.totalAmount !== 'null') {
@@ -1764,10 +1784,10 @@ class PostgresStorage implements IStorage {
           console.log(`[PETTY CASH] Using extractedData fallback: ${amount}`);
         }
       }
-      
+
       const isPetty = amount > 0 && amount < threshold;
       console.log(`[PETTY CASH] Final calculation: ${amount} < ${threshold} = ${isPetty}`);
-      
+
       return isPetty;
     } catch (error) {
       console.error(`[PETTY CASH] Error checking invoice ${invoiceId}:`, error);
@@ -1779,30 +1799,30 @@ class PostgresStorage implements IStorage {
   async classifyAndCreatePettyCashLog(invoiceId: number): Promise<boolean> {
     try {
       const isPetty = await this.isPettyCashInvoice(invoiceId);
-      
+
       if (isPetty) {
         // Check if log already exists
         const existingLog = await this.getPettyCashLogByInvoiceId(invoiceId);
-        
+
         if (!existingLog) {
           // Create petty cash log
           const invoice = await this.getInvoice(invoiceId);
           if (invoice) {
             const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
-            
+
             await this.createPettyCashLog({
               invoiceId,
               status: 'pending_approval',
               approvalNotes
             });
-            
+
             console.log(`[PETTY CASH] Created log for invoice ${invoiceId}`);
           }
         }
-        
+
         return true;
       }
-      
+
       return false;
     } catch (error) {
       console.error(`[PETTY CASH] Error classifying invoice ${invoiceId}:`, error);
@@ -1814,15 +1834,15 @@ class PostgresStorage implements IStorage {
   async syncPettyCashLogs(): Promise<{ created: number; skipped: number; errors: number }> {
     try {
       console.log('[PETTY CASH SYNC] Starting sync of existing petty cash invoices...');
-      
+
       // Get all invoices marked as petty cash
       const { Client } = await import('pg');
       const dbClient = new Client({
         connectionString: process.env.DATABASE_URL,
       });
-      
+
       await dbClient.connect();
-      
+
       // Find invoices with petty_cash_flag = true OR status = 'petty_cash'
       const result = await dbClient.query(`
         SELECT id, file_name, vendor_name, total_amount, currency, created_at
@@ -1830,46 +1850,46 @@ class PostgresStorage implements IStorage {
         WHERE petty_cash_flag = true OR status = 'petty_cash'
         ORDER BY created_at DESC
       `);
-      
+
       let created = 0;
       let skipped = 0;
       let errors = 0;
-      
+
       for (const invoice of result.rows) {
         try {
           // Check if log already exists
           const existingLog = await this.getPettyCashLogByInvoiceId(invoice.id);
-          
+
           if (existingLog) {
             skipped++;
             console.log(`[PETTY CASH SYNC] Log already exists for invoice ${invoice.id}`);
             continue;
           }
-          
+
           // Create petty cash log
           const approvalNotes = `${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
-          
+
           await this.createPettyCashLog({
             invoiceId: invoice.id,
             status: 'pending_approval',
             approvalNotes
           });
-          
+
           created++;
           console.log(`[PETTY CASH SYNC] Created log for invoice ${invoice.id}`);
-          
+
         } catch (error) {
           console.error(`[PETTY CASH SYNC] Error processing invoice ${invoice.id}:`, error);
           errors++;
         }
       }
-      
+
       await dbClient.end();
-      
+
       console.log(`[PETTY CASH SYNC] Completed: ${created} created, ${skipped} skipped, ${errors} errors`);
-      
+
       return { created, skipped, errors };
-      
+
     } catch (error) {
       console.error('[PETTY CASH SYNC] Error during sync:', error);
       throw error;
@@ -1880,54 +1900,54 @@ class PostgresStorage implements IStorage {
   async recalculatePettyCashInvoices(): Promise<{ processed: number; classified: number; logs_created: number }> {
     try {
       console.log('[PETTY CASH RECALC] Starting recalculation of all invoices...');
-      
+
       // Get all invoices
       const allInvoices = await this.getInvoices();
       let processed = 0;
       let classified = 0;
       let logsCreated = 0;
-      
+
       for (const invoice of allInvoices) {
         try {
           processed++;
-          
+
           // Check if invoice qualifies as petty cash
           const isPetty = await this.isPettyCashInvoice(invoice.id);
-          
+
           if (isPetty) {
             classified++;
-            
+
             // Update invoice flags
             await this.updateInvoice(invoice.id, {
               pettyCashFlag: true,
               status: invoice.status === 'pending' ? 'petty_cash' : invoice.status
             });
-            
+
             // Check if log exists, create if not
             const existingLog = await this.getPettyCashLogByInvoiceId(invoice.id);
-            
+
             if (!existingLog) {
               const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
-              
+
               await this.createPettyCashLog({
                 invoiceId: invoice.id,
                 status: 'pending_approval',
                 approvalNotes
               });
-              
+
               logsCreated++;
             }
           }
-          
+
         } catch (error) {
           console.error(`[PETTY CASH RECALC] Error processing invoice ${invoice.id}:`, error);
         }
       }
-      
+
       console.log(`[PETTY CASH RECALC] Completed: ${processed} processed, ${classified} classified as petty cash, ${logsCreated} logs created`);
-      
+
       return { processed, classified, logs_created: logsCreated };
-      
+
     } catch (error) {
       console.error('[PETTY CASH RECALC] Error during recalculation:', error);
       throw error;
