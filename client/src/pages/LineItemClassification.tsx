@@ -46,6 +46,18 @@ interface Invoice {
   currency?: string;
 }
 
+interface LineItemClassification {
+  lineItemId: number;
+  description: string;
+  quantity: number;
+  unitPrice: number;
+  totalPrice: number;
+  category?: string;
+  matchedKeyword?: string;
+  confidence?: number;
+  isManualOverride?: boolean;
+}
+
 const CATEGORY_INFO = {
   consumable_materials: {
     label: "Consumable Materials",
@@ -96,7 +108,7 @@ export default function LineItemClassification() {
   });
 
   // Fetch line item classifications for selected invoice
-  const { data: lineItemClassifications = [], isLoading: classificationsLoading, error: classificationsError } = useQuery({
+  const { data: lineItemClassifications = [], isLoading: classificationsLoading, error: classificationsError } = useQuery<LineItemClassification[]>({
     queryKey: ["/api/invoices", selectedInvoice, "classifications"],
     queryFn: async () => {
       if (!selectedInvoice) return [];
@@ -198,6 +210,7 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "Auto-classification completed",
@@ -223,6 +236,7 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "AI classification completed",
@@ -253,8 +267,12 @@ export default function LineItemClassification() {
         title: "Success",
         description: data.message,
       });
-      setSelectedInvoices([]);
+      // Invalidate classifications for all selected invoices
+      selectedInvoices.forEach(invoiceId => {
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoiceId, "classifications"] });
+      });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      setSelectedInvoices([]);
     },
     onError: () => {
       toast({
@@ -276,6 +294,7 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "AI classification completed for line item",
@@ -303,6 +322,7 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "Classification updated successfully",
