@@ -453,14 +453,11 @@ class PythonInvoiceImporter {
    * Process imported invoices directly from database and create main invoice records
    */
   private async processImportedInvoicesDirectly(logId: number): Promise<void> {
-    const { PostgresStorage, db, importedInvoices } = await import('../storage');
+    const { storage, db, importedInvoices } = await import('../storage');
     const { eq, and } = await import('drizzle-orm');
     
     try {
       console.log(`📋 Processing imported invoices for log ${logId}...`);
-      
-      // Get storage instance
-      const storage = new PostgresStorage();
       
       // Get all imported invoices for this log that haven't been processed yet
       const result = await db
