@@ -770,57 +770,25 @@ export default function LineItemClassification() {
                             </TableRow>
                           ) : (
                             lineItemClassifications.map((item: any) => (
-                          <TableRow key={item.lineItemId}>
-                            <TableCell>{item.description}</TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>${item.unitPrice}</TableCell>
-                            <TableCell>${item.totalPrice}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {item.category ? (
-                                  <Badge className={CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.color}>
-                                    {CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.label || item.category.replace('_', ' ')}
-                                  </Badge>
-                                ) : (
-                                  <span className="text-gray-400">Unclassified</span>
-                                )}
-                                {item.isManualOverride && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Manual
-                                  </Badge>
-                                )}
-                                {item.matchedKeyword === 'AI Classification' && (
-                                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                    <Bot className="w-3 h-3 mr-1" />
-                                    AI
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {item.matchedKeyword ? (
-                                <Badge variant="outline" className="text-xs">
-                                  {item.matchedKeyword}
-                                </Badge>
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {item.confidence ? (
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm">{Math.round(item.confidence * 100)}%</span>
-                                  {item.confidence > 0.7 ? (
-                                    <Check className="w-4 h-4 text-green-500" />
+                              <TableRow key={item.lineItemId}>
+                                <TableCell>{item.description}</TableCell>
+                                <TableCell>{item.quantity}</TableCell>
+                                <TableCell>${item.unitPrice}</TableCell>
+                                <TableCell>${item.totalPrice}</TableCell>
+                                <TableCell>
+                                  {item.category ? (
+                                    <Badge variant="secondary">
+                                      {item.category.replace('_', ' ')}
+                                    </Badge>
                                   ) : (
-                                    <AlertCircle className="w-4 h-4 text-yellow-500" />
+                                    <span className="text-gray-400">Unclassified</span>
                                   )}
-                                </div>
-                              ) : (
-                                '-'
-                              )}
-                            </TableCell>
-                            <TableCell>
+                                </TableCell>
+                                <TableCell>{item.matchedKeyword || '-'}</TableCell>
+                                <TableCell>
+                                  {item.confidence ? `${(parseFloat(item.confidence) * 100).toFixed(0)}%` : '-'}
+                                </TableCell>
+                                <TableCell>
                               <div className="flex gap-2">
                                 <Select
                                   value={item.category || ""}
