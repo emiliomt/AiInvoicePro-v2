@@ -321,7 +321,7 @@ class PythonInvoiceImporter {
         
         // Update log to reflect processing failure
         await storage.updateInvoiceImporterLog(progress.logId, {
-          status: 'processing_failed',
+          status: 'failed',
           errorMessage: `RPA completed but file processing failed: ${processError instanceof Error ? processError.message : 'Unknown error'}`,
         });
         
