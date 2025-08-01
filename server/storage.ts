@@ -133,6 +133,12 @@ export interface IStorage {
   getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | null>;
   updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<void>;
   deleteInvoiceImporterLog(id: number): Promise<void>;
+  
+  // Imported Invoices methods
+  createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice>;
+  getImportedInvoices(): Promise<ImportedInvoice[]>;
+  getImportedInvoicesByLogId(logId: number): Promise<ImportedInvoice[]>;
+  updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice>;
 
   // Missing methods from routes
   deleteAllProjects(): Promise<void>;
