@@ -590,27 +590,209 @@ class InvoiceImporterService {
   }
 
   private async storeImportedInvoicesFast(logId: number, progress: ImporterProgress): Promise<void> {
-    // Convert imported invoices to regular invoice records efficiently
+    // Get all imported invoice records for this log
     const importedInvoices = await storage.getImportedInvoicesByLog(logId);
-
+    
     if (importedInvoices.length === 0) {
+      console.log('No imported invoices found for log ID:', logId);
       return;
     }
 
-    const batchSize = 10;
-    for (let i = 0; i < importedInvoices.length; i += batchSize) {
-      const batch = importedInvoices.slice(i, i + batchSize);
+    // Get the user ID from the log
+    const log = await storage.getInvoiceImporterLog(logId);
+    if (!log) return;
 
-      await Promise.all(batch.map(async (importedInvoice) => {
-        if (importedInvoice.metadata) {
-          // Create placeholder invoice record - in real implementation this would involve OCR/AI
-          // For now just mark as processed
-          console.log(`Processed invoice: ${importedInvoice.originalFileName}`);
+    const config = await storage.getInvoiceImporterConfig(log.configId);
+    if (!config) return;
+
+    console.log(`🔄 Starting actual invoice record creation for ${importedInvoices.length} RPA-imported invoices`);
+    
+    for (const importedInvoice of importedInvoices) {
+      try {
+        // Create actual invoice record from imported file
+        const invoiceData = {
+          fileName: importedInvoice.originalFileName,
+          fileType: importedInvoice.fileType,
+          userId: config.userId, // Get from config
+          companyId: config.companyId || null,
+          status: 'pending' as const,
+          uploadedAt: new Date(),
+          // Set file path or content based on the imported file
+          filePath: importedInvoice.filePath || undefined,
+        };
+
+        // Create the invoice record
+        const invoice = await storage.createInvoice(invoiceData);
+        
+        // Link the imported invoice to the actual invoice
+        await storage.updateImportedInvoice(importedInvoice.id, {
+          invoiceId: invoice.id,
+          processedAt: new Date(),
+        });
+
+        // Trigger processing for the invoice (OCR, AI extraction, etc.)
+        // This should be done asynchronously
+        setImmediate(async () => {
+          try {
+            await this.processImportedInvoice(invoice.id, importedInvoice);
+          } catch (error) {
+            console.error(`Failed to process imported invoice ${invoice.id}:`, error);
+          }
+        });
+
+        progress.successfulImports++;
+        console.log(`✅ Created invoice record ${invoice.id} from imported file: ${importedInvoice.originalFileName}`);
+        
+      } catch (error) {
+        console.error(`Failed to create invoice from imported file:`, error);
+        progress.failedImports++;
+      }
+    }
+  }
+
+  /**
+   * Process imported invoice file based on type (XML or PDF)
+   */
+  private async processImportedInvoice(invoiceId: number, importedInvoice: any): Promise<void> {
+    try {
+      console.log(`🔄 Processing imported invoice ${invoiceId}, type: ${importedInvoice.fileType}`);
+      
+      // Process the file based on type (XML or PDF)
+      if (importedInvoice.fileType === 'xml') {
+        // Process XML file
+        await this.processXMLInvoice(invoiceId, importedInvoice);
+      } else if (importedInvoice.fileType === 'pdf') {
+        // Process PDF file with OCR and AI
+        await this.processPDFInvoice(invoiceId, importedInvoice);
+      } else {
+        console.warn(`Unsupported file type for invoice ${invoiceId}: ${importedInvoice.fileType}`);
+        await storage.updateInvoice(invoiceId, {
+          status: 'rejected',
+          processingError: `Unsupported file type: ${importedInvoice.fileType}`,
+        });
+      }
+    } catch (error) {
+      console.error(`Error processing imported invoice ${invoiceId}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      
+      await storage.updateInvoice(invoiceId, {
+        status: 'rejected',
+        processingError: errorMessage,
+        extractedData: { 
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+          processStep: 'file_processing'
         }
-      }));
+      });
+    }
+  }
 
-      // Minimal delay between batches
-      await this.simulateDelay(50);
+  /**
+   * Process XML invoice file
+   */
+  private async processXMLInvoice(invoiceId: number, importedInvoice: any): Promise<void> {
+    try {
+      const fs = await import('fs');
+      
+      // Check if file exists
+      if (!fs.existsSync(importedInvoice.filePath)) {
+        throw new Error(`XML file not found: ${importedInvoice.filePath}`);
+      }
+
+      // Read and parse XML file
+      const xmlContent = fs.readFileSync(importedInvoice.filePath, 'utf8');
+      
+      // Import and use XML parser
+      const { parseInvoiceXML } = await import('./xmlParser');
+      const extractedData = parseInvoiceXML(xmlContent, false);
+      
+      console.log(`✅ XML parser extracted data for invoice ${invoiceId}:`, {
+        vendor: extractedData.vendorName,
+        amount: extractedData.totalAmount,
+        invoiceNumber: extractedData.invoiceNumber,
+        lineItems: extractedData.lineItems?.length || 0
+      });
+
+      // Update invoice with extracted data
+      await storage.updateInvoice(invoiceId, {
+        status: 'extracted',
+        ocrText: xmlContent,
+        extractedData,
+        vendorName: extractedData.vendorName || null,
+        invoiceNumber: extractedData.invoiceNumber || null,
+        invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+        dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+        totalAmount: extractedData.totalAmount || null,
+        taxAmount: extractedData.taxAmount || null,
+        currency: extractedData.currency || 'USD',
+        confidenceScore: '0.95', // High confidence for XML parsing
+      });
+
+      console.log(`✅ XML invoice ${invoiceId} processing completed successfully`);
+
+    } catch (error) {
+      console.error(`❌ Error processing XML invoice ${invoiceId}:`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process PDF invoice file with OCR and AI
+   */
+  private async processPDFInvoice(invoiceId: number, importedInvoice: any): Promise<void> {
+    try {
+      const fs = await import('fs');
+      
+      // Check if file exists
+      if (!fs.existsSync(importedInvoice.filePath)) {
+        throw new Error(`PDF file not found: ${importedInvoice.filePath}`);
+      }
+
+      // Read PDF file
+      const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+      
+      // Process PDF with OCR
+      const { ocrService } = await import('./ocrService');
+      const ocrText = await ocrService.extractText(fileBuffer, 'application/pdf');
+      
+      if (!ocrText || ocrText.trim().length < 10) {
+        throw new Error("OCR did not extract sufficient text from the PDF document");
+      }
+
+      // Extract structured data using AI
+      const { extractInvoiceData } = await import('./aiService');
+      const extractedData = await extractInvoiceData(ocrText);
+      
+      console.log(`✅ AI extracted data for PDF invoice ${invoiceId}:`, {
+        vendor: extractedData.vendorName,
+        amount: extractedData.totalAmount,
+        invoiceNumber: extractedData.invoiceNumber
+      });
+
+      // Validate extracted data
+      const cleanedData = {
+        vendorName: extractedData.vendorName || null,
+        invoiceNumber: extractedData.invoiceNumber || null,
+        invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+        dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+        totalAmount: extractedData.totalAmount || null,
+        taxAmount: extractedData.taxAmount || null,
+        currency: extractedData.currency || 'USD',
+      };
+
+      // Update invoice with extracted data
+      await storage.updateInvoice(invoiceId, {
+        status: "extracted",
+        ocrText,
+        extractedData,
+        ...cleanedData
+      });
+
+      console.log(`✅ PDF invoice ${invoiceId} processing completed successfully`);
+
+    } catch (error) {
+      console.error(`❌ Error processing PDF invoice ${invoiceId}:`, error);
+      throw error;
     }
   }
 
