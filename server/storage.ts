@@ -133,12 +133,6 @@ export interface IStorage {
   getLatestInvoiceImporterLog(configId: number): Promise<InvoiceImporterLog | null>;
   updateInvoiceImporterLog(id: number, updates: Partial<InsertInvoiceImporterLog>): Promise<void>;
   deleteInvoiceImporterLog(id: number): Promise<void>;
-  
-  // Imported Invoices methods
-  createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice>;
-  getImportedInvoices(): Promise<ImportedInvoice[]>;
-  getImportedInvoicesByLogId(logId: number): Promise<ImportedInvoice[]>;
-  updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice>;
 
   // Missing methods from routes
   deleteAllProjects(): Promise<void>;
@@ -170,7 +164,6 @@ export interface IStorage {
   getLatestInvoiceImporterLog(configId: number): Promise<any>;
   updateInvoiceImporterLog(id: number, updates: any): Promise<void>;
   getImportedInvoicesByLog(logId: number): Promise<any[]>;
-  getImportedInvoicesByLogId(logId: number): Promise<ImportedInvoice[]>;
   updateImportedInvoice(id: number, updates: any): Promise<void>;
   getInvoiceImporterLogs(configId?: number): Promise<any[]>;
   getImportLogsWithDetails(): Promise<any[]>;
@@ -794,52 +787,6 @@ class PostgresStorage implements IStorage {
     return await db.select().from(importedInvoices)
       .where(eq(importedInvoices.logId, logId))
       .orderBy(desc(importedInvoices.createdAt));
-  }
-
-  async getImportedInvoicesByLogId(logId: number): Promise<ImportedInvoice[]> {
-    return await db
-      .select()
-      .from(importedInvoices)
-      .where(eq(importedInvoices.logId, logId))
-      .orderBy(desc(importedInvoices.createdAt));
-  }
-
-  async updateImportedInvoice(id: number, updates: Partial<InsertImportedInvoice>): Promise<ImportedInvoice> {
-    const [updated] = await db
-      .update(importedInvoices)
-      .set({
-        ...updates,
-        updatedAt: new Date()
-      })
-      .where(eq(importedInvoices.id, id))
-      .returning();
-    return updated;
-  }
-
-  async createImportedInvoice(data: InsertImportedInvoice): Promise<ImportedInvoice> {
-    const [created] = await db
-      .insert(importedInvoices)
-      .values(data)
-      .returning();
-    return created;
-  }
-
-  async getImportedInvoices(userId?: string): Promise<(ImportedInvoice & { invoice?: Invoice })[]> {
-    const query = db
-      .select({
-        ...getTableColumns(importedInvoices),
-        invoice: invoices,
-      })
-      .from(importedInvoices)
-      .leftJoin(invoices, eq(importedInvoices.invoiceId, invoices.id));
-    
-    // Add user filtering if needed based on company
-    const results = await query.orderBy(desc(importedInvoices.createdAt));
-    
-    return results.map(result => ({
-      ...result,
-      invoice: result.invoice || undefined,
-    }));
   }
 
   // ERP Tasks
@@ -1709,7 +1656,12 @@ class PostgresStorage implements IStorage {
     // Placeholder implementation
   }
 
-  
+  async updateImportedInvoice(id: number, updates: any): Promise<void> {
+    await db.update(importedInvoices).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(importedInvoices.id, id));
+  }
 
   // Duplicates removed - these functions already exist above
 

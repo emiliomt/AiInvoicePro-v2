@@ -467,7 +467,7 @@ export const feedbackLogs = pgTable("feedback_logs", {
 // Invoice Importer module enums
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
 export const scheduleTypeEnum = pgEnum("schedule_type", ["manual", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
-export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled", "processing_failed"]);
+export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled"]);
 export const processingStatusEnum = pgEnum("processing_status", ["downloaded", "processing", "completed", "failed"]);
 
 // Invoice Importer configurations

@@ -76,7 +76,6 @@ export default function InvoiceImporter() {
   const [importLogs, setImportLogs] = useState<any[]>([]);
   const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
   const [showLogDetails, setShowLogDetails] = useState(false);
-  const [importedFiles, setImportedFiles] = useState<any[]>([]);
   const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
   const [selectedConfig, setSelectedConfig] = useState<{
     id: number;
@@ -138,19 +137,6 @@ export default function InvoiceImporter() {
   // User state for WebSocket
   const [user] = useState({ id: 'current-user' });
 
-  // Utility functions
-  const formatFileSize = (bytes: number) => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
-
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleString();
-  };
-
   // ZIP timeout input display state
   const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
   const [editZipTimeoutInput, setEditZipTimeoutInput] = useState('60');
@@ -163,99 +149,11 @@ export default function InvoiceImporter() {
   const queryClient = useQueryClient();
   const [runningConfigs, setRunningConfigs] = useState<Set<number>>(new Set());
 
-  // ImportedFilesTable component
-  const ImportedFilesTable = () => {
-    return (
-      <div className="space-y-4">
-        {importedFiles.length === 0 ? (
-          <div className="text-center py-8">
-            <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-            <p className="text-gray-600">No imported files found</p>
-            <p className="text-sm text-gray-500 mt-2">Files downloaded from RPA processes will appear here</p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full border-collapse">
-              <thead>
-                <tr className="border-b border-gray-200">
-                  <th className="text-left p-3 font-medium text-gray-700">File Name</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Type</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Size</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Downloaded</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Status</th>
-                  <th className="text-left p-3 font-medium text-gray-700">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {importedFiles.map((file: any) => (
-                  <tr key={file.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="p-3">
-                      <div className="flex items-center space-x-2">
-                        <FileText className="w-4 h-4 text-gray-400" />
-                        <span className="font-medium">{file.originalFileName}</span>
-                      </div>
-                    </td>
-                    <td className="p-3">
-                      <Badge variant="outline" className="text-xs">
-                        {file.fileType?.toUpperCase() || 'UNKNOWN'}
-                      </Badge>
-                    </td>
-                    <td className="p-3 text-sm text-gray-600">
-                      {formatFileSize(file.fileSize || 0)}
-                    </td>
-                    <td className="p-3 text-sm text-gray-600">
-                      {file.downloadedAt ? formatDate(file.downloadedAt) : 'Unknown'}
-                    </td>
-                    <td className="p-3">
-                      {file.invoiceId ? (
-                        <Badge className="bg-green-100 text-green-800 border-green-200">
-                          Processed
-                        </Badge>
-                      ) : (
-                        <Badge variant="secondary">
-                          Pending
-                        </Badge>
-                      )}
-                    </td>
-                    <td className="p-3">
-                      {!file.invoiceId && (
-                        <Button
-                          size="sm"
-                          onClick={() => processImportedFile(file.id)}
-                          className="text-xs"
-                        >
-                          <Play className="w-3 h-3 mr-1" />
-                          Process
-                        </Button>
-                      )}
-                      {file.invoiceId && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => window.open(`/invoices/${file.invoiceId}`, '_blank')}
-                          className="text-xs"
-                        >
-                          <Eye className="w-3 h-3 mr-1" />
-                          View Invoice
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-    );
-  };
-
   useEffect(() => {
     fetchConfigs();
     fetchLogs();
     fetchERPConnections();
     fetchImportLogs();
-    fetchImportedFiles();
     initializeWebSocket();
 
     return () => {
@@ -567,20 +465,6 @@ export default function InvoiceImporter() {
       }
     } catch (error) {
       console.error('Error fetching import logs:', error);
-    }
-  };
-
-  const fetchImportedFiles = async () => {
-    try {
-      const response = await fetch('/api/invoice-importer/imported-invoices');
-      if (response.ok) {
-        const filesData = await response.json();
-        setImportedFiles(filesData);
-      } else {
-        console.error('Failed to fetch imported files');
-      }
-    } catch (error) {
-      console.error('Error fetching imported files:', error);
     }
   };
 
@@ -1199,36 +1083,6 @@ export default function InvoiceImporter() {
     }
   };
 
-  const processImportedFile = async (importedInvoiceId: number) => {
-    try {
-      const response = await fetch(`/api/invoice-importer/process-imported/${importedInvoiceId}`, {
-        method: 'POST',
-      });
-      
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process file');
-      }
-      
-      const result = await response.json();
-      
-      toast({
-        title: "File Processed",
-        description: result.message || "File has been processed successfully",
-      });
-      
-      // Refresh the imported files list
-      fetchImportedFiles();
-      
-    } catch (error) {
-      toast({
-        title: "Processing Failed",
-        description: error instanceof Error ? error.message : "Failed to process file",
-        variant: "destructive"
-      });
-    }
-  };
-
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -1249,10 +1103,9 @@ export default function InvoiceImporter() {
         </div>
 
         <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-4">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="configurations">Configurations</TabsTrigger>
             <TabsTrigger value="logs">Import Logs</TabsTrigger>
-            <TabsTrigger value="imported">Imported Files</TabsTrigger>
             <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
           </TabsList>
 
@@ -1610,36 +1463,6 @@ export default function InvoiceImporter() {
                 </Card>
               </div>
             )}
-          </TabsContent>
-
-          <TabsContent value="imported" className="space-y-4">
-            <Card>
-              <CardHeader>
-                <div className="flex justify-between items-center">
-                  <div>
-                    <CardTitle className="flex items-center space-x-2">
-                      <Database className="w-5 h-5" />
-                      <span>Imported Files</span>
-                    </CardTitle>
-                    <p className="text-sm text-gray-600 mt-2">
-                      Files downloaded from ERP system that can be processed into invoices
-                    </p>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={fetchImportedFiles}
-                    className="flex items-center space-x-2"
-                  >
-                    <RotateCcw className="w-4 h-4" />
-                    <span>Refresh</span>
-                  </Button>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <ImportedFilesTable />
-              </CardContent>
-            </Card>
           </TabsContent>
 
           <TabsContent value="schedule" className="space-y-4">
