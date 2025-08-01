@@ -139,7 +139,7 @@ export interface IStorage {
   getPurchaseOrderByPoId(poId: string): Promise<PurchaseOrder | null>;
   getAllPurchaseOrders(): Promise<PurchaseOrder[]>;
   getInvoicePoMatches(): Promise<any[]>;
-  assignProjectToInvoice(invoiceId: number, projectId: number): Promise<void>;
+  assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void>;
   updateInvoicePoMatch(id: number, updates: any): Promise<any>;
   getUnresolvedMatches(): Promise<any[]>;
   getInvoiceProjectMatches(): Promise<any[]>;
@@ -1372,8 +1372,47 @@ class PostgresStorage implements IStorage {
     return await db.select().from(invoicePoMatches);
   }
 
-  async assignProjectToInvoice(invoiceId: number, projectId: number): Promise<void> {
-    // Placeholder implementation
+  async assignProjectToInvoice(invoiceId: number, projectId: string): Promise<void> {
+    // Get the project to extract the name
+    const project = await db
+      .select()
+      .from(projects)
+      .where(eq(projects.projectId, projectId))
+      .limit(1);
+
+    if (project.length === 0) {
+      throw new Error(`Project with ID ${projectId} not found`);
+    }
+
+    const projectName = project[0].name;
+
+    // Get current invoice data
+    const invoice = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1);
+
+    if (invoice.length === 0) {
+      throw new Error(`Invoice with ID ${invoiceId} not found`);
+    }
+
+    // Update the extractedData to include the assigned project name
+    const currentExtractedData = invoice[0].extractedData || {};
+    const updatedExtractedData = {
+      ...currentExtractedData,
+      assignedProject: projectName,
+      assignedProjectId: projectId
+    };
+
+    // Update the invoice with the new extractedData
+    await db
+      .update(invoices)
+      .set({
+        extractedData: updatedExtractedData,
+        updatedAt: new Date()
+      })
+      .where(eq(invoices.id, invoiceId));
   }
 
   async updateInvoicePoMatch(id: number, updates: any): Promise<any> {

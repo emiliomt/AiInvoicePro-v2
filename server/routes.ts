@@ -387,7 +387,7 @@ async function processPostExtractionWorkflow(invoice: any) {
         validationErrors: validationResult.errors,
         validationResult,
         classifiedItems,
-        projectMatch,
+        projectMatch: projectMatch?.projectName || projectMatch?.projectId || null,
         updatedAt: new Date()
       });
       return;
@@ -407,7 +407,7 @@ async function processPostExtractionWorkflow(invoice: any) {
     await storage.updateInvoice(invoice.id, { 
       status: finalStatus,
       classifiedItems,
-      projectMatch,
+      projectMatch: projectMatch?.projectName || projectMatch?.projectId || null,
       poMatches,
       validationResult,
       updatedAt: new Date()
@@ -3598,6 +3598,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         matchDetails,
         approvedBy: userId,
       });
+
+      // Also assign the project to the invoice (updates extractedData with project name)
+      await storage.assignProjectToInvoice(invoiceId, projectId);
 
       // Update invoice status to approved
       await storage.updateInvoice(invoiceId, { status: 'approved' });

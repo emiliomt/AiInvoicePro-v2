@@ -1361,7 +1361,9 @@ export default function Invoices() {
                           <h4 className="font-medium">Project Matching</h4>
                           <div className="text-sm text-gray-600 mt-1">
                             {selectedInvoiceOutcome.projectMatch ? 
-                              `Matched to project: ${selectedInvoiceOutcome.projectMatch}` : 
+                              `Matched to project: ${typeof selectedInvoiceOutcome.projectMatch === 'string' 
+                                ? selectedInvoiceOutcome.projectMatch 
+                                : selectedInvoiceOutcome.projectMatch.name || selectedInvoiceOutcome.projectMatch.projectId || 'Unknown Project'}` : 
                               'No project match found'}
                           </div>
                         </div>
