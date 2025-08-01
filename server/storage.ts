@@ -10,15 +10,15 @@ import {
   invoicePoMatches,
   invoiceProjectMatches,
   projects,
-  approvedInvoiceProjects,
-  verifiedInvoiceProjects,
+  approvedInvoiceProject,
+  verifiedInvoiceProject,
   validationRules,
   invoiceFlags,
   predictiveAlerts,
   feedbackLogs,
   classificationKeywords,
   lineItemClassifications,
-  learningInsights,
+
   erpConnections,
   erpTasks,
   savedWorkflows,
@@ -27,7 +27,8 @@ import {
   invoiceImporterLogs,
   importedInvoices,
   settings,
-  pettyCashLogs,
+  pettyCashLog,
+  companies,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -1019,7 +1020,7 @@ class PostgresStorage implements IStorage {
         await db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds));
 
         // delete petty cash logs before invoices
-        await db.delete(pettyCashLogs).where(inArray(pettyCashLogs.invoiceId, invoiceIds));
+        await db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds));
 
         // Finally delete the main invoices
         await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
@@ -1107,10 +1108,10 @@ class PostgresStorage implements IStorage {
 
         // Delete petty cash logs
         await db
-          .delete(pettyCashLogs)
+          .delete(pettyCashLog)
           .where(
             inArray(
-              pettyCashLogs.invoiceId,
+              pettyCashLog.invoiceId,
               db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
             )
           );
