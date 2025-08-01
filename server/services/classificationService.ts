@@ -1,6 +1,6 @@
 
 import { db } from "../db";
-import { classificationKeywords, lineItemClassifications, lineItems } from "@shared/schema";
+import { classificationKeywords, lineItemClassifications, lineItems, invoices } from "@shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "@shared/schema";
 
@@ -167,10 +167,14 @@ export class ClassificationService {
 
   // Classify and store classification for line item
   static async classifyAndStore(lineItemId: number, userId?: string): Promise<void> {
-    // Get line item
+    // Get line item and its invoice
     const lineItem = await db
-      .select()
+      .select({
+        lineItem: lineItems,
+        invoice: invoices
+      })
       .from(lineItems)
+      .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
       .where(eq(lineItems.id, lineItemId))
       .limit(1);
 
@@ -178,7 +182,17 @@ export class ClassificationService {
       throw new Error('Line item not found');
     }
 
-    const classification = await this.classifyLineItem(lineItem[0], userId);
+    // Check if this line item belongs to a petty cash invoice
+    const { storage } = await import('../storage.js');
+    const isPettyCash = await storage.isPettyCashInvoice(lineItem[0].invoice.id);
+    
+    if (isPettyCash) {
+      console.log(`Skipping classification for line item ${lineItemId} - belongs to petty cash invoice`);
+      return; // Skip classification for petty cash items
+    }
+
+    // Continue with normal classification...
+    const classification = await this.classifyLineItem(lineItem[0].lineItem, userId);
 
     // Check if classification already exists
     const existingClassification = await db
@@ -216,6 +230,27 @@ export class ClassificationService {
 
   // Bulk classify line items for an invoice
   static async classifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
+    // First check if this is a petty cash invoice
+    const invoice = await db
+      .select()
+      .from(invoices)
+      .where(eq(invoices.id, invoiceId))
+      .limit(1);
+
+    if (invoice.length === 0) {
+      throw new Error('Invoice not found');
+    }
+
+    // Check if invoice is petty cash - if so, skip classification
+    const { storage } = await import('../storage.js');
+    const isPettyCash = await storage.isPettyCashInvoice(invoiceId);
+    
+    if (isPettyCash) {
+      console.log(`Skipping line item classification for petty cash invoice ${invoiceId}`);
+      return; // Exit early for petty cash invoices
+    }
+
+    // Continue with normal classification for non-petty cash invoices
     const invoiceLineItems = await db
       .select()
       .from(lineItems)

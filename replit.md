@@ -7,6 +7,16 @@ InvoicePro is an AI-powered platform for invoice processing and procurement mana
 Preferred communication style: Simple, everyday language.
 
 ## Recent Changes
+### August 1, 2025 - Petty Cash Line Item Classification Skip Feature - COMPLETED ✅
+- **Implemented petty cash detection**: Line item classification now automatically skips for petty cash invoices
+- **Enhanced backend classification**: Modified `classifyInvoiceLineItems` and `classifyAndStore` methods to check petty cash status before processing
+- **Updated frontend interface**: Added `PettyCashClassificationButtons` component with real-time petty cash detection
+- **Smart UI warnings**: Shows yellow alert with invoice amount and explains why classification is skipped for petty cash
+- **Disabled classification buttons**: Classification buttons are disabled and show "Classification Skipped" for petty cash invoices
+- **Maintains existing functionality**: Non-petty cash invoices continue to work normally with full classification features
+- **Comprehensive logging**: Added debug logs showing when classification is skipped for petty cash invoices
+- **Impact**: Reduces unnecessary processing overhead and prevents confusion when trying to classify small-value invoices
+
 ### August 1, 2025 - Enhanced Project Matching System - COMPLETED ✅
 - **Implemented intelligent project matching**: AI-powered algorithm matches invoices to 84+ validation criteria projects with 69% accuracy
 - **Enhanced data extraction**: Now uses multiple address sources (vendorAddress, buyerAddress, projectAddress) for comprehensive matching

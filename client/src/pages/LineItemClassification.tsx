@@ -85,6 +85,82 @@ const CATEGORY_INFO = {
   }
 };
 
+// Component for petty cash-aware classification buttons
+function PettyCashClassificationButtons({ 
+  selectedInvoice, 
+  selectedInvoiceData, 
+  autoClassifyMutation, 
+  aiClassifyMutation, 
+  checkIfPettyCash 
+}: {
+  selectedInvoice: number | null;
+  selectedInvoiceData: Invoice | null;
+  autoClassifyMutation: any;
+  aiClassifyMutation: any;
+  checkIfPettyCash: (invoiceId: number) => Promise<boolean>;
+}) {
+  const [isPettyCash, setIsPettyCash] = useState(false);
+  const [isCheckingPettyCash, setIsCheckingPettyCash] = useState(false);
+
+  useEffect(() => {
+    if (selectedInvoice) {
+      setIsCheckingPettyCash(true);
+      checkIfPettyCash(selectedInvoice).then(result => {
+        setIsPettyCash(result);
+        setIsCheckingPettyCash(false);
+      });
+    } else {
+      setIsPettyCash(false);
+      setIsCheckingPettyCash(false);
+    }
+  }, [selectedInvoice]);
+
+  if (isPettyCash) {
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2">
+          <AlertCircle className="w-5 h-5 text-yellow-600" />
+          <div className="text-sm text-yellow-800">
+            <div className="font-medium">Petty Cash Invoice</div>
+            <div>This invoice ({selectedInvoiceData?.totalAmount} {selectedInvoiceData?.currency || 'COP'}) is classified as petty cash and does not require line item classification.</div>
+          </div>
+        </div>
+        <div className="flex gap-2">
+          <Button disabled variant="outline" className="opacity-50">
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Classification Skipped
+          </Button>
+          <Button disabled className="bg-gray-400 hover:bg-gray-400 text-white opacity-50">
+            <AlertCircle className="w-4 h-4 mr-2" />
+            AI Classification Skipped
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex gap-2">
+      <Button
+        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
+        disabled={!selectedInvoice || autoClassifyMutation.isPending || isCheckingPettyCash}
+        variant="outline"
+      >
+        <RefreshCw className="w-4 h-4 mr-2" />
+        {isCheckingPettyCash ? "Checking..." : "Keyword Classify"}
+      </Button>
+      <Button
+        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
+        disabled={!selectedInvoice || aiClassifyMutation.isPending || isCheckingPettyCash}
+        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+      >
+        <AlertCircle className="w-4 h-4 mr-2" />
+        {aiClassifyMutation.isPending ? "AI Classifying..." : isCheckingPettyCash ? "Checking..." : "AI Classify All"}
+      </Button>
+    </div>
+  );
+}
+
 export default function LineItemClassification() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -96,6 +172,22 @@ export default function LineItemClassification() {
   const [selectedInvoice, setSelectedInvoice] = useState<number | null>(null);
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
+
+  // Check if an invoice is petty cash
+  const checkIfPettyCash = async (invoiceId: number): Promise<boolean> => {
+    try {
+      const response = await fetch(`/api/test/petty-cash/${invoiceId}`);
+      if (!response.ok) return false;
+      const data = await response.json();
+      return data.isPettyCash || false;
+    } catch (error) {
+      console.error('Error checking petty cash status:', error);
+      return false;
+    }
+  };
+
+  // Get selected invoice data
+  const selectedInvoiceData = selectedInvoice ? invoices.find(inv => inv.id === selectedInvoice) : null;
 
   // Fetch classification keywords
   const { data: keywords = {} as ClassificationKeywords } = useQuery<ClassificationKeywords>({
@@ -661,22 +753,13 @@ export default function LineItemClassification() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <Button
-                        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
-                        disabled={!selectedInvoice || autoClassifyMutation.isPending}
-                        variant="outline"
-                      >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Keyword Classify
-                      </Button>
-                      <Button
-                        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
-                        disabled={!selectedInvoice || aiClassifyMutation.isPending}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
-                      >
-                        <AlertCircle className="w-4 h-4 mr-2" />
-                        {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
-                      </Button>
+                      <PettyCashClassificationButtons 
+                        selectedInvoice={selectedInvoice}
+                        selectedInvoiceData={selectedInvoiceData}
+                        autoClassifyMutation={autoClassifyMutation}
+                        aiClassifyMutation={aiClassifyMutation}
+                        checkIfPettyCash={checkIfPettyCash}
+                      />
                     </div>
                   ) : (
                     <div className="space-y-4">
