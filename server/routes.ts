@@ -6088,6 +6088,40 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Manual processing endpoint for pending imported invoices
+  app.post('/api/invoice-importer/process-pending/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logId = parseInt(req.params.logId);
+      if (isNaN(logId)) {
+        return res.status(400).json({ error: 'Invalid log ID' });
+      }
+
+      console.log(`🔄 Manual processing requested for log ${logId}`);
+
+      // Import the processing method
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      
+      // Process the imported invoices directly
+      await pythonInvoiceImporter.processImportedInvoicesManually(logId);
+
+      res.json({ 
+        message: `Successfully processed pending imported invoices for log ${logId}`,
+        logId 
+      });
+    } catch (error) {
+      console.error('Error processing pending imported invoices:', error);
+      res.status(500).json({ 
+        error: 'Failed to process pending imported invoices',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Helper function for executing import tasks asynchronously
   async function executeImportAsync(configId: number) {
     try {

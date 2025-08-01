@@ -433,94 +433,124 @@ class PythonInvoiceImporter {
    * Process downloaded files from SQLite and save to PostgreSQL
    */
   private async processDownloadedFiles(logId: number): Promise<void> {
-    const fs = await import('fs');
-    const sqlite3 = await import('sqlite3');
-    const dbPath = '/tmp/invoice_downloads/invoices.db';
-
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(dbPath, (err: any) => {
-        if (err) {
-          console.error('Failed to connect to SQLite database:', err);
-          reject(err);
-          return;
-        }
-
-        db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
-          if (err) {
-            console.error('Failed to execute query:', err);
-            reject(err);
-            db.close();
-            return;
-          }
-
-          try {
-            await this.storeImportedInvoicesFast(logId, {
-              configId: 0,
-              logId: 0,
-              totalInvoices: 0,
-              processedInvoices: 0,
-              successfulImports: 0,
-              failedImports: 0,
-              currentStep: '',
-              progress: 0,
-              isComplete: false,
-            });
-            resolve();
-          } catch (error) {
-            reject(error);
-          } finally {
-            db.close();
-          }
-        });
-      });
-    });
+    console.log(`⚡ Processing downloaded files for log ${logId}`);
+    
+    // Skip SQLite processing - we'll process the imported_invoices directly
+    await this.processImportedInvoicesDirectly(logId);
   }
 
   /**
    * Process XML files from SQLite and save to PostgreSQL
    */
   private async processXmlFiles(logId: number): Promise<void> {
-    const fs = await import('fs');
-    const sqlite3 = await import('sqlite3');
-    const dbPath = '/tmp/xml_invoices/invoices_xml.db';
+    console.log(`⚡ Processing XML files for log ${logId}`);
+    
+    // Skip SQLite processing - we'll process the imported_invoices directly
+    await this.processImportedInvoicesDirectly(logId);
+  }
 
-    return new Promise((resolve, reject) => {
-      const db = new sqlite3.Database(dbPath, (err: any) => {
-        if (err) {
-          console.error('Failed to connect to SQLite database:', err);
-          reject(err);
-          return;
+  /**
+   * Process imported invoices directly from database and create main invoice records
+   */
+  private async processImportedInvoicesDirectly(logId: number): Promise<void> {
+    const { PostgresStorage, db, importedInvoices } = await import('../storage');
+    const { eq, and } = await import('drizzle-orm');
+    
+    try {
+      console.log(`📋 Processing imported invoices for log ${logId}...`);
+      
+      // Get storage instance
+      const storage = new PostgresStorage();
+      
+      // Get all imported invoices for this log that haven't been processed yet
+      const result = await db
+        .select()
+        .from(importedInvoices)
+        .where(and(
+          eq(importedInvoices.logId, logId),
+          eq(importedInvoices.processingStatus, 'downloaded')
+        ));
+        
+      if (!result || result.length === 0) {
+        console.log(`No unprocessed imported invoices found for log ${logId}`);
+        return;
+      }
+      
+      console.log(`Found ${result.length} imported invoices to process`);
+      
+      // Get the log to find the config and user
+      const log = await storage.getInvoiceImporterLog(logId);
+      if (!log) {
+        throw new Error(`Import log ${logId} not found`);
+      }
+      
+      const config = await storage.getInvoiceImporterConfig(log.configId);
+      if (!config) {
+        throw new Error(`Import config ${log.configId} not found`);
+      }
+      
+      let successCount = 0;
+      let failCount = 0;
+      
+      // Process each imported invoice
+      for (const importedInvoice of result) {
+        try {
+          console.log(`Creating invoice record for: ${importedInvoice.originalFileName}`);
+          
+          // Create the main invoice record
+          const newInvoice = await storage.createInvoice({
+            userId: config.userId,
+            companyId: config.companyId || null,
+            fileName: importedInvoice.originalFileName || 'Unknown File',
+            totalAmount: null,
+            currency: null,
+            vendorName: null,
+            extractedData: importedInvoice.metadata || null,
+            status: 'pending' // Start as pending, will be processed by OCR/AI pipeline
+          });
+          
+          // Link the imported invoice to the main invoice
+          await db
+            .update(importedInvoices)
+            .set({ 
+              invoiceId: newInvoice.id,
+              linkedInvoiceId: newInvoice.id,
+              processingStatus: 'completed',
+              processedAt: new Date()
+            })
+            .where(eq(importedInvoices.id, importedInvoice.id));
+            
+          successCount++;
+          console.log(`✅ Created invoice ${newInvoice.id} from imported file ${importedInvoice.originalFileName}`);
+          
+        } catch (error) {
+          failCount++;
+          console.error(`❌ Failed to process imported invoice ${importedInvoice.originalFileName}:`, error);
+          
+          // Mark as failed
+          await db
+            .update(importedInvoices)
+            .set({ 
+              processingStatus: 'failed',
+              processedAt: new Date()
+            })
+            .where(eq(importedInvoices.id, importedInvoice.id));
         }
+      }
+      
+      console.log(`🎯 Processing complete: ${successCount} success, ${failCount} failed`);
+      
+    } catch (error) {
+      console.error('❌ PROCESSING ERROR: Failed to process downloaded files for log', logId, ':', error);
+      throw error;
+    }
+  }
 
-        db.all('SELECT * FROM downloaded_invoices', async (err: any, rows: any[]) => {
-          if (err) {
-            console.error('Failed to execute query:', err);
-            reject(err);
-            db.close();
-            return;
-          }
-
-          try {
-            await this.storeImportedInvoicesFast(logId, {
-              configId: 0,
-              logId: 0,
-              totalInvoices: 0,
-              processedInvoices: 0,
-              successfulImports: 0,
-              failedImports: 0,
-              currentStep: '',
-              progress: 0,
-              isComplete: false,
-            });
-            resolve();
-          } catch (error) {
-            reject(error);
-          } finally {
-            db.close();
-          }
-        });
-      });
-    });
+  /**
+   * Public method to manually process imported invoices for a specific log
+   */
+  public async processImportedInvoicesManually(logId: number): Promise<void> {
+    return this.processImportedInvoicesDirectly(logId);
   }
 
   /**
