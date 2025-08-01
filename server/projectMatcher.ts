@@ -20,9 +20,15 @@ export interface ProjectMatchResult {
 export interface InvoiceData {
   extractedData?: {
     projectName?: string;
+    projectAddress?: string;
+    projectCity?: string;
     address?: string;
     city?: string;
     vendorName?: string;
+    vendorAddress?: string;
+    buyerAddress?: string;
+    concept?: string;
+    notes?: string;
   };
   projectName?: string;
   vendorName?: string;
@@ -158,27 +164,56 @@ export class ProjectMatcherService {
     invoice: Invoice,
     projects: Project[]
   ): Promise<ProjectMatchResult[]> {
+    console.log(`🎯 Starting project matching for invoice ${invoice.id} (${invoice.fileName || 'unknown'})`);
+    console.log(`📊 Found ${projects.length} validation criteria projects to match against`);
+    
     const invoiceData: InvoiceData = {
       extractedData: invoice.extractedData as any,
       projectName: invoice.projectName || undefined,
       vendorName: invoice.vendorName || undefined,
     };
 
+    // Log invoice data for debugging
+    const extractedData = invoiceData.extractedData;
+    console.log(`📍 Invoice matching data:`);
+    console.log(`  - Project Name: "${extractedData?.projectName || extractedData?.concept || extractedData?.notes || 'N/A'}"`);
+    console.log(`  - Address: "${extractedData?.projectAddress || extractedData?.address || extractedData?.vendorAddress || extractedData?.buyerAddress || 'N/A'}"`);
+    console.log(`  - City: "${extractedData?.projectCity || extractedData?.city || 'N/A'}"`);
+
     const matches: ProjectMatchResult[] = [];
 
     for (const project of projects) {
-      // Basic fuzzy matching
+      // Ensure we're working with real validation criteria projects
+      if (!project.projectId || !project.name) {
+        console.log(`  ⚠️ Skipping invalid project: ${project.name || 'unnamed'}`);
+        continue;
+      }
+      
+      // Basic fuzzy matching with real projects
       const basicMatch = await this.performBasicMatching(invoiceData, project);
       
-      // Enhance with AI if basic score is promising (>30%) or if we have good data
+      // Only use AI enhancement for promising matches to avoid false positives
       let finalMatch = basicMatch;
-      if (basicMatch.matchScore > 30 || this.hasGoodMatchingData(invoiceData)) {
-        finalMatch = await this.enhanceMatchingWithAI(invoiceData, project, basicMatch);
+      if (basicMatch.matchScore >= 40 && this.hasGoodMatchingData(invoiceData)) {
+        try {
+          finalMatch = await this.enhanceMatchingWithAI(invoiceData, project, basicMatch);
+        } catch (error) {
+          console.log(`  ⚠️ AI enhancement failed for ${project.name}, using basic match`);
+          finalMatch = basicMatch;
+        }
       }
 
-      if (finalMatch.matchScore > 0) {
+      // Only include matches above minimum threshold (50%)
+      if (finalMatch.matchScore >= 50) {
         matches.push(finalMatch);
       }
+    }
+
+    console.log(`📋 Found ${matches.length} valid project matches (≥50% confidence)`);
+    if (matches.length > 0) {
+      console.log(`🏆 Best match: ${matches[0]?.project.name} (${matches[0]?.matchScore}%)`);
+    } else {
+      console.log(`❌ No suitable project matches found above 50% threshold`);
     }
 
     // Sort by match score descending
@@ -197,6 +232,8 @@ export class ProjectMatcherService {
     invoiceData: InvoiceData,
     project: Project
   ): Promise<ProjectMatchResult> {
+    console.log(`\n🔍 Evaluating project: ${project.name} (${project.city})`);
+    
     const matchDetails = {
       addressSimilarity: 0,
       citySimilarity: 0,
@@ -206,21 +243,33 @@ export class ProjectMatcherService {
       reasons: [] as string[]
     };
 
-    // Project name matching
-    const invoiceProjectName = invoiceData.extractedData?.projectName || invoiceData.projectName;
+    // Project name matching - check multiple sources
+    const invoiceProjectName = invoiceData.extractedData?.projectName || 
+                              invoiceData.projectName || 
+                              invoiceData.extractedData?.concept || 
+                              invoiceData.extractedData?.notes;
+                              
     if (invoiceProjectName && project.name) {
       matchDetails.projectNameSimilarity = this.calculateStringSimilarity(invoiceProjectName, project.name);
-      if (matchDetails.projectNameSimilarity > 70) {
+      console.log(`  Name comparison: "${invoiceProjectName}" vs "${project.name}" = ${matchDetails.projectNameSimilarity}%`);
+      
+      if (matchDetails.projectNameSimilarity > 40) { // Lowered threshold for better matching
         matchDetails.matchedFields.push('projectName');
         matchDetails.reasons.push(`Project name similarity: ${matchDetails.projectNameSimilarity}%`);
       }
     }
 
-    // Address matching - use projectAddress if available, otherwise fall back to address
-    const invoiceAddress = invoiceData.extractedData?.projectAddress || invoiceData.extractedData?.address;
+    // Address matching - try multiple address sources
+    const invoiceAddress = invoiceData.extractedData?.projectAddress || 
+                          invoiceData.extractedData?.address || 
+                          invoiceData.extractedData?.vendorAddress || 
+                          invoiceData.extractedData?.buyerAddress;
+                          
     if (invoiceAddress && project.address) {
       matchDetails.addressSimilarity = this.calculateStringSimilarity(invoiceAddress, project.address);
-      if (matchDetails.addressSimilarity > 60) {
+      console.log(`  Address comparison: "${invoiceAddress}" vs "${project.address}" = ${matchDetails.addressSimilarity}%`);
+      
+      if (matchDetails.addressSimilarity > 30) { // Lowered threshold for better matching
         matchDetails.matchedFields.push('address');
         matchDetails.reasons.push(`Address similarity: ${matchDetails.addressSimilarity}%`);
       }
@@ -229,21 +278,30 @@ export class ProjectMatcherService {
     // City matching - use projectCity if available, otherwise derive from vendor address
     let invoiceCity = invoiceData.extractedData?.projectCity || invoiceData.extractedData?.city;
     
-    // If no explicit project city, try to extract from vendor address
-    if (!invoiceCity && invoiceData.extractedData?.vendorAddress) {
-      const vendorAddress = invoiceData.extractedData.vendorAddress;
-      // Extract city from vendor address (e.g., "CRA 64 N79 117, BARRANQUILLA, ATLANTICO, COLOMBIA")
-      const addressParts = vendorAddress.split(',').map(part => part.trim());
-      if (addressParts.length >= 2) {
-        invoiceCity = addressParts.slice(1).join(', '); // Take everything after the first comma
+    // If no explicit project city, try to extract from vendor address or buyer address
+    if (!invoiceCity && (invoiceData.extractedData?.vendorAddress || invoiceData.extractedData?.buyerAddress)) {
+      const address = invoiceData.extractedData?.vendorAddress || invoiceData.extractedData?.buyerAddress;
+      if (address) {
+        // Extract city from Colombian address format (e.g., "CARTAGENA, BOLIVAR, 130111")
+        const addressParts = address.split(',').map((part: string) => part.trim());
+        if (addressParts.length >= 1) {
+          invoiceCity = addressParts[0]; // Take the first part as the city
+        }
       }
     }
     
     if (invoiceCity && project.city) {
       matchDetails.citySimilarity = this.calculateStringSimilarity(invoiceCity, project.city);
-      if (matchDetails.citySimilarity > 80) {
+      console.log(`  City comparison: "${invoiceCity}" vs "${project.city}" = ${matchDetails.citySimilarity}%`);
+      
+      // Exact city match gets full score
+      if (invoiceCity.toLowerCase().trim() === project.city.toLowerCase().trim()) {
+        matchDetails.citySimilarity = 100;
         matchDetails.matchedFields.push('city');
-        matchDetails.reasons.push(`City match: ${matchDetails.citySimilarity}%`);
+        matchDetails.reasons.push(`City exact match: ${project.city}`);
+      } else if (matchDetails.citySimilarity > 60) { // Lowered threshold for partial matches
+        matchDetails.matchedFields.push('city');
+        matchDetails.reasons.push(`City similarity: ${matchDetails.citySimilarity}%`);
       }
     }
 
@@ -273,6 +331,23 @@ export class ProjectMatcherService {
     const matchScore = totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 0;
     matchDetails.overallConfidence = matchScore;
 
+    console.log(`  Final match score: ${matchScore}% (weighted from ${matchDetails.matchedFields.length} fields)`);
+    
+    // Apply minimum threshold of 50% for valid matches
+    if (matchScore < 50) {
+      console.log(`  ❌ Below minimum threshold (50%), rejecting match`);
+      return {
+        project,
+        matchScore: 0,
+        matchDetails: {
+          ...matchDetails,
+          overallConfidence: 0,
+          reasons: [`Match score ${matchScore}% below minimum threshold (50%)`]
+        }
+      };
+    }
+
+    console.log(`  ✅ Valid match found: ${matchScore}%`);
     return {
       project,
       matchScore,

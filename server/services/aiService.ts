@@ -621,13 +621,14 @@ export async function classifyPettyCash(invoice: any): Promise<boolean> {
   }
 }
 
-// Step 2B: Match invoice to projects using AI
+// Step 2B: Match invoice to projects using enhanced ProjectMatcherService
 export async function matchToProject(invoice: any): Promise<any> {
   try {
-    console.log(`🎯 Matching invoice ${invoice.id} (${invoice.fileName}) to projects...`);
+    console.log(`🎯 Matching invoice ${invoice.id} (${invoice.fileName || 'unknown'}) to projects...`);
     
     const { storage } = await import('../storage');
     const projects = await storage.getProjects();
+    
     if (!projects || projects.length === 0) {
       console.log('No projects available for matching');
       return {
@@ -638,96 +639,42 @@ export async function matchToProject(invoice: any): Promise<any> {
         suggestedProjects: []
       };
     }
+
+    // Use the enhanced ProjectMatcherService
+    const { projectMatcher } = await import('../projectMatcher');
+    const matchResults = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
     
-    const extractedData = invoice.extractedData || {};
-    // Try multiple address sources for better matching
-    const invoiceAddress = extractedData.projectAddress || extractedData.address || extractedData.vendorAddress || extractedData.buyerAddress || '';
-    const invoiceCity = extractedData.projectCity || extractedData.city || extractCity(invoiceAddress) || '';
-    const invoiceProjectName = extractedData.projectName || extractedData.concept || extractedData.notes || '';
-    
-    console.log(`Matching invoice data - Address: "${invoiceAddress}", City: "${invoiceCity}", Project: "${invoiceProjectName}"`);
-    
-    let bestMatch = {
-      project: null,
-      confidence: 0,
-      reasons: [] as string[]
-    };
-    
-    // Score each project based on similarity
-    for (const project of projects) {
-      let score = 0;
-      const reasons = [];
-      // Project name matching (40% weight)
-      if (invoiceProjectName && project.name) {
-        const nameSimilarity = calculateStringSimilarity(invoiceProjectName, project.name);
-        if (nameSimilarity > 40) { // Lowered threshold
-          score += nameSimilarity * 0.4;
-          reasons.push(`Project name similarity: ${nameSimilarity}%`);
-        }
-      }
-      
-      // Address matching (35% weight) - More flexible matching
-      if (invoiceAddress && project.address) {
-        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
-        if (addressSimilarity > 30) { // Lowered threshold
-          score += addressSimilarity * 0.35;
-          reasons.push(`Address similarity: ${addressSimilarity}%`);
-        }
-      }
-      
-      // City matching (25% weight) - Case insensitive exact match first
-      if (invoiceCity && project.city) {
-        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
-        
-        // Exact city match gets full score
-        if (invoiceCity.toLowerCase().trim() === project.city.toLowerCase().trim()) {
-          score += 100 * 0.25;
-          reasons.push(`City exact match: ${project.city}`);
-        } else if (citySimilarity > 60) { // Lowered threshold for partial matches
-          score += citySimilarity * 0.25;
-          reasons.push(`City similarity: ${citySimilarity}%`);
-        }
-      }
-      
-      if (score > bestMatch.confidence) {
-        bestMatch = {
-          project,
-          confidence: Math.round(score),
-          reasons
-        };
-      }
-    }
-    
-    console.log(`Best match found: ${bestMatch.project?.name || 'none'} with ${bestMatch.confidence}% confidence`);
-    
-    // Only return match if confidence is above threshold (60%) - Production threshold
-    if (bestMatch.confidence >= 60 && bestMatch.project) {
-      console.log(`✅ Found project match: ${bestMatch.project.name} (${bestMatch.confidence}% confidence)`);
+    if (matchResults.length === 0) {
+      console.log('No suitable project matches found above 50% threshold');
       return {
-        projectId: bestMatch.project.projectId,
-        projectName: bestMatch.project.name,
-        matchConfidence: bestMatch.confidence / 100,
-        matchReasons: bestMatch.reasons,
-        suggestedProjects: [bestMatch.project]
+        projectId: null,
+        projectName: null,
+        matchConfidence: 0.0,
+        matchReasons: [],
+        suggestedProjects: []
       };
     }
-    
-    console.log('No suitable project match found');
-    return {
-      projectId: null,
-      projectName: null,
-      matchConfidence: 0.0,
-      matchReasons: [],
-      suggestedProjects: []
-    };
 
+    // Get the best match
+    const bestMatch = matchResults[0];
+    console.log(`✅ Found project match: ${bestMatch.project.name} (${bestMatch.matchScore}% confidence)`);
+    
+    return {
+      projectId: bestMatch.project.projectId,
+      projectName: bestMatch.project.name,
+      matchConfidence: bestMatch.matchScore / 100,
+      matchReasons: bestMatch.matchDetails.reasons,
+      suggestedProjects: matchResults.slice(0, 3).map(m => m.project) // Return top 3 suggestions
+    };
+    
   } catch (error) {
     console.error('❌ Project matching failed:', error);
     return {
       projectId: null,
       projectName: null,
       matchConfidence: 0.0,
-      error: 'Project matching failed'
+      matchReasons: [`Error: ${error instanceof Error ? error.message : 'Unknown error'}`],
+      suggestedProjects: []
     };
   }
 }

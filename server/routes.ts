@@ -6866,6 +6866,53 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
+  // Test enhanced project matching endpoint
+  app.get("/api/test/project-match/:id", async (req, res) => {
+    try {
+      const invoice = await storage.getInvoice(parseInt(req.params.id));
+      if (!invoice) {
+        return res.status(404).json({ error: "Invoice not found" });
+      }
+
+      const projects = await storage.getProjects();
+      console.log(`\n🔬 Testing enhanced project matching for invoice ${invoice.id}`);
+      
+      // Use the enhanced ProjectMatcherService directly
+      const matchResults = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
+      
+      res.json({
+        invoice: {
+          id: invoice.id,
+          fileName: invoice.fileName,
+          vendorName: invoice.vendorName,
+          totalAmount: invoice.totalAmount,
+          extractedData: invoice.extractedData
+        },
+        enhancedMatching: {
+          totalMatches: matchResults.length,
+          bestMatch: matchResults[0] || null,
+          allMatches: matchResults.slice(0, 5), // Top 5 results
+          threshold: "50% minimum"
+        },
+        availableProjects: {
+          total: projects.length,
+          sample: projects.slice(0, 5).map(p => ({
+            projectId: p.projectId,
+            name: p.name,
+            address: p.address,
+            city: p.city
+          }))
+        }
+      });
+    } catch (error) {
+      console.error("Enhanced test matching failed:", error);
+      res.status(500).json({ 
+        error: "Enhanced test matching failed",
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // URGENT TEST: Check database schema without auth  
   app.get('/api/test/invoice-schema', async (req, res) => {
     try {

@@ -29,6 +29,7 @@ import RPADashboard from "@/pages/RPADashboard";
 import AiWorkflow from "@/pages/AiWorkflow";
 import InvoiceImporter from "@/pages/InvoiceImporter";
 import InvoicePreview from "@/pages/InvoicePreview";
+import ProjectMatchingTest from "@/pages/ProjectMatchingTest";
 import NotFound from "@/pages/not-found";
 
 // Import the existing query client from lib
@@ -119,6 +120,9 @@ const AppContent = React.memo(() => {
         </Route>
         <Route path="/rpa">
           {user ? <InvoiceImporter /> : <Landing />}
+        </Route>
+        <Route path="/test/project-matching">
+          {user ? <ProjectMatchingTest /> : <Landing />}
         </Route>
         <Route>
           <NotFound />
