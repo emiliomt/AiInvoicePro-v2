@@ -479,26 +479,38 @@ class InvoiceImporterService {
       if (Math.random() > 0.1) {
         progress.successfulImports++;
 
-        // Create mock imported invoice record
-        await storage.createImportedInvoice({
-          logId,
-          originalFileName: `invoice_${i + 1}.xml`,
-          fileType: 'xml',
-          fileSize: Math.floor(Math.random() * 50000) + 10000, // 10-60KB
-          filePath: `/uploads/imported/xml/invoice_${i + 1}.xml`,
-          erpDocumentId: `DOC_${Date.now()}_${i}`,
+        // Create realistic mock imported invoice record
+        const mockInvoiceData = {
+          logId: logId,
+          originalFileName: `INVOICE_${Date.now()}_${i + 1}.xml`,
+          fileType: 'xml' as const,
+          fileSize: Math.floor(Math.random() * 50000) + 5000, // 5KB to 55KB
+          filePath: `/downloads/xml/INVOICE_${Date.now()}_${i + 1}.xml`,
+          erpDocumentId: `DOC_${Math.random().toString(36).substr(2, 9)}`,
           downloadedAt: new Date(),
           metadata: {
+            source: 'ERP_SYSTEM',
+            importBatch: logId,
+            documentType: 'XML_INVOICE',
             invoiceNumber: `INV-${Date.now()}-${i}`,
             issueDate: new Date().toISOString(),
             vendor: `Vendor ${i + 1}`,
             amount: (Math.random() * 10000).toFixed(2),
           },
-        });
+        };
+
+        // Actually create the imported invoice record
+        await storage.createImportedInvoice(mockInvoiceData);
+        
       } else {
         progress.failedImports++;
       }
+
+      // Small delay to simulate download time
+      await this.simulateDelay(100);
     }
+
+    await this.updateStepStatus(logId, progress, 8, 'completed');
   }
 
   private async processExtractedInvoiceDataFast(
@@ -801,25 +813,35 @@ class InvoiceImporterService {
 
     // Similar to XML processing but for PDFs
     for (let i = 0; i < progress.totalInvoices; i++) {
+      progress.processedInvoices = i + 1;
+
       // Simulate success/failure rate (85% success for PDFs)
       if (Math.random() > 0.15) {
         progress.successfulImports++;
 
-        await storage.createImportedInvoice({
-          logId,
-          originalFileName: `invoice_${i + 1}.pdf`,
-          fileType: 'pdf',
-          fileSize: Math.floor(Math.random() * 200000) + 50000, // 50-250KB
-          filePath: `/uploads/imported/pdf/invoice_${i + 1}.pdf`,
-          erpDocumentId: `DOC_${Date.now()}_${i}`,
+        // Create realistic mock imported invoice record for PDF
+        const mockPdfData = {
+          logId: logId,
+          originalFileName: `INVOICE_${Date.now()}_${i + 1}.pdf`,
+          fileType: 'pdf' as const,
+          fileSize: Math.floor(Math.random() * 200000) + 50000, // 50KB to 250KB
+          filePath: `/downloads/pdf/INVOICE_${Date.now()}_${i + 1}.pdf`,
+          erpDocumentId: `DOC_${Math.random().toString(36).substr(2, 9)}`,
           downloadedAt: new Date(),
           metadata: {
+            source: 'ERP_SYSTEM',
+            importBatch: logId,
+            documentType: 'PDF_INVOICE',
             invoiceNumber: `INV-${Date.now()}-${i}`,
             issueDate: new Date().toISOString(),
             vendor: `Vendor ${i + 1}`,
             amount: (Math.random() * 10000).toFixed(2),
           },
-        });
+        };
+
+        // Actually create the imported invoice record
+        await storage.createImportedInvoice(mockPdfData);
+
       } else {
         progress.failedImports++;
       }
@@ -834,7 +856,8 @@ class InvoiceImporterService {
         data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
       });
 
-      await this.simulateDelay(2000);
+      // Small delay to simulate download time
+      await this.simulateDelay(100);
     }
 
     await this.updateStepStatus(logId, progress, 9, 'completed');
