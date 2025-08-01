@@ -143,7 +143,7 @@ export interface IStorage {
   updateInvoicePoMatch(id: number, updates: any): Promise<any>;
   getUnresolvedMatches(): Promise<any[]>;
   getInvoiceProjectMatches(): Promise<any[]>;
-  findPotentialProjectMatches(invoiceId: number): Promise<any[]>;
+  findPotentialProjectMatches(invoice: any): Promise<any[]>;
   updateInvoiceProjectMatch(id: number, updates: any): Promise<any>;
   setActiveProjectMatch(invoiceId: number, projectId: number): Promise<void>;
   getUnresolvedProjectMatches(): Promise<any[]>;
@@ -1427,8 +1427,88 @@ class PostgresStorage implements IStorage {
     return await db.select().from(invoiceProjectMatches);
   }
 
-  async findPotentialProjectMatches(invoiceId: number): Promise<any[]> {
-    return [];
+  async findPotentialProjectMatches(invoice: any): Promise<any[]> {
+    try {
+      const projects = await this.getProjects();
+      
+      if (!projects || projects.length === 0) {
+        return [];
+      }
+      
+      const extractedData = invoice.extractedData || {};
+      const invoiceAddress = extractedData.projectAddress || extractedData.address || '';
+      const invoiceCity = extractedData.projectCity || extractedData.city || '';
+      const invoiceProjectName = extractedData.projectName || '';
+      
+      const matches = [];
+      
+      // Score each project based on similarity
+      for (const project of projects) {
+        let score = 0;
+        const reasons = [];
+        
+        // Project name matching (40% weight)
+        if (invoiceProjectName && project.name) {
+          const nameSimilarity = this.calculateStringSimilarity(invoiceProjectName, project.name);
+          if (nameSimilarity > 40) {
+            score += nameSimilarity * 0.4;
+            reasons.push(`Project name similarity: ${nameSimilarity}%`);
+          }
+        }
+        
+        // Address matching (35% weight)
+        if (invoiceAddress && project.address) {
+          const addressSimilarity = this.calculateStringSimilarity(invoiceAddress, project.address);
+          if (addressSimilarity > 30) {
+            score += addressSimilarity * 0.35;
+            reasons.push(`Address similarity: ${addressSimilarity}%`);
+          }
+        }
+        
+        // City matching (25% weight)
+        if (invoiceCity && project.city) {
+          const citySimilarity = this.calculateStringSimilarity(invoiceCity, project.city);
+          if (citySimilarity > 50) {
+            score += citySimilarity * 0.25;
+            reasons.push(`City similarity: ${citySimilarity}%`);
+          }
+        }
+        
+        if (score > 20) {  // Lower threshold for potential matches
+          matches.push({
+            project,
+            matchScore: Math.round(score),
+            matchReasons: reasons,
+            confidence: Math.round(score)
+          });
+        }
+      }
+      
+      // Sort by match score descending
+      return matches.sort((a, b) => b.matchScore - a.matchScore);
+      
+    } catch (error) {
+      console.error('Error finding potential project matches:', error);
+      return [];
+    }
+  }
+
+  private calculateStringSimilarity(str1: string, str2: string): number {
+    if (!str1 || !str2) return 0;
+    
+    const s1 = str1.toLowerCase().trim();
+    const s2 = str2.toLowerCase().trim();
+    
+    if (s1 === s2) return 100;
+    
+    // Simple fuzzy matching using character overlap
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+    
+    if (longer.length === 0) return 100;
+    
+    const matches = shorter.split('').filter(char => longer.includes(char)).length;
+    return Math.round((matches / longer.length) * 100);
   }
 
   async updateInvoiceProjectMatch(id: number, updates: any): Promise<any> {

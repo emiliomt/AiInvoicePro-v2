@@ -618,8 +618,85 @@ export async function matchToProject(invoice: any): Promise<any> {
   try {
     console.log('🎯 Matching invoice to projects...');
     
-    // This would integrate with your existing project matching logic
-    // For now, return a mock project match structure
+    const { storage } = await import('../storage');
+    const projects = await storage.getProjects();
+    
+    if (!projects || projects.length === 0) {
+      console.log('No projects available for matching');
+      return {
+        projectId: null,
+        projectName: null,
+        matchConfidence: 0.0,
+        matchReasons: [],
+        suggestedProjects: []
+      };
+    }
+    
+    const extractedData = invoice.extractedData || {};
+    const invoiceAddress = extractedData.projectAddress || extractedData.address || '';
+    const invoiceCity = extractedData.projectCity || extractedData.city || '';
+    const invoiceProjectName = extractedData.projectName || '';
+    
+    let bestMatch = {
+      project: null,
+      confidence: 0,
+      reasons: [] as string[]
+    };
+    
+    // Score each project based on similarity
+    for (const project of projects) {
+      let score = 0;
+      const reasons = [];
+      
+      // Project name matching (40% weight)
+      if (invoiceProjectName && project.name) {
+        const nameSimilarity = calculateStringSimilarity(invoiceProjectName, project.name);
+        if (nameSimilarity > 60) {
+          score += nameSimilarity * 0.4;
+          reasons.push(`Project name similarity: ${nameSimilarity}%`);
+        }
+      }
+      
+      // Address matching (35% weight)
+      if (invoiceAddress && project.address) {
+        const addressSimilarity = calculateStringSimilarity(invoiceAddress, project.address);
+        if (addressSimilarity > 50) {
+          score += addressSimilarity * 0.35;
+          reasons.push(`Address similarity: ${addressSimilarity}%`);
+        }
+      }
+      
+      // City matching (25% weight)
+      if (invoiceCity && project.city) {
+        const citySimilarity = calculateStringSimilarity(invoiceCity, project.city);
+        if (citySimilarity > 70) {
+          score += citySimilarity * 0.25;
+          reasons.push(`City similarity: ${citySimilarity}%`);
+        }
+      }
+      
+      if (score > bestMatch.confidence) {
+        bestMatch = {
+          project,
+          confidence: Math.round(score),
+          reasons
+        };
+      }
+    }
+    
+    // Only return match if confidence is above threshold (60%)
+    if (bestMatch.confidence >= 60 && bestMatch.project) {
+      console.log(`✅ Found project match: ${bestMatch.project.name} (${bestMatch.confidence}% confidence)`);
+      return {
+        projectId: bestMatch.project.projectId,
+        projectName: bestMatch.project.name,
+        matchConfidence: bestMatch.confidence / 100,
+        matchReasons: bestMatch.reasons,
+        suggestedProjects: [bestMatch.project]
+      };
+    }
+    
+    console.log('No suitable project match found');
     return {
       projectId: null,
       projectName: null,
@@ -637,4 +714,23 @@ export async function matchToProject(invoice: any): Promise<any> {
       error: 'Project matching failed'
     };
   }
+}
+
+// Helper function for string similarity calculation
+function calculateStringSimilarity(str1: string, str2: string): number {
+  if (!str1 || !str2) return 0;
+  
+  const s1 = str1.toLowerCase().trim();
+  const s2 = str2.toLowerCase().trim();
+  
+  if (s1 === s2) return 100;
+  
+  // Simple fuzzy matching using character overlap
+  const longer = s1.length > s2.length ? s1 : s2;
+  const shorter = s1.length > s2.length ? s2 : s1;
+  
+  if (longer.length === 0) return 100;
+  
+  const matches = shorter.split('').filter(char => longer.includes(char)).length;
+  return Math.round((matches / longer.length) * 100);
 }

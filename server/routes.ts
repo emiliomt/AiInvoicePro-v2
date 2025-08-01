@@ -374,6 +374,29 @@ async function processPostExtractionWorkflow(invoice: any) {
     
     const projectMatch = await matchToProject(invoice);
     
+    // If a good project match is found, automatically assign it to the invoice
+    if (projectMatch?.projectName && projectMatch.matchConfidence >= 0.6) {
+      console.log(`✅ Auto-assigning project: ${projectMatch.projectName} (${Math.round(projectMatch.matchConfidence * 100)}% confidence)`);
+      
+      // Update extractedData to include the assigned project
+      const currentExtractedData = invoice.extractedData || {};
+      const updatedExtractedData = {
+        ...currentExtractedData,
+        assignedProject: projectMatch.projectName,
+        assignedProjectId: projectMatch.projectId,
+        autoAssigned: true,
+        assignmentConfidence: projectMatch.matchConfidence
+      };
+      
+      await storage.updateInvoice(invoice.id, {
+        extractedData: updatedExtractedData,
+        updatedAt: new Date()
+      });
+      
+      // Refresh invoice data with updated extractedData
+      invoice.extractedData = updatedExtractedData;
+    }
+    
     // Step 3: Information Validation
     await storage.updateInvoice(invoice.id, { status: "validating" });
     console.log(`🔍 Step 3: Validating invoice ${invoice.id} data`);
