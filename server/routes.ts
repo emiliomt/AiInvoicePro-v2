@@ -5456,28 +5456,92 @@ app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req
 
     console.log(`Starting automatic processing for ${invoiceIds.length} invoices`);
 
-    // Get all selected invoices
-    const invoices = await Promise.all(
-      invoiceIds.map(async (id: number) => {
-        const invoice = await storage.getInvoice(id);
-        if (!invoice || invoice.userId !== user.claims.sub) {
-          throw new Error(`Invoice ${id} not found or unauthorized`);
+    // Get all selected invoices with proper authorization handling
+    const results = [];
+    for (const invoiceId of invoiceIds) {
+      try {
+        console.log(`🔍 Looking up invoice ${invoiceId}...`);
+        
+        const invoice = await storage.getInvoice(invoiceId);
+        
+        if (!invoice) {
+          console.log(`❌ Invoice ${invoiceId} not found in database`);
+          results.push({
+            invoiceId,
+            success: false,
+            error: `Invoice ${invoiceId} not found`
+          });
+          continue;
         }
-        return invoice;
-      })
-    );
+        
+        console.log(`✅ Found invoice ${invoiceId}: ${invoice.invoiceNumber} (owner: ${invoice.userId})`);
+        
+        // Check if user can access this invoice
+        // Allow access if: invoice belongs to user, is system-owned (rpa-system), or has no owner
+        const canAccess = !invoice.userId || 
+                          invoice.userId === user.claims.sub || 
+                          invoice.userId === 'rpa-system';
+        
+        if (!canAccess) {
+          console.log(`❌ Invoice ${invoiceId} belongs to different user (${invoice.userId} vs ${user.claims.sub})`);
+          results.push({
+            invoiceId,
+            success: false,
+            error: `Unauthorized to access invoice ${invoiceId}`
+          });
+          continue;
+        }
+        
+        results.push({
+          invoiceId,
+          invoice,
+          success: true
+        });
+        
+      } catch (error) {
+        console.error(`❌ Error accessing invoice ${invoiceId}:`, error);
+        results.push({
+          invoiceId,
+          success: false,
+          error: error.message
+        });
+      }
+    }
 
-    // Filter invoices that can be processed automatically (pending, extracted, or rejected)
+    // Extract successful invoices
+    const invoices = results
+      .filter(result => result.success && result.invoice)
+      .map(result => result.invoice);
+    
+    // Check if we have any invoices to process
+    if (invoices.length === 0) {
+      const errors = results.filter(r => !r.success).map(r => `Invoice ${r.invoiceId}: ${r.error}`);
+      console.log('❌ No accessible invoices found');
+      return res.status(404).json({
+        success: false,
+        error: 'No accessible invoices found',
+        details: errors
+      });
+    }
+
+    console.log(`Found ${invoices.length} accessible invoices out of ${invoiceIds.length} requested`);
+
+    // Filter invoices that can be processed automatically (pending, extracted, rejected, or approved)
     const processableInvoices = invoices.filter(invoice => 
-      invoice.status === 'pending' || invoice.status === 'extracted' || invoice.status === 'rejected'
+      invoice.status === 'pending' || 
+      invoice.status === 'extracted' || 
+      invoice.status === 'rejected' ||
+      invoice.status === 'approved'
     );
 
-    console.log(`Found ${processableInvoices.length} processable invoices out of ${invoices.length} selected`);
+    console.log(`Found ${processableInvoices.length} processable invoices out of ${invoices.length} accessible`);
 
     if (processableInvoices.length === 0) {
       console.log('❌ No invoices available for automatic processing');
       return res.status(400).json({ 
-        error: 'No invoices available for automatic processing. Invoices must be in pending, extracted, or rejected status.' 
+        error: 'No invoices available for automatic processing. Invoices must be in pending, extracted, rejected, or approved status.',
+        accessibleInvoices: invoices.length,
+        details: invoices.map(inv => `Invoice ${inv.id} (${inv.invoiceNumber}): status = ${inv.status}`)
       });
     }
 
@@ -5582,6 +5646,52 @@ app.get('/api/invoices/processable', isAuthenticated, async (req: any, res) => {
       error: 'Failed to fetch processable invoices',
       details: error.message 
     });
+  }
+});
+
+// Debug endpoint to check invoice access
+app.get('/api/debug/invoice/:id', isAuthenticated, async (req: any, res) => {
+  try {
+    const invoiceId = parseInt(req.params.id);
+    const user = req.user;
+    
+    console.log(`🔍 Debug: Looking up invoice ${invoiceId} for user ${user.claims.sub}`);
+    
+    // Check if invoice exists
+    const invoice = await storage.getInvoice(invoiceId);
+    
+    // Also check all invoices for this user
+    const userInvoices = await storage.getInvoicesByUserId(user.claims.sub);
+    
+    // Check system invoices (rpa-system)
+    const systemInvoices = await storage.getInvoicesByUserId('rpa-system');
+    
+    const canAccess = invoice && (!invoice.userId || 
+                      invoice.userId === user.claims.sub || 
+                      invoice.userId === 'rpa-system');
+    
+    res.json({
+      invoiceId,
+      found: !!invoice,
+      canAccess,
+      invoice: invoice ? {
+        id: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        userId: invoice.userId,
+        status: invoice.status,
+        fileName: invoice.fileName
+      } : null,
+      currentUser: user.claims.sub,
+      userInvoiceCount: userInvoices.length,
+      systemInvoiceCount: systemInvoices.length,
+      userInvoiceIds: userInvoices.map(inv => inv.id),
+      systemInvoiceIds: systemInvoices.map(inv => inv.id),
+      requestedInvoiceExists: userInvoices.some(inv => inv.id === invoiceId) || systemInvoices.some(inv => inv.id === invoiceId)
+    });
+    
+  } catch (error) {
+    console.error('Debug endpoint error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
