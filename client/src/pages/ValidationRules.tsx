@@ -452,7 +452,7 @@ function ValidationRulesContent() {
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleValue || rule.ruleData || "",
+      ruleValue: rule.ruleValue || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -800,19 +800,19 @@ function ValidationRulesContent() {
 
         {/* Rules List */}
         <div className="grid grid-cols-1 gap-6">
-          {queryError ? (
+          {error ? (
             <Card>
               <CardContent className="p-6">
                 <div className="text-center">
                   <div className="text-red-500 text-4xl mb-4">⚠️</div>
                   <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Rules</h3>
                   <p className="text-gray-600 mb-4">
-                    {isUnauthorizedError(queryError as Error) 
+                    {isUnauthorizedError(error as Error) 
                       ? "You are not authorized to view this data. Please log in again."
-                      : (queryError as Error)?.message || "Failed to load validation rules"
+                      : (error as Error)?.message || "Failed to load validation rules"
                     }
                   </p>
-                  {isUnauthorizedError(queryError as Error) ? (
+                  {isUnauthorizedError(error as Error) ? (
                     <Button 
                       onClick={() => window.location.href = "/api/login"}
                       className="bg-primary-600 hover:bg-primary-700"
@@ -891,7 +891,7 @@ function ValidationRulesContent() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || rule.ruleData || '')}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || '')}
                       </p>
                     </div>
                   </div>

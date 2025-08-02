@@ -20,6 +20,7 @@ import {
   scheduledTasks,
   feedbackLogs,
   settings,
+  validationRules,
   // Types
   type Invoice,
   type InsertInvoice,
