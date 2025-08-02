@@ -44,7 +44,7 @@ export default function AILearningDashboard() {
       const response = await apiRequest('GET', '/api/ai/learning-metrics');
       return response.json() as Promise<LearningMetrics>;
     },
-    refetchInterval: false, // Disable automatic refresh
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
   const { data: insights, isLoading: insightsLoading } = useQuery({
@@ -53,7 +53,7 @@ export default function AILearningDashboard() {
       const response = await apiRequest('GET', '/api/ai/learning-insights');
       return response.json() as Promise<LearningInsights>;
     },
-    refetchInterval: false, // Disable automatic refresh
+    refetchInterval: 60000, // Refresh every minute
   });
 
   const getTrendIcon = (trend: string) => {

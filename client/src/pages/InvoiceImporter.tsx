@@ -2274,7 +2274,7 @@ function ScheduleOverview() {
   // Fetch scheduled configurations
   const { data: scheduleData = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery<any[]>({
     queryKey: ['/api/schedule-overview'],
-    refetchInterval: false, // Disable automatic refresh
+    refetchInterval: 30000, // Refresh every 30 seconds
   });
 
   // Toggle pause/resume mutation

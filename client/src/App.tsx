@@ -133,9 +133,6 @@ function App() {
   // Add comprehensive global error handling for unhandled promise rejections and errors
   React.useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      // Always prevent default to avoid crashes
-      event.preventDefault();
-      
       console.error('Unhandled promise rejection:', event.reason);
       
       // Check if it's a WebSocket error (common cause of crashes)
@@ -143,6 +140,7 @@ function App() {
         const reasonStr = String(event.reason);
         if (reasonStr.includes('WebSocket') || reasonStr.includes('Failed to construct') || reasonStr.includes('connection')) {
           console.warn('WebSocket-related promise rejection handled gracefully');
+          event.preventDefault();
           return;
         }
       }
@@ -150,21 +148,12 @@ function App() {
       // Check if it's a fetch error (network issues)
       if (event.reason instanceof TypeError && event.reason.message.includes('fetch')) {
         console.warn('Network fetch error handled gracefully');
+        event.preventDefault();
         return;
       }
       
-      // Check for TanStack Query errors
-      if (event.reason && (event.reason.message?.includes('QueryClient') || event.reason.name?.includes('Query'))) {
-        console.warn('Query-related promise rejection handled gracefully');
-        return;
-      }
-      
-      // Log specific details for debugging but don't crash
-      console.warn('Unhandled promise rejection prevented:', {
-        reason: event.reason,
-        type: typeof event.reason,
-        stack: event.reason?.stack || 'No stack trace'
-      });
+      // Prevent the default browser behavior for all unhandled rejections
+      event.preventDefault();
     };
 
     const handleError = (event: ErrorEvent) => {

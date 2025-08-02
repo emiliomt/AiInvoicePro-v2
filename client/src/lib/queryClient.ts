@@ -56,12 +56,6 @@ export const queryClient = new QueryClient({
         return failureCount < 3;
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
-      refetchOnWindowFocus: false, // Prevent excessive refetching
-      refetchOnMount: true,
-      refetchOnReconnect: true,
-    },
-    mutations: {
-      retry: false, // Don't retry failed mutations to prevent cascading errors
     },
   },
 });
