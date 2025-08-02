@@ -1286,13 +1286,26 @@ class PostgresStorage implements IStorage {
   }
 
   async createValidationRule(rule: any): Promise<any> {
-    console.log("Storage: Creating validation rule with data:", rule);
+    console.log("📦 Storage: Creating validation rule with data:", JSON.stringify(rule, null, 2));
+    console.log("📦 Storage: Rule data types:");
+    Object.entries(rule).forEach(([key, value]) => {
+      console.log(`    ${key}: ${value} (${typeof value})`);
+    });
+
     try {
+      console.log("📦 Storage: Attempting to insert into validationRules table...");
       const result = await db.insert(validationRules).values(rule).returning();
-      console.log("Storage: Validation rule created successfully:", result[0]);
+      console.log("✅ Storage: Database insert successful, returned:", JSON.stringify(result, null, 2));
+      console.log("✅ Storage: First result item:", JSON.stringify(result[0], null, 2));
       return result[0];
     } catch (error) {
-      console.error("Storage: Error creating validation rule:", error);
+      console.error("❌ Storage: Error creating validation rule:");
+      console.error("    Error message:", error instanceof Error ? error.message : String(error));
+      console.error("    Error stack:", error instanceof Error ? error.stack : "No stack trace");
+      console.error("    SQL Error code:", (error as any)?.code);
+      console.error("    SQL Error detail:", (error as any)?.detail);
+      console.error("    SQL Error hint:", (error as any)?.hint);
+      console.error("    Full error object:", error);
       throw error;
     }
   }

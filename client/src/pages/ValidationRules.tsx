@@ -79,15 +79,58 @@ export default function ValidationRules() {
   // Create/Update rule mutation
   const saveRuleMutation = useMutation({
     mutationFn: async (ruleData: any) => {
-      if (editingRule) {
-        const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
-        return response.json();
-      } else {
-        const response = await apiRequest('POST', '/api/validation-rules', ruleData);
-        return response.json();
+      console.log("🚀 Frontend: Starting mutation with data:", JSON.stringify(ruleData, null, 2));
+      console.log("🚀 Frontend: Data types:");
+      Object.entries(ruleData).forEach(([key, value]) => {
+        console.log(`    ${key}: ${value} (${typeof value})`);
+      });
+
+      try {
+        if (editingRule) {
+          console.log("🔄 Frontend: Making PUT request to update rule", editingRule.id);
+          const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
+          const result = await response.json();
+          console.log("✅ Frontend: PUT response received:", JSON.stringify(result, null, 2));
+          return result;
+        } else {
+          console.log("🔄 Frontend: Making POST request to create new rule");
+          const response = await apiRequest('POST', '/api/validation-rules', ruleData);
+          
+          console.log("📊 Frontend: Response status:", response.status);
+          console.log("📊 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
+          
+          if (!response.ok) {
+            const errorText = await response.text();
+            console.error("❌ Frontend: Non-OK response received:");
+            console.error("    Status:", response.status);
+            console.error("    Status text:", response.statusText);
+            console.error("    Response body:", errorText);
+            
+            let errorData;
+            try {
+              errorData = JSON.parse(errorText);
+            } catch (parseError) {
+              console.error("❌ Frontend: Failed to parse error response as JSON:", parseError);
+              throw new Error(`Server error (${response.status}): ${errorText}`);
+            }
+            
+            throw new Error(errorData.message || `Server error (${response.status})`);
+          }
+
+          const result = await response.json();
+          console.log("✅ Frontend: POST response received:", JSON.stringify(result, null, 2));
+          return result;
+        }
+      } catch (apiError) {
+        console.error("❌ Frontend: API request failed:");
+        console.error("    Error message:", apiError instanceof Error ? apiError.message : String(apiError));
+        console.error("    Error stack:", apiError instanceof Error ? apiError.stack : "No stack trace");
+        console.error("    Full error object:", apiError);
+        throw apiError;
       }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log("🎉 Frontend: Mutation successful with data:", JSON.stringify(data, null, 2));
       toast({
         title: editingRule ? "Rule Updated" : "Rule Created",
         description: `Validation rule has been ${editingRule ? "updated" : "created"} successfully.`,
@@ -97,7 +140,13 @@ export default function ValidationRules() {
       resetForm();
     },
     onError: (error: Error) => {
+      console.error("❌ Frontend: Mutation failed:");
+      console.error("    Error message:", error.message);
+      console.error("    Error stack:", error.stack);
+      console.error("    Full error object:", error);
+
       if (isUnauthorizedError(error)) {
+        console.log("🔐 Frontend: Unauthorized error detected, redirecting to login");
         toast({
           title: "Unauthorized",
           description: "You are logged out. Logging in again...",
@@ -111,7 +160,7 @@ export default function ValidationRules() {
 
       toast({
         title: "Save Failed",
-        description: error.message,
+        description: error.message || "An unknown error occurred",
         variant: "destructive",
       });
     },
@@ -186,7 +235,16 @@ export default function ValidationRules() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log("📝 Frontend: Form submission started");
+    console.log("📝 Frontend: Current form data:", JSON.stringify(formData, null, 2));
+    console.log("📝 Frontend: Form validation check:");
+    console.log("    name:", formData.name, "(valid:", !!formData.name, ")");
+    console.log("    fieldName:", formData.fieldName, "(valid:", !!formData.fieldName, ")");
+    console.log("    ruleType:", formData.ruleType, "(valid:", !!formData.ruleType, ")");
+    console.log("    ruleValue:", formData.ruleValue, "(valid:", !!formData.ruleValue, ")");
+
     if (!formData.name || !formData.fieldName || !formData.ruleType || !formData.ruleValue) {
+      console.error("❌ Frontend: Form validation failed - missing required fields");
       toast({
         title: "Validation Error",
         description: "Please fill in all required fields.",
@@ -195,7 +253,7 @@ export default function ValidationRules() {
       return;
     }
 
-    console.log("Submitting validation rule:", formData);
+    console.log("✅ Frontend: Form validation passed, submitting data:", JSON.stringify(formData, null, 2));
 
     // Send the form data directly - the backend will handle field mapping
     saveRuleMutation.mutate(formData);

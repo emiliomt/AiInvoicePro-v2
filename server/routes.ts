@@ -2600,22 +2600,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ruleData = req.body;
 
-      console.log("Creating validation rule with data:", ruleData);
+      console.log("🔍 POST /api/validation-rules - Received request body:", JSON.stringify(ruleData, null, 2));
+      console.log("🔍 Request body type:", typeof ruleData);
+      console.log("🔍 Request body keys:", Object.keys(ruleData));
 
       // Validate required fields
       if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType) {
-        console.error("Missing required fields:", ruleData);
+        console.error("❌ Missing required fields validation failed:");
+        console.error("  - name:", ruleData.name, "(type:", typeof ruleData.name, ")");
+        console.error("  - fieldName:", ruleData.fieldName, "(type:", typeof ruleData.fieldName, ")");
+        console.error("  - ruleType:", ruleData.ruleType, "(type:", typeof ruleData.ruleType, ")");
         return res.status(400).json({ 
-          message: "Missing required fields: name, fieldName, ruleType" 
+          message: "Missing required fields: name, fieldName, ruleType",
+          details: {
+            name: !ruleData.name ? "missing" : "present",
+            fieldName: !ruleData.fieldName ? "missing" : "present", 
+            ruleType: !ruleData.ruleType ? "missing" : "present"
+          }
         });
       }
 
       // Ensure ruleValue is present (either from ruleValue or ruleData field)
       const ruleValue = ruleData.ruleValue || ruleData.ruleData;
+      console.log("🔍 Rule value extraction:");
+      console.log("  - ruleData.ruleValue:", ruleData.ruleValue, "(type:", typeof ruleData.ruleValue, ")");
+      console.log("  - ruleData.ruleData:", ruleData.ruleData, "(type:", typeof ruleData.ruleData, ")");
+      console.log("  - final ruleValue:", ruleValue, "(type:", typeof ruleValue, ")");
+
       if (!ruleValue) {
-        console.error("Missing rule value:", ruleData);
+        console.error("❌ Missing rule value validation failed:");
+        console.error("  - ruleData.ruleValue:", ruleData.ruleValue);
+        console.error("  - ruleData.ruleData:", ruleData.ruleData);
         return res.status(400).json({ 
-          message: "Rule value is required" 
+          message: "Rule value is required",
+          details: {
+            ruleValue: ruleData.ruleValue || "missing",
+            ruleData: ruleData.ruleData || "missing"
+          }
         });
       }
 
@@ -2631,17 +2652,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isActive: true
       };
 
-      console.log("Creating rule with processed data:", ruleToCreate);
+      console.log("✅ Creating rule with processed data:", JSON.stringify(ruleToCreate, null, 2));
 
+      console.log("🔄 Calling storage.createValidationRule...");
       const rule = await storage.createValidationRule(ruleToCreate);
-      console.log("Created validation rule:", rule);
+      console.log("✅ Storage returned validation rule:", JSON.stringify(rule, null, 2));
       
+      console.log("✅ Sending success response with rule ID:", rule?.id);
       res.status(201).json(rule);
     } catch (error) {
-      console.error("Error creating validation rule:", error);
+      console.error("❌ Error creating validation rule:");
+      console.error("  - Error message:", error instanceof Error ? error.message : String(error));
+      console.error("  - Error stack:", error instanceof Error ? error.stack : "No stack trace");
+      console.error("  - Error type:", typeof error);
+      console.error("  - Full error object:", error);
+      
       res.status(500).json({ 
         message: "Failed to create validation rule",
-        error: error instanceof Error ? error.message : "Unknown error"
+        error: error instanceof Error ? error.message : "Unknown error",
+        details: {
+          type: typeof error,
+          stack: error instanceof Error ? error.stack : undefined
+        }
       });
     }
   });
