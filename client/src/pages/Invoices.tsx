@@ -503,34 +503,32 @@ export default function Invoices() {
   };
 
   const handleInitiateAutomaticProcess = async () => {
-    // Get all invoices that can be processed automatically (uploaded or failed status)
-    const processableInvoices = invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed');
+    console.log('🚀 handleInitiateAutomaticProcess called');
+    console.log('📝 Selected invoices:', selectedInvoices);
+    console.log('📊 Selected count:', selectedInvoices.length);
     
-    if (processableInvoices.length === 0) {
+    if (selectedInvoices.length === 0) {
       toast({
-        title: "No Processable Invoices",
-        description: "No invoices found with 'uploaded' or 'failed' status that can be processed automatically",
+        title: "No Invoices Selected",
+        description: "Please select invoices to process automatically",
         variant: "destructive",
       });
       return;
     }
 
+    // Get the selected invoices with their details
+    const selectedInvoiceObjects = invoices.filter(inv => selectedInvoices.includes(inv.id));
+    console.log('🔍 Selected invoice objects:', selectedInvoiceObjects);
+
     setIsProcessingAutomatic(true);
-    setShowProcessingStatus(true);
-    setProcessingProgress({ current: 0, total: processableInvoices.length, currentStep: 'Initializing...' });
-    setProcessingComplete({show: false, success: false, message: ''});
 
     try {
-      const processableIds = processableInvoices.map(inv => inv.id);
       const requestPayload = {
-        invoiceIds: processableIds,
+        invoiceIds: selectedInvoices,
         source: 'manual'
       };
 
-      console.log('Sending automatic processing request:', requestPayload);
-
-      // Update progress
-      setProcessingProgress({ current: 0, total: processableInvoices.length, currentStep: `Starting processing for ${processableInvoices.length} invoices...` });
+      console.log('📤 Sending automatic processing request:', requestPayload);
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
@@ -546,55 +544,26 @@ export default function Invoices() {
       }
 
       const result = await response.json();
+      console.log('✅ Processing result:', result);
 
-      // Simulate progress updates (since we start async processing)
-      let current = 0;
-      const progressInterval = setInterval(() => {
-        current++;
-        if (current <= processableInvoices.length) {
-          setProcessingProgress({
-            current,
-            total: processableInvoices.length,
-            currentStep: `Processing invoice ${current} of ${processableInvoices.length}...`
-          });
-        }
-        
-        if (current >= processableInvoices.length) {
-          clearInterval(progressInterval);
-          setProcessingProgress({
-            current: processableInvoices.length,
-            total: processableInvoices.length,
-            currentStep: 'Processing complete!'
-          });
-          
-          // Show completion status
-          setProcessingComplete({
-            show: true,
-            success: result.summary.failed === 0,
-            message: `Processing completed! ${result.summary.successful} successful, ${result.summary.failed} failed.`
-          });
-        }
-      }, 2000); // Update every 2 seconds
+      toast({
+        title: "Automatic Processing Initiated",
+        description: `Processing ${selectedInvoices.length} selected invoices.`,
+      });
 
-      // Refresh the invoices list after a delay
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-        setSelectedInvoices([]);
-      }, 5000);
+      // Refresh the invoices list
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      setSelectedInvoices([]);
 
     } catch (error: any) {
-      console.error('Automatic processing failed:', error);
-      setProcessingComplete({
-        show: true,
-        success: false,
-        message: error.message || "Failed to initiate automatic processing"
+      console.error('❌ Automatic processing failed:', error);
+      toast({
+        title: "Automatic Processing Failed",
+        description: error.message || "Failed to initiate automatic processing",
+        variant: "destructive",
       });
     } finally {
-      // Keep processing state for a while to show completion
-      setTimeout(() => {
-        setIsProcessingAutomatic(false);
-        setShowProcessingStatus(false);
-      }, 10000);
+      setIsProcessingAutomatic(false);
     }
   };
 
@@ -679,7 +648,7 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0 || isProcessingAutomatic}
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
                   >
                     {isProcessingAutomatic ? (
                       <>
@@ -689,7 +658,7 @@ export default function Invoices() {
                     ) : (
                       <>
                         <Play size={16} className="mr-2" />
-                        Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                        Process Selected ({selectedInvoices.length})
                       </>
                     )}
                   </Button>
