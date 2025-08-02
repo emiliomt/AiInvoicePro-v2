@@ -521,6 +521,12 @@ export default function Invoices() {
     console.log('🔍 Selected invoice objects:', selectedInvoiceObjects);
 
     setIsProcessingAutomatic(true);
+    setShowProcessingStatus(true);
+    setProcessingProgress({ 
+      current: 0, 
+      total: selectedInvoices.length, 
+      currentStep: 'Initiating automatic processing...' 
+    });
 
     try {
       const requestPayload = {
@@ -529,6 +535,13 @@ export default function Invoices() {
       };
 
       console.log('📤 Sending automatic processing request:', requestPayload);
+
+      // Update progress to show we're making the request
+      setProcessingProgress({ 
+        current: 1, 
+        total: selectedInvoices.length, 
+        currentStep: `Processing ${selectedInvoices.length} selected invoice${selectedInvoices.length === 1 ? '' : 's'}...` 
+      });
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
@@ -546,6 +559,20 @@ export default function Invoices() {
       const result = await response.json();
       console.log('✅ Processing result:', result);
 
+      // Show completion
+      setProcessingProgress({ 
+        current: selectedInvoices.length, 
+        total: selectedInvoices.length, 
+        currentStep: 'Processing completed successfully!' 
+      });
+
+      // Show completion message
+      setProcessingComplete({
+        show: true,
+        success: true,
+        message: `Successfully initiated processing for ${selectedInvoices.length} invoice${selectedInvoices.length === 1 ? '' : 's'}`
+      });
+
       toast({
         title: "Automatic Processing Initiated",
         description: `Processing ${selectedInvoices.length} selected invoices.`,
@@ -555,13 +582,39 @@ export default function Invoices() {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setSelectedInvoices([]);
 
+      // Hide progress after delay
+      setTimeout(() => {
+        setShowProcessingStatus(false);
+        setProcessingComplete({show: false, success: false, message: ''});
+      }, 3000);
+
     } catch (error: any) {
       console.error('❌ Automatic processing failed:', error);
+      
+      // Show error in progress
+      setProcessingProgress({ 
+        current: 0, 
+        total: selectedInvoices.length, 
+        currentStep: 'Processing failed' 
+      });
+
+      setProcessingComplete({
+        show: true,
+        success: false,
+        message: error.message || "Failed to initiate automatic processing"
+      });
+
       toast({
         title: "Automatic Processing Failed",
         description: error.message || "Failed to initiate automatic processing",
         variant: "destructive",
       });
+
+      // Hide progress after delay
+      setTimeout(() => {
+        setShowProcessingStatus(false);
+        setProcessingComplete({show: false, success: false, message: ''});
+      }, 5000);
     } finally {
       setIsProcessingAutomatic(false);
     }
@@ -668,13 +721,13 @@ export default function Invoices() {
 
         {/* Processing Progress Display */}
         {showProcessingStatus && (
-          <Card className="border-blue-200 bg-blue-50">
-            <CardContent className="py-6">
-              <div className="space-y-4">
+          <Card className="mb-6 border-blue-200 bg-blue-50">
+            <CardContent className="py-4">
+              <div className="space-y-3">
                 <div className="flex items-center space-x-2">
-                  <Loader2 className="h-5 w-5 text-blue-600 animate-spin" />
+                  <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
                   <div>
-                    <h3 className="text-sm font-medium text-blue-800">Processing Invoices</h3>
+                    <h3 className="text-sm font-medium text-blue-800">Processing Selected Invoices</h3>
                     <p className="text-sm text-blue-600">{processingProgress.currentStep}</p>
                   </div>
                 </div>
@@ -684,8 +737,8 @@ export default function Invoices() {
                     <span>{processingProgress.current} of {processingProgress.total}</span>
                   </div>
                   <Progress 
-                    value={(processingProgress.current / processingProgress.total) * 100} 
-                    className="w-full"
+                    value={processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0} 
+                    className="w-full h-2"
                   />
                 </div>
               </div>
