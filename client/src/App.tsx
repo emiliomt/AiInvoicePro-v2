@@ -161,9 +161,9 @@ function App() {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       // Always prevent default to avoid crashes
       event.preventDefault();
-      
+
       console.error('Unhandled promise rejection:', event.reason);
-      
+
       // Check if it's a WebSocket error (common cause of crashes)
       if (event.reason && typeof event.reason === 'object') {
         const reasonStr = String(event.reason);
@@ -172,19 +172,19 @@ function App() {
           return;
         }
       }
-      
+
       // Check if it's a fetch error (network issues)
       if (event.reason instanceof TypeError && event.reason.message.includes('fetch')) {
         console.warn('Network fetch error handled gracefully');
         return;
       }
-      
+
       // Check for TanStack Query errors
       if (event.reason && (event.reason.message?.includes('QueryClient') || event.reason.name?.includes('Query'))) {
         console.warn('Query-related promise rejection handled gracefully');
         return;
       }
-      
+
       // Log specific details for debugging but don't crash
       console.warn('Unhandled promise rejection prevented:', {
         reason: event.reason,
@@ -195,7 +195,7 @@ function App() {
 
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
-      
+
       // Don't let script errors crash the entire app
       if (event.error && event.error.name === 'ChunkLoadError') {
         console.warn('Chunk load error - possible network issue or cache problem');

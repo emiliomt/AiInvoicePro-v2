@@ -209,6 +209,16 @@ export default function Invoices() {
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Failed to fetch invoices: ${response.status} ${response.statusText}`, errorText);
+          
+          // Handle specific error cases
+          if (response.status === 401) {
+            throw new Error('Authentication required. Please log in.');
+          } else if (response.status === 403) {
+            throw new Error('Access denied. Please check your permissions.');
+          } else if (response.status === 500) {
+            throw new Error('Server error. Please try again later.');
+          }
+          
           throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
@@ -219,7 +229,13 @@ export default function Invoices() {
         throw err;
       }
     },
-    retry: 3,
+    retry: (failureCount, error: any) => {
+      // Don't retry on authentication errors
+      if (error?.message?.includes('Authentication required') || error?.message?.includes('401')) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     retryDelay: 1000,
     refetchInterval: false, // Disable automatic refetching
   });
