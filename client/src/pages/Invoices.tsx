@@ -492,7 +492,12 @@ export default function Invoices() {
   };
 
   const handleInitiateAutomaticProcess = async () => {
+    console.log('🔄 Button clicked! Starting automatic processing...');
+    console.log('Selected invoices:', selectedInvoices);
+    console.log('Is processing:', isProcessingAutomatic);
+
     if (selectedInvoices.length === 0) {
+      console.log('❌ No invoices selected');
       toast({
         title: "No Invoices Selected",
         description: "Please select invoices to process automatically",
@@ -501,6 +506,12 @@ export default function Invoices() {
       return;
     }
 
+    if (isProcessingAutomatic) {
+      console.log('❌ Already processing');
+      return;
+    }
+
+    console.log('✅ Starting processing...');
     setIsProcessingAutomatic(true);
 
     try {
@@ -509,7 +520,7 @@ export default function Invoices() {
         source: 'manual'
       };
 
-      console.log('Sending automatic processing request:', requestPayload);
+      console.log('🚀 Sending automatic processing request:', requestPayload);
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
@@ -519,16 +530,20 @@ export default function Invoices() {
         body: JSON.stringify(requestPayload),
       });
 
+      console.log('📡 Response status:', response.status);
+
       if (!response.ok) {
         const errorData = await response.json();
+        console.error('❌ API Error:', errorData);
         throw new Error(errorData.error || 'Automatic processing failed');
       }
 
       const result = await response.json();
+      console.log('✅ Processing completed:', result);
 
       toast({
         title: "Automatic Processing Initiated",
-        description: `Processing ${result.summary.totalInvoices} invoices. ${result.summary.successful} successful, ${result.summary.failed} failed.`,
+        description: `Processing ${result.summary.totalInvoices} invoices${result.summary.skipped ? ` (${result.summary.skipped} skipped)` : ''}.`,
       });
 
       // Refresh the invoices list
@@ -536,7 +551,7 @@ export default function Invoices() {
       setSelectedInvoices([]);
 
     } catch (error: any) {
-      console.error('Automatic processing failed:', error);
+      console.error('❌ Automatic processing failed:', error);
       toast({
         title: "Automatic Processing Failed",
         description: error.message || "Failed to initiate automatic processing",
@@ -627,11 +642,23 @@ export default function Invoices() {
                 </AlertDialog>
               )}
               <Button
-                    onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
+                    onClick={() => {
+                      console.log('🎯 Button physically clicked!');
+                      handleInitiateAutomaticProcess();
+                    }}
+                    disabled={isProcessingAutomatic || selectedInvoices.length === 0}
                   >
-                    <Play size={16} className="mr-2" />
-                    Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                    {isProcessingAutomatic ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Play size={16} className="mr-2" />
+                        Initiate Automatic Process ({selectedInvoices.length})
+                      </>
+                    )}
                   </Button>
             </div>
           </div>
