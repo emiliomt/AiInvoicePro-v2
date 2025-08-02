@@ -170,7 +170,7 @@ export default function ValidationRules() {
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleData || rule.ruleValue || "",
+      ruleValue: rule.ruleValue || rule.ruleData || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -195,13 +195,10 @@ export default function ValidationRules() {
       return;
     }
 
-    // Map ruleValue to ruleData for backend compatibility
-    const ruleData = {
-      ...formData,
-      ruleData: formData.ruleValue
-    };
+    console.log("Submitting validation rule:", formData);
 
-    saveRuleMutation.mutate(ruleData);
+    // Send the form data directly - the backend will handle field mapping
+    saveRuleMutation.mutate(formData);
   };
 
   const getSeverityIcon = (severity: string) => {
@@ -232,7 +229,7 @@ export default function ValidationRules() {
       case "comparison":
         return `Must satisfy: ${ruleValue}`;
       default:
-        return ruleValue;
+        return ruleValue || "No rule value specified";
     }
   };
 
@@ -506,7 +503,7 @@ export default function ValidationRules() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleData || rule.ruleValue || '')}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || rule.ruleData || '')}
                       </p>
                     </div>
                   </div>

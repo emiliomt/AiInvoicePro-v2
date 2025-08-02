@@ -2508,7 +2508,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/validation-rules', isAuthenticated, async (req: any, res) => {
     try {
       const rules = await storage.getValidationRules();
-      res.json(rules);
+      console.log("Fetched validation rules:", rules?.length || 0);
+      res.json(rules || []);
     } catch (error) {
       console.error("Error fetching validation rules:", error);
       res.status(500).json({ message: "Failed to fetch validation rules" });
@@ -2599,24 +2600,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ruleData = req.body;
 
+      console.log("Creating validation rule with data:", ruleData);
+
       // Validate required fields
-      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
+      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType) {
+        console.error("Missing required fields:", ruleData);
         return res.status(400).json({ 
-          message: "Missing required fields: name, fieldName, ruleType, ruleValue" 
+          message: "Missing required fields: name, fieldName, ruleType" 
         });
       }
 
-      // Set ruleData as valid JSON object containing the rule value
-      const ruleDataWithJson = {
-        ...ruleData,
-        ruleData: JSON.stringify({ value: ruleData.ruleValue })
+      // Ensure ruleValue is present (either from ruleValue or ruleData field)
+      const ruleValue = ruleData.ruleValue || ruleData.ruleData;
+      if (!ruleValue) {
+        console.error("Missing rule value:", ruleData);
+        return res.status(400).json({ 
+          message: "Rule value is required" 
+        });
+      }
+
+      // Create the rule with proper field mapping
+      const ruleToCreate = {
+        name: ruleData.name,
+        description: ruleData.description || null,
+        fieldName: ruleData.fieldName,
+        ruleType: ruleData.ruleType,
+        ruleValue: ruleValue,
+        severity: ruleData.severity || 'medium',
+        errorMessage: ruleData.errorMessage || null,
+        isActive: true
       };
 
-      const rule = await storage.createValidationRule(ruleDataWithJson);
+      console.log("Creating rule with processed data:", ruleToCreate);
+
+      const rule = await storage.createValidationRule(ruleToCreate);
+      console.log("Created validation rule:", rule);
+      
       res.status(201).json(rule);
     } catch (error) {
       console.error("Error creating validation rule:", error);
-      res.status(500).json({ message: "Failed to create validation rule" });
+      res.status(500).json({ 
+        message: "Failed to create validation rule",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
