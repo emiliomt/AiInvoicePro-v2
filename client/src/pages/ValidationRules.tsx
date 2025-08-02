@@ -110,17 +110,17 @@ export default function ValidationRules() {
         } else {
           console.log("🔄 Frontend: Making POST request to create new rule");
           const response = await apiRequest('POST', '/api/validation-rules', ruleData);
-          
+
           console.log("📊 Frontend: Response status:", response.status);
           console.log("📊 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
-          
+
           if (!response.ok) {
             const errorText = await response.text();
             console.error("❌ Frontend: Non-OK response received:");
             console.error("    Status:", response.status);
             console.error("    Status text:", response.statusText);
             console.error("    Response body:", errorText);
-            
+
             let errorData;
             try {
               errorData = JSON.parse(errorText);
@@ -128,7 +128,7 @@ export default function ValidationRules() {
               console.error("❌ Frontend: Failed to parse error response as JSON:", parseError);
               throw new Error(`Server error (${response.status}): ${errorText}`);
             }
-            
+
             throw new Error(errorData.message || `Server error (${response.status})`);
           }
 
@@ -366,6 +366,14 @@ export default function ValidationRules() {
                         ))}
                       </SelectContent>
                     </Select>
+                    {formData.fieldName && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Field path: <code className="bg-gray-100 px-1 rounded">{formData.fieldName}</code>
+                        {formData.fieldName.startsWith('extractedData.') && 
+                          <span className="ml-2 text-amber-600">⚠️ Nested field in extracted data</span>
+                        }
+                      </p>
+                    )}
                   </div>
 
                   <div>

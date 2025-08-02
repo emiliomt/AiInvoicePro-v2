@@ -1997,6 +1997,73 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invoiceId,
         approverId: userId, // For now, self-approval
         status: "approved",
+
+
+// Diagnostic endpoint to inspect invoice field structure
+app.get("/api/validation-rules/field-structure", async (req, res) => {
+  try {
+    console.log("🔍 Getting invoice field structure for validation rules");
+    
+    // Get a recent invoice to analyze its structure
+    const recentInvoice = await db
+      .select()
+      .from(invoices)
+      .orderBy(desc(invoices.createdAt))
+      .limit(1);
+    
+    if (recentInvoice.length === 0) {
+      return res.json({
+        message: "No invoices found",
+        availableFields: []
+      });
+    }
+    
+    const invoice = recentInvoice[0];
+    const fieldStructure: any = {};
+    
+    // Top-level fields
+    Object.keys(invoice).forEach(key => {
+      if (invoice[key] !== null && invoice[key] !== undefined) {
+        fieldStructure[key] = {
+          type: typeof invoice[key],
+          value: invoice[key],
+          path: key
+        };
+      }
+    });
+    
+    // Extracted data fields (nested)
+    if (invoice.extractedData && typeof invoice.extractedData === 'object') {
+      Object.keys(invoice.extractedData).forEach(key => {
+        const extractedValue = (invoice.extractedData as any)[key];
+        if (extractedValue !== null && extractedValue !== undefined) {
+          fieldStructure[`extractedData.${key}`] = {
+            type: typeof extractedValue,
+            value: extractedValue,
+            path: `extractedData.${key}`
+          };
+        }
+      });
+    }
+    
+    console.log("📊 Invoice field structure:", Object.keys(fieldStructure));
+    
+    res.json({
+      message: "Invoice field structure",
+      sampleInvoiceId: invoice.id,
+      fieldStructure,
+      availableFields: Object.keys(fieldStructure).sort()
+    });
+    
+  } catch (error) {
+    console.error("❌ Error getting field structure:", error);
+    res.status(500).json({ 
+      message: "Failed to get field structure",
+      error: error instanceof Error ? error.message : String(error)
+    });
+  }
+});
+
       });
 
       // Update invoice status
