@@ -1272,12 +1272,23 @@ class PostgresStorage implements IStorage {
 
   async getValidationRules(): Promise<any[]> {
     try {
-      const rules = await db.select().from(validationRules).where(eq(validationRules.isActive, true));
-      console.log("Storage: Retrieved validation rules count:", rules.length);
-      return rules;
+      console.log("📋 Storage: Getting validation rules from database...");
+      console.log("📋 Storage: Database connection status:", !!db);
+      console.log("📋 Storage: validationRules table reference:", !!validationRules);
+
+      const result = await db.select().from(validationRules).orderBy(validationRules.createdAt);
+      console.log(`📋 Storage: Found ${result.length} validation rules`);
+      console.log("📋 Storage: Raw result:", JSON.stringify(result, null, 2));
+
+      return result;
     } catch (error) {
-      console.error("Storage: Error fetching validation rules:", error);
-      throw error;
+      console.error("❌ Storage: Error getting validation rules:", error);
+      console.error("❌ Storage: Error name:", error instanceof Error ? error.name : "Unknown");
+      console.error("❌ Storage: Error message:", error instanceof Error ? error.message : String(error));
+      console.error("❌ Storage: Error stack:", error instanceof Error ? error.stack : "No stack");
+      console.error("❌ Storage: SQL Error code:", (error as any)?.code);
+      console.error("❌ Storage: SQL Error detail:", (error as any)?.detail);
+      return [];
     }
   }
 
