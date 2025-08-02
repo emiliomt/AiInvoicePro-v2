@@ -242,20 +242,38 @@ export function registerRoutes(app: Express): Server {
 
   // Initiate automatic processing
   app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    let processingTimeout: NodeJS.Timeout;
+
     try {
-      logger.info('🚀 Starting automatic invoice processing...');
-      logger.info('Request user:', req.user?.id);
-      logger.info('Request body:', req.body);
+      console.log('🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...');
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', req.user?.claims?.sub);
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request body:', JSON.stringify(req.body, null, 2));
 
       // Ensure we always return JSON with proper headers
       res.setHeader('Content-Type', 'application/json');
 
+      // Set up timeout to prevent hanging
+      processingTimeout = setTimeout(() => {
+        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 25 seconds');
+        if (!res.headersSent) {
+          res.status(408).json({
+            success: false,
+            error: 'Processing timeout',
+            message: 'Automatic processing took too long and was cancelled',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }, 25000); // 25 second timeout (less than frontend timeout)
+
       // Call the Python RPA service with fallback
       let result;
       try {
+        console.log('🔄 [AUTOMATIC_PROCESSING] Calling Python RPA service...');
         result = await pythonRpaService.processInvoicesAutomatically();
+        console.log('✅ [AUTOMATIC_PROCESSING] Python RPA service completed:', JSON.stringify(result, null, 2));
       } catch (pythonError) {
-        logger.warn('Python RPA service unavailable, using fallback processing:', pythonError.message);
+        console.warn('⚠️ [AUTOMATIC_PROCESSING] Python RPA service unavailable:', pythonError.message);
 
         // Fallback: Return a mock successful response
         result = {
@@ -265,32 +283,58 @@ export function registerRoutes(app: Express): Server {
           fallback: true,
           timestamp: new Date().toISOString()
         };
+        console.log('🔄 [AUTOMATIC_PROCESSING] Using fallback result:', JSON.stringify(result, null, 2));
       }
 
-      logger.info('✅ Automatic processing completed successfully');
-      logger.info('Processing result:', result);
+      // Clear timeout since we're responding
+      clearTimeout(processingTimeout);
+
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [AUTOMATIC_PROCESSING] Completed successfully in ${processingTime}ms`);
 
       // Ensure result is a valid JSON object
       const jsonResponse = {
         success: true,
         message: 'Automatic processing initiated successfully',
         data: result || {},
+        processingTimeMs: processingTime,
         timestamp: new Date().toISOString()
       };
 
-      res.status(200).json(jsonResponse);
+      console.log('📤 [AUTOMATIC_PROCESSING] Sending response:', JSON.stringify(jsonResponse, null, 2));
+
+      if (!res.headersSent) {
+        res.status(200).json(jsonResponse);
+      } else {
+        console.warn('⚠️ [AUTOMATIC_PROCESSING] Response already sent, skipping');
+      }
+
     } catch (error) {
-      logger.error('❌ Automatic processing failed:', error);
-      logger.error('Error stack:', error.stack);
+      // Clear timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+      }
+
+      const processingTime = Date.now() - startTime;
+      console.error('❌ [AUTOMATIC_PROCESSING] Failed after', processingTime, 'ms:', error);
+      console.error('❌ [AUTOMATIC_PROCESSING] Error stack:', error.stack);
+      console.error('❌ [AUTOMATIC_PROCESSING] Error name:', error.name);
+      console.error('❌ [AUTOMATIC_PROCESSING] Error message:', error.message);
 
       // Always return JSON, never let Express return HTML
       res.setHeader('Content-Type', 'application/json');
-      res.status(500).json({ 
-        success: false, 
-        error: 'Automatic processing failed',
-        message: error.message || 'Unknown error occurred',
-        timestamp: new Date().toISOString()
-      });
+      
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          success: false, 
+          error: 'Automatic processing failed',
+          message: error.message || 'Unknown error occurred',
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.warn('⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent');
+      }
     }
   });
 
