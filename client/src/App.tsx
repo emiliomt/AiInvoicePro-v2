@@ -40,6 +40,23 @@ import { queryClient } from "@/lib/queryClient";
 const AppContent = React.memo(() => {
   const { user, isLoading } = useAuth();
 
+  // Handle authentication success/error from URL parameters
+  React.useEffect(() => {
+    const urlParams = new URLSearchParams(window.location.search);
+    const authStatus = urlParams.get('auth');
+    const message = urlParams.get('message');
+    
+    if (authStatus === 'success') {
+      console.log('Authentication successful');
+      // Clear the URL parameters after handling
+      window.history.replaceState({}, document.title, window.location.pathname);
+    } else if (authStatus === 'error') {
+      console.error('Authentication error:', message || 'Unknown error');
+      // Clear the URL parameters after handling
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
+
   if (isLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-gray-50">
@@ -156,6 +173,14 @@ const AppContent = React.memo(() => {
 });
 
 function App() {
+  // Check if current path is an API route on initial load
+  if (window.location.pathname.startsWith('/api/')) {
+    // Don't render React router for API routes - let browser handle them
+    console.log('API route detected, redirecting to server:', window.location.pathname);
+    window.location.href = window.location.href;
+    return <div>Redirecting to authentication...</div>;
+  }
+
   // Add comprehensive global error handling for unhandled promise rejections and errors
   React.useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {

@@ -4,27 +4,37 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
 
-export function registerRoutes(app: Express): Server {
+export async function registerRoutes(app: Express): Promise<Server> {
   const httpServer = createServer(app);
 
   // Setup authentication
-  setupAuth(app);
+  await setupAuth(app);
 
   // Basic user endpoint  
   app.get("/api/user", (req: any, res) => {
     console.log('🔍 User endpoint - isAuthenticated:', !!req.isAuthenticated());
     console.log('🔍 User endpoint - user exists:', !!req.user);
+    console.log('🔍 User endpoint - session user:', (req.session as any)?.user);
     console.log('🔍 User endpoint - session ID:', req.sessionID);
     
-    if (!req.isAuthenticated() || !req.user) {
-      console.log('❌ User endpoint - auth failed');
-      return res.status(401).json({ message: "Unauthorized" });
+    // Check both passport auth and session-based auth for development
+    const sessionUser = (req.session as any)?.user;
+    if (req.isAuthenticated() && req.user) {
+      console.log('✅ User endpoint - passport auth passed');
+      return res.json({ 
+        user: req.user,
+        message: "Authenticated successfully" 
+      });
+    } else if (sessionUser) {
+      console.log('✅ User endpoint - session auth passed');
+      return res.json({ 
+        user: sessionUser,
+        message: "Authenticated successfully (session)" 
+      });
     }
-    console.log('✅ User endpoint - auth passed');
-    res.json({ 
-      user: req.user,
-      message: "Authenticated successfully" 
-    });
+    
+    console.log('❌ User endpoint - auth failed');
+    return res.status(401).json({ message: "Unauthorized" });
   });
 
   // Health check endpoint
@@ -32,6 +42,75 @@ export function registerRoutes(app: Express): Server {
     res.json({ 
       status: "ok", 
       timestamp: new Date().toISOString() 
+    });
+  });
+
+  // Authentication endpoints (moved here to ensure they work)
+  app.get("/api/login", (req, res) => {
+    console.log('🔐 Login route called directly from routes.ts');
+    console.log('🔐 Hostname:', req.hostname);
+    console.log('🔐 Query params:', req.query);
+    console.log('🔐 req.query.bypass:', req.query.bypass);
+    console.log('🔐 bypass check:', req.query.bypass === 'dev');
+    
+    // For development/testing, allow bypass mode
+    if (req.query.bypass === 'dev') {
+      console.log('🔐 Development bypass mode activated');
+      // Create a mock user session for development
+      (req.session as any).user = {
+        id: 'dev-user-123',
+        email: 'dev@example.com',
+        name: 'Development User',
+        picture: 'https://via.placeholder.com/150'
+      };
+      console.log('🔐 Mock user session created');
+      return res.redirect('/?auth=success');
+    }
+    
+    try {
+      // Direct redirect to Replit authentication
+      const issuerUrl = process.env.ISSUER_URL ?? "https://replit.com/oidc";
+      const clientId = process.env.REPL_ID!;
+      const domain = process.env.REPLIT_DOMAINS!.split(",")[0];
+      const redirectUri = `https://${domain}/api/callback`;
+      
+      const authUrl = `${issuerUrl}/auth?client_id=${clientId}&response_type=code&scope=openid%20email%20profile%20offline_access&redirect_uri=${encodeURIComponent(redirectUri)}&prompt=login%20consent`;
+      
+      console.log('🔐 Redirecting to:', authUrl);
+      res.redirect(authUrl);
+      
+    } catch (error) {
+      console.error('🔐 Login error:', error);
+      res.status(500).json({ error: 'Authentication setup failed', message: error instanceof Error ? error.message : String(error) });
+    }
+  });
+
+  app.get("/api/callback", (req, res) => {
+    console.log('🔐 Callback route called directly from routes.ts');
+    console.log('🔐 Query params:', req.query);
+    
+    // Handle the OAuth callback manually for now
+    if (req.query.code) {
+      console.log('🔐 OAuth code received:', req.query.code);
+      // For now, just redirect to home page with success
+      // Later we'll implement proper token exchange
+      res.redirect('/?auth=success');
+    } else if (req.query.error) {
+      console.log('🔐 OAuth error:', req.query.error);
+      res.redirect('/?auth=error&message=' + encodeURIComponent(req.query.error as string));
+    } else {
+      console.log('🔐 Callback called without code or error');
+      res.redirect('/?auth=error&message=No authorization code received');
+    }
+  });
+
+  app.get("/api/logout", (req, res) => {
+    console.log('🔐 Logout route called');
+    req.session.destroy((err) => {
+      if (err) {
+        console.error('🔐 Session destroy error:', err);
+      }
+      res.redirect('/');
     });
   });
 
