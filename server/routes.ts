@@ -180,6 +180,31 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       ...cleanedData
     });
 
+    // Automatically validate the invoice after extraction
+    try {
+      const validationResult = await storage.validateInvoiceData({
+        ...cleanedData,
+        totalAmount: cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount.toString()) : 0,
+        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0
+      });
+
+      // Update invoice with validation status
+      const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+      await storage.updateInvoice(invoice.id, {
+        validationStatus,
+        isValidated: validationResult.isValid
+      });
+
+      console.log(`Invoice ${invoice.id} validation completed: ${validationStatus}`);
+    } catch (validationError) {
+      console.error(`Validation failed for invoice ${invoice.id}:`, validationError);
+      // Keep as pending if validation fails
+      await storage.updateInvoice(invoice.id, {
+        validationStatus: 'pending',
+        isValidated: false
+      });
+    }
+
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
@@ -2953,6 +2978,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Validate pending invoices
+  app.post('/api/validate-pending-invoices', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      
+      // Get all invoices with pending validation status
+      const pendingInvoices = await storage.getInvoicesByUserId(userId);
+      const invoicesToValidate = pendingInvoices.filter(inv => 
+        inv.validationStatus === 'pending' || !inv.validationStatus
+      );
+
+      let validatedCount = 0;
+      let rejectedCount = 0;
+      let errorCount = 0;
+
+      for (const invoice of invoicesToValidate) {
+        try {
+          const validationResult = await storage.validateInvoiceData({
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+            taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            currency: invoice.currency || 'USD'
+          });
+
+          const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+          await storage.updateInvoice(invoice.id, {
+            validationStatus,
+            isValidated: validationResult.isValid
+          });
+
+          if (validationResult.isValid) {
+            validatedCount++;
+          } else {
+            rejectedCount++;
+          }
+        } catch (error) {
+          console.error(`Validation failed for invoice ${invoice.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      res.json({
+        message: `Validation completed for ${invoicesToValidate.length} invoices`,
+        results: {
+          total: invoicesToValidate.length,
+          validated: validatedCount,
+          rejected: rejectedCount,
+          errors: errorCount
+        }
+      });
+    } catch (error) {
+      console.error("Error validating pending invoices:", error);
+      res.status(500).json({ message: "Failed to validate pending invoices" });
+    }
+  });
+
   // Process approved invoices and automatically move validated ones to verified status
   app.post('/api/process-approved-validations', isAuthenticated, async (req, res) => {
     try {
@@ -4358,6 +4442,35 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       };
       
       const invoice = await storage.createInvoice(invoiceData);
+      
+      // Automatically validate the RPA XML invoice
+      try {
+        const validationResult = await storage.validateInvoiceData({
+          vendorName: extractedData.vendorName,
+          invoiceNumber: extractedData.invoiceNumber,
+          totalAmount: parseFloat(sanitizedTotalAmount) || 0,
+          taxAmount: parseFloat(sanitizedTaxAmount) || 0,
+          invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+          dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+          currency: extractedData.currency || 'COP'
+        });
+
+        // Update invoice with validation status
+        const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+        await storage.updateInvoice(invoice.id, {
+          validationStatus,
+          isValidated: validationResult.isValid
+        });
+
+        console.log(`✅ RPA XML invoice ${invoice.id} validation completed: ${validationStatus}`);
+      } catch (validationError) {
+        console.error(`Validation failed for RPA XML invoice ${invoice.id}:`, validationError);
+        // Keep as pending if validation fails
+        await storage.updateInvoice(invoice.id, {
+          validationStatus: 'pending',
+          isValidated: false
+        });
+      }
       
       console.log(`✅ Created invoice record ${invoice.id} for RPA XML file: ${filename}`);
       
