@@ -464,26 +464,9 @@ export const feedbackLogs = pgTable("feedback_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export type FeedbackLog = typeof feedbackLogs.$inferSelect;
-export type InsertFeedbackLog = typeof feedbackLogs.$inferInsert;
 
-// Validation rules for invoice data validation
-export const validationRules = pgTable("validation_rules", {
-  id: serial("id").primaryKey(),
-  name: varchar("name").notNull(),
-  description: text("description"),
-  fieldName: varchar("field_name").notNull(),
-  ruleType: text("rule_type").notNull(), // 'required', 'min_value', 'max_value', 'regex', 'format'
-  ruleValue: text("rule_value").notNull(),
-  severity: text("severity").notNull().default("medium"), // 'low', 'medium', 'high'
-  errorMessage: text("error_message"),
-  isActive: boolean("is_active").notNull().default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-});
 
-export type ValidationRule = typeof validationRules.$inferSelect;
-export type InsertValidationRule = typeof validationRules.$inferInsert;
+
 
 // Invoice Importer module enums
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
