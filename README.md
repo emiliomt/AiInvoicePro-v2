@@ -1,184 +1,202 @@
+# Invoice Line Item Classifier
 
-# AnzuDynamics - AI-Powered Invoice Procurement Platform
+An advanced Python application for automated invoice line item classification using OpenAI's GPT-4 API. This tool helps categorize invoice descriptions into predefined business expense categories with confidence scores and detailed reasoning.
 
-🚀 **Transform your invoice processing with intelligent OCR, automated data extraction, and streamlined approval workflows.**
+## Features
 
-[![Live Demo](https://img.shields.io/badge/Live%20Demo-Replit-blue)](https://replit.com)
-[![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![React](https://img.shields.io/badge/React-20232A?logo=react&logoColor=61DAFB)](https://reactjs.org/)
-[![Node.js](https://img.shields.io/badge/Node.js-43853D?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?logo=postgresql&logoColor=white)](https://www.postgresql.org/)
+- **AI-Powered Classification**: Uses OpenAI GPT-4 for intelligent categorization
+- **Predefined Categories**: 12 standard business expense categories
+- **Confidence Scoring**: Returns confidence levels (0.0-1.0) for each classification
+- **Batch Processing**: Handle multiple invoice items simultaneously
+- **Detailed Results**: Includes reasoning and keywords for each classification
+- **Export Functionality**: Save results to CSV format
+- **Summary Reports**: Generate classification statistics and distribution reports
+- **Error Handling**: Robust error handling with fallback responses
 
-## 🌟 Features
+## Categories
 
-### 🤖 AI-Powered Processing
-- **Intelligent OCR**: Advanced text extraction from PDF and image invoices
-- **AI Data Extraction**: OpenAI GPT-powered structured data extraction
-- **Smart Validation**: Configurable business rules and automated validation
-- **Predictive Analytics**: ML-based issue prediction and alerts
+The system classifies expenses into these categories:
 
-### 📊 Invoice Management
-- **Multi-format Support**: PDF, XML, JPEG, PNG invoice processing
-- **Real-time Processing**: Background processing with live status updates
-- **Batch Upload**: Process multiple invoices simultaneously
-- **Preview & Download**: Secure PDF preview and file management
+- **LABOR**: Direct labor costs including wages, salaries, overtime
+- **MATERIALS**: Raw materials, supplies, components, and physical goods
+- **EQUIPMENT**: Machinery, tools, vehicles, and equipment purchases/rentals
+- **SERVICES**: Professional services, consulting, maintenance, repairs
+- **UTILITIES**: Electricity, water, gas, telecommunications
+- **TRAVEL**: Transportation, accommodation, meals, travel expenses
+- **OFFICE_SUPPLIES**: Stationery, office equipment, software licenses
+- **RENT_FACILITIES**: Facility rent, property leases, real estate expenses
+- **INSURANCE**: Insurance premiums, coverage, risk management
+- **TAXES_FEES**: Government taxes, permits, licenses, regulatory fees
+- **SUBCONTRACTOR**: Third-party contractor and subcontractor payments
+- **OTHER**: Expenses that don't fit into standard categories
 
-### 🔄 Workflow Automation
-- **Approval Workflows**: Multi-stage approval processes
-- **PO Matching**: Automated purchase order matching with AI
-- **Project Assignment**: Smart project validation and assignment
-- **Discrepancy Detection**: Automated flagging of potential issues
+## Installation
 
-### 🏢 ERP Integration
-- **RPA Automation**: Robotic Process Automation for ERP systems
-- **Invoice Importer**: Automated invoice extraction from ERP systems
-- **Connection Management**: Secure ERP connection configuration
-- **Scheduled Tasks**: Automated recurring data extraction
-
-### 📈 Analytics & Reporting
-- **Dashboard Analytics**: Real-time processing statistics
-- **Learning Metrics**: AI model performance tracking
-- **Classification System**: Automated line item categorization
-- **Feedback Loop**: Continuous AI improvement through user feedback
-
-## 🏗️ Architecture
-
-```
-├── client/                    # React frontend
-│   ├── src/
-│   │   ├── components/       # Reusable UI components
-│   │   ├── pages/           # Application pages
-│   │   ├── hooks/           # Custom React hooks
-│   │   └── lib/             # Utilities and configurations
-├── server/                   # Node.js backend
-│   ├── services/            # Business logic services
-│   │   ├── aiService.ts     # AI extraction service
-│   │   ├── ocrService.ts    # OCR processing
-│   │   ├── xmlParser.ts     # XML invoice parsing
-│   │   └── erpAutomationService.ts # RPA automation
-│   ├── routes.ts            # API endpoints
-│   └── storage.ts           # Database operations
-├── shared/                  # Shared types and schemas
-└── migrations/              # Database migrations
+1. Install required dependencies:
+```bash
+pip install openai pandas python-dotenv
 ```
 
-## 🚀 Quick Start
+2. Set up your OpenAI API key:
+```bash
+export OPENAI_API_KEY="your-openai-api-key-here"
+```
 
-### Prerequisites
-- Node.js 20+
-- PostgreSQL 16+
-- OpenAI API key
+Or create a `.env` file:
+```
+OPENAI_API_KEY=your-openai-api-key-here
+```
 
-### Installation
+## Usage
 
-1. **Clone the repository**
-   ```bash
-   git clone https://github.com/yourusername/anzudynamics-invoice-platform.git
-   cd anzudynamics-invoice-platform
-   ```
+### Basic Usage
 
-2. **Install dependencies**
-   ```bash
-   npm install
-   ```
+```python
+from invoice_classifier import InvoiceLineItemClassifier
 
-3. **Set up environment variables**
-   ```bash
-   cp .env.example .env
-   # Edit .env with your configuration
-   ```
+# Initialize the classifier
+classifier = InvoiceLineItemClassifier()
 
-4. **Run database migrations**
-   ```bash
-   npm run db:push
-   ```
+# Classify a single item
+result = classifier.classify_line_item(
+    description="Concrete mixer rental for foundation work - 3 days",
+    amount=450.00,
+    vendor="Equipment Rentals Inc"
+)
 
-5. **Start the development server**
-   ```bash
-   npm run dev
-   ```
+print(f"Category: {result['category']}")
+print(f"Confidence: {result['confidence']}")
+print(f"Reasoning: {result['reasoning']}")
+```
 
-## 🌐 Live Demo
+### Batch Processing
 
-Experience the platform live on Replit: [View Demo](https://replit.com/@yourusername/anzudynamics)
+```python
+# Sample invoice line items
+line_items = [
+    {
+        "description": "Skilled construction workers - 40 hours labor",
+        "amount": 2800.00,
+        "vendor": "Labor Solutions Inc"
+    },
+    {
+        "description": "Steel rebar 20mm diameter - 500 meters",
+        "amount": 1250.00,
+        "vendor": "Steel Supply Co"
+    }
+]
 
-## 📸 Screenshots
+# Classify batch
+results = classifier.classify_batch(line_items)
 
-### Dashboard Overview
-![Dashboard](docs/images/dashboard.png)
+# Generate summary report
+summary = classifier.generate_summary_report(results)
+print(f"Average confidence: {summary['average_confidence']:.2f}")
 
-### Invoice Processing
-![Invoice Processing](docs/images/invoice-processing.png)
+# Export results
+filename = classifier.export_results(results)
+print(f"Results saved to: {filename}")
+```
 
-### AI Analytics
-![AI Analytics](docs/images/ai-analytics.png)
+## Example Scripts
 
-## 🛠️ Technology Stack
+### Run the Demo
+```bash
+python invoice_classifier.py
+```
 
-### Frontend
-- **React 18** with TypeScript
-- **Tailwind CSS** for styling
-- **Radix UI** components via shadcn/ui
-- **React Query** for state management
-- **Vite** for development and bundling
+### Run Extended Examples
+```bash
+python example_usage.py
+```
 
-### Backend
-- **Node.js** with TypeScript
-- **Express.js** web framework
-- **Drizzle ORM** for database operations
-- **PostgreSQL** database
-- **Passport.js** for authentication
+### Using Sample Data
+```bash
+python -c "
+import json
+from invoice_classifier import InvoiceLineItemClassifier
 
-### AI & Processing
-- **OpenAI GPT** for data extraction
-- **Tesseract.js** for OCR processing
-- **PDF.js** for PDF handling
-- **Sharp** for image processing
+with open('sample_invoice_data.json', 'r') as f:
+    data = json.load(f)
 
-### Infrastructure
-- **Replit** for hosting and deployment
-- **Neon** for serverless PostgreSQL
-- **Session-based authentication**
-- **File upload with Multer**
+classifier = InvoiceLineItemClassifier()
+results = classifier.classify_batch(data['line_items'])
+classifier.export_results(results, 'sample_results.csv')
+"
+```
 
-## 📊 Database Schema
+## API Reference
 
-The platform uses a comprehensive PostgreSQL schema:
+### InvoiceLineItemClassifier
 
-- **Users & Sessions**: Authentication and user management
-- **Invoices & Line Items**: Core invoice data
-- **Purchase Orders**: PO management and matching
-- **Projects**: Project validation and assignment
-- **Validation Rules**: Configurable business rules
-- **ERP Connections**: RPA automation configuration
-- **Feedback Logs**: AI learning and improvement
+#### Methods
 
-## 🤝 Contributing
+- `__init__(api_key=None, model="gpt-4")`: Initialize classifier
+- `classify_line_item(description, amount=None, vendor=None)`: Classify single item
+- `classify_batch(line_items)`: Classify multiple items
+- `export_results(results, filename=None)`: Export to CSV
+- `generate_summary_report(results)`: Generate statistics
+- `validate_categories()`: Get available categories
+
+#### Response Format
+
+```python
+{
+    "category": "EQUIPMENT",
+    "confidence": 0.95,
+    "reasoning": "Item clearly describes equipment rental for construction work",
+    "keywords": ["concrete", "mixer", "rental", "foundation"],
+    "timestamp": "2024-01-15T10:30:00",
+    "model_used": "gpt-4",
+    "original_description": "Concrete mixer rental for foundation work - 3 days"
+}
+```
+
+## Configuration
+
+### Environment Variables
+
+- `OPENAI_API_KEY`: Your OpenAI API key (required)
+- `OPENAI_MODEL`: Model to use (default: gpt-4)
+- `LOG_LEVEL`: Logging level (default: INFO)
+
+### Model Options
+
+- `gpt-4`: Most accurate, higher cost
+- `gpt-3.5-turbo`: Faster, lower cost, slightly less accurate
+
+## Error Handling
+
+The system includes comprehensive error handling:
+
+- **API Errors**: Network issues, rate limits, invalid keys
+- **JSON Parsing**: Malformed responses from OpenAI
+- **Empty Descriptions**: Blank or whitespace-only descriptions
+- **Invalid Categories**: Unknown categories are mapped to "OTHER"
+
+All errors return a fallback result with error information.
+
+## Performance Notes
+
+- **Rate Limits**: Respects OpenAI API rate limits
+- **Batch Processing**: Processes items sequentially to avoid rate limiting
+- **Temperature**: Uses low temperature (0.1) for consistent results
+- **Token Usage**: Optimized prompts to minimize token consumption
+
+## Contributing
 
 1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+2. Create a feature branch
+3. Add tests for new functionality
+4. Submit a pull request
 
-## 📝 License
+## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License.
 
-## 🙏 Acknowledgments
+## Support
 
-- OpenAI for GPT API
-- Tesseract.js team for OCR capabilities
-- Radix UI for component primitives
-- Replit for hosting platform
-
-## 🔗 Links
-
-- [Live Demo](https://replit.com/@yourusername/anzudynamics)
-- [Documentation](docs/)
-- [API Reference](docs/api.md)
-- [Contributing Guide](CONTRIBUTING.md)
-
----
-
-Built with ❤️ on [Replit](https://replit.com)
+For issues and questions:
+1. Check the error logs for API key and connection issues
+2. Verify your OpenAI API key has sufficient credits
+3. Review the sample data format for proper input structure

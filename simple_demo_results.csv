@@ -1,0 +1,4 @@
+original_description,category,confidence,reasoning,keywords,amount,vendor,timestamp,error
+Concrete mixer rental for foundation work - 3 days,EQUIPMENT,0.95,"The invoice line item is for the rental of a concrete mixer, which is a piece of equipment used in construction.","Concrete mixer, rental, foundation work",450.0,ALUTEMP SAS,2025-08-02T17:13:46.427602,False
+Professional plumbing installation services,SERVICES,0.95,"The line item refers to professional plumbing installation services, which falls under the SERVICES category as it involves contracted work.","Professional, plumbing, installation, services",1200.0,AquaPro Services,2025-08-02T17:13:48.929759,False
+Monthly office space rental - downtown location,RENT_FACILITIES,0.95,The description clearly mentions 'office space rental' which falls under the category of facility rent or real estate expenses.,"Monthly, office space, rental, downtown location",2500.0,Downtown Properties,2025-08-02T17:13:51.264193,False

@@ -1,0 +1,4 @@
+original_description,category,confidence,reasoning,keywords,amount,vendor,timestamp,error
+Concrete mixer rental for foundation work - 3 days,EQUIPMENT,0.95,"The invoice line item is related to the rental of a concrete mixer, which is a piece of equipment used in construction.","Concrete mixer rental, foundation work, 3 days",450.0,ALUTEMP SAS,2025-08-02T17:13:02.325058,False
+Skilled construction workers - 40 hours labor,LABOR,0.95,The description clearly mentions 'Skilled construction workers - 40 hours labor' which indicates that this expense is related to labor costs.,"Skilled construction workers, 40 hours labor",2800.0,Labor Solutions Inc,2025-08-02T17:13:05.060306,False
+Steel rebar 20mm diameter - 500 meters,MATERIALS,0.95,The item 'Steel rebar 20mm diameter - 500 meters' is a raw material used in construction.,"Steel rebar, 500 meters",1250.0,Steel Supply Co,2025-08-02T17:13:09.420248,False

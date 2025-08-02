@@ -1,0 +1,80 @@
+{
+  "description": "Sample invoice line items for testing the classification system",
+  "line_items": [
+    {
+      "description": "Concrete mixer rental for foundation work - 3 days",
+      "amount": 450.00,
+      "vendor": "ALUTEMP SAS"
+    },
+    {
+      "description": "Skilled construction workers - 40 hours labor",
+      "amount": 2800.00,
+      "vendor": "Labor Solutions Inc"
+    },
+    {
+      "description": "Steel rebar 20mm diameter - 500 meters",
+      "amount": 1250.00,
+      "vendor": "Steel Supply Co"
+    },
+    {
+      "description": "Electrical installation subcontractor services",
+      "amount": 5600.00,
+      "vendor": "ElectroWork Ltd"
+    },
+    {
+      "description": "Office supplies and printing materials",
+      "amount": 125.50,
+      "vendor": "Office Depot"
+    },
+    {
+      "description": "Monthly rent for warehouse facility",
+      "amount": 3200.00,
+      "vendor": "Industrial Properties LLC"
+    },
+    {
+      "description": "Business travel - Flight to project site",
+      "amount": 750.00,
+      "vendor": "Delta Airlines"
+    },
+    {
+      "description": "General liability insurance premium",
+      "amount": 1800.00,
+      "vendor": "ProCover Insurance"
+    },
+    {
+      "description": "City building permit and inspection fees",
+      "amount": 650.00,
+      "vendor": "Municipal Planning Department"
+    },
+    {
+      "description": "Monthly electricity bill - Main office",
+      "amount": 425.00,
+      "vendor": "City Electric Utility"
+    },
+    {
+      "description": "Excavator rental for site preparation",
+      "amount": 950.00,
+      "vendor": "Heavy Equipment Rentals"
+    },
+    {
+      "description": "Drywall materials and installation supplies",
+      "amount": 1350.00,
+      "vendor": "Construction Materials Plus"
+    },
+    {
+      "description": "HVAC system installation services",
+      "amount": 4200.00,
+      "vendor": "Climate Control Specialists"
+    },
+    {
+      "description": "Safety equipment and protective gear",
+      "amount": 380.00,
+      "vendor": "WorkSafe Supply"
+    },
+    {
+      "description": "Project management consulting services",
+      "amount": 2500.00,
+      "vendor": "BuildPro Consultants"
+    }
+  ]
+}

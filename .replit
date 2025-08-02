@@ -4,7 +4,7 @@ hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
 [nix]
 channel = "stable-24_05"
-packages = ["chromedriver", "chromium", "geckodriver", "graphicsmagick", "imagemagick"]
+packages = ["chromedriver", "chromium", "geckodriver", "glibcLocales", "graphicsmagick", "imagemagick"]
 
 [deployment]
 deploymentTarget = "autoscale"
