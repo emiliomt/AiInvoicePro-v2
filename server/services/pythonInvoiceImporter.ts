@@ -70,7 +70,7 @@ class PythonInvoiceImporter {
    */
   getImportProgressByLogId(logId: number): ImportProgress | null {
     const configId = this.logIdToConfigId.get(logId);
-    return configId ? this.activeImports.get(configId) || null : null;
+    return configId ? this.activeImports.get(configId) : null;
   }
 
   /**
@@ -427,7 +427,6 @@ class PythonInvoiceImporter {
               processedInvoices: 0,
               successfulImports: 0,
               failedImports: 0,
-              skippedImports: 0,
               currentStep: '',
               progress: 0,
               isComplete: false,
@@ -475,7 +474,6 @@ class PythonInvoiceImporter {
               processedInvoices: 0,
               successfulImports: 0,
               failedImports: 0,
-              skippedImports: 0,
               currentStep: '',
               progress: 0,
               isComplete: false,
@@ -734,7 +732,6 @@ class PythonInvoiceImporter {
               processed_invoices: 0,
               successful_imports: 0,
               failed_imports: 0,
-              skipped_imports: 0,
               current_step: 'Failed',
               progress: 0,
             },
@@ -753,7 +750,6 @@ class PythonInvoiceImporter {
             processed_invoices: 0,
             successful_imports: 0,
             failed_imports: 0,
-            skipped_imports: 0,
             current_step: 'Failed',
             progress: 0,
           },
@@ -772,7 +768,6 @@ class PythonInvoiceImporter {
               processed_invoices: 0,
               successful_imports: 0,
               failed_imports: 0,
-              skipped_imports: 0,
               current_step: 'Timeout',
               progress: 0,
             },

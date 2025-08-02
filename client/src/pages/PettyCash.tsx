@@ -16,31 +16,29 @@ function RecalculateButton() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Mutation for recalculating petty cash classifications
   const recalculateMutation = useMutation({
     mutationFn: async () => {
-      const response = await fetch("/api/petty-cash/recalculate", {
-        method: "POST",
-        credentials: "include",
+      const response = await fetch('/api/petty-cash/recalculate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
       });
-
+      
       if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || "Failed to recalculate petty cash");
+        throw new Error('Failed to recalculate petty cash');
       }
-
+      
       return response.json();
     },
     onSuccess: (data) => {
       toast({
-        title: "Recalculation Complete",
+        title: "Success",
         description: data.message,
       });
       queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
     },
-    onError: (error: any) => {
+    onError: (error: Error) => {
       toast({
-        title: "Recalculation Failed",
+        title: "Error",
         description: error.message,
         variant: "destructive",
       });
@@ -56,9 +54,7 @@ function RecalculateButton() {
       className="flex items-center space-x-2"
     >
       <RefreshCw className={`h-4 w-4 ${recalculateMutation.isPending ? 'animate-spin' : ''}`} />
-      <span>
-        {recalculateMutation.isPending ? 'Recalculating...' : 'Sync Missing Logs'}
-      </span>
+      <span>Recalculate</span>
     </Button>
   );
 }
@@ -112,7 +108,7 @@ export default function PettyCash() {
         ]);
 
         const userSettings = JSON.parse(userSettingsRes.value || '{"defaultCurrency": "USD"}');
-
+        
         return {
           userSettings,
           threshold: thresholdRes
@@ -130,7 +126,7 @@ export default function PettyCash() {
   });
 
   const defaultCurrency = configData?.userSettings?.defaultCurrency || 'USD';
-
+  
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
       case 'USD': return '$';

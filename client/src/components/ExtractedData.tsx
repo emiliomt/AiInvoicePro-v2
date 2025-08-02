@@ -674,11 +674,7 @@ export default function ExtractedData() {
       {!isPettyCash && (
         <ProjectAssignment
           invoiceId={invoice.id}
-          currentProject={
-            typeof (invoice as any).extractedData?.assignedProject === 'string'
-              ? (invoice as any).extractedData.assignedProject
-              : (invoice as any).extractedData?.assignedProject?.name || ''
-          }
+          currentProject={(invoice as any).extractedData?.assignedProject}
         />
       )}
 

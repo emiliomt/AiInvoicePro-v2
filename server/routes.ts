@@ -164,130 +164,23 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       return cleaned;
     };
 
-    // Smart totalAmount calculation
-    let finalTotalAmount = extractedData.totalAmount;
-    if (!finalTotalAmount && extractedData.subtotal && extractedData.taxAmount) {
-      // Calculate from subtotal + tax
-      const subtotal = parseFloat(extractedData.subtotal);
-      const tax = parseFloat(extractedData.taxAmount);
-      if (!isNaN(subtotal) && !isNaN(tax)) {
-        finalTotalAmount = (subtotal + tax).toFixed(2);
-        console.log(`[CALCULATION] Calculated totalAmount from subtotal + tax: ${subtotal} + ${tax} = ${finalTotalAmount}`);
-      }
-    } else if (!finalTotalAmount && extractedData.subtotal) {
-      // Use subtotal as fallback
-      finalTotalAmount = extractedData.subtotal;
-      console.log(`[CALCULATION] Using subtotal as totalAmount: ${finalTotalAmount}`);
-    }
-
     const cleanedData = {
       vendorName: sanitizeText(extractedData.vendorName),
       invoiceNumber: sanitizeText(extractedData.invoiceNumber),
       invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
       dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-      totalAmount: finalTotalAmount || null,
+      totalAmount: extractedData.totalAmount || null,
       taxAmount: extractedData.taxAmount || null,
-      subtotal: extractedData.subtotal || null,
-      currency: extractedData.currency || 'COP',
-      taxId: extractedData.taxId || null,
+      currency: extractedData.currency || 'USD',
     };
 
-    // CRITICAL FIX: Update main invoice table with extracted data
-    const updateData = {
-      status: "extracted" as const,
+    // Update invoice with extracted data
+    await storage.updateInvoice(invoice.id, {
+      status: "extracted",
       ocrText,
       extractedData,
-      // Map extracted data to main table columns
-      vendorName: cleanedData.vendorName || null,
-      invoiceNumber: cleanedData.invoiceNumber || null,
-      invoiceDate: cleanedData.invoiceDate || null,
-      dueDate: cleanedData.dueDate || null,
-      totalAmount: cleanedData.totalAmount || null,
-      taxAmount: cleanedData.taxAmount || null,
-      subtotal: cleanedData.subtotal || null,
-      currency: cleanedData.currency || 'COP',
-      taxId: cleanedData.taxId || null
-    };
-
-    console.log(`[INVOICE UPDATE] Updating invoice ${invoice.id} with main table data:`, {
-      totalAmount: updateData.totalAmount,
-      currency: updateData.currency,
-      vendorName: updateData.vendorName
+      ...cleanedData
     });
-
-    await storage.updateInvoice(invoice.id, updateData);
-
-    console.log(`[INVOICE UPDATE] Invoice ${invoice.id} main table updated successfully`);
-
-    // AUTOMATIC PETTY CASH DETECTION AND LOG CREATION
-    try {
-      console.log(`[PETTY CASH] Checking if invoice ${invoice.id} qualifies as petty cash...`);
-      
-      // Get current petty cash threshold
-      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
-      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
-      
-      // Check if invoice amount qualifies as petty cash
-      const amount = cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount) : 0;
-      const isPettyCash = amount > 0 && amount < threshold;
-      
-      console.log(`[PETTY CASH] Invoice ${invoice.id}: Amount ${amount} ${cleanedData.currency}, Threshold ${threshold}, Qualifies: ${isPettyCash}`);
-      
-      if (isPettyCash) {
-        // Check if petty cash log already exists
-        const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-        
-        if (!existingLog) {
-          // Create petty cash log automatically
-          const approvalNotes = `${invoice.fileName} - Vendor: ${cleanedData.vendorName || 'Unknown'} - Amount: ${cleanedData.currency} ${amount.toLocaleString()}`;
-          
-          await storage.createPettyCashLog({
-            invoiceId: invoice.id,
-            status: 'pending_approval',
-            approvalNotes
-          });
-          
-          console.log(`[PETTY CASH] ✅ Created petty cash log for invoice ${invoice.id} - ${approvalNotes}`);
-          
-          // Update invoice to mark as petty cash
-          await storage.updateInvoice(invoice.id, {
-            status: "petty_cash",
-            pettyCashFlag: true,
-            extractedData: {
-              ...extractedData,
-              isPettyCash: true,
-              pettyCashThreshold: threshold,
-              pettyCashAmount: amount
-            }
-          });
-          
-          console.log(`[PETTY CASH] ✅ Updated invoice ${invoice.id} status to petty_cash`);
-        } else {
-          console.log(`[PETTY CASH] ⚠️ Petty cash log already exists for invoice ${invoice.id}`);
-          
-          // Still update the invoice flags if not already set
-          if (!invoice.pettyCashFlag) {
-            await storage.updateInvoice(invoice.id, {
-              status: "petty_cash",
-              pettyCashFlag: true,
-              extractedData: {
-                ...extractedData,
-                isPettyCash: true,
-                pettyCashThreshold: threshold,
-                pettyCashAmount: amount
-              }
-            });
-            console.log(`[PETTY CASH] ✅ Updated invoice ${invoice.id} petty cash flags`);
-          }
-        }
-      } else {
-        console.log(`[PETTY CASH] Invoice ${invoice.id} does not qualify as petty cash (${amount} >= ${threshold})`);
-      }
-      
-    } catch (pettyCashError) {
-      console.error(`[PETTY CASH] ❌ Error during petty cash processing for invoice ${invoice.id}:`, pettyCashError);
-      // Don't fail the entire processing for petty cash errors
-    }
 
     console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
@@ -324,47 +217,16 @@ async function processPostExtractionWorkflow(invoice: any) {
     await storage.updateInvoice(invoice.id, { status: "checking_petty_cash" });
     console.log(`💰 Step 2A: Checking petty cash classification for invoice ${invoice.id}`);
     
-    const isPettyCash = await storage.isPettyCashInvoice(invoice.id);
+    const isPettyCash = await classifyPettyCash(invoice);
     
     if (isPettyCash) {
       console.log(`💰 Invoice ${invoice.id} classified as petty cash - skipping remaining steps`);
-      
-      // Check if petty cash log already exists before creating
-      const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-      
-      if (!existingLog) {
-        // Create petty cash log for approval with detailed notes
-        const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`;
-        
-        try {
-          await storage.createPettyCashLog({
-            invoiceId: invoice.id,
-            status: 'pending_approval',
-            approvalNotes: approvalNotes
-          });
-          console.log(`💰 ✅ Created petty cash log for invoice ${invoice.id} with notes: ${approvalNotes}`);
-        } catch (logError) {
-          console.error(`💰 ❌ Failed to create petty cash log for invoice ${invoice.id}:`, logError);
-          // Continue processing even if log creation fails
-        }
-      } else {
-        console.log(`💰 ⚠️ Petty cash log already exists for invoice ${invoice.id}`);
-      }
-      
-      // Update invoice status and flags
       await storage.updateInvoice(invoice.id, { 
         status: "petty_cash",
         pettyCashFlag: true,
         classifiedItems,
-        extractedData: {
-          ...invoice.extractedData,
-          isPettyCash: true,
-          pettyCashProcessedAt: new Date().toISOString()
-        },
         updatedAt: new Date()
       });
-      
-      console.log(`✅ Invoice ${invoice.id} classified as PETTY CASH`);
       return; // Skip remaining steps for petty cash
     }
 
@@ -373,29 +235,6 @@ async function processPostExtractionWorkflow(invoice: any) {
     console.log(`🎯 Step 2B: Matching invoice ${invoice.id} to projects`);
     
     const projectMatch = await matchToProject(invoice);
-    
-    // If a good project match is found, automatically assign it to the invoice
-    if (projectMatch?.projectName && projectMatch.matchConfidence >= 0.6) {
-      console.log(`✅ Auto-assigning project: ${projectMatch.projectName} (${Math.round(projectMatch.matchConfidence * 100)}% confidence)`);
-      
-      // Update extractedData to include the assigned project
-      const currentExtractedData = invoice.extractedData || {};
-      const updatedExtractedData = {
-        ...currentExtractedData,
-        assignedProject: projectMatch.projectName,
-        assignedProjectId: projectMatch.projectId,
-        autoAssigned: true,
-        assignmentConfidence: projectMatch.matchConfidence
-      };
-      
-      await storage.updateInvoice(invoice.id, {
-        extractedData: updatedExtractedData,
-        updatedAt: new Date()
-      });
-      
-      // Refresh invoice data with updated extractedData
-      invoice.extractedData = updatedExtractedData;
-    }
     
     // Step 3: Information Validation
     await storage.updateInvoice(invoice.id, { status: "validating" });
@@ -410,7 +249,7 @@ async function processPostExtractionWorkflow(invoice: any) {
         validationErrors: validationResult.errors,
         validationResult,
         classifiedItems,
-        projectMatch: projectMatch?.projectName || projectMatch?.projectId || null,
+        projectMatch,
         updatedAt: new Date()
       });
       return;
@@ -430,7 +269,7 @@ async function processPostExtractionWorkflow(invoice: any) {
     await storage.updateInvoice(invoice.id, { 
       status: finalStatus,
       classifiedItems,
-      projectMatch: projectMatch?.projectName || projectMatch?.projectId || null,
+      projectMatch,
       poMatches,
       validationResult,
       updatedAt: new Date()
@@ -487,22 +326,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Dashboard stats
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const userId = (req.user as any).claims.sub;
-      
-      const stats = await DatabaseTimeoutService.withTimeout(
-        storage.getDashboardStats(userId),
-        { timeoutMs: 10000, operation: 'getDashboardStats' }
-      );
-      
+      const stats = await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ message: "Dashboard stats request timed out, please try again" });
-      } else {
-        res.status(500).json({ message: "Failed to fetch dashboard stats" });
-      }
+      res.status(500).json({ message: "Failed to fetch dashboard stats" });
     }
   });
 
@@ -515,137 +344,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error creating petty cash log:", error);
       res.status(500).json({ message: "Failed to create petty cash log" });
-    }
-  });
-
-  // Recalculate petty cash classifications and create missing logs
-  app.post('/api/petty-cash/recalculate', isAuthenticated, async (req, res) => {
-    try {
-      console.log('[PETTY CASH RECALC] Starting recalculation process...');
-      
-      // Get current petty cash threshold
-      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
-      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
-      
-      console.log(`[PETTY CASH RECALC] Using threshold: ${threshold} COP`);
-      
-      // Get all invoices from the database
-      const allInvoices = await storage.getInvoices();
-      let processed = 0;
-      let qualified = 0;
-      let logsCreated = 0;
-      let updated = 0;
-      const errors = [];
-      
-      for (const invoice of allInvoices) {
-        try {
-          processed++;
-          
-          // Determine total amount from main table or extractedData
-          let amount = 0;
-          if (invoice.totalAmount && invoice.totalAmount !== 'null') {
-            amount = parseFloat(invoice.totalAmount);
-          } else {
-            const extractedData = invoice.extractedData as any;
-            if (extractedData?.totalAmount) {
-              amount = parseFloat(extractedData.totalAmount);
-            }
-          }
-          
-          // Check if invoice qualifies as petty cash (below threshold)
-          const isPetty = amount > 0 && amount < threshold;
-          
-          if (isPetty) {
-            qualified++;
-            console.log(`[PETTY CASH RECALC] Invoice ${invoice.id} (${invoice.fileName}) qualifies as petty cash: ${amount} < ${threshold}`);
-            
-            // Check if petty cash log already exists
-            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-            
-            if (!existingLog) {
-              // Create petty cash log with status "pending_approval"
-              const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount.toLocaleString()}`;
-              
-              await storage.createPettyCashLog({
-                invoiceId: invoice.id,
-                status: 'pending_approval',
-                approvalNotes
-              });
-              
-              logsCreated++;
-              console.log(`[PETTY CASH RECALC] Created log for invoice ${invoice.id}`);
-            }
-            
-            // Update invoice extractedData to mark isPettyCash: true
-            const invoiceUpdates: any = {
-              pettyCashFlag: true
-            };
-            
-            // Update status if currently pending
-            if (invoice.status === 'pending') {
-              invoiceUpdates.status = 'petty_cash';
-            }
-            
-            // Update extractedData to include petty cash flag
-            if (invoice.extractedData) {
-              const updatedExtractedData = {
-                ...invoice.extractedData,
-                isPettyCash: true,
-                pettyCashThreshold: threshold,
-                pettyCashAmount: amount
-              };
-              invoiceUpdates.extractedData = updatedExtractedData;
-            } else {
-              // Create extractedData if it doesn't exist
-              invoiceUpdates.extractedData = {
-                isPettyCash: true,
-                pettyCashThreshold: threshold,
-                pettyCashAmount: amount
-              };
-            }
-            
-            await storage.updateInvoice(invoice.id, invoiceUpdates);
-            updated++;
-          }
-          
-        } catch (error) {
-          console.error(`[PETTY CASH RECALC] Error processing invoice ${invoice.id}:`, error);
-          errors.push({
-            invoiceId: invoice.id,
-            fileName: invoice.fileName,
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
-      }
-      
-      const summary = {
-        totalInvoices: processed,
-        qualifiedForPettyCash: qualified,
-        invoicesUpdated: updated,
-        logsCreated: logsCreated,
-        errors: errors.length,
-        threshold: threshold,
-        timestamp: new Date().toISOString()
-      };
-      
-      console.log(`[PETTY CASH RECALC] Completed:`, summary);
-      
-      const message = `Recalculation completed: ${processed} invoices processed, ${qualified} qualified as petty cash, ${logsCreated} new logs created, ${updated} invoices updated`;
-      
-      res.json({
-        success: true,
-        message,
-        summary,
-        errors: errors.length > 0 ? errors : undefined
-      });
-      
-    } catch (error) {
-      console.error('[PETTY CASH RECALC] Error during recalculation:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Failed to recalculate petty cash classifications',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
     }
   });
 
@@ -685,47 +383,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(pettyCash);
     } catch (error) {
       console.error("Error fetching petty cash by invoice:", error);
-
-  // Database monitoring endpoint
-  app.get('/api/admin/database-stats', isAuthenticated, async (req: any, res) => {
-    try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
-      const user = req.user;
-      
-      // Simple admin check - in production you'd want proper role-based access
-      if (!user || !(user as any).claims.email?.endsWith('@company.com')) {
-        return res.status(403).json({ message: "Admin access required" });
-      }
-      
-      const stats = DatabaseTimeoutService.getOperationStats();
-      const activeOps = DatabaseTimeoutService.getActiveOperations();
-      
-      res.json({
-        activeOperations: stats.active,
-        operationTypes: stats.types,
-        activeOperationIds: activeOps,
-        timestamp: new Date().toISOString(),
-        monitoring: {
-          timeouts: {
-            default: '8s',
-            settings: '5s',
-            longOperations: '15s',
-            invoiceQueries: '10s'
-          },
-          recommendations: stats.active > 10 ? [
-            'High number of active operations detected',
-            'Consider scaling database resources',
-            'Review slow query performance'
-          ] : []
-        }
-      });
-    } catch (error) {
-      console.error("Error fetching database stats:", error);
-      res.status(500).json({ message: "Failed to fetch database statistics" });
-    }
-  });
-
-
       res.status(500).json({ message: "Failed to fetch petty cash log" });
     }
   });
@@ -765,97 +422,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error updating setting:", error);
       res.status(500).json({ message: "Failed to update setting", error: error instanceof Error ? error.message : "Unknown error" });
-    }
-  });
-
-  // Batch repair endpoint for all invoices
-  app.post('/api/invoices/batch-repair-all', isAuthenticated, async (req, res) => {
-    try {
-      console.log('[BATCH REPAIR] Starting repair for all invoices...');
-      
-      // Get all invoices
-      const allInvoices = await storage.getInvoices();
-      console.log(`[BATCH REPAIR] Found ${allInvoices.length} total invoices`);
-      
-      let repairedCount = 0;
-      let alreadyGoodCount = 0;
-      
-      for (const invoice of allInvoices) {
-        console.log(`[BATCH REPAIR] Checking invoice ${invoice.id}: ${invoice.fileName}`);
-        
-        // Check if main table fields need repair
-        const needsRepair = !invoice.totalAmount || invoice.totalAmount === 'null' || 
-                           !invoice.currency || invoice.currency === 'null' ||
-                           !invoice.vendorName || invoice.vendorName === 'null';
-        
-        if (!needsRepair) {
-          alreadyGoodCount++;
-          console.log(`[BATCH REPAIR] Invoice ${invoice.id} already has good data, skipping`);
-          continue;
-        }
-        
-        console.log(`[BATCH REPAIR] Invoice ${invoice.id} needs repair:`, {
-          totalAmount: invoice.totalAmount,
-          currency: invoice.currency,
-          vendorName: invoice.vendorName
-        });
-        
-        // Try to get data from extractedData field
-        const extractedData = invoice.extractedData as any;
-        
-        if (extractedData) {
-          const repairData: any = {};
-          
-          // Extract totalAmount (try multiple possible field names)
-          if (extractedData.totalAmount) {
-            repairData.totalAmount = extractedData.totalAmount;
-          } else if (extractedData.total_amount) {
-            repairData.totalAmount = extractedData.total_amount;
-          } else if (extractedData.subtotal && extractedData.taxAmount) {
-            // Calculate from subtotal + tax
-            const subtotal = parseFloat(extractedData.subtotal);
-            const tax = parseFloat(extractedData.taxAmount);
-            if (!isNaN(subtotal) && !isNaN(tax)) {
-              repairData.totalAmount = (subtotal + tax).toFixed(2);
-            }
-          } else if (extractedData.subtotal) {
-            // Use subtotal as fallback
-            repairData.totalAmount = extractedData.subtotal;
-          }
-          
-          // Extract other fields
-          if (extractedData.currency) repairData.currency = extractedData.currency;
-          if (extractedData.vendorName) repairData.vendorName = extractedData.vendorName;
-          if (extractedData.invoiceNumber) repairData.invoiceNumber = extractedData.invoiceNumber;
-          if (extractedData.taxAmount) repairData.taxAmount = extractedData.taxAmount;
-          if (extractedData.subtotal) repairData.subtotal = extractedData.subtotal;
-          if (extractedData.taxId) repairData.taxId = extractedData.taxId;
-          if (extractedData.invoiceDate) {
-            repairData.invoiceDate = new Date(extractedData.invoiceDate);
-          }
-          if (extractedData.dueDate) {
-            repairData.dueDate = new Date(extractedData.dueDate);
-          }
-          
-          if (Object.keys(repairData).length > 0) {
-            console.log(`[BATCH REPAIR] Updating invoice ${invoice.id} with:`, repairData);
-            await storage.updateInvoice(invoice.id, repairData);
-            repairedCount++;
-          }
-        }
-      }
-      
-      console.log(`[BATCH REPAIR] Completed: ${repairedCount} repaired, ${alreadyGoodCount} already good`);
-      
-      res.json({
-        message: `Batch repair completed: ${repairedCount} invoices repaired, ${alreadyGoodCount} were already correct`,
-        repairedCount,
-        alreadyGoodCount,
-        totalProcessed: allInvoices.length
-      });
-    } catch (error) {
-      console.error('[BATCH REPAIR] Error:', error);
-      res.status(500).json({ message: 'Batch repair failed', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
@@ -1390,46 +956,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { action } = req.body;
       const userId = (req.user as any)?.claims?.sub || (req.user as any)?.id || "unknown";
 
-      // Validate required fields
-      if (!projectId) {
-        return res.status(400).json({ message: "Project ID is required" });
-      }
-
-      if (!action || (action !== "validate" && action !== "reject")) {
-        return res.status(400).json({ message: "Action must be either 'validate' or 'reject'" });
-      }
-
-      // Check if project exists
-      const existingProject = await storage.getProject(parseInt(projectId));
-      if (!existingProject) {
-        return res.status(404).json({ message: "Project not found" });
-      }
-
-      // Determine validation status and validated flag
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
       // Update the project validation status
-      const updatedProject = await storage.updateProject(parseInt(projectId), {
+      const updatedProject = await storage.updateProject(projectId, {
         validationStatus,
         isValidated,
         validatedBy: userId,
         validatedAt: new Date()
       });
 
-      if (!updatedProject) {
-        return res.status(500).json({ message: "Failed to update project validation status" });
-      }
-
-      console.log(`Project ${projectId} ${action}d by user ${userId}`);
       res.json(updatedProject);
     } catch (error) {
       console.error("Error validating project:", error);
-      const errorMessage = error instanceof Error ? error.message : "Unknown error";
-      res.status(500).json({ 
-        message: "Failed to validate project",
-        error: errorMessage 
-      });
+      res.status(500).json({ message: "Failed to validate project" });
     }
   });
 
@@ -1438,13 +979,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Settings routes
   app.get('/api/settings/:key', isAuthenticated, async (req, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const key = req.params.key;
-      
-      const setting = await DatabaseTimeoutService.withTimeout(
-        storage.getSetting(key),
-        { timeoutMs: 5000, operation: `getSetting:${key}` }
-      );
+      const setting = await storage.getSetting(key);
 
       if (!setting) {
         return res.status(404).json({ message: "Setting not found" });
@@ -1453,17 +989,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(setting);
     } catch (error) {
       console.error("Error fetching setting:", error);
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ message: "Setting request timed out, please try again" });
-      } else {
-        res.status(500).json({ message: "Failed to fetch setting" });
-      }
+      res.status(500).json({ message: "Failed to fetch setting" });
     }
   });
 
   app.put('/api/settings/:key', isAuthenticated, async (req, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const key = req.params.key;
       const { value } = req.body;
 
@@ -1471,35 +1002,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "Value is required" });
       }
 
-      const setting = await DatabaseTimeoutService.withTimeout(
-        storage.updateSetting(key, value),
-        { 
-          timeoutMs: 8000, 
-          operation: `updateSetting:${key}`,
-          cleanup: () => console.log(`⚠️ Setting update for ${key} was cancelled due to timeout`)
-        }
-      );
-      
+      const setting = await storage.updateSetting(key, value);
       res.json(setting);
     } catch (error) {
       console.error("Error updating setting:", error);
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ message: "Setting update timed out, please try again" });
-      } else {
-        res.status(500).json({ message: "Failed to update setting" });
-      }
+      res.status(500).json({ message: "Failed to update setting" });
     }
   });
 
   // User settings routes
   app.get('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
-      
-      const setting = await DatabaseTimeoutService.withTimeout(
-        storage.getSetting('user_preferences'),
-        { timeoutMs: 5000, operation: 'getUserPreferences' }
+      // Add timeout to prevent hanging database operations
+      const settingPromise = storage.getSetting('user_preferences');
+      const timeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Settings fetch timeout')), 10000)
       );
+
+      const setting = await Promise.race([settingPromise, timeoutPromise]);
       
       if (!setting) {
         // Return default settings
@@ -1521,28 +1041,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
           description: 'User preferences and settings'
         };
         
-        await DatabaseTimeoutService.withTimeout(
-          storage.updateSetting('user_preferences', defaultSettings.value),
-          { timeoutMs: 8000, operation: 'createDefaultUserPreferences' }
+        // Add timeout for default settings creation
+        const createPromise = storage.updateSetting('user_preferences', defaultSettings.value);
+        const createTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('Settings creation timeout')), 10000)
         );
         
+        await Promise.race([createPromise, createTimeoutPromise]);
         res.json(defaultSettings);
       } else {
         res.json(setting);
       }
     } catch (error) {
       console.error("Error fetching user settings:", error);
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ message: "Settings request timed out, please try again" });
-      } else {
-        res.status(500).json({ message: "Failed to fetch user settings" });
-      }
+      res.status(500).json({ message: "Failed to fetch user settings" });
     }
   });
 
   app.put('/api/settings/user_preferences', isAuthenticated, async (req, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const { value } = req.body;
 
       if (value === undefined || value === null) {
@@ -1565,11 +1082,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       try {
-        const existing = await DatabaseTimeoutService.withTimeout(
-          storage.getSetting('user_preferences'),
-          { timeoutMs: 5000, operation: 'getExistingUserPreferences' }
-        );
-        
+        const existing = await storage.getSetting('user_preferences');
         if (existing?.value) {
           try {
             const parsed = JSON.parse(existing.value);
@@ -1579,11 +1092,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
         }
       } catch (error) {
-        if (error.name === 'TimeoutError') {
-          console.warn('Timeout getting existing settings, using defaults');
-        } else {
-          console.log('No existing settings found, using defaults');
-        }
+        console.log('No existing settings found, using defaults');
       }
 
       // Merge new settings with existing ones
@@ -1605,19 +1114,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const settingsJson = JSON.stringify(newSettings);
       console.log('Saving merged settings:', settingsJson);
 
-      // Use setSetting with timeout protection
-      const setting = await DatabaseTimeoutService.withTimeout(
-        storage.setSetting({
-          key: 'user_preferences',
-          value: settingsJson,
-          description: 'User preferences and settings'
-        }),
-        { 
-          timeoutMs: 8000, 
-          operation: 'updateUserPreferences',
-          cleanup: () => console.log('⚠️ User preferences update was cancelled due to timeout')
-        }
-      );
+      // Use setSetting instead of updateSetting to ensure upsert behavior
+      const setting = await storage.setSetting({
+        key: 'user_preferences',
+        value: settingsJson,
+        description: 'User preferences and settings'
+      });
 
       res.json({ 
         message: "Settings updated successfully",
@@ -1625,17 +1127,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       });
     } catch (error) {
       console.error("Error updating user settings:", error);
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ 
-          message: "Settings update timed out, please try again",
-          error: "Request timeout"
-        });
-      } else {
-        res.status(500).json({ 
-          message: "Failed to update user settings",
-          error: error instanceof Error ? error.message : "Unknown error"
-        });
-      }
+      res.status(500).json({ 
+        message: "Failed to update user settings",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
     }
   });
 
@@ -2186,96 +1681,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Manual petty cash detection endpoint
-  app.post('/api/invoices/:id/detect-petty-cash', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const userId = (req.user as any).claims.sub;
-
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice || invoice.userId !== userId) {
-        return res.status(404).json({ message: "Invoice not found or access denied" });
-      }
-
-      console.log(`[MANUAL PETTY CASH] Starting detection for invoice ${invoiceId}`);
-
-      // Get current petty cash threshold
-      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
-      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 400000;
-
-      // Determine total amount from various sources
-      let amount = 0;
-      if (invoice.totalAmount && invoice.totalAmount !== 'null') {
-        amount = parseFloat(invoice.totalAmount);
-      } else if (invoice.extractedData) {
-        const data = invoice.extractedData as any;
-        if (data?.totalAmount) {
-          amount = parseFloat(data.totalAmount);
-        }
-      }
-
-      const isPettyCash = amount > 0 && amount < threshold;
-      
-      if (isPettyCash) {
-        // Check if log already exists
-        const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-        
-        if (!existingLog) {
-          const approvalNotes = `${invoice.fileName} - Vendor: ${invoice.vendorName || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${amount.toLocaleString()}`;
-          
-          await storage.createPettyCashLog({
-            invoiceId,
-            status: 'pending_approval',
-            approvalNotes
-          });
-
-          await storage.updateInvoice(invoiceId, {
-            status: "petty_cash",
-            pettyCashFlag: true,
-            extractedData: {
-              ...invoice.extractedData,
-              isPettyCash: true,
-              pettyCashThreshold: threshold,
-              pettyCashAmount: amount
-            }
-          });
-
-          res.json({
-            success: true,
-            message: `Invoice detected as petty cash and log created`,
-            amount,
-            threshold,
-            logCreated: true
-          });
-        } else {
-          res.json({
-            success: true,
-            message: `Invoice already has petty cash log`,
-            amount,
-            threshold,
-            logCreated: false
-          });
-        }
-      } else {
-        res.json({
-          success: false,
-          message: `Invoice does not qualify as petty cash (${amount} >= ${threshold})`,
-          amount,
-          threshold,
-          logCreated: false
-        });
-      }
-
-    } catch (error) {
-      console.error("Error in manual petty cash detection:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Failed to detect petty cash",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
   // Manual processing endpoints
   app.post('/api/invoices/:id/process-ocr', isAuthenticated, async (req: any, res) => {
     try {
@@ -2520,7 +1925,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get user's invoices
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
-      const { DatabaseTimeoutService } = await import('./services/timeoutService');
       const userId = (req.user as any).claims.sub;
 
       if (!userId) {
@@ -2530,35 +1934,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const includeMatches = req.query.includeMatches === 'true';
 
       if (includeMatches) {
-        const invoicesWithMatches = await DatabaseTimeoutService.withTimeout(
-          storage.getInvoicesWithProjectMatches(userId),
-          { timeoutMs: 15000, operation: 'getInvoicesWithProjectMatches' }
-        );
+        const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
-        const invoices = await DatabaseTimeoutService.withTimeout(
-          storage.getInvoicesByUserId(userId),
-          { timeoutMs: 10000, operation: 'getInvoicesByUserId' }
-        );
+        const invoices = await storage.getInvoicesByUserId(userId);
         res.json(invoices || []);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
       const errorMessage = error instanceof Error ? error.message : "Failed to fetch invoices";
-      
-      if (error.name === 'TimeoutError') {
-        res.status(504).json({ 
-          message: "Invoice request timed out, please try again",
-          error: "Request timeout",
-          timestamp: new Date().toISOString()
-        });
-      } else {
-        res.status(500).json({ 
-          message: "Failed to fetch invoices",
-          error: errorMessage,
-          timestamp: new Date().toISOString()
-        });
-      }
+      res.status(500).json({ 
+        message: "Failed to fetch invoices",
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      });
     }
   });
 
@@ -3000,7 +2389,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         await applyColombianLearningUpdates(invoice, correctedData, feedbackLog.id);
       }
 
-      // Apply general learning improvements with comprehensive error handling
+      // Apply general learning improvements
       try {
         const { LearningTracker } = await import('./services/learningTracker');
         await LearningTracker.recordFeedback(
@@ -3011,29 +2400,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
           reason,
           invoice.fileName
         );
-        console.log(`✅ Learning feedback successfully recorded for invoice ${invoiceId}`);
-      } catch (learningError) {
-        console.error(`❌ Learning system error for invoice ${invoiceId}:`, learningError);
-        
-        // Log detailed error information for debugging Colombian invoice issues
-        try {
-          console.error('Learning system error details:', {
-            invoiceId,
-            userId,
-            fileName: invoice.fileName,
-            isColombianInvoice,
-            reason,
-            correctionFields: correctedData ? Object.keys(correctedData) : [],
-            error: learningError instanceof Error ? learningError.message : 'Unknown learning error',
-            stack: learningError instanceof Error ? learningError.stack : undefined,
-            timestamp: new Date().toISOString()
-          });
-        } catch (logError) {
-          console.error('Failed to log learning error details:', logError);
-        }
-        
-        // Continue processing - don't let learning system failures block feedback submission
-        console.log(`⚠️ Continuing feedback processing despite learning system failure for invoice ${invoiceId}`);
+      } catch (error) {
+        console.error('Error calling LearningTracker.recordFeedback:', error);
       }
 
       // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
@@ -3088,30 +2456,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         fileName: invoice.fileName,
       });
 
-      // Track positive feedback for learning system with error handling
-      try {
-        const { LearningTracker } = await import('./services/learningTracker');
-        await LearningTracker.recordPositiveFeedback(invoiceId, userId);
-        console.log(`✅ Positive learning feedback recorded for invoice ${invoiceId}`);
-      } catch (learningError) {
-        console.error(`❌ Learning system error for positive feedback on invoice ${invoiceId}:`, learningError);
-        
-        // Log error details but don't fail the request
-        try {
-          console.error('Positive feedback learning error details:', {
-            invoiceId,
-            userId,
-            fileName: invoice.fileName,
-            error: learningError instanceof Error ? learningError.message : 'Unknown learning error',
-            timestamp: new Date().toISOString()
-          });
-        } catch (logError) {
-          console.error('Failed to log positive feedback learning error:', logError);
-        }
-        
-        // Continue processing - positive feedback submission should succeed even if learning fails
-        console.log(`⚠️ Continuing positive feedback processing despite learning system failure for invoice ${invoiceId}`);
-      }
+      // Track positive feedback for learning system
+      const { LearningTracker } = await import('./services/learningTracker');
+      await LearningTracker.recordPositiveFeedback(invoiceId, userId);
 
       // Log successful extraction for model improvement
       console.log(`Positive feedback received for invoice ${invoiceId}:`, {
@@ -3538,41 +2885,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  app.post('/api/invoices/bulk-auto-classify', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
-      const { invoiceIds } = req.body;
-
-      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
-        return res.status(400).json({ message: "Invoice IDs array is required" });
-      }
-
-      const { ClassificationService } = await import('./services/classificationService');
-      
-      let successCount = 0;
-      let errorCount = 0;
-      
-      for (const invoiceId of invoiceIds) {
-        try {
-          await ClassificationService.classifyInvoiceLineItems(invoiceId, userId);
-          successCount++;
-        } catch (error) {
-          console.error(`Failed to classify invoice ${invoiceId}:`, error);
-          errorCount++;
-        }
-      }
-
-      res.json({ 
-        message: `Classification completed for ${successCount} invoices${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
-        successCount,
-        errorCount
-      });
-    } catch (error) {
-      console.error("Error bulk classifying invoices:", error);
-      res.status(500).json({ message: "Failed to bulk classify invoices" });
-    }
-  });
-
   app.post('/api/invoices/:id/ai-classify', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
@@ -3621,9 +2933,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         matchDetails,
         approvedBy: userId,
       });
-
-      // Also assign the project to the invoice (updates extractedData with project name)
-      await storage.assignProjectToInvoice(invoiceId, projectId);
 
       // Update invoice status to approved
       await storage.updateInvoice(invoiceId, { status: 'approved' });
@@ -5282,353 +4591,6 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
-  // Create missing petty cash logs for invoices classified as petty cash
-  app.post('/api/petty-cash/create-missing-logs', isAuthenticated, async (req: any, res) => {
-    try {
-      const user = req.user;
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const userId = (user as any).claims.sub;
-      const currentUser = await storage.getUser(userId);
-
-      console.log(`[PETTY CASH] Creating missing petty cash logs for user ${userId}`);
-
-      // Get all invoices with status 'petty_cash' that don't have petty cash logs
-      const { Client } = await import('pg');
-      const dbClient = new Client({
-        connectionString: process.env.DATABASE_URL,
-      });
-      
-      await dbClient.connect();
-      
-      try {
-        // Find invoices with petty_cash status that don't have logs
-        let query = `
-          SELECT i.id, i.file_name, i.currency, i.total_amount, i.vendor_name, i.user_id, i.company_id
-          FROM invoices i
-          LEFT JOIN petty_cash_log pcl ON i.id = pcl.invoice_id
-          WHERE i.status = 'petty_cash' 
-          AND pcl.invoice_id IS NULL
-        `;
-        
-        const params: any[] = [];
-        
-        // Filter by user access (own invoices or company invoices)
-        if (currentUser?.companyId) {
-          query += ` AND (i.user_id = $1 OR (i.user_id = 'rpa-system' AND i.company_id = $2))`;
-          params.push(userId, currentUser.companyId);
-        } else {
-          query += ` AND i.user_id = $1`;
-          params.push(userId);
-        }
-        
-        const result = await dbClient.query(query, params);
-        const missingLogInvoices = result.rows;
-        
-        console.log(`[PETTY CASH] Found ${missingLogInvoices.length} invoices with missing petty cash logs`);
-        
-        let createdCount = 0;
-        
-        // Create petty cash logs for each missing invoice
-        for (const invoice of missingLogInvoices) {
-          try {
-            const approvalNotes = `Auto-created for ${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
-            
-            await storage.createPettyCashLog({
-              invoiceId: invoice.id,
-              status: 'pending_approval',
-              approvalNotes: approvalNotes
-            });
-            
-            createdCount++;
-            console.log(`[PETTY CASH] Created log for invoice ${invoice.id}: ${invoice.file_name}`);
-          } catch (error) {
-            console.error(`[PETTY CASH] Failed to create log for invoice ${invoice.id}:`, error);
-          }
-        }
-        
-        await dbClient.end();
-        
-        console.log(`[PETTY CASH] Successfully created ${createdCount} petty cash logs`);
-        
-        res.json({
-          message: `Created ${createdCount} missing petty cash log entries`,
-          createdCount,
-          totalFound: missingLogInvoices.length
-        });
-        
-      } catch (error) {
-        await dbClient.end();
-        throw error;
-      }
-      
-    } catch (error) {
-      console.error('[PETTY CASH] Error creating missing logs:', error);
-      res.status(500).json({ 
-        error: 'Failed to create missing petty cash logs',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Recalculate petty cash classification for all invoices
-  app.post('/api/petty-cash/recalculate', isAuthenticated, async (req: any, res) => {
-    try {
-      const user = req.user;
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const userId = (user as any).claims.sub;
-      const currentUser = await storage.getUser(userId);
-
-      console.log(`[PETTY CASH] Recalculating petty cash classification for user ${userId}`);
-
-      // Get user's accessible invoices
-      let invoices;
-      if (currentUser?.companyId) {
-        invoices = await storage.getCompanyInvoicesWithProjectMatches(currentUser.companyId);
-      } else {
-        invoices = await storage.getInvoicesWithProjectMatches(userId);
-      }
-
-      let reclassifiedCount = 0;
-      let newPettyCashCount = 0;
-
-      for (const invoice of invoices) {
-        try {
-          const isPetty = await storage.isPettyCashInvoice(invoice.id);
-          const currentStatus = invoice.status;
-
-          if (isPetty && currentStatus !== 'petty_cash') {
-            // Reclassify as petty cash
-            await storage.updateInvoice(invoice.id, { 
-              status: 'petty_cash',
-              pettyCashFlag: true 
-            });
-
-            // Create petty cash log if it doesn't exist
-            const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-            if (!existingLog) {
-              await storage.createPettyCashLog({
-                invoiceId: invoice.id,
-                status: 'pending_approval'
-              });
-              newPettyCashCount++;
-            }
-            
-            reclassifiedCount++;
-            console.log(`[PETTY CASH] Reclassified invoice ${invoice.id} as petty cash`);
-          } else if (!isPetty && currentStatus === 'petty_cash') {
-            // Remove petty cash classification
-            await storage.updateInvoice(invoice.id, { 
-              status: 'extracted',
-              pettyCashFlag: false 
-            });
-            reclassifiedCount++;
-            console.log(`[PETTY CASH] Removed petty cash classification from invoice ${invoice.id}`);
-          }
-        } catch (error) {
-          console.error(`[PETTY CASH] Error processing invoice ${invoice.id}:`, error);
-        }
-      }
-
-      res.json({
-        message: `Recalculation complete: ${reclassifiedCount} invoices reclassified, ${newPettyCashCount} new petty cash logs created`,
-        reclassifiedCount,
-        newPettyCashCount,
-        totalProcessed: invoices.length
-      });
-
-    } catch (error) {
-      console.error('[PETTY CASH] Error in recalculation:', error);
-      res.status(500).json({ 
-        error: 'Failed to recalculate petty cash classification',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Test endpoint to force create petty cash logs for specific invoices (730, 736)
-  app.post('/api/petty-cash/force-create-test-logs', isAuthenticated, async (req: any, res) => {
-    try {
-      const user = req.user;
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      console.log('[PETTY CASH TEST] Force creating logs for invoices 730 and 736');
-
-      const testInvoiceIds = [730, 736];
-      const results = [];
-
-      for (const invoiceId of testInvoiceIds) {
-        try {
-          // Check if invoice exists
-          const invoice = await storage.getInvoice(invoiceId);
-          if (!invoice) {
-            results.push({ invoiceId, status: 'not_found' });
-            continue;
-          }
-
-          // Check if log already exists
-          const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-          if (existingLog) {
-            results.push({ invoiceId, status: 'already_exists', logId: existingLog.id });
-            continue;
-          }
-
-          // Create petty cash log regardless of amount (for testing)
-          const log = await storage.createPettyCashLog({
-            invoiceId,
-            status: 'pending_approval',
-            approvalNotes: `Test log for invoice ${invoiceId} - ${invoice.fileName} - Amount: ${invoice.currency || 'COP'} ${invoice.totalAmount || '0'}`
-          });
-
-          results.push({ invoiceId, status: 'created', logId: log.id });
-          console.log(`[PETTY CASH TEST] Created log for invoice ${invoiceId}`);
-
-        } catch (error) {
-          console.error(`[PETTY CASH TEST] Error processing invoice ${invoiceId}:`, error);
-          results.push({ invoiceId, status: 'error', error: error instanceof Error ? error.message : 'Unknown error' });
-        }
-      }
-
-      res.json({
-        message: `Test petty cash logs processed`,
-        results
-      });
-
-    } catch (error) {
-      console.error('[PETTY CASH TEST] Error:', error);
-      res.status(500).json({ 
-        error: 'Failed to create test petty cash logs',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Create petty cash logs for specific invoices
-  app.post('/api/petty-cash/create-for-invoices', isAuthenticated, async (req: any, res) => {
-    try {
-      const user = req.user;
-      if (!user) {
-        return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const { invoiceIds } = req.body;
-      if (!invoiceIds || !Array.isArray(invoiceIds)) {
-        return res.status(400).json({ error: 'Invoice IDs array is required' });
-      }
-
-      const userId = (user as any).claims.sub;
-      const currentUser = await storage.getUser(userId);
-
-      console.log(`[PETTY CASH] Creating petty cash logs for specific invoices: ${invoiceIds.join(', ')}`);
-
-      const { Client } = await import('pg');
-      const dbClient = new Client({
-        connectionString: process.env.DATABASE_URL,
-      });
-      
-      await dbClient.connect();
-      
-      let createdCount = 0;
-      const results = [];
-      
-      try {
-        for (const invoiceId of invoiceIds) {
-          // Get invoice details
-          const invoiceQuery = `
-            SELECT id, file_name, currency, total_amount, vendor_name, user_id, company_id, status
-            FROM invoices 
-            WHERE id = $1
-          `;
-          const invoiceResult = await dbClient.query(invoiceQuery, [invoiceId]);
-          
-          if (invoiceResult.rows.length === 0) {
-            results.push({ invoiceId, status: 'not_found', message: 'Invoice not found' });
-            continue;
-          }
-          
-          const invoice = invoiceResult.rows[0];
-          
-          // Check access permissions
-          const hasAccess = invoice.user_id === userId || 
-            (currentUser?.companyId && invoice.user_id === 'rpa-system' && 
-             invoice.company_id === currentUser.companyId);
-          
-          if (!hasAccess) {
-            results.push({ invoiceId, status: 'access_denied', message: 'Access denied to this invoice' });
-            continue;
-          }
-          
-          // Check if log already exists
-          const existingLogQuery = `
-            SELECT id FROM petty_cash_log WHERE invoice_id = $1
-          `;
-          const existingLog = await dbClient.query(existingLogQuery, [invoiceId]);
-          
-          if (existingLog.rows.length > 0) {
-            results.push({ invoiceId, status: 'already_exists', message: 'Petty cash log already exists' });
-            continue;
-          }
-          
-          // Create approval notes with invoice details
-          const approvalNotes = `${invoice.file_name} - Vendor: ${invoice.vendor_name || 'Unknown'} - Amount: ${invoice.currency || 'COP'} ${invoice.total_amount || '0'}`;
-          
-          // Insert petty cash log
-          const insertQuery = `
-            INSERT INTO petty_cash_log (
-              invoice_id, status, approval_notes, created_at, updated_at
-            ) VALUES ($1, $2, $3, NOW(), NOW())
-            RETURNING id
-          `;
-          
-          const insertResult = await dbClient.query(insertQuery, [
-            invoiceId,
-            'pending_approval',
-            approvalNotes
-          ]);
-          
-          createdCount++;
-          results.push({ 
-            invoiceId, 
-            status: 'created', 
-            logId: insertResult.rows[0].id,
-            approvalNotes 
-          });
-          
-          console.log(`[PETTY CASH] Created log for invoice ${invoiceId}: ${invoice.file_name}`);
-        }
-        
-        await dbClient.end();
-        
-        console.log(`[PETTY CASH] Successfully created ${createdCount} petty cash logs`);
-        
-        res.json({
-          message: `Created ${createdCount} petty cash logs`,
-          createdCount,
-          totalRequested: invoiceIds.length,
-          results
-        });
-        
-      } catch (error) {
-        await dbClient.end();
-        throw error;
-      }
-      
-    } catch (error) {
-      console.error('[PETTY CASH] Error creating logs for specific invoices:', error);
-      res.status(500).json({ 
-        error: 'Failed to create petty cash logs',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
@@ -6756,383 +5718,6 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
       });
     }
   });
-
-  // Simple endpoint to manually update invoice 729
-  app.put('/api/invoices/729/manual-update', isAuthenticated, async (req, res) => {
-    try {
-      console.log('Manual update for invoice 729');
-      
-      // Direct update with known values
-      await storage.updateInvoice(729, {
-        totalAmount: "57000.00",
-        currency: "COP",
-        vendorName: "PAPELERIA LOS DIBUJANTES",
-        invoiceNumber: "PE658807",
-        taxAmount: "9100.86",
-        subtotal: "47899.14"
-      });
-      
-      console.log('Invoice 729 manually updated');
-      res.json({ message: "Invoice 729 updated successfully" });
-    } catch (error) {
-      console.error('Manual update failed:', error);
-      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // URGENT TEST: Direct fix for specific invoice without auth
-  app.post('/api/test/force-repair/:id', async (req, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      console.log(`[FORCE REPAIR] Starting repair for invoice ${invoiceId}`);
-      
-      const invoice = await storage.getInvoice(invoiceId);
-      if (!invoice) {
-        return res.status(404).json({ message: "Invoice not found" });
-      }
-      
-      console.log(`[FORCE REPAIR] Current invoice data:`, {
-        totalAmount: invoice.totalAmount,
-        currency: invoice.currency,
-        vendorName: invoice.vendorName,
-        hasExtractedData: !!invoice.extractedData
-      });
-      
-      const extractedData = invoice.extractedData as any;
-      console.log(`[FORCE REPAIR] Extracted data:`, extractedData);
-      
-      // Force update with extracted data
-      const updateData = {
-        vendorName: extractedData?.vendorName || "PAPELERIA LOS DIBUJANTES",
-        invoiceNumber: extractedData?.invoiceNumber || "PE658807",
-        totalAmount: extractedData?.totalAmount || "57000.00",
-        currency: extractedData?.currency || "COP",
-        taxAmount: extractedData?.taxAmount || null,
-        subtotal: extractedData?.subtotal || null,
-        invoiceDate: extractedData?.invoiceDate ? new Date(extractedData.invoiceDate) : new Date("2025-07-31"),
-        taxId: extractedData?.taxId || null
-      };
-      
-      console.log(`[FORCE REPAIR] Updating with:`, updateData);
-      
-      await storage.updateInvoice(invoiceId, updateData);
-      
-      // Verify the update worked
-      const updatedInvoice = await storage.getInvoice(invoiceId);
-      console.log(`[FORCE REPAIR] After update:`, {
-        totalAmount: updatedInvoice?.totalAmount,
-        currency: updatedInvoice?.currency,
-        vendorName: updatedInvoice?.vendorName
-      });
-      
-      res.json({ 
-        message: `Force repaired invoice ${invoiceId}`,
-        before: {
-          totalAmount: invoice.totalAmount,
-          currency: invoice.currency
-        },
-        after: {
-          totalAmount: updatedInvoice?.totalAmount,
-          currency: updatedInvoice?.currency
-        }
-      });
-    } catch (error) {
-      console.error(`[FORCE REPAIR] Error:`, error);
-      res.status(500).json({ message: 'Force repair failed', error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // Test petty cash classification
-  app.get('/api/test/petty-cash/:invoiceId', async (req, res) => {
-    try {
-      const invoiceId = parseInt(req.params.invoiceId);
-      console.log(`Testing petty cash classification for invoice: ${invoiceId}`);
-      
-      const isPettyCash = await storage.isPettyCashInvoice(invoiceId);
-      
-      // Get invoice details for response
-      const invoice = await storage.getInvoice(invoiceId);
-      
-      res.json({
-        invoiceId: invoiceId,
-        amount: invoice?.totalAmount || 'not set',
-        currency: invoice?.currency || 'not set',
-        isPettyCash: isPettyCash,
-        message: `Invoice ${invoiceId} (${invoice?.totalAmount} ${invoice?.currency}) is ${isPettyCash ? '' : 'NOT '}classified as petty cash`
-      });
-    } catch (error) {
-      console.error('Test petty cash error:', error);
-      res.status(500).json({ message: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // Test enhanced project matching endpoint
-  app.get("/api/test/project-match/:id", async (req, res) => {
-    try {
-      const invoice = await storage.getInvoice(parseInt(req.params.id));
-      if (!invoice) {
-        return res.status(404).json({ error: "Invoice not found" });
-      }
-
-      const projects = await storage.getProjects();
-      console.log(`\n🔬 Testing enhanced project matching for invoice ${invoice.id}`);
-      
-      // Use the enhanced ProjectMatcherService directly
-      const matchResults = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
-      
-      res.json({
-        invoice: {
-          id: invoice.id,
-          fileName: invoice.fileName,
-          vendorName: invoice.vendorName,
-          totalAmount: invoice.totalAmount,
-          extractedData: invoice.extractedData
-        },
-        enhancedMatching: {
-          totalMatches: matchResults.length,
-          bestMatch: matchResults[0] || null,
-          allMatches: matchResults.slice(0, 5), // Top 5 results
-          threshold: "50% minimum"
-        },
-        availableProjects: {
-          total: projects.length,
-          sample: projects.slice(0, 5).map(p => ({
-            projectId: p.projectId,
-            name: p.name,
-            address: p.address,
-            city: p.city
-          }))
-        }
-      });
-    } catch (error) {
-      console.error("Enhanced test matching failed:", error);
-      res.status(500).json({ 
-        error: "Enhanced test matching failed",
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // URGENT TEST: Check database schema without auth  
-  app.get('/api/test/invoice-schema', async (req, res) => {
-    try {
-      console.log('[DEBUG] Checking invoice table schema...');
-      
-      // Use direct database connection to check schema
-      const { Client } = await import('pg');
-      const dbClient = new Client({
-        connectionString: process.env.DATABASE_URL,
-      });
-      
-      await dbClient.connect();
-      
-      const result = await dbClient.query(`
-        SELECT column_name, data_type, is_nullable 
-        FROM information_schema.columns 
-        WHERE table_name = 'invoices' 
-        ORDER BY ordinal_position
-      `);
-      
-      await dbClient.end();
-      
-      console.log('[DEBUG] Invoice table columns:', result.rows);
-      res.json(result.rows);
-    } catch (error) {
-      console.error('[DEBUG] Error checking schema:', error);
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // URGENT FIX: Repair endpoint for existing invoices with data in extractedData but not in main fields
-  app.post('/api/invoices/repair-main-fields', isAuthenticated, async (req, res) => {
-    try {
-      console.log('[REPAIR] Starting invoice main fields repair...');
-      
-      const allInvoices = await storage.getInvoices();
-      let repairedCount = 0;
-      
-      for (const invoice of allInvoices) {
-        // Check if main fields are missing but extractedData has them
-        const hasMainData = invoice.totalAmount && invoice.vendorName;
-        const extractedData = invoice.extractedData as any;
-        const hasExtractedData = extractedData?.totalAmount || extractedData?.vendorName;
-        
-        if (!hasMainData && hasExtractedData) {
-          console.log(`[REPAIR] Repairing invoice ${invoice.id}: ${invoice.fileName}`);
-          
-          const updateData = {
-            vendorName: extractedData.vendorName || invoice.vendorName,
-            invoiceNumber: extractedData.invoiceNumber || invoice.invoiceNumber,
-            totalAmount: extractedData.totalAmount || invoice.totalAmount,
-            currency: extractedData.currency || invoice.currency || 'COP',
-            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : invoice.invoiceDate,
-            dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : invoice.dueDate,
-            taxAmount: extractedData.taxAmount || null,
-            subtotal: extractedData.subtotal || null,
-            taxId: extractedData.taxId || null
-          };
-          
-          await storage.updateInvoice(invoice.id, updateData);
-          repairedCount++;
-          
-          console.log(`[REPAIR] Invoice ${invoice.id} repaired: totalAmount=${updateData.totalAmount}, currency=${updateData.currency}`);
-        }
-      }
-      
-      console.log(`[REPAIR] Repaired ${repairedCount} invoices`);
-      res.json({ 
-        message: `Successfully repaired ${repairedCount} invoices`,
-        repairedCount 
-      });
-    } catch (error) {
-      console.error('[REPAIR] Error repairing invoices:', error);
-      res.status(500).json({ message: 'Failed to repair invoices', error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // Debug endpoint to check database columns (as requested in uploaded file)
-  app.get('/api/debug/database-columns', async (req, res) => {
-    try {
-      const { Client } = await import('pg');
-      const dbClient = new Client({
-        connectionString: process.env.DATABASE_URL,
-      });
-      
-      await dbClient.connect();
-      
-      // Get invoices table schema
-      const schemaQuery = `
-        SELECT column_name, data_type, is_nullable, column_default
-        FROM information_schema.columns 
-        WHERE table_name = 'invoices' 
-        ORDER BY ordinal_position
-      `;
-      
-      const result = await dbClient.query(schemaQuery);
-      await dbClient.end();
-      
-      res.json({
-        message: "Database schema for invoices table",
-        columns: result.rows,
-        mainColumns: result.rows.filter(col => 
-          ['total_amount', 'currency', 'vendor_name', 'invoice_number', 'tax_amount', 'subtotal'].includes(col.column_name)
-        )
-      });
-      
-    } catch (error) {
-      console.error("Error checking database schema:", error);
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-  // SQL fix endpoint for invoice 729 (and other invoices) as requested
-  app.post('/api/invoices/:id/sql-fix', async (req, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      if (isNaN(invoiceId)) {
-        return res.status(400).json({ error: 'Invalid invoice ID' });
-      }
-
-      const { Client } = await import('pg');
-      const dbClient = new Client({
-        connectionString: process.env.DATABASE_URL,
-      });
-      
-      await dbClient.connect();
-      
-      // Get invoice current data
-      const invoiceQuery = 'SELECT * FROM invoices WHERE id = $1';
-      const invoiceResult = await dbClient.query(invoiceQuery, [invoiceId]);
-      
-      if (invoiceResult.rows.length === 0) {
-        await dbClient.end();
-        return res.status(404).json({ error: 'Invoice not found' });
-      }
-      
-      const invoice = invoiceResult.rows[0];
-      console.log(`[SQL-FIX] Processing invoice ${invoiceId}:`, {
-        currentTotalAmount: invoice.total_amount,
-        currentCurrency: invoice.currency,
-        hasExtractedData: !!invoice.extracted_data
-      });
-      
-      // Extract data from extractedData JSON if main columns are null
-      let updateValues: any = {};
-      
-      if (invoice.extracted_data) {
-        const extractedData = invoice.extracted_data;
-        
-        // Map extracted data to main table columns if they're missing
-        if (!invoice.total_amount && extractedData.totalAmount) {
-          updateValues.total_amount = extractedData.totalAmount;
-        }
-        if (!invoice.currency && extractedData.currency) {
-          updateValues.currency = extractedData.currency;
-        }
-        if (!invoice.vendor_name && extractedData.vendorName) {
-          updateValues.vendor_name = extractedData.vendorName;
-        }
-        if (!invoice.invoice_number && extractedData.invoiceNumber) {
-          updateValues.invoice_number = extractedData.invoiceNumber;
-        }
-        if (!invoice.tax_amount && extractedData.taxAmount) {
-          updateValues.tax_amount = extractedData.taxAmount;
-        }
-        if (!invoice.subtotal && extractedData.subtotal) {
-          updateValues.subtotal = extractedData.subtotal;
-        }
-        if (!invoice.invoice_date && extractedData.invoiceDate) {
-          updateValues.invoice_date = new Date(extractedData.invoiceDate);
-        }
-        if (!invoice.due_date && extractedData.dueDate) {
-          updateValues.due_date = new Date(extractedData.dueDate);
-        }
-      }
-      
-      if (Object.keys(updateValues).length === 0) {
-        await dbClient.end();
-        return res.json({ 
-          message: "No updates needed - main table columns already populated",
-          invoice: {
-            id: invoice.id,
-            total_amount: invoice.total_amount,
-            currency: invoice.currency,
-            vendor_name: invoice.vendor_name
-          }
-        });
-      }
-      
-      // Build update query dynamically
-      const setClause = Object.keys(updateValues)
-        .map((key, index) => `${key} = $${index + 2}`)
-        .join(', ');
-      
-      const updateQuery = `
-        UPDATE invoices 
-        SET ${setClause}, updated_at = NOW()
-        WHERE id = $1
-        RETURNING id, total_amount, currency, vendor_name, invoice_number
-      `;
-      
-      const values = [invoiceId, ...Object.values(updateValues)];
-      console.log(`[SQL-FIX] Executing update:`, { updateQuery, values });
-      
-      const updateResult = await dbClient.query(updateQuery, values);
-      await dbClient.end();
-      
-      res.json({ 
-        message: "SQL fix applied successfully",
-        updated: updateValues,
-        invoice: updateResult.rows[0]
-      });
-      
-    } catch (error) {
-      console.error(`Error applying SQL fix for invoice ${req.params.id}:`, error);
-      res.status(500).json({ error: error instanceof Error ? error.message : 'Unknown error' });
-    }
-  });
-
-
 
   return httpServer;
 }

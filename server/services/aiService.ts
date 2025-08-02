@@ -511,14 +511,6 @@ export async function findBestProjectMatch(projectName: string, availableProject
   return null;
 }
 
-// Helper function to extract city from address
-function extractCity(address: string): string {
-  if (!address) return '';
-  // Extract city from Colombian address format "CITY, DEPARTMENT, POSTAL"
-  const parts = address.split(',');
-  return parts.length > 0 ? parts[0].trim() : '';
-}
-
 // POST-EXTRACTION WORKFLOW METHODS
 
 // Step 1: Classify line items using AI
@@ -621,79 +613,28 @@ export async function classifyPettyCash(invoice: any): Promise<boolean> {
   }
 }
 
-// Step 2B: Match invoice to projects using enhanced ProjectMatcherService
+// Step 2B: Match invoice to projects using AI
 export async function matchToProject(invoice: any): Promise<any> {
   try {
-    console.log(`🎯 Matching invoice ${invoice.id} (${invoice.fileName || 'unknown'}) to projects...`);
+    console.log('🎯 Matching invoice to projects...');
     
-    const { storage } = await import('../storage');
-    const projects = await storage.getProjects();
-    
-    if (!projects || projects.length === 0) {
-      console.log('No projects available for matching');
-      return {
-        projectId: null,
-        projectName: null,
-        matchConfidence: 0.0,
-        matchReasons: [],
-        suggestedProjects: []
-      };
-    }
-
-    // Use the enhanced ProjectMatcherService
-    const { projectMatcher } = await import('../projectMatcher');
-    const matchResults = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
-    
-    if (matchResults.length === 0) {
-      console.log('No suitable project matches found above 50% threshold');
-      return {
-        projectId: null,
-        projectName: null,
-        matchConfidence: 0.0,
-        matchReasons: [],
-        suggestedProjects: []
-      };
-    }
-
-    // Get the best match
-    const bestMatch = matchResults[0];
-    console.log(`✅ Found project match: ${bestMatch.project.name} (${bestMatch.matchScore}% confidence)`);
-    
+    // This would integrate with your existing project matching logic
+    // For now, return a mock project match structure
     return {
-      projectId: bestMatch.project.projectId,
-      projectName: bestMatch.project.name,
-      matchConfidence: bestMatch.matchScore / 100,
-      matchReasons: bestMatch.matchDetails.reasons,
-      suggestedProjects: matchResults.slice(0, 3).map(m => m.project) // Return top 3 suggestions
+      projectId: null,
+      projectName: null,
+      matchConfidence: 0.0,
+      matchReasons: [],
+      suggestedProjects: []
     };
-    
+
   } catch (error) {
     console.error('❌ Project matching failed:', error);
     return {
       projectId: null,
       projectName: null,
       matchConfidence: 0.0,
-      matchReasons: [`Error: ${error instanceof Error ? error.message : 'Unknown error'}`],
-      suggestedProjects: []
+      error: 'Project matching failed'
     };
   }
-}
-
-// Helper function for string similarity calculation
-function calculateStringSimilarity(str1: string, str2: string): number {
-  if (!str1 || !str2) return 0;
-  
-  const s1 = str1.toLowerCase().trim();
-  const s2 = str2.toLowerCase().trim();
-  
-  if (s1 === s2) return 100;
-  
-  // Simple fuzzy matching using character overlap
-  const longer = s1.length > s2.length ? s1 : s2;
-  const shorter = s1.length > s2.length ? s2 : s1;
-  
-  if (longer.length === 0) return 100;
-  
-  const matches = shorter.split('').filter(char => longer.includes(char)).length;
-  return Math.round((matches / longer.length) * 100);
 }

@@ -58,112 +58,76 @@ export class LearningTracker {
     examples: string[];
     suggestedFix: string;
   }>> {
-    try {
-      const recentErrors = await storage.getRecentFeedbackLogs(90); // Last 90 days
-      const olderErrors = await storage.getFeedbackLogsInRange(180, 90); // 90-180 days ago
+    const recentErrors = await storage.getRecentFeedbackLogs(90); // Last 90 days
+    const olderErrors = await storage.getFeedbackLogsInRange(180, 90); // 90-180 days ago
 
-      // Group errors by field and type with detailed analysis
-      const errorGroups = new Map<string, { 
-        recent: number; 
-        older: number; 
-        examples: Array<{reason: string, corrected: any, original: any}>;
-        recentExamples: Array<{reason: string, corrected: any, original: any}>;
-      }>();
+    // Group errors by field and type with detailed analysis
+    const errorGroups = new Map<string, { 
+      recent: number; 
+      older: number; 
+      examples: Array<{reason: string, corrected: any, original: any}>;
+      recentExamples: Array<{reason: string, corrected: any, original: any}>;
+    }>();
 
-      // Process recent errors with more detail
-      try {
-        recentErrors.forEach(log => {
-          try {
-            if (log.reason) {
-              const key = this.categorizeError(log.reason);
-              const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
-              current.recent++;
-              current.recentExamples.push({
-                reason: log.reason,
-                corrected: log.correctedData,
-                original: log.extractedData
-              });
-              if (current.examples.length < 5) {
-                current.examples.push({
-                  reason: log.reason,
-                  corrected: log.correctedData,
-                  original: log.extractedData
-                });
-              }
-              errorGroups.set(key, current);
-            }
-          } catch (logError) {
-            console.error('Error processing recent feedback log:', logError);
-            // Continue with other logs
-          }
+    // Process recent errors with more detail
+    recentErrors.forEach(log => {
+      if (log.reason) {
+        const key = this.categorizeError(log.reason);
+        const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
+        current.recent++;
+        current.recentExamples.push({
+          reason: log.reason,
+          corrected: log.correctedData,
+          original: log.extractedData
         });
-      } catch (recentError) {
-        console.error('Error processing recent errors:', recentError);
-      }
-
-      // Count older errors
-      try {
-        olderErrors.forEach(log => {
-          try {
-            if (log.reason) {
-              const key = this.categorizeError(log.reason);
-              const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
-              current.older++;
-              errorGroups.set(key, current);
-            }
-          } catch (logError) {
-            console.error('Error processing older feedback log:', logError);
-            // Continue with other logs
-          }
-        });
-      } catch (olderError) {
-        console.error('Error processing older errors:', olderError);
-      }
-
-      // Calculate trends and generate AI-powered suggestions
-      const commonErrors = [];
-      for (const [key, counts] of errorGroups.entries()) {
-        try {
-          const [field, errorType] = key.split('::');
-          let trend: 'improving' | 'stable' | 'declining' = 'stable';
-
-          if (counts.older > 0) {
-            const changeRate = (counts.recent - counts.older) / counts.older;
-            if (changeRate < -0.2) trend = 'improving';
-            else if (changeRate > 0.2) trend = 'declining';
-          }
-
-          // Generate AI-powered suggestions for fixes with fallback
-          let suggestedFix = 'Review extraction patterns for this field';
-          try {
-            suggestedFix = await this.generateErrorFix(field, errorType, counts.examples);
-          } catch (fixError) {
-            console.error(`Error generating fix for ${field}:`, fixError);
-            // Use fallback suggestion
-          }
-          
-          const exampleReasons = counts.examples.map(e => e.reason).slice(0, 3);
-
-          commonErrors.push({
-            field,
-            errorType,
-            frequency: counts.recent,
-            trend,
-            examples: exampleReasons,
-            suggestedFix
+        if (current.examples.length < 5) {
+          current.examples.push({
+            reason: log.reason,
+            corrected: log.correctedData,
+            original: log.extractedData
           });
-        } catch (errorProcessingError) {
-          console.error(`Error processing error group ${key}:`, errorProcessingError);
-          // Continue with other error groups
         }
+        errorGroups.set(key, current);
+      }
+    });
+
+    // Count older errors
+    olderErrors.forEach(log => {
+      if (log.reason) {
+        const key = this.categorizeError(log.reason);
+        const current = errorGroups.get(key) || { recent: 0, older: 0, examples: [], recentExamples: [] };
+        current.older++;
+        errorGroups.set(key, current);
+      }
+    });
+
+    // Calculate trends and generate AI-powered suggestions
+    const commonErrors = [];
+    for (const [key, counts] of errorGroups.entries()) {
+      const [field, errorType] = key.split('::');
+      let trend: 'improving' | 'stable' | 'declining' = 'stable';
+
+      if (counts.older > 0) {
+        const changeRate = (counts.recent - counts.older) / counts.older;
+        if (changeRate < -0.2) trend = 'improving';
+        else if (changeRate > 0.2) trend = 'declining';
       }
 
-      return commonErrors.sort((a, b) => b.frequency - a.frequency);
-    } catch (error) {
-      console.error('Critical error in analyzeCommonErrors:', error);
-      // Return empty array as fallback to prevent crashing
-      return [];
+      // Generate AI-powered suggestions for fixes
+      const suggestedFix = await this.generateErrorFix(field, errorType, counts.examples);
+      const exampleReasons = counts.examples.map(e => e.reason).slice(0, 3);
+
+      commonErrors.push({
+        field,
+        errorType,
+        frequency: counts.recent,
+        trend,
+        examples: exampleReasons,
+        suggestedFix
+      });
     }
+
+    return commonErrors.sort((a, b) => b.frequency - a.frequency);
   }
 
   // Get performance metrics over time
@@ -276,52 +240,27 @@ export class LearningTracker {
     try {
       console.log(`Recording feedback for invoice ${invoiceId} from user ${userId}: ${reason}`);
       
-      // Apply learning from the feedback immediately with error handling
-      try {
-        await this.applyLearningFromFeedback();
-      } catch (learningError) {
-        console.error(`Failed to apply learning from feedback for invoice ${invoiceId}:`, learningError);
-        // Continue processing even if learning application fails
-      }
+      // Apply learning from the feedback immediately
+      await this.applyLearningFromFeedback();
       
       // Store specific learning insights based on the corrections
       if (correctedData) {
         for (const [field, correctedValue] of Object.entries(correctedData)) {
           if (correctedValue && correctedValue !== originalData?.[field]) {
-            try {
-              await storage.storeLearningInsight({
-                field: field,
-                errorType: 'user_correction',
-                suggestedFix: `Correct value: ${correctedValue}`,
-                frequency: 1,
-                lastSeen: new Date()
-              });
-            } catch (insightError) {
-              console.error(`Failed to store learning insight for field ${field} on invoice ${invoiceId}:`, insightError);
-              // Continue with other fields even if one fails
-            }
+            await storage.storeLearningInsight({
+              field: field,
+              errorType: 'user_correction',
+              suggestedFix: `Correct value: ${correctedValue}`,
+              frequency: 1,
+              lastSeen: new Date()
+            });
           }
         }
       }
       
       console.log(`Feedback processing completed for invoice ${invoiceId}`);
     } catch (error) {
-      console.error(`Critical error recording feedback for invoice ${invoiceId}:`, error);
-      // Log the error but don't throw to prevent crashing the main process
-      
-      // Try to log a minimal error record for debugging
-      try {
-        console.error(`Feedback error details:`, {
-          invoiceId,
-          userId,
-          reason,
-          fileName,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        });
-      } catch (logError) {
-        console.error('Failed to log feedback error details:', logError);
-      }
+      console.error('Error recording feedback:', error);
     }
   }
 
@@ -334,20 +273,7 @@ export class LearningTracker {
       // Could be used to update confidence scores or model training data
       // For now, we log it for future ML pipeline improvements
     } catch (error) {
-      console.error(`Error recording positive feedback for invoice ${invoiceId}:`, error);
-      // Don't throw error to prevent crashing the main process
-      
-      // Log minimal error details
-      try {
-        console.error(`Positive feedback error details:`, {
-          invoiceId,
-          userId,
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        });
-      } catch (logError) {
-        console.error('Failed to log positive feedback error details:', logError);
-      }
+      console.error('Error recording positive feedback:', error);
     }
   }
 
@@ -416,54 +342,34 @@ Generate a specific instruction that could be added to the extraction prompt to 
 
   // Apply learning from feedback to improve future extractions
   static async applyLearningFromFeedback(): Promise<void> {
-    try {
-      const commonErrors = await this.analyzeCommonErrors();
-      
-      // Store learned patterns for future use with lower threshold
-      for (const error of commonErrors.slice(0, 10)) { // Top 10 most common
-        if (error.frequency >= 2) { // Lower threshold for faster learning
-          try {
-            console.log(`Learning applied for ${error.field}: ${error.suggestedFix}`);
-            
-            // Store in learning cache or database
-            await storage.storeLearningInsight({
-              field: error.field,
-              errorType: error.errorType,
-              suggestedFix: error.suggestedFix,
-              frequency: error.frequency,
-              lastSeen: new Date()
-            });
-            
-            // Also create specific improvement rules with error handling
-            try {
-              if (error.field === 'totalAmount' && error.frequency >= 3) {
-                await this.createAmountExtractionRule(error);
-              } else if (error.field === 'vendorName' && error.frequency >= 3) {
-                await this.createVendorNameRule(error);
-              } else if (error.field === 'invoiceDate' && error.frequency >= 3) {
-                await this.createDateExtractionRule(error);
-              }
-            } catch (ruleError) {
-              console.error(`Error creating extraction rule for ${error.field}:`, ruleError);
-              // Continue with other rules even if one fails
-            }
-          } catch (insightError) {
-            console.error(`Error storing learning insight for ${error.field}:`, insightError);
-            // Continue with other errors even if one fails
+    const commonErrors = await this.analyzeCommonErrors();
+    
+    // Store learned patterns for future use with lower threshold
+    for (const error of commonErrors.slice(0, 10)) { // Top 10 most common
+      if (error.frequency >= 2) { // Lower threshold for faster learning
+        try {
+          console.log(`Learning applied for ${error.field}: ${error.suggestedFix}`);
+          
+          // Store in learning cache or database
+          await storage.storeLearningInsight({
+            field: error.field,
+            errorType: error.errorType,
+            suggestedFix: error.suggestedFix,
+            frequency: error.frequency,
+            lastSeen: new Date()
+          });
+          
+          // Also create specific improvement rules
+          if (error.field === 'totalAmount' && error.frequency >= 3) {
+            await this.createAmountExtractionRule(error);
+          } else if (error.field === 'vendorName' && error.frequency >= 3) {
+            await this.createVendorNameRule(error);
+          } else if (error.field === 'invoiceDate' && error.frequency >= 3) {
+            await this.createDateExtractionRule(error);
           }
+        } catch (error) {
+          console.error('Error applying learning:', error);
         }
-      }
-    } catch (error) {
-      console.error('Critical error in applyLearningFromFeedback:', error);
-      // Don't throw error to prevent crashing the main process
-      
-      try {
-        console.error('Learning feedback application failed:', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-          timestamp: new Date().toISOString()
-        });
-      } catch (logError) {
-        console.error('Failed to log learning feedback error:', logError);
       }
     }
   }
@@ -502,61 +408,6 @@ Generate a specific instruction that could be added to the extraction prompt to 
       frequency: error.frequency,
       lastSeen: new Date()
     });
-  }
-
-  // Helper function to safely execute learning operations with Colombian invoice context
-  static async safeRecordFeedback(
-    invoiceId: number,
-    userId: string,
-    originalData: any,
-    correctedData: any,
-    reason: string,
-    fileName?: string,
-    isColombianInvoice: boolean = false
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      await this.recordFeedback(invoiceId, userId, originalData, correctedData, reason, fileName);
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown learning error';
-      
-      // Enhanced logging for Colombian invoices
-      if (isColombianInvoice) {
-        console.error(`🇨🇴 Colombian invoice learning system failure:`, {
-          invoiceId,
-          fileName,
-          reason,
-          correctionFields: correctedData ? Object.keys(correctedData) : [],
-          error: errorMessage,
-          timestamp: new Date().toISOString()
-        });
-      }
-      
-      return { success: false, error: errorMessage };
-    }
-  }
-
-  // Helper function to safely execute positive feedback with error recovery
-  static async safeRecordPositiveFeedback(
-    invoiceId: number,
-    userId: string,
-    fileName?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    try {
-      await this.recordPositiveFeedback(invoiceId, userId);
-      return { success: true };
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : 'Unknown learning error';
-      
-      console.error(`Positive feedback learning error for invoice ${invoiceId}:`, {
-        invoiceId,
-        fileName,
-        error: errorMessage,
-        timestamp: new Date().toISOString()
-      });
-      
-      return { success: false, error: errorMessage };
-    }
   }
 
   private static categorizeError(reason: string): string {

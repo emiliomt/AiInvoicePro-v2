@@ -37,27 +37,6 @@ interface ClassificationKeywords {
   tools_equipment: { id: number; keyword: string; isDefault: boolean }[];
 }
 
-interface Invoice {
-  id: number;
-  fileName: string;
-  vendorName?: string;
-  totalAmount?: number;
-  status: string;
-  currency?: string;
-}
-
-interface LineItemClassification {
-  lineItemId: number;
-  description: string;
-  quantity: number;
-  unitPrice: number;
-  totalPrice: number;
-  category?: string;
-  matchedKeyword?: string;
-  confidence?: number;
-  isManualOverride?: boolean;
-}
-
 const CATEGORY_INFO = {
   consumable_materials: {
     label: "Consumable Materials",
@@ -85,82 +64,6 @@ const CATEGORY_INFO = {
   }
 };
 
-// Component for petty cash-aware classification buttons
-function PettyCashClassificationButtons({ 
-  selectedInvoice, 
-  selectedInvoiceData, 
-  autoClassifyMutation, 
-  aiClassifyMutation, 
-  checkIfPettyCash 
-}: {
-  selectedInvoice: number | null;
-  selectedInvoiceData: Invoice | null;
-  autoClassifyMutation: any;
-  aiClassifyMutation: any;
-  checkIfPettyCash: (invoiceId: number) => Promise<boolean>;
-}) {
-  const [isPettyCash, setIsPettyCash] = useState(false);
-  const [isCheckingPettyCash, setIsCheckingPettyCash] = useState(false);
-
-  useEffect(() => {
-    if (selectedInvoice) {
-      setIsCheckingPettyCash(true);
-      checkIfPettyCash(selectedInvoice).then(result => {
-        setIsPettyCash(result);
-        setIsCheckingPettyCash(false);
-      });
-    } else {
-      setIsPettyCash(false);
-      setIsCheckingPettyCash(false);
-    }
-  }, [selectedInvoice]);
-
-  if (isPettyCash) {
-    return (
-      <div className="flex flex-col gap-2">
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 flex items-center gap-2">
-          <AlertCircle className="w-5 h-5 text-yellow-600" />
-          <div className="text-sm text-yellow-800">
-            <div className="font-medium">Petty Cash Invoice</div>
-            <div>This invoice ({selectedInvoiceData?.totalAmount} {selectedInvoiceData?.currency || 'COP'}) is classified as petty cash and does not require line item classification.</div>
-          </div>
-        </div>
-        <div className="flex gap-2">
-          <Button disabled variant="outline" className="opacity-50">
-            <RefreshCw className="w-4 h-4 mr-2" />
-            Classification Skipped
-          </Button>
-          <Button disabled className="bg-gray-400 hover:bg-gray-400 text-white opacity-50">
-            <AlertCircle className="w-4 h-4 mr-2" />
-            AI Classification Skipped
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="flex gap-2">
-      <Button
-        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
-        disabled={!selectedInvoice || autoClassifyMutation.isPending || isCheckingPettyCash}
-        variant="outline"
-      >
-        <RefreshCw className="w-4 h-4 mr-2" />
-        {isCheckingPettyCash ? "Checking..." : "Keyword Classify"}
-      </Button>
-      <Button
-        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
-        disabled={!selectedInvoice || aiClassifyMutation.isPending || isCheckingPettyCash}
-        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
-      >
-        <AlertCircle className="w-4 h-4 mr-2" />
-        {aiClassifyMutation.isPending ? "AI Classifying..." : isCheckingPettyCash ? "Checking..." : "AI Classify All"}
-      </Button>
-    </div>
-  );
-}
-
 export default function LineItemClassification() {
   const { user } = useAuth();
   const { toast } = useToast();
@@ -173,41 +76,19 @@ export default function LineItemClassification() {
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [bulkMode, setBulkMode] = useState(false);
 
-  // Check if an invoice is petty cash
-  const checkIfPettyCash = async (invoiceId: number): Promise<boolean> => {
-    try {
-      const response = await fetch(`/api/test/petty-cash/${invoiceId}`);
-      if (!response.ok) return false;
-      const data = await response.json();
-      return data.isPettyCash || false;
-    } catch (error) {
-      console.error('Error checking petty cash status:', error);
-      return false;
-    }
-  };
-
-  // Get selected invoice data
-  const selectedInvoiceData = selectedInvoice ? invoices.find(inv => inv.id === selectedInvoice) : null;
-
   // Fetch classification keywords
   const { data: keywords = {} as ClassificationKeywords } = useQuery<ClassificationKeywords>({
     queryKey: ["/api/classification/keywords"],
   });
 
   // Fetch invoices for classification testing
-  const { data: invoices = [] } = useQuery<Invoice[]>({
+  const { data: invoices = [] } = useQuery({
     queryKey: ["/api/invoices"],
   });
 
   // Fetch line item classifications for selected invoice
-  const { data: lineItemClassifications = [], isLoading: classificationsLoading, error: classificationsError } = useQuery<LineItemClassification[]>({
+  const { data: lineItemClassifications = [] } = useQuery({
     queryKey: ["/api/invoices", selectedInvoice, "classifications"],
-    queryFn: async () => {
-      if (!selectedInvoice) return [];
-      const response = await fetch(`/api/invoices/${selectedInvoice}/classifications`);
-      if (!response.ok) throw new Error("Failed to fetch classifications");
-      return response.json();
-    },
     enabled: !!selectedInvoice,
   });
 
@@ -302,7 +183,6 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "Auto-classification completed",
@@ -328,7 +208,6 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "AI classification completed",
@@ -343,33 +222,35 @@ export default function LineItemClassification() {
     },
   });
 
-  // Bulk classify mutation
-  const bulkClassifyMutation = useMutation({
+  // Bulk AI classify mutation
+  const bulkAiClassifyMutation = useMutation({
     mutationFn: async (invoiceIds: number[]) => {
-      const response = await fetch('/api/invoices/bulk-auto-classify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoiceIds }),
-      });
-      if (!response.ok) throw new Error('Failed to bulk classify');
-      return response.json();
+      const results = [];
+      for (const invoiceId of invoiceIds) {
+        try {
+          const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
+            method: "POST",
+          });
+          if (!response.ok) throw new Error(`Failed to AI classify invoice ${invoiceId}`);
+          results.push(await response.json());
+        } catch (error) {
+          console.error(`Error classifying invoice ${invoiceId}:`, error);
+        }
+      }
+      return results;
     },
-    onSuccess: (data) => {
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
-        description: data.message,
+        description: `AI classification completed for ${selectedInvoices.length} invoices`,
       });
-      // Invalidate classifications for all selected invoices
-      selectedInvoices.forEach(invoiceId => {
-        queryClient.invalidateQueries({ queryKey: ["/api/invoices", invoiceId, "classifications"] });
-      });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setSelectedInvoices([]);
     },
     onError: () => {
       toast({
         title: "Error",
-        description: "Failed to bulk classify invoices",
+        description: "Failed to AI classify some invoices",
         variant: "destructive",
       });
     },
@@ -386,7 +267,6 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "AI classification completed for line item",
@@ -414,7 +294,6 @@ export default function LineItemClassification() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       toast({
         title: "Success",
         description: "Classification updated successfully",
@@ -512,14 +391,6 @@ export default function LineItemClassification() {
       setSelectedInvoices([]);
     } else {
       setSelectedInvoices(invoices.map((invoice: any) => invoice.id));
-    }
-  };
-
-  const handleInvoiceSelection = (invoiceId: number, checked: boolean) => {
-    if (checked) {
-      setSelectedInvoices(prev => [...prev, invoiceId]);
-    } else {
-      setSelectedInvoices(prev => prev.filter(id => id !== invoiceId));
     }
   };
 
@@ -753,13 +624,22 @@ export default function LineItemClassification() {
                           </SelectContent>
                         </Select>
                       </div>
-                      <PettyCashClassificationButtons 
-                        selectedInvoice={selectedInvoice}
-                        selectedInvoiceData={selectedInvoiceData}
-                        autoClassifyMutation={autoClassifyMutation}
-                        aiClassifyMutation={aiClassifyMutation}
-                        checkIfPettyCash={checkIfPettyCash}
-                      />
+                      <Button
+                        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
+                        disabled={!selectedInvoice || autoClassifyMutation.isPending}
+                        variant="outline"
+                      >
+                        <RefreshCw className="w-4 h-4 mr-2" />
+                        Keyword Classify
+                      </Button>
+                      <Button
+                        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
+                        disabled={!selectedInvoice || aiClassifyMutation.isPending}
+                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
+                      >
+                        <AlertCircle className="w-4 h-4 mr-2" />
+                        {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
+                      </Button>
                     </div>
                   ) : (
                     <div className="space-y-4">
@@ -777,12 +657,12 @@ export default function LineItemClassification() {
                           </span>
                         )}
                         <Button
-                          onClick={() => bulkClassifyMutation.mutate(selectedInvoices)}
-                          disabled={selectedInvoices.length === 0 || bulkClassifyMutation.isPending}
+                          onClick={() => bulkAiClassifyMutation.mutate(selectedInvoices)}
+                          disabled={selectedInvoices.length === 0 || bulkAiClassifyMutation.isPending}
                           className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white ml-auto"
                         >
                           <Bot className="w-4 h-4 mr-2" />
-                          {bulkClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
+                          {bulkAiClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
                         </Button>
                       </div>
                       
@@ -798,7 +678,7 @@ export default function LineItemClassification() {
                             <input
                               type="checkbox"
                               checked={selectedInvoices.includes(invoice.id)}
-                              onChange={(e) => handleInvoiceSelection(invoice.id, e.target.checked)}
+                              onChange={() => handleInvoiceToggle(invoice.id)}
                               className="h-4 w-4"
                             />
                             <div className="flex-1">
@@ -820,58 +700,68 @@ export default function LineItemClassification() {
                     <CardTitle>Line Item Classifications</CardTitle>
                   </CardHeader>
                   <CardContent>
-                    {classificationsError && (
-                      <div className="text-red-600 text-sm mb-4">
-                        Error loading classifications: {classificationsError.message}
-                      </div>
-                    )}
-                    {classificationsLoading ? (
-                      <div className="flex items-center justify-center py-8">
-                        <RefreshCw className="w-6 h-6 animate-spin mr-2" />
-                        Loading classifications...
-                      </div>
-                    ) : (
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Description</TableHead>
-                            <TableHead>Quantity</TableHead>
-                            <TableHead>Unit Price</TableHead>
-                            <TableHead>Total</TableHead>
-                            <TableHead>Category</TableHead>
-                            <TableHead>Matched Keyword</TableHead>
-                            <TableHead>Confidence</TableHead>
-                            <TableHead>Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {lineItemClassifications.length === 0 ? (
-                            <TableRow>
-                              <TableCell colSpan={8} className="text-center py-8 text-gray-500">
-                                No line items found for this invoice
-                              </TableCell>
-                            </TableRow>
-                          ) : (
-                            lineItemClassifications.map((item: any) => (
-                              <TableRow key={item.lineItemId}>
-                                <TableCell>{item.description}</TableCell>
-                                <TableCell>{item.quantity}</TableCell>
-                                <TableCell>${item.unitPrice}</TableCell>
-                                <TableCell>${item.totalPrice}</TableCell>
-                                <TableCell>
-                                  {item.category ? (
-                                    <Badge variant="secondary">
-                                      {item.category.replace('_', ' ')}
-                                    </Badge>
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Description</TableHead>
+                          <TableHead>Quantity</TableHead>
+                          <TableHead>Unit Price</TableHead>
+                          <TableHead>Total</TableHead>
+                          <TableHead>Category</TableHead>
+                          <TableHead>Matched Keyword</TableHead>
+                          <TableHead>Confidence</TableHead>
+                          <TableHead>Actions</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {lineItemClassifications.map((item: any) => (
+                          <TableRow key={item.lineItemId}>
+                            <TableCell>{item.description}</TableCell>
+                            <TableCell>{item.quantity}</TableCell>
+                            <TableCell>${item.unitPrice}</TableCell>
+                            <TableCell>${item.totalPrice}</TableCell>
+                            <TableCell>
+                              <div className="flex items-center gap-2">
+                                {item.category ? (
+                                  <Badge className={CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.color}>
+                                    {CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.label}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="secondary">Unclassified</Badge>
+                                )}
+                                {item.isManualOverride && (
+                                  <Badge variant="outline" className="text-xs">
+                                    Manual
+                                  </Badge>
+                                )}
+                                {item.matchedKeyword === 'AI Classification' && (
+                                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                                    <Bot className="w-3 h-3 mr-1" />
+                                    AI
+                                  </Badge>
+                                )}
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {item.matchedKeyword && (
+                                <Badge variant="outline" className="text-xs">
+                                  {item.matchedKeyword}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              {item.confidence && (
+                                <div className="flex items-center gap-1">
+                                  <span className="text-sm">{Math.round(parseFloat(item.confidence) * 100)}%</span>
+                                  {parseFloat(item.confidence) > 0.7 ? (
+                                    <Check className="w-4 h-4 text-green-500" />
                                   ) : (
-                                    <span className="text-gray-400">Unclassified</span>
+                                    <AlertCircle className="w-4 h-4 text-yellow-500" />
                                   )}
-                                </TableCell>
-                                <TableCell>{item.matchedKeyword || '-'}</TableCell>
-                                <TableCell>
-                                  {item.confidence ? `${(parseFloat(item.confidence) * 100).toFixed(0)}%` : '-'}
-                                </TableCell>
-                                <TableCell>
+                                </div>
+                              )}
+                            </TableCell>
+                            <TableCell>
                               <div className="flex gap-2">
                                 <Select
                                   value={item.category || ""}
@@ -903,11 +793,9 @@ export default function LineItemClassification() {
                               </div>
                             </TableCell>
                           </TableRow>
-                            ))
-                          )}
-                        </TableBody>
-                      </Table>
-                    )}
+                        ))}
+                      </TableBody>
+                    </Table>
                   </CardContent>
                 </Card>
               )}

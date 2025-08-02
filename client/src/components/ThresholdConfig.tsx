@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import { Settings, Edit, Save, X, RefreshCw, Database } from "lucide-react";
+import { Settings, Edit, Save, X } from "lucide-react";
 
 // Currency options for the selector
 const CURRENCY_OPTIONS = [
@@ -187,43 +187,6 @@ export default function ThresholdConfig() {
     setIsEditing(false);
   };
 
-  // Sync missing petty cash logs mutation
-  const syncLogsMutation = useMutation({
-    mutationFn: async () => {
-      const response = await fetch('/api/petty-cash/recalculate', {
-        method: 'POST',
-        credentials: 'include',
-      });
-      
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.message || 'Failed to sync missing logs');
-      }
-      
-      return response.json();
-    },
-    onSuccess: (data) => {
-      const { newPettyCashCount = 0, reclassifiedCount = 0, totalProcessed = 0 } = data;
-      
-      toast({
-        title: "Sync Complete",
-        description: `Successfully processed ${totalProcessed} invoices. Created ${newPettyCashCount} new petty cash logs and reclassified ${reclassifiedCount} invoices.`,
-      });
-      
-      // Force refresh of related data
-      queryClient.invalidateQueries({ queryKey: ['thresholdConfig'] });
-      queryClient.invalidateQueries({ queryKey: ['/api/petty-cash'] });
-      queryClient.refetchQueries({ queryKey: ['/api/petty-cash'] });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Sync Failed",
-        description: `Failed to sync missing logs: ${error.message}`,
-        variant: "destructive",
-      });
-    },
-  });
-
   const defaultCurrency = configData?.userSettings?.defaultCurrency || 'USD';
   const getCurrencySymbol = (currency: string) => {
     switch (currency) {
@@ -357,33 +320,6 @@ export default function ThresholdConfig() {
               </Button>
             </>
           )}
-        </div>
-      </div>
-
-      {/* Sync Missing Logs */}
-      <div className="flex items-center justify-between p-4 border rounded-lg">
-        <div className="flex items-center space-x-2">
-          <Database className="text-gray-500" size={20} />
-          <div>
-            <div className="font-medium">Sync Missing Petty Cash Logs</div>
-            <div className="text-sm text-gray-600">
-              Create petty cash logs for invoices that qualify but don't have logs yet
-            </div>
-          </div>
-        </div>
-        <div className="flex items-center space-x-2">
-          <Button 
-            onClick={() => syncLogsMutation.mutate()}
-            disabled={syncLogsMutation.isPending}
-            variant="outline"
-            size="sm"
-            className="flex items-center space-x-2"
-          >
-            <RefreshCw className={`h-4 w-4 ${syncLogsMutation.isPending ? 'animate-spin' : ''}`} />
-            <span>
-              {syncLogsMutation.isPending ? 'Syncing...' : 'Sync Missing Logs'}
-            </span>
-          </Button>
         </div>
       </div>
     </div>
