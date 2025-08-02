@@ -470,44 +470,61 @@ export default function Invoices() {
   };
 
   const handleSelectInvoice = (invoiceId: number) => {
-    setSelectedInvoices(prev => 
-      prev.includes(invoiceId) 
+    console.log('🔄 handleSelectInvoice called with ID:', invoiceId);
+    setSelectedInvoices(prev => {
+      const isCurrentlySelected = prev.includes(invoiceId);
+      const newSelection = isCurrentlySelected 
         ? prev.filter(id => id !== invoiceId)
-        : [...prev, invoiceId]
-    );
+        : [...prev, invoiceId];
+      
+      console.log('📋 Previous selection:', prev);
+      console.log('📋 New selection:', newSelection);
+      console.log('📊 Selection count:', newSelection.length);
+      
+      return newSelection;
+    });
   };
 
   const handleSelectAll = () => {
-    if (selectedInvoices.length === invoices.length) {
-      setSelectedInvoices([]);
-    } else {
-      setSelectedInvoices(invoices.map(invoice => invoice.id));
-    }
+    console.log('🔄 handleSelectAll called');
+    console.log('📊 Current selection count:', selectedInvoices.length);
+    console.log('📊 Total invoices:', invoices.length);
+    
+    const newSelection = selectedInvoices.length === invoices.length 
+      ? [] 
+      : invoices.map(invoice => invoice.id);
+    
+    console.log('📋 New selection after select all:', newSelection);
+    setSelectedInvoices(newSelection);
   };
 
   const handleInitiateAutomaticProcess = async () => {
-    // Get all invoices that can be processed automatically (uploaded or failed status)
-    const processableInvoices = invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed');
+    console.log('🚀 handleInitiateAutomaticProcess called');
+    console.log('📝 Selected invoices:', selectedInvoices);
+    console.log('📊 Selected count:', selectedInvoices.length);
     
-    if (processableInvoices.length === 0) {
+    if (selectedInvoices.length === 0) {
       toast({
-        title: "No Processable Invoices",
-        description: "No invoices found with 'uploaded' or 'failed' status that can be processed automatically",
+        title: "No Invoices Selected",
+        description: "Please select invoices to process automatically",
         variant: "destructive",
       });
       return;
     }
 
+    // Get the selected invoices with their details
+    const selectedInvoiceObjects = invoices.filter(inv => selectedInvoices.includes(inv.id));
+    console.log('🔍 Selected invoice objects:', selectedInvoiceObjects);
+
     setIsProcessingAutomatic(true);
 
     try {
-      const processableIds = processableInvoices.map(inv => inv.id);
       const requestPayload = {
-        invoiceIds: processableIds,
+        invoiceIds: selectedInvoices,
         source: 'manual'
       };
 
-      console.log('Sending automatic processing request:', requestPayload);
+      console.log('📤 Sending automatic processing request:', requestPayload);
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
@@ -523,18 +540,19 @@ export default function Invoices() {
       }
 
       const result = await response.json();
+      console.log('✅ Processing result:', result);
 
       toast({
         title: "Automatic Processing Initiated",
-        description: `Processing ${result.summary.totalInvoices} invoices. ${result.summary.successful} successful, ${result.summary.failed} failed.`,
+        description: `Processing ${selectedInvoices.length} selected invoices.`,
       });
 
       // Refresh the invoices list
-      queryClient.invalidateQueries({ queryKey: ['invoices'] });
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setSelectedInvoices([]);
 
     } catch (error: any) {
-      console.error('Automatic processing failed:', error);
+      console.error('❌ Automatic processing failed:', error);
       toast({
         title: "Automatic Processing Failed",
         description: error.message || "Failed to initiate automatic processing",
@@ -626,7 +644,7 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0 || isProcessingAutomatic}
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
                   >
                     {isProcessingAutomatic ? (
                       <>
@@ -636,7 +654,7 @@ export default function Invoices() {
                     ) : (
                       <>
                         <Play size={16} className="mr-2" />
-                        Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                        Process Selected ({selectedInvoices.length})
                       </>
                     )}
                   </Button>
