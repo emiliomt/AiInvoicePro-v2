@@ -2598,82 +2598,103 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   app.post('/api/validation-rules', isAuthenticated, async (req: any, res) => {
     try {
-      const ruleData = req.body;
+      const requestData = req.body;
 
-      console.log("🔍 POST /api/validation-rules - Received request body:", JSON.stringify(ruleData, null, 2));
-      console.log("🔍 Request body type:", typeof ruleData);
-      console.log("🔍 Request body keys:", Object.keys(ruleData));
+      console.log("🔍 POST /api/validation-rules - Received request body:", JSON.stringify(requestData, null, 2));
 
       // Validate required fields
-      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType) {
-        console.error("❌ Missing required fields validation failed:");
-        console.error("  - name:", ruleData.name, "(type:", typeof ruleData.name, ")");
-        console.error("  - fieldName:", ruleData.fieldName, "(type:", typeof ruleData.fieldName, ")");
-        console.error("  - ruleType:", ruleData.ruleType, "(type:", typeof ruleData.ruleType, ")");
+      if (!requestData.name || !requestData.fieldName || !requestData.ruleType) {
+        console.error("❌ Missing required fields validation failed");
         return res.status(400).json({ 
           message: "Missing required fields: name, fieldName, ruleType",
           details: {
-            name: !ruleData.name ? "missing" : "present",
-            fieldName: !ruleData.fieldName ? "missing" : "present", 
-            ruleType: !ruleData.ruleType ? "missing" : "present"
+            name: !requestData.name ? "missing" : "present",
+            fieldName: !requestData.fieldName ? "missing" : "present", 
+            ruleType: !requestData.ruleType ? "missing" : "present"
           }
         });
       }
 
-      // Ensure ruleValue is present (either from ruleValue or ruleData field)
-      const ruleValue = ruleData.ruleValue || ruleData.ruleData;
-      console.log("🔍 Rule value extraction:");
-      console.log("  - ruleData.ruleValue:", ruleData.ruleValue, "(type:", typeof ruleData.ruleValue, ")");
-      console.log("  - ruleData.ruleData:", ruleData.ruleData, "(type:", typeof ruleData.ruleData, ")");
-      console.log("  - final ruleValue:", ruleValue, "(type:", typeof ruleValue, ")");
-
+      // Get ruleValue from either ruleValue or ruleData field (legacy support)
+      const ruleValue = requestData.ruleValue || requestData.ruleData;
       if (!ruleValue) {
-        console.error("❌ Missing rule value validation failed:");
-        console.error("  - ruleData.ruleValue:", ruleData.ruleValue);
-        console.error("  - ruleData.ruleData:", ruleData.ruleData);
+        console.error("❌ Missing rule value validation failed");
         return res.status(400).json({ 
           message: "Rule value is required",
-          details: {
-            ruleValue: ruleData.ruleValue || "missing",
-            ruleData: ruleData.ruleData || "missing"
-          }
+          details: "Either 'ruleValue' or 'ruleData' field must be provided"
         });
       }
 
-      // Create the rule with proper field mapping
-      const ruleToCreate = {
-        name: ruleData.name,
-        description: ruleData.description || null,
-        fieldName: ruleData.fieldName,
-        ruleType: ruleData.ruleType,
-        ruleValue: ruleValue,
-        severity: ruleData.severity || 'medium',
-        errorMessage: ruleData.errorMessage || null,
-        isActive: true
+      // Validate ruleType enum
+      const validRuleTypes = ['required', 'regex', 'range', 'enum', 'format', 'comparison'];
+      if (!validRuleTypes.includes(requestData.ruleType)) {
+        console.error("❌ Invalid ruleType:", requestData.ruleType);
+        return res.status(400).json({ 
+          message: "Invalid rule type",
+          details: `Rule type must be one of: ${validRuleTypes.join(', ')}`
+        });
+      }
+
+      // Validate severity enum
+      const validSeverities = ['low', 'medium', 'high', 'critical'];
+      const severity = requestData.severity || 'medium';
+      if (!validSeverities.includes(severity)) {
+        console.error("❌ Invalid severity:", severity);
+        return res.status(400).json({ 
+          message: "Invalid severity level",
+          details: `Severity must be one of: ${validSeverities.join(', ')}`
+        });
+      }
+
+      // Clean and validate data to match database schema exactly
+      const cleanRuleData = {
+        name: String(requestData.name).trim(),
+        description: requestData.description ? String(requestData.description).trim() : null,
+        fieldName: String(requestData.fieldName).trim(),
+        ruleType: requestData.ruleType,
+        ruleValue: String(ruleValue).trim(),
+        severity: severity,
+        errorMessage: requestData.errorMessage ? String(requestData.errorMessage).trim() : null,
+        isActive: Boolean(requestData.isActive !== false) // Default to true unless explicitly false
       };
 
-      console.log("✅ Creating rule with processed data:", JSON.stringify(ruleToCreate, null, 2));
+      console.log("✅ Clean rule data for database:", JSON.stringify(cleanRuleData, null, 2));
 
-      console.log("🔄 Calling storage.createValidationRule...");
-      const rule = await storage.createValidationRule(ruleToCreate);
-      console.log("✅ Storage returned validation rule:", JSON.stringify(rule, null, 2));
+      // Create validation rule in database
+      const rule = await storage.createValidationRule(cleanRuleData);
+      console.log("✅ Successfully created validation rule with ID:", rule?.id);
       
-      console.log("✅ Sending success response with rule ID:", rule?.id);
       res.status(201).json(rule);
     } catch (error) {
-      console.error("❌ Error creating validation rule:");
-      console.error("  - Error message:", error instanceof Error ? error.message : String(error));
-      console.error("  - Error stack:", error instanceof Error ? error.stack : "No stack trace");
-      console.error("  - Error type:", typeof error);
-      console.error("  - Full error object:", error);
+      console.error("❌ Error creating validation rule:", error);
+      
+      // Check for specific database errors
+      if (error instanceof Error) {
+        if (error.message.includes('duplicate key')) {
+          return res.status(409).json({ 
+            message: "A validation rule with this name already exists",
+            error: "Duplicate rule name"
+          });
+        }
+        
+        if (error.message.includes('foreign key constraint')) {
+          return res.status(400).json({ 
+            message: "Invalid field reference in validation rule",
+            error: "Foreign key constraint violation"
+          });
+        }
+        
+        if (error.message.includes('check constraint')) {
+          return res.status(400).json({ 
+            message: "Invalid data format for validation rule",
+            error: "Data validation failed"
+          });
+        }
+      }
       
       res.status(500).json({ 
         message: "Failed to create validation rule",
-        error: error instanceof Error ? error.message : "Unknown error",
-        details: {
-          type: typeof error,
-          stack: error instanceof Error ? error.stack : undefined
-        }
+        error: error instanceof Error ? error.message : "Unknown database error"
       });
     }
   });
