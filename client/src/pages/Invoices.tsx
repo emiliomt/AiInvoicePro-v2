@@ -118,7 +118,7 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
 // Enhanced status badge component with icons and colors
 const getStatusBadge = (invoice: Invoice) => {
   const status = invoice.status;
-  
+
   switch (status) {
     case 'po_matched':
       return (
@@ -644,7 +644,7 @@ export default function Invoices() {
   // Calculate processing summary
   const getProcessingSummary = () => {
     if (!invoices) return { poMatched: 0, pettyCash: 0, noPOMatch: 0, failed: 0 };
-    
+
     return {
       poMatched: invoices.filter(i => i.status === 'po_matched').length,
       pettyCash: invoices.filter(i => i.status === 'petty_cash').length,
@@ -895,20 +895,20 @@ export default function Invoices() {
                         <div className="flex items-center space-x-3">
                           {/* Main Status Badge */}
                           {getStatusBadge(invoice)}
-                          
+
                           {/* Additional Outcome Info */}
                           {invoice.status === 'po_matched' && invoice.poMatches && (
                             <div className="text-xs text-gray-500">
                               Matched to PO #{invoice.poMatches[0]?.poId || 'N/A'}
                             </div>
                           )}
-                          
+
                           {invoice.status === 'petty_cash' && (
                             <div className="text-xs text-gray-500">
                               {formatAmount(invoice.totalAmount, invoice.currency)} petty cash
                             </div>
                           )}
-                          
+
                           {invoice.status === 'validation_failed' && invoice.validationErrors && (
                             <div className="text-xs text-red-600">
                               {invoice.validationErrors.length} validation errors
@@ -1338,7 +1338,7 @@ export default function Invoices() {
                     {getStatusBadge(selectedInvoiceOutcome)}
                     <span className="font-medium">{selectedInvoiceOutcome.fileName}</span>
                   </div>
-                  
+
                   {/* Step-by-step results */}
                   <div className="space-y-3">
                     <div className="border rounded p-3">
@@ -1347,14 +1347,14 @@ export default function Invoices() {
                         {selectedInvoiceOutcome.classifiedItems?.length || 0} items classified
                       </div>
                     </div>
-                    
+
                     <div className="border rounded p-3">
                       <h4 className="font-medium">Petty Cash Check</h4>
                       <div className="text-sm text-gray-600 mt-1">
                         {selectedInvoiceOutcome.pettyCashFlag ? 'Classified as petty cash' : 'Not petty cash'}
                       </div>
                     </div>
-                    
+
                     {!selectedInvoiceOutcome.pettyCashFlag && (
                       <>
                         <div className="border rounded p-3">
@@ -1365,7 +1365,7 @@ export default function Invoices() {
                               'No project match found'}
                           </div>
                         </div>
-                        
+
                         <div className="border rounded p-3">
                           <h4 className="font-medium">Validation</h4>
                           <div className="text-sm text-gray-600 mt-1">
@@ -1374,7 +1374,7 @@ export default function Invoices() {
                               `Failed ${selectedInvoiceOutcome.validationErrors?.length || 0} validation rules`}
                           </div>
                         </div>
-                        
+
                         <div className="border rounded p-3">
                           <h4 className="font-medium">PO Matching</h4>
                           <div className="text-sm text-gray-600 mt-1">
