@@ -1004,18 +1004,38 @@ export default function Invoices() {
                             <div className="space-y-2">
                               <p className="text-xs font-medium text-gray-500">Project Match</p>
                               <div>
-                                {(invoice.extractedData as any)?.projectName || invoice.projectName ? (
-                                  <Badge 
-                                    variant="default" 
-                                    className="text-xs bg-blue-100 text-blue-800 border-blue-200"
-                                  >
-                                    {(invoice.extractedData as any)?.projectName || invoice.projectName}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
-                                    No Match
-                                  </Badge>
-                                )}
+                                {(() => {
+                                  const amount = parseFloat(invoice.totalAmount || '0');
+                                  const isPettyCash = amount <= 500000; // 500K COP threshold
+                                  
+                                  if (isPettyCash) {
+                                    return (
+                                      <Badge 
+                                        variant="default" 
+                                        className="text-xs bg-green-100 text-green-800 border-green-200"
+                                      >
+                                        Petty Cash
+                                      </Badge>
+                                    );
+                                  }
+                                  
+                                  if ((invoice.extractedData as any)?.projectName || invoice.projectName) {
+                                    return (
+                                      <Badge 
+                                        variant="default" 
+                                        className="text-xs bg-blue-100 text-blue-800 border-blue-200"
+                                      >
+                                        {(invoice.extractedData as any)?.projectName || invoice.projectName}
+                                      </Badge>
+                                    );
+                                  }
+                                  
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                      No Match
+                                    </Badge>
+                                  );
+                                })()}
                               </div>
                             </div>
 
