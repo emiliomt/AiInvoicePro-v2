@@ -30,6 +30,9 @@ import AiWorkflow from "@/pages/AiWorkflow";
 import InvoiceImporter from "@/pages/InvoiceImporter";
 import InvoicePreview from "@/pages/InvoicePreview";
 import NotFound from "@/pages/not-found";
+import { AlertCircle } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 
 // Import the existing query client from lib
 import { queryClient } from "@/lib/queryClient";
@@ -121,7 +124,30 @@ const AppContent = React.memo(() => {
           {user ? <InvoiceImporter /> : <Landing />}
         </Route>
         <Route>
-          {user ? <NotFound /> : <Landing />}
+          {user ? (
+            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+              <Card className="w-full max-w-md mx-4">
+                <CardContent className="pt-6">
+                  <div className="flex mb-4 gap-2">
+                    <AlertCircle className="h-8 w-8 text-red-500" />
+                    <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
+                  </div>
+                  <p className="mt-4 text-sm text-gray-600 mb-4">
+                    Current URL: {window.location.pathname}
+                  </p>
+                  <p className="text-sm text-gray-600 mb-4">
+                    Available routes: /, /dashboard, /invoices, /validation-rules, /petty-cash, /reports
+                  </p>
+                  <Button 
+                    onClick={() => window.location.href = '/dashboard'}
+                    className="w-full"
+                  >
+                    Go to Dashboard
+                  </Button>
+                </CardContent>
+              </Card>
+            </div>
+          ) : <Landing />}
         </Route>
       </Switch>
       <Toaster />
