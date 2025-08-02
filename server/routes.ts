@@ -2356,6 +2356,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/validation-rules', isAuthenticated, async (req: any, res) => {
     try {
       const rules = await storage.getValidationRules();
+      console.log('Fetched validation rules:', rules.length, 'rules');
       res.json(rules);
     } catch (error) {
       console.error("Error fetching validation rules:", error);
@@ -2447,6 +2448,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const ruleData = req.body;
 
+      console.log('Creating validation rule with data:', ruleData);
+
       // Validate required fields
       if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
         return res.status(400).json({ 
@@ -2454,17 +2457,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
         });
       }
 
-      // Set ruleData as valid JSON object containing the rule value
-      const ruleDataWithJson = {
-        ...ruleData,
-        ruleData: JSON.stringify({ value: ruleData.ruleValue })
+      // Map frontend fields to database schema
+      const dbRuleData = {
+        name: ruleData.name,
+        description: ruleData.description || null,
+        fieldName: ruleData.fieldName,
+        ruleType: ruleData.ruleType,
+        ruleValue: ruleData.ruleValue, // This maps to rule_value column
+        severity: ruleData.severity || 'medium',
+        errorMessage: ruleData.errorMessage || null,
+        isActive: true
       };
 
-      const rule = await storage.createValidationRule(ruleDataWithJson);
+      console.log('Mapped rule data for database:', dbRuleData);
+
+      const rule = await storage.createValidationRule(dbRuleData);
+      console.log('Created rule:', rule);
+      
       res.status(201).json(rule);
     } catch (error) {
       console.error("Error creating validation rule:", error);
-      res.status(500).json({ message: "Failed to create validation rule" });
+      res.status(500).json({ message: "Failed to create validation rule", error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 

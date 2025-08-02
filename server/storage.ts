@@ -324,7 +324,7 @@ class PostgresStorage implements IStorage {
       .from(invoices)
       .leftJoin(importedInvoices, eq(invoices.id, importedInvoices.invoiceId))
       .orderBy(desc(invoices.createdAt));
-    
+
     return results.map(result => ({
       ...result,
       isDataSource: result.isDataSource ?? null, // Convert undefined to null for consistency
@@ -344,10 +344,10 @@ class PostgresStorage implements IStorage {
     const dbClient = new Client({
       connectionString: process.env.DATABASE_URL,
     });
-    
+
     try {
       await dbClient.connect();
-      
+
       // First, get the linked files so we can delete the physical files
       const linkedFilesQuery = `
         SELECT file_path, original_file_name 
@@ -355,7 +355,7 @@ class PostgresStorage implements IStorage {
         WHERE linked_invoice_id = $1
       `;
       const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
-      
+
       // Delete physical files from disk
       const fs = await import('fs');
       for (const file of linkedFiles.rows) {
@@ -368,21 +368,21 @@ class PostgresStorage implements IStorage {
           console.error(`Error deleting physical file ${file.file_path}:`, fileError);
         }
       }
-      
+
       // Delete linked PDF files from imported_invoices table
       const deleteResult = await dbClient.query(
         'DELETE FROM imported_invoices WHERE linked_invoice_id = $1',
         [id]
       );
-      
+
       console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for invoice ${id}`);
-      
+
     } catch (error) {
       console.error(`Error deleting linked files for invoice ${id}:`, error);
     } finally {
       await dbClient.end();
     }
-    
+
     // Delete related line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
     // Delete feedback logs
@@ -395,7 +395,7 @@ class PostgresStorage implements IStorage {
     await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
     // Finally delete the main invoice
     await db.delete(invoices).where(eq(invoices.id, id));
-    
+
     console.log(`✅ Successfully deleted invoice ${id} and all related records`);
   }
 
@@ -937,10 +937,10 @@ class PostgresStorage implements IStorage {
         const dbClient = new Client({
           connectionString: process.env.DATABASE_URL,
         });
-        
+
         try {
           await dbClient.connect();
-          
+
           // Get linked files that will be deleted so we can remove physical files
           const linkedFilesQuery = `
             SELECT file_path, original_file_name 
@@ -948,7 +948,7 @@ class PostgresStorage implements IStorage {
             WHERE linked_invoice_id = ANY($1)
           `;
           const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
-          
+
           // Delete physical files from disk
           const fs = await import('fs');
           for (const file of linkedFiles.rows) {
@@ -961,15 +961,15 @@ class PostgresStorage implements IStorage {
               console.error(`Error deleting physical file ${file.file_path}:`, fileError);
             }
           }
-          
+
           // Delete linked PDF files from imported_invoices table
           const deleteResult = await dbClient.query(
             'DELETE FROM imported_invoices WHERE linked_invoice_id = ANY($1)',
             [invoiceIds]
           );
-          
+
           console.log(`🗑️ Deleted ${deleteResult.rowCount} linked imported files for ${count} invoices`);
-          
+
         } catch (error) {
           console.error(`Error deleting linked files for bulk deletion:`, error);
         } finally {
@@ -985,7 +985,7 @@ class PostgresStorage implements IStorage {
 
         // Finally delete the main invoices
         await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
-        
+
         console.log(`✅ Successfully deleted ${count} invoices and all related records`);
       }
 
@@ -1228,15 +1228,31 @@ class PostgresStorage implements IStorage {
 
 
   async getValidationRules(): Promise<any[]> {
-    return [];
+    try {
+      const rules = await db.select().from(validationRules).orderBy(desc(validationRules.createdAt));
+      console.log('Retrieved validation rules from database:', rules.length, 'rules');
+      return rules;
+    } catch (error) {
+      console.error('Database error fetching validation rules:', error);
+      throw error;
+    }
   }
 
   async getValidationRule(id: number): Promise<any> {
     return null;
   }
 
-  async createValidationRule(rule: any): Promise<any> {
-    return { id: Date.now(), ...rule, createdAt: new Date() };
+  async createValidationRule(ruleData: any): Promise<any> {
+    console.log('Creating validation rule in database:', ruleData);
+
+    try {
+      const [rule] = await db.insert(validationRules).values(ruleData).returning();
+      console.log('Successfully created validation rule:', rule);
+      return rule;
+    } catch (error) {
+      console.error('Database error creating validation rule:', error);
+      throw error;
+    }
   }
 
   async updateValidationRule(id: number, updates: any): Promise<any> {

@@ -79,24 +79,41 @@ export default function ValidationRules() {
   // Create/Update rule mutation
   const saveRuleMutation = useMutation({
     mutationFn: async (ruleData: any) => {
+      console.log('Saving rule data:', ruleData);
+      
       if (editingRule) {
         const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to update rule');
+        }
         return response.json();
       } else {
         const response = await apiRequest('POST', '/api/validation-rules', ruleData);
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || 'Failed to create rule');
+        }
         return response.json();
       }
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
+      console.log('Rule saved successfully:', data);
       toast({
         title: editingRule ? "Rule Updated" : "Rule Created",
         description: `Validation rule has been ${editingRule ? "updated" : "created"} successfully.`,
       });
+      
+      // Force refresh the rules list
       queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] });
+      queryClient.refetchQueries({ queryKey: ["/api/validation-rules"] });
+      
       setIsDialogOpen(false);
       resetForm();
     },
     onError: (error: Error) => {
+      console.error('Error saving rule:', error);
+      
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -111,7 +128,7 @@ export default function ValidationRules() {
 
       toast({
         title: "Save Failed",
-        description: error.message,
+        description: error.message || "An error occurred while saving the rule",
         variant: "destructive",
       });
     },
@@ -164,13 +181,14 @@ export default function ValidationRules() {
   };
 
   const handleEdit = (rule: ValidationRule) => {
+    console.log('Editing rule:', rule);
     setEditingRule(rule);
     setFormData({
       name: rule.name,
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleData || rule.ruleValue || "",
+      ruleValue: rule.ruleValue || rule.ruleData || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -186,6 +204,8 @@ export default function ValidationRules() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
+    console.log('Form submission with data:', formData);
+
     if (!formData.name || !formData.fieldName || !formData.ruleType || !formData.ruleValue) {
       toast({
         title: "Validation Error",
@@ -195,12 +215,18 @@ export default function ValidationRules() {
       return;
     }
 
-    // Map ruleValue to ruleData for backend compatibility
+    // Prepare data for API - keep ruleValue as is since that's what the API expects
     const ruleData = {
-      ...formData,
-      ruleData: formData.ruleValue
+      name: formData.name.trim(),
+      description: formData.description.trim() || null,
+      fieldName: formData.fieldName,
+      ruleType: formData.ruleType,
+      ruleValue: formData.ruleValue.trim(),
+      severity: formData.severity,
+      errorMessage: formData.errorMessage.trim() || null
     };
 
+    console.log('Submitting rule data:', ruleData);
     saveRuleMutation.mutate(ruleData);
   };
 
@@ -506,7 +532,7 @@ export default function ValidationRules() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleData || rule.ruleValue || '')}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || rule.ruleData || '')}
                       </p>
                     </div>
                   </div>
