@@ -934,6 +934,168 @@ export default function Invoices() {
                           </p>
                         </div>
                       </div>
+
+                      {/* Processing Results Display */}
+                      {invoice.status === 'extracted' && (
+                        <div className="border-t pt-4 mb-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">Processing Results</h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+                            
+                            {/* Item Classification */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Item Classification</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(invoice.extractedData as any)?.lineItems?.length > 0 ? (
+                                  (() => {
+                                    const classifications = new Set();
+                                    (invoice.extractedData as any).lineItems.forEach((item: any) => {
+                                      if (item.classification) {
+                                        classifications.add(item.classification);
+                                      }
+                                    });
+                                    return Array.from(classifications).map((classification: any) => (
+                                      <Badge 
+                                        key={classification}
+                                        variant="outline" 
+                                        className={`text-xs ${
+                                          classification === 'consumable_materials' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                          classification === 'non_consumable_materials' ? 'bg-green-50 text-green-700 border-green-200' :
+                                          classification === 'labor' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                          classification === 'tools_equipment' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                          'bg-gray-50 text-gray-700 border-gray-200'
+                                        }`}
+                                      >
+                                        {classification?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                                      </Badge>
+                                    ));
+                                  })()
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                    Not Classified
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Petty Cash Status */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Petty Cash</p>
+                              <div>
+                                {(() => {
+                                  const amount = parseFloat(invoice.totalAmount || '0');
+                                  const isPettyCash = amount <= 500000; // 500K COP threshold
+                                  return (
+                                    <Badge 
+                                      variant={isPettyCash ? "default" : "outline"}
+                                      className={`text-xs ${
+                                        isPettyCash 
+                                          ? 'bg-green-100 text-green-800 border-green-200' 
+                                          : 'bg-red-50 text-red-700 border-red-200'
+                                      }`}
+                                    >
+                                      {isPettyCash ? `Yes (≤${formatAmount('500000', invoice.currency)})` : 'No'}
+                                    </Badge>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            {/* Project Match */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Project Match</p>
+                              <div>
+                                {(invoice.extractedData as any)?.projectName || invoice.projectName ? (
+                                  <Badge 
+                                    variant="default" 
+                                    className="text-xs bg-blue-100 text-blue-800 border-blue-200"
+                                  >
+                                    {(invoice.extractedData as any)?.projectName || invoice.projectName}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                    No Match
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Validation Results */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Validation</p>
+                              <div>
+                                {(invoice.extractedData as any)?.validationResults ? (
+                                  <Badge 
+                                    variant={(invoice.extractedData as any)?.validationResults?.isValid ? "default" : "destructive"}
+                                    className={`text-xs ${
+                                      (invoice.extractedData as any)?.validationResults?.isValid
+                                        ? 'bg-green-100 text-green-800'
+                                        : 'bg-red-100 text-red-800'
+                                    }`}
+                                  >
+                                    {(invoice.extractedData as any)?.validationResults?.isValid ? (
+                                      <>
+                                        <CheckCircle className="w-3 h-3 mr-1" />
+                                        Passed
+                                      </>
+                                    ) : (
+                                      <>
+                                        <XCircle className="w-3 h-3 mr-1" />
+                                        {(invoice.extractedData as any)?.validationResults?.violations?.length || 0} Issues
+                                      </>
+                                    )}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                                    <AlertTriangle className="w-3 h-3 mr-1" />
+                                    Pending
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* PO Match Status */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">PO Match</p>
+                              <div>
+                                {(invoice.extractedData as any)?.poMatch ? (
+                                  <Badge 
+                                    variant="default" 
+                                    className="text-xs bg-green-100 text-green-800 border-green-200"
+                                  >
+                                    <Package className="w-3 h-3 mr-1" />
+                                    PO-{(invoice.extractedData as any)?.poMatch?.poNumber}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                    <X className="w-3 h-3 mr-1" />
+                                    No Match
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                          </div>
+
+                          {/* Detailed Results Summary */}
+                          {((invoice.extractedData as any)?.validationResults?.violations?.length > 0 || 
+                            (invoice.extractedData as any)?.confidenceScore) && (
+                            <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                              <div className="flex items-center justify-between text-sm">
+                                {(invoice.extractedData as any)?.confidenceScore && (
+                                  <span className="text-gray-600">
+                                    AI Confidence: {(parseFloat((invoice.extractedData as any).confidenceScore) * 100).toFixed(1)}%
+                                  </span>
+                                )}
+                                {(invoice.extractedData as any)?.validationResults?.violations?.length > 0 && (
+                                  <span className="text-red-600 text-xs">
+                                    Issues: {(invoice.extractedData as any).validationResults.violations.map((v: any) => v.field).join(', ')}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      )}
                       <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
                         <Button
                           variant="outline"
