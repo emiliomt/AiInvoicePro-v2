@@ -13,6 +13,7 @@ import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
 import { Plus, Edit, Trash2, Shield, AlertTriangle, Info, XCircle } from "lucide-react";
 import Header from "@/components/Header";
+import { ValidationRulesErrorBoundary } from "@/components/ErrorBoundary";
 
 interface ValidationRule {
   id: number;
@@ -70,7 +71,7 @@ const SEVERITY_OPTIONS = [
   { value: "critical", label: "Critical", color: "bg-red-100 text-red-800" },
 ];
 
-export default function ValidationRules() {
+function ValidationRulesContent() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
   const [formData, setFormData] = useState({
@@ -87,61 +88,91 @@ export default function ValidationRules() {
   const queryClient = useQueryClient();
 
   // Get validation rules
-  const { data: rules, isLoading } = useQuery<ValidationRule[]>({
+  const { data: rules, isLoading, error: queryError } = useQuery<ValidationRule[]>({
     queryKey: ["/api/validation-rules"],
+    retry: (failureCount, error) => {
+      // Don't retry on 401/403 errors
+      if (isUnauthorizedError(error as Error)) {
+        return false;
+      }
+      // Retry up to 3 times for other errors
+      return failureCount < 3;
+    },
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
   });
 
   // Create/Update rule mutation
   const saveRuleMutation = useMutation({
     mutationFn: async (ruleData: any) => {
       console.log("🚀 Frontend: Starting mutation with data:", JSON.stringify(ruleData, null, 2));
-      console.log("🚀 Frontend: Data types:");
-      Object.entries(ruleData).forEach(([key, value]) => {
-        console.log(`    ${key}: ${value} (${typeof value})`);
-      });
 
       try {
+        // Validate data before sending
+        if (!ruleData.name?.trim()) {
+          throw new Error("Rule name is required");
+        }
+        if (!ruleData.fieldName?.trim()) {
+          throw new Error("Field name is required");
+        }
+        if (!ruleData.ruleType?.trim()) {
+          throw new Error("Rule type is required");
+        }
+        if (!ruleData.ruleValue?.trim()) {
+          throw new Error("Rule value is required");
+        }
+
+        let response;
+        let result;
+
         if (editingRule) {
           console.log("🔄 Frontend: Making PUT request to update rule", editingRule.id);
-          const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
-          const result = await response.json();
-          console.log("✅ Frontend: PUT response received:", JSON.stringify(result, null, 2));
-          return result;
+          response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
         } else {
           console.log("🔄 Frontend: Making POST request to create new rule");
-          const response = await apiRequest('POST', '/api/validation-rules', ruleData);
+          response = await apiRequest('POST', '/api/validation-rules', ruleData);
+        }
 
-          console.log("📊 Frontend: Response status:", response.status);
-          console.log("📊 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
+        console.log("📊 Frontend: Response status:", response.status);
 
-          if (!response.ok) {
-            const errorText = await response.text();
-            console.error("❌ Frontend: Non-OK response received:");
-            console.error("    Status:", response.status);
-            console.error("    Status text:", response.statusText);
-            console.error("    Response body:", errorText);
-
-            let errorData;
-            try {
-              errorData = JSON.parse(errorText);
-            } catch (parseError) {
-              console.error("❌ Frontend: Failed to parse error response as JSON:", parseError);
-              throw new Error(`Server error (${response.status}): ${errorText}`);
+        // Handle different response types
+        if (!response.ok) {
+          let errorMessage = `Server error (${response.status})`;
+          
+          try {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const errorData = await response.json();
+              errorMessage = errorData.message || errorData.error || errorMessage;
+            } else {
+              const errorText = await response.text();
+              errorMessage = errorText || errorMessage;
             }
-
-            throw new Error(errorData.message || `Server error (${response.status})`);
+          } catch (parseError) {
+            console.warn("Could not parse error response:", parseError);
           }
 
-          const result = await response.json();
-          console.log("✅ Frontend: POST response received:", JSON.stringify(result, null, 2));
-          return result;
+          throw new Error(errorMessage);
         }
-      } catch (apiError) {
-        console.error("❌ Frontend: API request failed:");
-        console.error("    Error message:", apiError instanceof Error ? apiError.message : String(apiError));
-        console.error("    Error stack:", apiError instanceof Error ? apiError.stack : "No stack trace");
-        console.error("    Full error object:", apiError);
-        throw apiError;
+
+        // Parse successful response
+        try {
+          result = await response.json();
+          console.log("✅ Frontend: Response received:", JSON.stringify(result, null, 2));
+          return result;
+        } catch (parseError) {
+          console.error("❌ Frontend: Failed to parse success response:", parseError);
+          throw new Error("Server returned invalid response format");
+        }
+
+      } catch (error) {
+        console.error("❌ Frontend: Mutation failed:", error);
+        
+        // Re-throw with better error message
+        if (error instanceof Error) {
+          throw error;
+        } else {
+          throw new Error("An unexpected error occurred while saving the rule");
+        }
       }
     },
     onSuccess: (data) => {
@@ -184,7 +215,37 @@ export default function ValidationRules() {
   // Delete rule mutation
   const deleteRuleMutation = useMutation({
     mutationFn: async (ruleId: number) => {
-      await apiRequest('DELETE', `/api/validation-rules/${ruleId}`);
+      try {
+        if (!ruleId || isNaN(ruleId)) {
+          throw new Error("Invalid rule ID");
+        }
+
+        const response = await apiRequest('DELETE', `/api/validation-rules/${ruleId}`);
+        
+        if (!response.ok) {
+          let errorMessage = `Failed to delete rule (${response.status})`;
+          
+          try {
+            const contentType = response.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              const errorData = await response.json();
+              errorMessage = errorData.message || errorData.error || errorMessage;
+            } else {
+              const errorText = await response.text();
+              errorMessage = errorText || errorMessage;
+            }
+          } catch (parseError) {
+            console.warn("Could not parse delete error response:", parseError);
+          }
+
+          throw new Error(errorMessage);
+        }
+
+        return response;
+      } catch (error) {
+        console.error("Delete rule error:", error);
+        throw error instanceof Error ? error : new Error("Failed to delete validation rule");
+      }
     },
     onSuccess: () => {
       toast({
@@ -194,6 +255,8 @@ export default function ValidationRules() {
       queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] });
     },
     onError: (error: Error) => {
+      console.error("Delete mutation error:", error);
+      
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -208,7 +271,7 @@ export default function ValidationRules() {
 
       toast({
         title: "Delete Failed",
-        description: error.message,
+        description: error.message || "An unexpected error occurred while deleting the rule",
         variant: "destructive",
       });
     },
@@ -250,28 +313,74 @@ export default function ValidationRules() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    console.log("📝 Frontend: Form submission started");
-    console.log("📝 Frontend: Current form data:", JSON.stringify(formData, null, 2));
-    console.log("📝 Frontend: Form validation check:");
-    console.log("    name:", formData.name, "(valid:", !!formData.name, ")");
-    console.log("    fieldName:", formData.fieldName, "(valid:", !!formData.fieldName, ")");
-    console.log("    ruleType:", formData.ruleType, "(valid:", !!formData.ruleType, ")");
-    console.log("    ruleValue:", formData.ruleValue, "(valid:", !!formData.ruleValue, ")");
+    try {
+      console.log("📝 Frontend: Form submission started");
+      console.log("📝 Frontend: Current form data:", JSON.stringify(formData, null, 2));
 
-    if (!formData.name || !formData.fieldName || !formData.ruleType || !formData.ruleValue) {
-      console.error("❌ Frontend: Form validation failed - missing required fields");
+      // Comprehensive form validation
+      const errors: string[] = [];
+      
+      if (!formData.name?.trim()) {
+        errors.push("Rule name is required");
+      }
+      if (!formData.fieldName?.trim()) {
+        errors.push("Field name is required");
+      }
+      if (!formData.ruleType?.trim()) {
+        errors.push("Rule type is required");
+      }
+      if (!formData.ruleValue?.trim()) {
+        errors.push("Rule value is required");
+      }
+
+      // Rule-specific validation
+      if (formData.ruleType === "range" && formData.ruleValue) {
+        const rangeParts = formData.ruleValue.split(',');
+        if (rangeParts.length !== 2 || isNaN(Number(rangeParts[0])) || isNaN(Number(rangeParts[1]))) {
+          errors.push("Range rule value must be in format 'min,max' (e.g., '0,1000')");
+        }
+      }
+
+      if (formData.ruleType === "regex" && formData.ruleValue) {
+        try {
+          new RegExp(formData.ruleValue);
+        } catch (regexError) {
+          errors.push("Invalid regex pattern");
+        }
+      }
+
+      if (errors.length > 0) {
+        console.error("❌ Frontend: Form validation failed:", errors);
+        toast({
+          title: "Validation Error",
+          description: errors.join('. '),
+          variant: "destructive",
+        });
+        return;
+      }
+
+      console.log("✅ Frontend: Form validation passed, submitting data");
+
+      // Clean the form data before sending
+      const cleanFormData = {
+        name: formData.name.trim(),
+        description: formData.description?.trim() || null,
+        fieldName: formData.fieldName.trim(),
+        ruleType: formData.ruleType.trim(),
+        ruleValue: formData.ruleValue.trim(),
+        severity: formData.severity,
+        errorMessage: formData.errorMessage?.trim() || null,
+      };
+
+      saveRuleMutation.mutate(cleanFormData);
+    } catch (error) {
+      console.error("❌ Frontend: Form submission error:", error);
       toast({
-        title: "Validation Error",
-        description: "Please fill in all required fields.",
+        title: "Submission Error",
+        description: "An unexpected error occurred while preparing the form data",
         variant: "destructive",
       });
-      return;
     }
-
-    console.log("✅ Frontend: Form validation passed, submitting data:", JSON.stringify(formData, null, 2));
-
-    // Send the form data directly - the backend will handle field mapping
-    saveRuleMutation.mutate(formData);
   };
 
   const getSeverityIcon = (severity: string) => {
@@ -495,7 +604,37 @@ export default function ValidationRules() {
 
         {/* Rules List */}
         <div className="grid grid-cols-1 gap-6">
-          {isLoading ? (
+          {queryError ? (
+            <Card>
+              <CardContent className="p-6">
+                <div className="text-center">
+                  <div className="text-red-500 text-4xl mb-4">⚠️</div>
+                  <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Rules</h3>
+                  <p className="text-gray-600 mb-4">
+                    {isUnauthorizedError(queryError as Error) 
+                      ? "You are not authorized to view this data. Please log in again."
+                      : (queryError as Error)?.message || "Failed to load validation rules"
+                    }
+                  </p>
+                  {isUnauthorizedError(queryError as Error) ? (
+                    <Button 
+                      onClick={() => window.location.href = "/api/login"}
+                      className="bg-primary-600 hover:bg-primary-700"
+                    >
+                      Login Again
+                    </Button>
+                  ) : (
+                    <Button 
+                      onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] })}
+                      variant="outline"
+                    >
+                      Try Again
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : isLoading ? (
             <Card>
               <CardContent className="p-6">
                 <div className="flex items-center justify-center">
@@ -600,5 +739,13 @@ export default function ValidationRules() {
         </div>
       </main>
     </div>
+  );
+}
+
+export default function ValidationRules() {
+  return (
+    <ValidationRulesErrorBoundary>
+      <ValidationRulesContent />
+    </ValidationRulesErrorBoundary>
   );
 }
