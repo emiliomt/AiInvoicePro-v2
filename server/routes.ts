@@ -2,6 +2,7 @@ import express, { type Express, type Request, type Response, type NextFunction }
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
+import { invoiceImporterService } from "./services/invoiceImporterService";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -266,24 +267,63 @@ export function registerRoutes(app: Express): Server {
         }
       }, 25000); // 25 second timeout (less than frontend timeout)
 
-      // Call the Python RPA service with fallback
+      // Call the Invoice Importer service for automatic processing
       let result;
       try {
-        console.log('🔄 [AUTOMATIC_PROCESSING] Calling Python RPA service...');
-        result = await pythonRpaService.processInvoicesAutomatically();
-        console.log('✅ [AUTOMATIC_PROCESSING] Python RPA service completed:', JSON.stringify(result, null, 2));
-      } catch (pythonError) {
-        console.warn('⚠️ [AUTOMATIC_PROCESSING] Python RPA service unavailable:', pythonError.message);
-
-        // Fallback: Return a mock successful response
+        console.log('🔄 [AUTOMATIC_PROCESSING] Starting invoice importer service...');
+        
+        // Get all active invoice importer configurations
+        const configs = await storage.getInvoiceImporterConfigs();
+        console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
+        
+        if (configs.length === 0) {
+          throw new Error('No invoice importer configurations found');
+        }
+        
+        // Process each configuration
+        const processedConfigurations = [];
+        for (const config of configs) {
+          if (config.isActive) {
+            console.log(`🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`);
+            try {
+              await invoiceImporterService.executeImportTask(config.id);
+              processedConfigurations.push({
+                configId: config.id,
+                taskName: config.taskName,
+                status: 'completed'
+              });
+            } catch (configError) {
+              console.error(`❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`, configError);
+              processedConfigurations.push({
+                configId: config.id,
+                taskName: config.taskName,
+                status: 'failed',
+                error: configError.message
+              });
+            }
+          }
+        }
+        
         result = {
           success: true,
-          message: 'Automatic processing queued (Python RPA service temporarily unavailable)',
-          processedInvoices: 0,
-          fallback: true,
+          message: `Processed ${processedConfigurations.length} import configurations`,
+          processedConfigurations,
+          processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
           timestamp: new Date().toISOString()
         };
-        console.log('🔄 [AUTOMATIC_PROCESSING] Using fallback result:', JSON.stringify(result, null, 2));
+        
+        console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
+      } catch (importerError) {
+        console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service failed:', importerError.message);
+        
+        // Return error response instead of fallback
+        result = {
+          success: false,
+          error: true,
+          message: importerError.message || 'Automatic processing failed',
+          processedInvoices: 0,
+          timestamp: new Date().toISOString()
+        };
       }
 
       // Clear timeout since we're responding
