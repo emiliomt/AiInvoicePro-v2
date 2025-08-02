@@ -256,7 +256,7 @@ export function registerRoutes(app: Express): Server {
 
       // Set up timeout to prevent hanging
       processingTimeout = setTimeout(() => {
-        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 25 seconds');
+        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 2 minutes');
         if (!res.headersSent) {
           res.status(408).json({
             success: false,
@@ -265,7 +265,7 @@ export function registerRoutes(app: Express): Server {
             timestamp: new Date().toISOString()
           });
         }
-      }, 25000); // 25 second timeout (less than frontend timeout)
+      }, 120000); // 2 minute timeout for browser automation
 
       // Call the Invoice Importer service for automatic processing
       let result;
@@ -375,6 +375,48 @@ export function registerRoutes(app: Express): Server {
       } else {
         console.warn('⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent');
       }
+    }
+  });
+
+  // Debug endpoint to test ERP connection
+  app.post('/api/debug/test-erp-connection', isAuthenticated, async (req: any, res) => {
+    try {
+      const { connectionId } = req.body;
+      
+      if (!connectionId) {
+        return res.status(400).json({ error: 'Connection ID is required' });
+      }
+
+      const connection = await storage.getErpConnection(connectionId);
+      if (!connection) {
+        return res.status(404).json({ error: 'ERP connection not found' });
+      }
+
+      console.log('🔍 [DEBUG] Testing ERP connection:', connection.name);
+      
+      // Import the ERP automation service
+      const { erpAutomationService } = await import('./services/erpAutomationService');
+      
+      const testResult = await erpAutomationService.testConnection(connection);
+      
+      res.json({
+        success: testResult.success,
+        message: testResult.message,
+        details: testResult.details,
+        connectionInfo: {
+          id: connection.id,
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username
+        }
+      });
+      
+    } catch (error) {
+      console.error('ERP connection test failed:', error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined
+      });
     }
   });
 
