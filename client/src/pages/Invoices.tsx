@@ -198,6 +198,7 @@ export default function Invoices() {
   const [showProcessingSummary, setShowProcessingSummary] = useState(false);
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
   const [selectedInvoiceOutcome, setSelectedInvoiceOutcome] = useState<Invoice | null>(null);
+  const [showLatestResults, setShowLatestResults] = useState(true);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -625,16 +626,16 @@ export default function Invoices() {
       const failedProcessing = results?.filter((r: any) => !r.success) || [];
 
       let description = `Successfully processed ${processedCount}/${totalCount} invoices.`;
-      
+
       if (successfulProcessing.length > 0) {
         const poMatches = successfulProcessing.filter((r: any) => r.poMatches > 0).length;
         const projectAssignments = successfulProcessing.filter((r: any) => r.projectAssigned).length;
-        
+
         if (poMatches > 0 || projectAssignments > 0) {
           description += ` Found ${poMatches} PO matches and ${projectAssignments} project assignments.`;
         }
       }
-      
+
       if (failedProcessing.length > 0) {
         description += ` ${failedProcessing.length} invoices failed processing.`;
       }
@@ -648,13 +649,13 @@ export default function Invoices() {
       // Refresh the invoices list
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setSelectedInvoices([]);
-      
+
       // Show processing summary
       setShowProcessingSummary(true);
 
     } catch (error: any) {
       console.error('Automatic processing failed:', error);
-      
+
       if (error.name === 'AbortError') {
         toast({
           title: "Processing Timeout",
@@ -701,6 +702,32 @@ export default function Invoices() {
       setSelectedInvoices(invoices?.map(invoice => invoice.id) || []);
     }
   };
+
+  // Calculate processing stats
+  const calculateProcessingStats = (invoices: any[]) => {
+    let poMatched = 0;
+    let pettyCash = 0;
+    let noPOMatch = 0;
+    let failedErrors = 0;
+
+    invoices.forEach(invoice => {
+      const results = invoice.extractedData?.processingResults;
+
+      if (results?.isPettyCash) {
+        pettyCash++;
+      } else if (results?.poMatched) {
+        poMatched++;
+      } else if (results?.processingStatus === 'failed') {
+        failedErrors++;
+      } else if (results && !results.poMatched) {
+        noPOMatch++;
+      }
+    });
+
+    return { poMatched, pettyCash, noPOMatch, failedErrors };
+  };
+
+  const processingStats = calculateProcessingStats(invoices || []);
 
   // Calculate processing summary
   const getProcessingSummary = () => {
@@ -833,6 +860,47 @@ export default function Invoices() {
             </div>
           </div>
         </div>
+
+        {/* Latest Processing Results */}
+        {showLatestResults && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center justify-between">
+                <span>Latest Processing Results</span>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => setShowLatestResults(false)}
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid grid-cols-4 gap-4">
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-green-600">{processingStats.poMatched}</div>
+                  <div className="text-sm text-gray-600">PO Matched</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-blue-600">{processingStats.pettyCash}</div>
+                  <div className="text-sm text-gray-600">Petty Cash</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-orange-600">{processingStats.noPOMatch}</div>
+                  <div className="text-sm text-gray-600">No PO Match</div>
+                </div>
+                <div className="text-center">
+                  <div className="text-2xl font-bold text-red-600">{processingStats.failedErrors}</div>
+                  <div className="text-sm text-gray-600">Failed/Errors</div>
+                </div>
+              </div>
+              <div className="mt-4 text-xs text-gray-500">
+                Based on {totalInvoices} total invoices with processing results
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         {showProcessingSummary && (
           <Card className="mb-6 border-l-4 border-l-blue-500">
@@ -1037,6 +1105,7 @@ export default function Invoices() {
                           </p>
                         </div>
                       </div>
+                      
                       <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
                         <Button
                           variant="outline"
