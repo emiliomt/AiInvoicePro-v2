@@ -1,4 +1,3 @@
-
 // Enhanced Colombian Invoice Extraction Rules
 // server/services/colombianInvoiceExtractor.ts
 
@@ -9,7 +8,7 @@ interface ColombianInvoiceRules {
 }
 
 class ColombianInvoiceExtractor implements ColombianInvoiceRules {
-  
+
   /**
    * Detect if this is a Colombian invoice based on specific patterns
    */
@@ -191,7 +190,7 @@ RESPOND WITH VALID JSON ONLY - NO EXPLANATIONS`;
     // Handle DD/MM/YYYY format common in Colombia
     const ddmmyyyyPattern = /^(\d{2})\/(\d{2})\/(\d{4})$/;
     const match = ddmmyyyyPattern.exec(dateStr);
-    
+
     if (match) {
       const [, day, month, year] = match;
       return `${year}-${month}-${day}`;
@@ -233,6 +232,24 @@ RESPOND WITH VALID JSON ONLY - NO EXPLANATIONS`;
   }
 }
 
+// Enhanced project name patterns to better capture project names from different parts of the invoice
+const enhancedProjectPatterns = [
+            /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,;\.]+)/i,
+            /(?:PROYECTO|OBRA|PROJECT)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,40})/i,
+            /CONTRATO\s+(?:NO\.?|NUM\.?|#)?\s*([A-ZÁÉÍÓÚÑ0-9\-]{3,25})/i,
+            /(?:CONSTRUCCIÓN|CONSTRUCTION)\s+(?:DE\s+)?([A-ZÁÉÍÓÚÑ0-9\-\s]{5,40})/i,
+            /(?:EDIFICIO|BUILDING|TORRE|TOWER)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+            /(?:FASE|PHASE|ETAPA)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{2,25})/i,
+            /(?:PARQUE|PARK)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+            /(?:CONJUNTO|COMPLEX|RESIDENCIAL)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+            /(?:URBANIZACIÓN|URBANIZACION|DEVELOPMENT)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+            // Specific pattern for compound project names like "Parque Heredia"
+            /(PARQUE\s+[A-ZÁÉÍÓÚÑ]+)/i,
+            /(CONJUNTO\s+[A-ZÁÉÍÓÚÑ\s]+)/i,
+            // General pattern for proper nouns that could be project names
+            /(?:EN\s+EL?\s+|PARA\s+EL?\s+|DEL?\s+)?([A-ZÁÉÍÓÚÑ]+\s+[A-ZÁÉÍÓÚÑ]+)(?:\s+(?:PHASE|FASE|ETAPA|TORRE|TOWER|APARTAMENTOS?))?/i
+          ];
+
 // Integration function
 export function applyColombianRules(ocrText: string, learningImprovements: string = ""): {
   isColombianInvoice: boolean;
@@ -244,7 +261,7 @@ export function applyColombianRules(ocrText: string, learningImprovements: strin
 
   if (isColombianInvoice) {
     console.log('🇨🇴 Colombian invoice detected - applying specialized extraction rules');
-    
+
     return {
       isColombianInvoice: true,
       extractionPrompt: extractor.getColombianExtractionPrompt(ocrText, learningImprovements),

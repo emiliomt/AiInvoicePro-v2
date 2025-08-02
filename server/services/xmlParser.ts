@@ -689,33 +689,68 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
                      extractTextFromXMLTag(cleanedXmlContent, 'ContractDocumentReference') ||
                      extractTextFromXMLTag(cleanedXmlContent, 'AdditionalDocumentReference');
 
-    // If no direct project reference found, search in multiple content sources
+    // If no direct project reference found, search in multiple content sources including line items
     if (!projectName) {
       const searchContent = [
         concept || '',
-        extractTextFromXMLTag(xmlContent, 'Note') || '',
-        extractTextFromXMLTag(xmlContent, 'Description') || '',
-        // Also search in delivery location which might indicate project site
-        extractTextFromXMLTag(xmlContent, 'StreetName') || ''
+        extractTextFromXMLTag(cleanedXmlContent, 'Note') || '',
+        extractTextFromXMLTag(cleanedXmlContent, 'Description') || '',
+        extractTextFromXMLTag(cleanedXmlContent, 'StreetName') || '',
+        // Add line item descriptions to search content
+        ...lineItems.map(item => item.description)
       ].join(' ');
 
       const enhancedProjectPatterns = [
-        /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,;]+)/i,
-        /(?:PROYECTO|OBRA|PROJECT)\s+([A-Z0-9\-\s]{3,30})/i,
+        // Colombian project patterns with more flexible matching
+        /(?:PROYECTO|OBRA|PROJECT|CONTRATO):\s*([^\n\r,;\.]+)/i,
+        /(?:PROYECTO|OBRA|PROJECT)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,40})/i,
         /CONTRATO\s+(?:NO\.?|NUM\.?|#)?\s*([A-Z0-9\-]{3,20})/i,
-        /(?:CONSTRUCCIÓN|CONSTRUCTION)\s+(?:DE\s+)?([A-Z0-9\-\s]{5,40})/i,
-        /(?:EDIFICIO|BUILDING|TORRE|TOWER)\s+([A-Z0-9\-\s]{3,25})/i,
-        /(?:FASE|PHASE|ETAPA)\s+([A-Z0-9\-\s]{2,20})/i
+        /(?:CONSTRUCCIÓN|CONSTRUCTION)\s+(?:DE\s+)?([A-ZÁÉÍÓÚÑ0-9\-\s]{5,40})/i,
+        /(?:EDIFICIO|BUILDING|TORRE|TOWER)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+        /(?:FASE|PHASE|ETAPA)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{2,25})/i,
+        /(?:PARQUE|PARK)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+        /(?:CONJUNTO|COMPLEX|RESIDENCIAL)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+        /(?:URBANIZACIÓN|URBANIZACION|DEVELOPMENT)\s+([A-ZÁÉÍÓÚÑ0-9\-\s]{3,30})/i,
+        // Pattern for "Parque Heredia" and similar compound names
+        /(PARQUE\s+[A-ZÁÉÍÓÚÑ]+)/i,
+        /(CONJUNTO\s+[A-ZÁÉÍÓÚÑ\s]+)/i,
+        // General pattern for capturing proper nouns that might be project names
+        /(?:EN\s+EL?\s+|PARA\s+EL?\s+|DEL?\s+)?([A-ZÁÉÍÓÚÑ]+\s+[A-ZÁÉÍÓÚÑ]+)(?:\s+(?:PHASE|FASE|ETAPA|TORRE|TOWER))?/i
       ];
 
       for (const pattern of enhancedProjectPatterns) {
         const match = searchContent.match(pattern);
         if (match && match[1]) {
-          projectName = match[1].trim();
-          // Remove common suffixes/prefixes that aren't part of project name
-          projectName = projectName.replace(/^(DE\s+|THE\s+|EL\s+|LA\s+)/i, '');
-          projectName = projectName.replace(/(\s+EN\s+|\s+IN\s+|\s+AT\s+).*$/i, '');
-          break;
+          let candidateProject = match[1].trim();
+          
+          // Clean up common prefixes and suffixes
+          candidateProject = candidateProject.replace(/^(DE\s+|THE\s+|EL\s+|LA\s+|EN\s+|PARA\s+)/i, '');
+          candidateProject = candidateProject.replace(/(\s+EN\s+|\s+IN\s+|\s+AT\s+|\s+UBICADO).*$/i, '');
+          candidateProject = candidateProject.replace(/(\s+PHASE|\s+FASE|\s+ETAPA).*$/i, '');
+          
+          // Validate that it's not too generic or short
+          if (candidateProject.length >= 5 && 
+              !candidateProject.match(/^(SERVICIOS?|TRABAJO|OBRA|PROJECT|CONSTRUCTION)$/i) &&
+              candidateProject.match(/[A-ZÁÉÍÓÚÑ]/)) {
+            projectName = candidateProject;
+            break;
+          }
+        }
+      }
+      
+      // If still no project name found, try to extract from address context
+      if (!projectName) {
+        const addressContext = [
+          extractTextFromXMLTag(cleanedXmlContent, 'StreetName') || '',
+          extractTextFromXMLTag(cleanedXmlContent, 'CityName') || '',
+          projectAddress || ''
+        ].join(' ');
+        
+        // Look for proper nouns in address that might indicate project
+        const addressProjectPattern = /(PARQUE|CONJUNTO|RESIDENCIAL|URBANIZACIÓN|EDIFICIO)\s+([A-ZÁÉÍÓÚÑ\s]{3,25})/i;
+        const addressMatch = addressContext.match(addressProjectPattern);
+        if (addressMatch && addressMatch[0]) {
+          projectName = addressMatch[0].trim();
         }
       }
     }
@@ -813,9 +848,20 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
       totalAmount: result.totalAmount,
       currency: result.currency,
       lineItemsCount: result.lineItems.length,
-      projectName: result.projectName ? 'Found' : 'Not found',
+      projectName: result.projectName ? `Found: "${result.projectName}"` : 'Not found',
       subtotal: result.subtotal ? 'Found' : 'Not found'
     });
+
+    // Enhanced debugging for project extraction
+    if (enableDebug || !result.projectName) {
+      console.log('🔍 PROJECT EXTRACTION DEBUG:', {
+        concept: concept ? `"${concept.substring(0, 100)}..."` : 'Not found',
+        notes: extractTextFromXMLTag(cleanedXmlContent, 'Note') ? 'Found' : 'Not found',
+        lineItemDescriptions: lineItems.slice(0, 3).map(item => `"${item.description.substring(0, 50)}..."`),
+        deliveryAddress: projectAddress ? `"${projectAddress}"` : 'Not found',
+        searchableContent: [concept, extractTextFromXMLTag(cleanedXmlContent, 'Note')].filter(Boolean).join(' | ').substring(0, 200)
+      });
+    }
 
     return result;
 
