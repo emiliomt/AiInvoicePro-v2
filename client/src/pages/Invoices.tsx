@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, CheckCircle, XCircle, Clock, Target } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, CheckCircle, XCircle, Clock, Target, X } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   AlertDialog,
@@ -728,6 +728,7 @@ export default function Invoices() {
   };
 
   const processingStats = calculateProcessingStats(invoices || []);
+  const totalInvoices = processingStats.poMatched + processingStats.pettyCash + processingStats.noPOMatch + processingStats.failedErrors;
 
   // Calculate processing summary
   const getProcessingSummary = () => {

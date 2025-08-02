@@ -924,7 +924,7 @@ class PostgresStorage implements IStorage {
             eq(invoices.userId, userId),
             and(
               eq(invoices.userId, 'rpa-system'),
-              eq(invoices.companyId, user.companyId)
+              eq(invoices.companyId, user.companyId || 0)
             )
           )
         );
@@ -1470,17 +1470,7 @@ class PostgresStorage implements IStorage {
     }).where(eq(importedInvoices.id, id));
   }
 
-  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
-    const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
-    return result || null;
-  }
 
-  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void> {
-     await db.update(invoiceImporterConfigs).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoiceImporterConfigs.id, id));
-  }
 
   // Enhanced import logs with comprehensive metadata
   async getImportLogsWithDetails(): Promise<any[]> {

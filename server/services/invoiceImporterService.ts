@@ -123,7 +123,7 @@ class InvoiceImporterService {
 
       if (config.isManualConfig || !config.connectionId) {
         // Manual configuration - use credentials stored directly in the config
-        console.log(`🔍 Invoice import: Using manual ERP configuration for config "${config.name}"`);
+        console.log(`🔍 Invoice import: Using manual ERP configuration for config "${config.taskName}"`);
         connection = {
           id: 'manual',
           name: `Manual Config - ${config.taskName}`,
@@ -143,7 +143,7 @@ class InvoiceImporterService {
         });
       } else {
         // Connection-based configuration - retrieve fresh credentials from ERP connection
-        console.log(`🔍 Invoice import: Retrieving ERP connection ${config.connectionId} for config "${config.name}"`);
+        console.log(`🔍 Invoice import: Retrieving ERP connection ${config.connectionId} for config "${config.taskName}"`);
         connection = await storage.getErpConnection(config.connectionId);
         if (!connection) {
           throw new Error('ERP connection not found');
@@ -443,10 +443,8 @@ class InvoiceImporterService {
       await this.simulateDelay(200);
       await this.updateStepStatus(logId, progress, 12, 'completed');
 
-      // Step 13: Trigger automatic processing if enabled
-      if (config.automaticProcessing) {
-        await this.triggerAutomaticProcessing(logId, config.userId);
-      }
+      // Step 13: Complete processing
+      console.log('Import process completed successfully');
 
     } catch (error: any) {
       console.error('RPA automation failed:', error);
@@ -797,7 +795,7 @@ class InvoiceImporterService {
 
       // Get all imported invoices from this RPA session
       const { storage } = await import('../storage.js');
-      const importedInvoices = await storage.getImportedInvoicesByLogId(logId);
+      const importedInvoices = await storage.getImportedInvoicesByLog(logId);
 
       if (importedInvoices.length === 0) {
         console.log('No invoices found for automatic processing');

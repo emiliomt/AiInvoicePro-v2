@@ -29,7 +29,7 @@ export function registerRoutes(app: Express): Server {
   // Get all invoices
   app.get("/api/invoices", isAuthenticated, async (req: any, res) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ message: "User not authenticated" });
       }
@@ -246,13 +246,13 @@ export function registerRoutes(app: Express): Server {
 
     try {
       console.log('🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...');
-      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', req.user?.claims?.sub);
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', req.user?.id);
       console.log('🚀 [AUTOMATIC_PROCESSING] Request body:', JSON.stringify(req.body, null, 2));
 
       // Ensure we always return JSON with proper headers
       res.setHeader('Content-Type', 'application/json');
 
-      const userId = req.user?.claims?.sub;
+      const userId = req.user?.id;
       if (!userId) {
         return res.status(401).json({ 
           success: false, 
@@ -392,7 +392,7 @@ export function registerRoutes(app: Express): Server {
     const poMatchCount = poMatches.length;
     if (poMatchCount > 0) {
       processingResults.poMatched = true;
-      processingResults.poMatchDetails = poMatches[0]; // Use best match
+      processingResults.poMatchDetails = poMatches[0] || null; // Use best match
       console.log(`✅ Found ${poMatchCount} PO matches`);
     } else {
       console.log(`ℹ️ No PO matches found`);
@@ -418,7 +418,7 @@ export function registerRoutes(app: Express): Server {
     const projectMatch = await assignProjectToInvoice(invoice);
     if (projectMatch) {
       processingResults.projectAssigned = true;
-      processingResults.projectId = projectMatch.projectId;
+      processingResults.projectId = String(projectMatch.projectId);
       console.log(`✅ Project assigned: ${projectMatch.projectId}`);
     } else {
       console.log(`ℹ️ No project assignment made`);
@@ -427,13 +427,13 @@ export function registerRoutes(app: Express): Server {
     // Step 5: Discrepancy Check
     console.log(`🔄 Running discrepancy check for invoice ${invoice.id}`);
     const discrepancies = await checkForDiscrepancies(invoice);
-    processingResults.discrepancies = discrepancies;
+    processingResults.discrepancies = discrepancies || [];
     processingResults.processingStatus = 'completed';
     console.log(`✅ Discrepancy check completed: ${discrepancies.length} issues found`);
 
     // Step 6: Store processing results in invoice
     const updatedInvoiceData = {
-      status: isPettyCash ? 'petty_cash' : (poMatchCount > 0 ? 'matched' : 'processed'),
+      status: isPettyCash ? 'petty_cash' as const : (poMatchCount > 0 ? 'matched' as const : 'processed' as const),
       extractedData: {
         ...invoice.extractedData,
         processingResults: processingResults
@@ -541,9 +541,8 @@ export function registerRoutes(app: Express): Server {
         await storage.createInvoiceProjectMatch({
           invoiceId: invoice.id,
           projectId: projectMatch.id.toString(),
-          matchType: 'automatic',
           matchScore: 80,
-          matchReason: 'Vendor name similarity'
+          matchDetails: { type: 'automatic', reason: 'Vendor name similarity' }
         });
 
         return projectMatch;

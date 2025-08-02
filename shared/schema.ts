@@ -116,6 +116,7 @@ export const invoices = pgTable("invoices", {
   poMatches: jsonb("po_matches"),
   validationErrors: jsonb("validation_errors"),
   processingError: text("processing_error"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
