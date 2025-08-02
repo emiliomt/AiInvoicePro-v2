@@ -241,10 +241,9 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Initiate automatic processing
+  // Initiate automatic processing (process existing invoices, not import new ones)
   app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
-    let processingTimeout: NodeJS.Timeout;
 
     try {
       console.log('🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...');
@@ -254,129 +253,319 @@ export function registerRoutes(app: Express): Server {
       // Ensure we always return JSON with proper headers
       res.setHeader('Content-Type', 'application/json');
 
-      // Set up timeout to prevent hanging
-      processingTimeout = setTimeout(() => {
-        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 2 minutes');
-        if (!res.headersSent) {
-          res.status(408).json({
-            success: false,
-            error: 'Processing timeout',
-            message: 'Automatic processing took too long and was cancelled',
-            timestamp: new Date().toISOString()
-          });
-        }
-      }, 120000); // 2 minute timeout for browser automation
-
-      // Call the Invoice Importer service for automatic processing
-      let result;
-      try {
-        console.log('🔄 [AUTOMATIC_PROCESSING] Starting invoice importer service...');
-        
-        // Get all active invoice importer configurations
-        const configs = await storage.getInvoiceImporterConfigs();
-        console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
-        
-        if (configs.length === 0) {
-          throw new Error('No invoice importer configurations found');
-        }
-        
-        // Process each configuration
-        const processedConfigurations = [];
-        for (const config of configs) {
-          if (config.isActive) {
-            console.log(`🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`);
-            try {
-              await invoiceImporterService.executeImportTask(config.id);
-              processedConfigurations.push({
-                configId: config.id,
-                taskName: config.taskName,
-                status: 'completed'
-              });
-            } catch (configError) {
-              console.error(`❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`, configError);
-              processedConfigurations.push({
-                configId: config.id,
-                taskName: config.taskName,
-                status: 'failed',
-                error: configError.message
-              });
-            }
-          }
-        }
-        
-        result = {
-          success: true,
-          message: `Processed ${processedConfigurations.length} import configurations`,
-          processedConfigurations,
-          processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
-          timestamp: new Date().toISOString()
-        };
-        
-        console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
-      } catch (importerError) {
-        console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service failed:', importerError.message);
-        
-        // Return error response instead of fallback
-        result = {
-          success: false,
-          error: true,
-          message: importerError.message || 'Automatic processing failed',
-          processedInvoices: 0,
-          timestamp: new Date().toISOString()
-        };
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ 
+          success: false, 
+          error: 'User not authenticated',
+          message: 'Authentication required'
+        });
       }
 
-      // Clear timeout since we're responding
-      clearTimeout(processingTimeout);
+      const { invoiceIds } = req.body;
+      
+      // If no specific invoices provided, get all pending invoices for the user
+      let targetInvoiceIds = invoiceIds;
+      if (!targetInvoiceIds || targetInvoiceIds.length === 0) {
+        const pendingInvoices = await storage.getInvoices();
+        targetInvoiceIds = pendingInvoices
+          .filter(inv => inv.userId === userId && ['pending', 'extracted', 'processing'].includes(inv.status))
+          .map(inv => inv.id);
+        
+        if (targetInvoiceIds.length === 0) {
+          return res.json({
+            success: true,
+            message: 'No pending invoices found to process',
+            processedCount: 0,
+            totalCount: 0,
+            results: []
+          });
+        }
+      }
+
+      console.log(`📋 [AUTOMATIC_PROCESSING] Processing ${targetInvoiceIds.length} existing invoices`);
+
+      let processedCount = 0;
+      const results = [];
+
+      for (const invoiceId of targetInvoiceIds) {
+        try {
+          console.log(`🔄 [AUTOMATIC_PROCESSING] Processing invoice ${invoiceId}`);
+          
+          // Get the invoice from database
+          const invoice = await storage.getInvoice(invoiceId);
+          if (!invoice) {
+            console.log(`❌ Invoice ${invoiceId} not found`);
+            results.push({ invoiceId, success: false, error: 'Invoice not found' });
+            continue;
+          }
+
+          console.log(`🔄 Processing invoice ${invoiceId}: ${invoice.invoiceNumber || 'No number'}`);
+
+          // Run processing steps on existing invoice
+          const processingResult = await processExistingInvoice(invoice);
+          results.push(processingResult);
+          
+          if (processingResult.success) {
+            processedCount++;
+          }
+
+          console.log(`✅ Completed processing invoice ${invoiceId}`);
+
+        } catch (error) {
+          console.error(`❌ Failed to process invoice ${invoiceId}:`, error);
+          results.push({ 
+            invoiceId, 
+            success: false, 
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
+      }
 
       const processingTime = Date.now() - startTime;
-      console.log(`✅ [AUTOMATIC_PROCESSING] Completed successfully in ${processingTime}ms`);
-
-      // Ensure result is a valid JSON object
-      const jsonResponse = {
+      
+      const response = {
         success: true,
-        message: 'Automatic processing initiated successfully',
-        data: result || {},
+        message: `Processed ${processedCount}/${targetInvoiceIds.length} invoices successfully`,
+        processedCount,
+        totalCount: targetInvoiceIds.length,
+        results,
         processingTimeMs: processingTime,
         timestamp: new Date().toISOString()
       };
 
-      console.log('📤 [AUTOMATIC_PROCESSING] Sending response:', JSON.stringify(jsonResponse, null, 2));
-
-      if (!res.headersSent) {
-        res.status(200).json(jsonResponse);
-      } else {
-        console.warn('⚠️ [AUTOMATIC_PROCESSING] Response already sent, skipping');
-      }
+      console.log('✅ [AUTOMATIC_PROCESSING] Completed successfully:', JSON.stringify(response, null, 2));
+      res.json(response);
 
     } catch (error) {
-      // Clear timeout
-      if (processingTimeout) {
-        clearTimeout(processingTimeout);
-      }
-
       const processingTime = Date.now() - startTime;
       console.error('❌ [AUTOMATIC_PROCESSING] Failed after', processingTime, 'ms:', error);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error stack:', error.stack);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error name:', error.name);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error message:', error.message);
 
-      // Always return JSON, never let Express return HTML
-      res.setHeader('Content-Type', 'application/json');
-      
-      if (!res.headersSent) {
-        res.status(500).json({ 
-          success: false, 
-          error: 'Automatic processing failed',
-          message: error.message || 'Unknown error occurred',
-          processingTimeMs: processingTime,
-          timestamp: new Date().toISOString()
-        });
-      } else {
-        console.warn('⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent');
-      }
+      res.status(500).json({
+        success: false,
+        error: 'Automatic processing failed',
+        message: error instanceof Error ? error.message : 'Unknown error occurred',
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      });
     }
   });
+
+  // Helper function to process existing invoices (not import new ones)
+  async function processExistingInvoice(invoice: any) {
+    console.log(`📋 Processing existing invoice: ${invoice.invoiceNumber || invoice.id}`);
+    
+    const processingSteps = {
+      poMatching: false,
+      validation: false,
+      projectAssignment: false,
+      discrepancyCheck: false
+    };
+    
+    try {
+      // Step 1: PO Matching
+      console.log(`🔄 Running PO matching for invoice ${invoice.id}`);
+      const poMatches = await findPOMatchesForInvoice(invoice);
+      if (poMatches.length > 0) {
+        await storage.updateInvoice(invoice.id, { 
+          status: 'po_matched',
+          poMatches: poMatches 
+        });
+        processingSteps.poMatching = true;
+        console.log(`✅ Found ${poMatches.length} PO matches`);
+      } else {
+        await storage.updateInvoice(invoice.id, { status: 'no_po_match' });
+        console.log(`ℹ️ No PO matches found`);
+      }
+      
+      // Step 2: Validation Rules
+      console.log(`🔄 Running validation for invoice ${invoice.id}`);
+      const validationResult = await storage.validateInvoiceData(invoice);
+      processingSteps.validation = true;
+      
+      if (validationResult.isValid) {
+        console.log(`✅ Validation completed: PASSED`);
+      } else {
+        await storage.updateInvoice(invoice.id, { 
+          status: 'validation_failed',
+          validationErrors: validationResult.errors 
+        });
+        console.log(`❌ Validation completed: FAILED - ${validationResult.errors?.length || 0} errors`);
+      }
+      
+      // Step 3: Project Assignment
+      console.log(`🔄 Running project assignment for invoice ${invoice.id}`);
+      const projectMatch = await assignProjectToInvoice(invoice);
+      if (projectMatch) {
+        processingSteps.projectAssignment = true;
+        console.log(`✅ Assigned to project: ${projectMatch.projectId}`);
+      } else {
+        console.log(`ℹ️ No project assignment made`);
+      }
+      
+      // Step 4: Discrepancy Detection
+      console.log(`🔄 Running discrepancy check for invoice ${invoice.id}`);
+      const discrepancies = await checkInvoiceDiscrepancies(invoice);
+      processingSteps.discrepancyCheck = true;
+      console.log(`✅ Discrepancy check completed: ${discrepancies.length} issues found`);
+      
+      // Update final status based on processing results
+      if (validationResult.isValid && poMatches.length > 0) {
+        await storage.updateInvoice(invoice.id, { status: 'matched' });
+      } else if (validationResult.isValid) {
+        await storage.updateInvoice(invoice.id, { status: 'approved' });
+      }
+      
+      return {
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber,
+        success: true,
+        processingSteps,
+        poMatches: poMatches?.length || 0,
+        validationPassed: validationResult?.isValid || false,
+        projectAssigned: !!projectMatch,
+        discrepanciesFound: discrepancies?.length || 0
+      };
+      
+    } catch (error) {
+      console.error(`❌ Processing failed for invoice ${invoice.id}:`, error);
+      
+      // Update invoice status to processing_failed
+      await storage.updateInvoice(invoice.id, { 
+        status: 'processing_failed',
+        processingError: error instanceof Error ? error.message : String(error)
+      });
+      
+      return {
+        invoiceId: invoice.id,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+        processingSteps
+      };
+    }
+  }
+
+  // Helper function to find PO matches for an invoice
+  async function findPOMatchesForInvoice(invoice: any) {
+    try {
+      // Get all purchase orders
+      const purchaseOrders = await storage.getPurchaseOrders();
+      
+      const matches = purchaseOrders.filter(po => {
+        // Match by vendor name (case-insensitive partial match)
+        const vendorMatch = po.vendorName && invoice.vendorName && 
+          po.vendorName.toLowerCase().includes(invoice.vendorName.toLowerCase());
+        
+        // Match by amount (within 5% tolerance)
+        const amountMatch = po.amount && invoice.totalAmount &&
+          Math.abs(parseFloat(po.amount.toString()) - parseFloat(invoice.totalAmount.toString())) / parseFloat(po.amount.toString()) < 0.05;
+        
+        // Match by invoice number if available (using poId as reference)
+        const invoiceNumberMatch = po.poId && invoice.invoiceNumber &&
+          po.poId.toLowerCase().includes(invoice.invoiceNumber.toLowerCase());
+        
+        return vendorMatch || amountMatch || invoiceNumberMatch;
+      });
+      
+      return matches.map(po => ({
+        poId: po.id,
+        poNumber: po.poId,
+        matchType: 'automatic',
+        matchScore: 85,
+        matchReason: 'Vendor and/or amount match'
+      }));
+      
+    } catch (error) {
+      console.error('PO matching failed:', error);
+      return [];
+    }
+  }
+
+  // Helper function to assign project to invoice
+  async function assignProjectToInvoice(invoice: any) {
+    try {
+      // Get all projects
+      const projects = await storage.getProjects();
+      
+      // Simple project assignment logic - match by vendor name
+      const projectMatch = projects.find(project => 
+        invoice.vendorName && project.name && 
+        invoice.vendorName.toLowerCase().includes(project.name.toLowerCase())
+      );
+      
+      if (projectMatch) {
+        await storage.updateInvoice(invoice.id, {
+          projectName: projectMatch.name
+        });
+        
+        // Create project match record
+        await storage.createInvoiceProjectMatch({
+          invoiceId: invoice.id,
+          projectId: projectMatch.id.toString(),
+          matchType: 'automatic',
+          matchScore: 80,
+          matchReason: 'Vendor name similarity'
+        });
+        
+        return projectMatch;
+      }
+      
+      return null;
+    } catch (error) {
+      console.error('Project assignment failed:', error);
+      return null;
+    }
+  }
+
+  // Helper function to check invoice discrepancies
+  async function checkInvoiceDiscrepancies(invoice: any) {
+    try {
+      const discrepancies = [];
+      
+      // Check for missing required fields
+      if (!invoice.vendorName) {
+        discrepancies.push({ type: 'missing_vendor', message: 'Vendor name is missing' });
+      }
+      
+      if (!invoice.totalAmount || parseFloat(invoice.totalAmount.toString()) <= 0) {
+        discrepancies.push({ type: 'invalid_amount', message: 'Total amount is missing or invalid' });
+      }
+      
+      if (!invoice.invoiceDate) {
+        discrepancies.push({ type: 'missing_date', message: 'Invoice date is missing' });
+      }
+      
+      // Check for duplicate invoices
+      if (invoice.vendorName && invoice.invoiceNumber) {
+        const existingInvoices = await storage.getInvoices();
+        const duplicates = existingInvoices.filter(inv => 
+          inv.id !== invoice.id &&
+          inv.userId === invoice.userId &&
+          inv.vendorName === invoice.vendorName &&
+          inv.invoiceNumber === invoice.invoiceNumber
+        );
+        
+        if (duplicates.length > 0) {
+          discrepancies.push({ 
+            type: 'duplicate_invoice', 
+            message: `Potential duplicate found (Invoice ID: ${duplicates[0].id})` 
+          });
+        }
+      }
+      
+      // Store discrepancies if any
+      if (discrepancies.length > 0) {
+        await storage.updateInvoice(invoice.id, {
+          validationErrors: discrepancies
+        });
+      }
+      
+      return discrepancies;
+    } catch (error) {
+      console.error('Discrepancy check failed:', error);
+      return [];
+    }
+  }
 
   // Debug endpoint to test ERP connection
   app.post('/api/debug/test-erp-connection', isAuthenticated, async (req: any, res) => {

@@ -617,15 +617,40 @@ export default function Invoices() {
       }
 
       const result = await response.json();
+      console.log('Processing result:', result);
+
+      // Show detailed processing results
+      const { processedCount, totalCount, results } = result;
+      const successfulProcessing = results?.filter((r: any) => r.success) || [];
+      const failedProcessing = results?.filter((r: any) => !r.success) || [];
+
+      let description = `Successfully processed ${processedCount}/${totalCount} invoices.`;
+      
+      if (successfulProcessing.length > 0) {
+        const poMatches = successfulProcessing.filter((r: any) => r.poMatches > 0).length;
+        const projectAssignments = successfulProcessing.filter((r: any) => r.projectAssigned).length;
+        
+        if (poMatches > 0 || projectAssignments > 0) {
+          description += ` Found ${poMatches} PO matches and ${projectAssignments} project assignments.`;
+        }
+      }
+      
+      if (failedProcessing.length > 0) {
+        description += ` ${failedProcessing.length} invoices failed processing.`;
+      }
 
       toast({
-        title: "Automatic Processing Initiated",
-        description: `Processing completed. Check the updated invoices below.`,
+        title: "Automatic Processing Completed",
+        description,
+        variant: processedCount === totalCount ? "default" : "destructive",
       });
 
       // Refresh the invoices list
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       setSelectedInvoices([]);
+      
+      // Show processing summary
+      setShowProcessingSummary(true);
 
     } catch (error: any) {
       console.error('Automatic processing failed:', error);
