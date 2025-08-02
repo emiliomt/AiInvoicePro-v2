@@ -11,6 +11,8 @@ import {
   purchaseOrders,
   invoicePoMatches,
   invoiceProjectMatches,
+  validationRules,
+  settings,
   erpConnections,
   invoiceImporterConfigs,
   invoiceImporterLogs,
@@ -38,6 +40,10 @@ import {
   type InsertInvoicePoMatch,
   type InvoiceProjectMatch,
   type InsertInvoiceProjectMatch,
+  type ValidationRule,
+  type InsertValidationRule,
+  type Setting,
+  type InsertSetting,
   type ErpConnection,
   type InsertErpConnection,
   type InvoiceImporterConfig,
@@ -98,10 +104,10 @@ export interface IStorage {
   // Additional methods
   getInvoicesWithProjectMatches(userId: string): Promise<any[]>;
   getCompanyInvoicesWithProjectMatches(companyId: number): Promise<any[]>;
-  getValidationRules(): Promise<any[]>;
-  getValidationRule(id: number): Promise<any>;
-  createValidationRule(rule: any): Promise<any>;
-  updateValidationRule(id: number, updates: any): Promise<any>;
+  getValidationRules(): Promise<ValidationRule[]>;
+  getValidationRule(id: number): Promise<ValidationRule | null>;
+  createValidationRule(rule: InsertValidationRule): Promise<ValidationRule>;
+  updateValidationRule(id: number, updates: Partial<InsertValidationRule>): Promise<ValidationRule>;
   deleteValidationRule(id: number): Promise<void>;
   validateInvoiceData(invoiceData: any): Promise<any>;
   validateAllApprovedInvoices(): Promise<any>;
@@ -1089,46 +1095,75 @@ class PostgresStorage implements IStorage {
   }
 
   // Settings methods
-  async getSetting(key: string): Promise<any> {
+  async getSetting(key: string): Promise<Setting | null> {
     try {
-      // For now, return default settings
-      const defaultSettings: Record<string, any> = {
-        petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
-        user_preferences: { 
-          key, 
-          value: JSON.stringify({
-            fullName: '',
-            department: '',
-            phoneNumber: '',
-            emailNotifications: true,
-            dashboardLayout: 'grid',
-            defaultCurrency: 'USD',
-            timezone: 'America/New_York'
-          }),
-          description: 'User preferences and settings'
-        }
-      };
-
-      return defaultSettings[key] || null;
+      const [setting] = await db.select().from(settings).where(eq(settings.key, key));
+      
+      if (!setting) {
+        // Return default settings if not found
+        const defaultSettings: Record<string, any> = {
+          petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
+          user_preferences: { 
+            key, 
+            value: JSON.stringify({
+              fullName: '',
+              department: '',
+              phoneNumber: '',
+              emailNotifications: true,
+              dashboardLayout: 'grid',
+              defaultCurrency: 'USD',
+              timezone: 'America/New_York'
+            }),
+            description: 'User preferences and settings'
+          }
+        };
+        return defaultSettings[key] || null;
+      }
+      
+      return setting;
     } catch (error) {
       console.error('Error in getSetting:', error);
       return null;
     }
   }
 
-  async updateSetting(key: string, value: string): Promise<any> {
+  async updateSetting(key: string, value: string): Promise<Setting> {
     try {
-      // For now, just return the setting object
-      return { key, value, description: 'Setting updated' };
+      const [setting] = await db.insert(settings).values({
+        key,
+        value,
+        description: 'Setting updated',
+        updatedAt: new Date()
+      }).onConflictDoUpdate({
+        target: settings.key,
+        set: {
+          value,
+          updatedAt: new Date()
+        }
+      }).returning();
+      
+      return setting;
     } catch (error) {
       console.error('Error in updateSetting:', error);
       throw error;
     }
   }
 
-  async setSetting(setting: { key: string; value: string; description: string }): Promise<any> {
+  async setSetting(setting: { key: string; value: string; description: string }): Promise<Setting> {
     try {
-      return setting;
+      const [result] = await db.insert(settings).values({
+        ...setting,
+        updatedAt: new Date()
+      }).onConflictDoUpdate({
+        target: settings.key,
+        set: {
+          value: setting.value,
+          description: setting.description,
+          updatedAt: new Date()
+        }
+      }).returning();
+      
+      return result;
     } catch (error) {
       console.error('Error in setSetting:', error);
       throw error;
@@ -1227,7 +1262,7 @@ class PostgresStorage implements IStorage {
   // Additional methods for complete interface compatibility
 
 
-  async getValidationRules(): Promise<any[]> {
+  async getValidationRules(): Promise<ValidationRule[]> {
     try {
       const rules = await db.select().from(validationRules).orderBy(desc(validationRules.createdAt));
       console.log('Retrieved validation rules from database:', rules.length, 'rules');
@@ -1238,11 +1273,17 @@ class PostgresStorage implements IStorage {
     }
   }
 
-  async getValidationRule(id: number): Promise<any> {
-    return null;
+  async getValidationRule(id: number): Promise<ValidationRule | null> {
+    try {
+      const [rule] = await db.select().from(validationRules).where(eq(validationRules.id, id));
+      return rule || null;
+    } catch (error) {
+      console.error('Database error fetching validation rule:', error);
+      throw error;
+    }
   }
 
-  async createValidationRule(ruleData: any): Promise<any> {
+  async createValidationRule(ruleData: InsertValidationRule): Promise<ValidationRule> {
     console.log('Creating validation rule in database:', ruleData);
 
     try {
@@ -1255,12 +1296,26 @@ class PostgresStorage implements IStorage {
     }
   }
 
-  async updateValidationRule(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+  async updateValidationRule(id: number, updates: Partial<InsertValidationRule>): Promise<ValidationRule> {
+    try {
+      const [rule] = await db.update(validationRules).set({
+        ...updates,
+        updatedAt: new Date()
+      }).where(eq(validationRules.id, id)).returning();
+      return rule;
+    } catch (error) {
+      console.error('Database error updating validation rule:', error);
+      throw error;
+    }
   }
 
   async deleteValidationRule(id: number): Promise<void> {
-    // Placeholder implementation
+    try {
+      await db.delete(validationRules).where(eq(validationRules.id, id));
+    } catch (error) {
+      console.error('Database error deleting validation rule:', error);
+      throw error;
+    }
   }
 
   async validateInvoiceData(invoiceData: any): Promise<any> {

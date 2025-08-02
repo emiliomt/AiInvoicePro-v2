@@ -40,6 +40,52 @@ async function ensureInvoiceImporterTables() {
       END $$;
     `);
 
+    // Create validation rule enums
+    await db.execute(sql`
+      DO $$ BEGIN
+        CREATE TYPE "validation_rule_type" AS ENUM('required', 'regex', 'range', 'enum', 'format', 'comparison');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+    `);
+
+    await db.execute(sql`
+      DO $$ BEGIN
+        CREATE TYPE "validation_severity" AS ENUM('low', 'medium', 'high', 'critical');
+      EXCEPTION
+        WHEN duplicate_object THEN null;
+      END $$;
+    `);
+
+    // Create validation rules table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "validation_rules" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "name" varchar NOT NULL,
+        "description" text,
+        "rule_type" "validation_rule_type" NOT NULL,
+        "rule_data" text,
+        "is_active" boolean DEFAULT true,
+        "created_at" timestamp DEFAULT now(),
+        "updated_at" timestamp DEFAULT now(),
+        "field_name" varchar NOT NULL,
+        "rule_value" text NOT NULL,
+        "severity" "validation_severity" DEFAULT 'medium',
+        "error_message" text
+      );
+    `);
+
+    // Create settings table
+    await db.execute(sql`
+      CREATE TABLE IF NOT EXISTS "settings" (
+        "id" serial PRIMARY KEY NOT NULL,
+        "key" varchar(100) UNIQUE NOT NULL,
+        "value" text NOT NULL,
+        "description" text,
+        "updated_at" timestamp DEFAULT now()
+      );
+    `);
+
     // Create invoice importer tables
     await db.execute(sql`
       CREATE TABLE IF NOT EXISTS "invoice_importer_configs" (
