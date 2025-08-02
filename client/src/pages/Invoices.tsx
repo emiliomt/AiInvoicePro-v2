@@ -28,8 +28,6 @@ import { format } from "date-fns";
 import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
 import ExtractionFeedbackModal from "@/components/ExtractionFeedbackModal";
-import ProcessingProgress from "@/components/ProcessingProgress";
-import InvoiceStatusBadge from "@/components/InvoiceStatusBadge";
 
 interface Invoice {
   id: number;
@@ -47,17 +45,6 @@ interface Invoice {
   isDataSource?: boolean | null;
   extractedData?: {
     confidenceScore?: string;
-    currentStep?: string;
-    progress?: number;
-    isPettyCash?: boolean;
-    isPoMatched?: boolean;
-    isValidated?: boolean;
-    processingResults?: {
-      processed?: boolean;
-      extractionMethod?: string;
-      confidenceScore?: string;
-      processingTime?: string;
-    };
     [key: string]: any;
   };
 }
@@ -117,8 +104,6 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
 };
 
 export default function Invoices() {
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
   const [bulkAction, setBulkAction] = useState<string>('');
@@ -131,63 +116,6 @@ export default function Invoices() {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
   const [linkedFilesMap, setLinkedFilesMap] = useState<Record<number, LinkedFilesInfo>>({});
-  
-  // Progress tracking state
-  const [processingProgress, setProcessingProgress] = useState({
-    isProcessing: false,
-    currentStep: '',
-    progress: 0,
-    totalInvoices: 0,
-    processedInvoices: 0,
-    results: [] as Array<{
-      invoiceId: number;
-      invoiceNumber?: string;
-      success: boolean;
-      message?: string;
-      error?: string;
-    }>
-  });
-
-  // Progress polling query - only runs when processing
-  const { data: progressData } = useQuery({
-    queryKey: ['/api/invoices/processing-progress'],
-    queryFn: async () => {
-      const response = await fetch('/api/invoices/processing-progress');
-      if (!response.ok) throw new Error('Failed to fetch progress');
-      return response.json();
-    },
-    enabled: processingProgress.isProcessing || isProcessingAutomatic,
-    refetchInterval: 1000, // Poll every second during processing
-  });
-
-  // Update progress when progressData changes
-  useEffect(() => {
-    if (progressData) {
-      const wasProcessing = processingProgress.isProcessing;
-      
-      setProcessingProgress(prev => ({
-        ...prev,
-        isProcessing: progressData.isProcessing,
-        currentStep: progressData.currentStep,
-        progress: progressData.totalProgress,
-        processedInvoices: progressData.processingCount || prev.processedInvoices
-      }));
-
-      // If processing is complete, refresh invoices and show results
-      if (!progressData.isProcessing && wasProcessing) {
-        queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
-        setIsProcessingAutomatic(false);
-        
-        // Show completion toast
-        if (processingProgress.totalInvoices > 0) {
-          toast({
-            title: "Processing Complete",
-            description: `Processed ${processingProgress.totalInvoices} invoices successfully.`,
-          });
-        }
-      }
-    }
-  }, [progressData, queryClient, toast, processingProgress.isProcessing, processingProgress.totalInvoices]);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -212,6 +140,8 @@ export default function Invoices() {
     retryDelay: 1000,
     refetchInterval: false, // Disable automatic refetching
   });
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   // Function to fetch linked files for RPA invoices on demand
   const fetchLinkedFilesForInvoices = async (rpaInvoices: Invoice[]) => {
@@ -562,12 +492,7 @@ export default function Invoices() {
   };
 
   const handleInitiateAutomaticProcess = async () => {
-    console.log('🔄 Button clicked! Starting automatic processing...');
-    console.log('Selected invoices:', selectedInvoices);
-    console.log('Is processing:', isProcessingAutomatic);
-
     if (selectedInvoices.length === 0) {
-      console.log('❌ No invoices selected');
       toast({
         title: "No Invoices Selected",
         description: "Please select invoices to process automatically",
@@ -576,23 +501,7 @@ export default function Invoices() {
       return;
     }
 
-    if (isProcessingAutomatic) {
-      console.log('❌ Already processing');
-      return;
-    }
-
-    console.log('✅ Starting processing...');
     setIsProcessingAutomatic(true);
-
-    // Initialize progress tracking
-    setProcessingProgress({
-      isProcessing: true,
-      currentStep: 'Initiating processing...',
-      progress: 0,
-      totalInvoices: selectedInvoices.length,
-      processedInvoices: 0,
-      results: []
-    });
 
     try {
       const requestPayload = {
@@ -600,7 +509,7 @@ export default function Invoices() {
         source: 'manual'
       };
 
-      console.log('🚀 Sending automatic processing request:', requestPayload);
+      console.log('Sending automatic processing request:', requestPayload);
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
@@ -610,50 +519,30 @@ export default function Invoices() {
         body: JSON.stringify(requestPayload),
       });
 
-      console.log('📡 Response status:', response.status);
-
       if (!response.ok) {
         const errorData = await response.json();
-        console.error('❌ API Error:', errorData);
         throw new Error(errorData.error || 'Automatic processing failed');
       }
 
       const result = await response.json();
-      console.log('✅ Processing initiated:', result);
 
       toast({
-        title: "Automatic Processing Started",
-        description: `Processing ${result.summary.totalInvoices} invoices. Watch the progress below.`,
+        title: "Automatic Processing Initiated",
+        description: `Processing ${result.summary.totalInvoices} invoices. ${result.summary.successful} successful, ${result.summary.failed} failed.`,
       });
 
-      // Update progress tracking
-      setProcessingProgress(prev => ({
-        ...prev,
-        currentStep: 'Processing invoices...',
-        progress: 10,
-        totalInvoices: result.summary.totalInvoices
-      }));
-
-      // Clear selection after successful initiation
+      // Refresh the invoices list
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setSelectedInvoices([]);
 
     } catch (error: any) {
-      console.error('❌ Automatic processing failed:', error);
+      console.error('Automatic processing failed:', error);
       toast({
         title: "Automatic Processing Failed",
         description: error.message || "Failed to initiate automatic processing",
         variant: "destructive",
       });
-      
-      // Reset progress on failure
-      setProcessingProgress({
-        isProcessing: false,
-        currentStep: '',
-        progress: 0,
-        totalInvoices: 0,
-        processedInvoices: 0,
-        results: []
-      });
+    } finally {
       setIsProcessingAutomatic(false);
     }
   };
@@ -738,23 +627,11 @@ export default function Invoices() {
                 </AlertDialog>
               )}
               <Button
-                    onClick={() => {
-                      console.log('🎯 Button physically clicked!');
-                      handleInitiateAutomaticProcess();
-                    }}
-                    disabled={isProcessingAutomatic || selectedInvoices.length === 0}
+                    onClick={handleInitiateAutomaticProcess}
+                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
                   >
-                    {isProcessingAutomatic ? (
-                      <>
-                        <Loader2 size={16} className="mr-2 animate-spin" />
-                        Processing...
-                      </>
-                    ) : (
-                      <>
-                        <Play size={16} className="mr-2" />
-                        Initiate Automatic Process ({selectedInvoices.length})
-                      </>
-                    )}
+                    <Play size={16} className="mr-2" />
+                    Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
                   </Button>
             </div>
           </div>
@@ -832,16 +709,6 @@ export default function Invoices() {
                 </CardContent>
               </Card>
 
-              {/* Processing Progress Component */}
-              <ProcessingProgress
-                isProcessing={processingProgress.isProcessing}
-                currentStep={processingProgress.currentStep}
-                progress={processingProgress.progress}
-                totalInvoices={processingProgress.totalInvoices}
-                processedInvoices={processingProgress.processedInvoices}
-                results={processingProgress.results}
-              />
-
               <div className="grid gap-6">
               {invoices.map((invoice) => {
                 if (!invoice || !invoice.id) {
@@ -893,10 +760,9 @@ export default function Invoices() {
                             </div>
                           </div>
                         </div>
-                        <InvoiceStatusBadge 
-                          status={invoice.status} 
-                          extractedData={invoice.extractedData}
-                        />
+                        <Badge className={getStatusColor(invoice.status)}>
+                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                        </Badge>
                       </div>
                     </CardHeader>
                     <CardContent>
