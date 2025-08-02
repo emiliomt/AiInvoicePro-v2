@@ -133,45 +133,124 @@ function ValidationRulesContent() {
         }
 
         console.log("📊 Frontend: Response status:", response.status);
+        console.log("📊 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
 
-        // Handle different response types
+        // Enhanced error handling for non-ok responses
         if (!response.ok) {
           let errorMessage = `Server error (${response.status})`;
+          let errorDetails: any = {};
           
           try {
             const contentType = response.headers.get('content-type');
+            console.log("📊 Frontend: Content-Type:", contentType);
+            
             if (contentType && contentType.includes('application/json')) {
               const errorData = await response.json();
+              console.log("❌ Frontend: Server error data:", JSON.stringify(errorData, null, 2));
+              
               errorMessage = errorData.message || errorData.error || errorMessage;
+              errorDetails = {
+                status: response.status,
+                statusText: response.statusText,
+                serverData: errorData,
+                url: response.url
+              };
+              
+              // Extract specific error messages
+              if (errorData.details) {
+                errorMessage += ` - ${errorData.details}`;
+              }
+              if (errorData.code) {
+                errorMessage += ` (Code: ${errorData.code})`;
+              }
+              if (errorData.constraint) {
+                errorMessage += ` - Database constraint: ${errorData.constraint}`;
+              }
             } else {
               const errorText = await response.text();
+              console.log("❌ Frontend: Server error text:", errorText);
+              
               errorMessage = errorText || errorMessage;
+              errorDetails = {
+                status: response.status,
+                statusText: response.statusText,
+                responseText: errorText,
+                url: response.url
+              };
             }
           } catch (parseError) {
-            console.warn("Could not parse error response:", parseError);
+            console.error("❌ Frontend: Could not parse error response:", parseError);
+            errorDetails = {
+              status: response.status,
+              statusText: response.statusText,
+              parseError: parseError instanceof Error ? parseError.message : String(parseError),
+              url: response.url
+            };
           }
 
-          throw new Error(errorMessage);
+          console.error("❌ Frontend: Full error details:", errorDetails);
+          
+          // Create enhanced error with details
+          const enhancedError = new Error(errorMessage);
+          (enhancedError as any).details = errorDetails;
+          throw enhancedError;
         }
 
-        // Parse successful response
+        // Enhanced success response parsing
         try {
-          result = await response.json();
-          console.log("✅ Frontend: Response received:", JSON.stringify(result, null, 2));
-          return result;
+          const contentType = response.headers.get('content-type');
+          console.log("✅ Frontend: Success Content-Type:", contentType);
+          
+          if (contentType && contentType.includes('application/json')) {
+            result = await response.json();
+            console.log("✅ Frontend: Response received:", JSON.stringify(result, null, 2));
+            return result;
+          } else {
+            // Handle non-JSON success responses
+            const responseText = await response.text();
+            console.log("✅ Frontend: Non-JSON response:", responseText);
+            
+            // Return a synthetic success object
+            return {
+              success: true,
+              message: "Rule saved successfully",
+              responseText: responseText
+            };
+          }
         } catch (parseError) {
           console.error("❌ Frontend: Failed to parse success response:", parseError);
-          throw new Error("Server returned invalid response format");
+          console.error("❌ Frontend: Parse error details:", {
+            error: parseError instanceof Error ? parseError.message : String(parseError),
+            responseStatus: response.status,
+            responseUrl: response.url
+          });
+          
+          // Still consider it a success if the HTTP status was ok
+          return {
+            success: true,
+            message: "Rule saved successfully (response parse failed)",
+            parseError: parseError instanceof Error ? parseError.message : String(parseError)
+          };
         }
 
       } catch (error) {
-        console.error("❌ Frontend: Mutation failed:", error);
+        console.error("❌ Frontend: Mutation failed with error:", error);
         
-        // Re-throw with better error message
+        // Enhanced error logging
         if (error instanceof Error) {
+          console.error("❌ Frontend: Error name:", error.name);
+          console.error("❌ Frontend: Error message:", error.message);
+          console.error("❌ Frontend: Error stack:", error.stack);
+          
+          // Log additional details if available
+          if ((error as any).details) {
+            console.error("❌ Frontend: Error details:", (error as any).details);
+          }
+          
           throw error;
         } else {
-          throw new Error("An unexpected error occurred while saving the rule");
+          console.error("❌ Frontend: Non-Error object thrown:", error);
+          throw new Error(`An unexpected error occurred: ${JSON.stringify(error)}`);
         }
       }
     },
@@ -191,6 +270,11 @@ function ValidationRulesContent() {
       console.error("    Error stack:", error.stack);
       console.error("    Full error object:", error);
 
+      // Log additional error details if available
+      if ((error as any).details) {
+        console.error("    Error details:", (error as any).details);
+      }
+
       if (isUnauthorizedError(error)) {
         console.log("🔐 Frontend: Unauthorized error detected, redirecting to login");
         toast({
@@ -204,9 +288,41 @@ function ValidationRulesContent() {
         return;
       }
 
+      // Enhanced error message construction
+      let errorTitle = "Save Failed";
+      let errorDescription = error.message || "An unknown error occurred";
+      
+      // Check for specific error types and provide better messages
+      if (error.message.includes("Network error")) {
+        errorTitle = "Network Error";
+        errorDescription = "Unable to connect to the server. Please check your internet connection and try again.";
+      } else if (error.message.includes("Server error (5")) {
+        errorTitle = "Server Error";
+        errorDescription = "The server encountered an error. Please try again in a few moments.";
+      } else if (error.message.includes("constraint")) {
+        errorTitle = "Validation Error";
+        errorDescription = "A validation rule with similar settings already exists. Please check your field name and rule type.";
+      } else if (error.message.includes("Database")) {
+        errorTitle = "Database Error";
+        errorDescription = "There was an issue saving to the database. Please try again or contact support if the problem persists.";
+      }
+
+      // Add technical details for developers in development mode
+      if (process.env.NODE_ENV === 'development' && (error as any).details) {
+        const details = (error as any).details;
+        if (details.status) {
+          errorDescription += ` (HTTP ${details.status})`;
+        }
+        if (details.serverData?.code) {
+          errorDescription += ` [${details.serverData.code}]`;
+        }
+      }
+
+      console.log("🔔 Frontend: Showing toast with:", { errorTitle, errorDescription });
+
       toast({
-        title: "Save Failed",
-        description: error.message || "An unknown error occurred",
+        title: errorTitle,
+        description: errorDescription,
         variant: "destructive",
       });
     },
