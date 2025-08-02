@@ -486,10 +486,13 @@ export default function Invoices() {
   };
 
   const handleInitiateAutomaticProcess = async () => {
-    if (selectedInvoices.length === 0) {
+    // Get all invoices that can be processed automatically (uploaded or failed status)
+    const processableInvoices = invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed');
+    
+    if (processableInvoices.length === 0) {
       toast({
-        title: "No Invoices Selected",
-        description: "Please select invoices to process automatically",
+        title: "No Processable Invoices",
+        description: "No invoices found with 'uploaded' or 'failed' status that can be processed automatically",
         variant: "destructive",
       });
       return;
@@ -498,8 +501,9 @@ export default function Invoices() {
     setIsProcessingAutomatic(true);
 
     try {
+      const processableIds = processableInvoices.map(inv => inv.id);
       const requestPayload = {
-        invoiceIds: selectedInvoices,
+        invoiceIds: processableIds,
         source: 'manual'
       };
 
@@ -622,10 +626,19 @@ export default function Invoices() {
               )}
               <Button
                     onClick={handleInitiateAutomaticProcess}
-                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0}
+                    disabled={invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length === 0 || isProcessingAutomatic}
                   >
-                    <Play size={16} className="mr-2" />
-                    Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                    {isProcessingAutomatic ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Play size={16} className="mr-2" />
+                        Initiate Automatic Process ({invoices.filter(inv => inv.status === 'uploaded' || inv.status === 'failed').length})
+                      </>
+                    )}
                   </Button>
             </div>
           </div>

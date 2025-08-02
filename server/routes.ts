@@ -5432,6 +5432,79 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   }
 });
 
+// Initiate automatic processing for selected invoices
+app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { invoiceIds, source = 'manual' } = req.body;
+
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return res.status(400).json({ error: 'Invoice IDs are required' });
+    }
+
+    console.log(`Starting automatic processing for ${invoiceIds.length} invoices`);
+
+    let successful = 0;
+    let failed = 0;
+    const errors: string[] = [];
+
+    for (const invoiceId of invoiceIds) {
+      try {
+        const invoice = await storage.getInvoice(invoiceId);
+        if (!invoice) {
+          failed++;
+          errors.push(`Invoice ${invoiceId} not found`);
+          continue;
+        }
+
+        // Only process invoices that are in uploaded or failed status
+        if (invoice.status !== 'uploaded' && invoice.status !== 'failed') {
+          failed++;
+          errors.push(`Invoice ${invoiceId} is not in a processable state (current status: ${invoice.status})`);
+          continue;
+        }
+
+        // Update status to processing
+        await storage.updateInvoice(invoiceId, { status: 'processing' });
+
+        // Process the invoice asynchronously
+        processInvoiceAsync(invoice, Buffer.from(invoice.fileData || '', 'base64')).catch(error => {
+          console.error(`Async processing failed for invoice ${invoiceId}:`, error);
+        });
+
+        successful++;
+      } catch (error) {
+        failed++;
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`Invoice ${invoiceId}: ${errorMessage}`);
+        console.error(`Failed to process invoice ${invoiceId}:`, error);
+      }
+    }
+
+    res.json({
+      message: `Automatic processing initiated for ${successful} invoices`,
+      summary: {
+        totalInvoices: invoiceIds.length,
+        successful,
+        failed,
+        errors: errors.length > 0 ? errors : undefined
+      }
+    });
+
+  } catch (error) {
+    console.error('Automatic processing initiation error:', error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ 
+      error: 'Failed to initiate automatic processing',
+      details: errorMessage 
+    });
+  }
+});
+
 // Get invoices that can be processed automatically (uploaded status)
 app.get('/api/invoices/processable', isAuthenticated, async (req: any, res) => {
   try {
