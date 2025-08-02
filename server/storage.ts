@@ -1558,7 +1558,7 @@ export async function getInvoicesByStatus(status: string, limit: number = 50): P
   try {
     return await db.select()
       .from(invoices)
-      .where(eq(invoices.status, status))
+      .where(eq(invoices.status, status as any))
       .orderBy(desc(invoices.uploadedAt))
       .limit(limit);
   } catch (error) {

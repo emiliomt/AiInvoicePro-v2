@@ -121,7 +121,7 @@ const AppContent = React.memo(() => {
           {user ? <InvoiceImporter /> : <Landing />}
         </Route>
         <Route>
-          <NotFound />
+          {user ? <NotFound /> : <Landing />}
         </Route>
       </Switch>
       <Toaster />
