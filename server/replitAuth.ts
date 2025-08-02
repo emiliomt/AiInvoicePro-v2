@@ -144,32 +144,47 @@ export async function setupAuth(app: Express) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = req.user as any;
+    
+    console.log('🔐 Auth check - isAuthenticated:', !!req.isAuthenticated());
+    console.log('🔐 Auth check - user exists:', !!user);
+    console.log('🔐 Auth check - user.expires_at:', user?.expires_at);
 
-    if (!req.isAuthenticated() || !user?.expires_at) {
+    if (!req.isAuthenticated() || !user) {
+      console.log('❌ Auth failed - no authentication or user');
       return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    // If no expires_at, assume valid session
+    if (!user.expires_at) {
+      console.log('✅ Auth success - no expiry check needed');
+      return next();
     }
 
     const now = Math.floor(Date.now() / 1000);
     if (now <= user.expires_at) {
+      console.log('✅ Auth success - token still valid');
       return next();
     }
 
     const refreshToken = user.refresh_token;
     if (!refreshToken) {
+      console.log('❌ Auth failed - token expired and no refresh token');
       return res.status(401).json({ message: "Unauthorized" });
     }
 
     try {
+      console.log('🔄 Attempting token refresh...');
       const config = await getOidcConfig();
       const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
       updateUserSession(user, tokenResponse);
+      console.log('✅ Token refreshed successfully');
       return next();
     } catch (refreshError) {
-      console.error('Token refresh failed:', refreshError);
+      console.error('❌ Token refresh failed:', refreshError);
       return res.status(401).json({ message: "Unauthorized" });
     }
   } catch (error) {
-    console.error('Authentication middleware error:', error);
+    console.error('❌ Authentication middleware error:', error);
     return res.status(500).json({ message: "Authentication error" });
   }
 };

@@ -10,8 +10,17 @@ export function registerRoutes(app: Express): Server {
   // Setup authentication
   setupAuth(app);
 
-  // Basic user endpoint
-  app.get("/api/user", isAuthenticated, (req: any, res) => {
+  // Basic user endpoint  
+  app.get("/api/user", (req: any, res) => {
+    console.log('🔍 User endpoint - isAuthenticated:', !!req.isAuthenticated());
+    console.log('🔍 User endpoint - user exists:', !!req.user);
+    console.log('🔍 User endpoint - session ID:', req.sessionID);
+    
+    if (!req.isAuthenticated() || !req.user) {
+      console.log('❌ User endpoint - auth failed');
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    console.log('✅ User endpoint - auth passed');
     res.json({ 
       user: req.user,
       message: "Authenticated successfully" 
@@ -60,7 +69,16 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic dashboard stats
-  app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
+  app.get("/api/dashboard/stats", async (req: any, res) => {
+    console.log('🔍 Dashboard stats - isAuthenticated:', !!req.isAuthenticated());
+    console.log('🔍 Dashboard stats - user exists:', !!req.user);
+    console.log('🔍 Dashboard stats - session ID:', req.sessionID);
+    
+    if (!req.isAuthenticated() || !req.user) {
+      console.log('❌ Dashboard stats - auth failed');
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+    console.log('✅ Dashboard stats - auth passed');
     try {
       const invoices = await storage.getInvoices();
 
