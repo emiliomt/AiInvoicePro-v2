@@ -33,10 +33,25 @@ const FIELD_OPTIONS = [
   { value: "invoiceNumber", label: "Invoice Number" },
   { value: "totalAmount", label: "Total Amount" },
   { value: "taxAmount", label: "Tax Amount" },
+  { value: "subtotal", label: "Subtotal" },
   { value: "invoiceDate", label: "Invoice Date" },
   { value: "dueDate", label: "Due Date" },
-  { value: "taxId", label: "Tax ID" },
   { value: "currency", label: "Currency" },
+  { value: "confidenceScore", label: "Confidence Score" },
+  { value: "projectName", label: "Project Name" },
+  { value: "fileName", label: "File Name" },
+  { value: "status", label: "Invoice Status" },
+  { value: "extractedData.taxId", label: "Vendor Tax ID (NIT)" },
+  { value: "extractedData.buyerTaxId", label: "Buyer Tax ID" },
+  { value: "extractedData.companyName", label: "Company Name (Buyer)" },
+  { value: "extractedData.vendorAddress", label: "Vendor Address" },
+  { value: "extractedData.buyerAddress", label: "Buyer Address" },
+  { value: "extractedData.projectAddress", label: "Project Address" },
+  { value: "extractedData.projectCity", label: "Project City" },
+  { value: "extractedData.concept", label: "Concept/Description" },
+  { value: "extractedData.descriptionSummary", label: "Description Summary" },
+  { value: "extractedData.notes", label: "Notes" },
+  { value: "extractedData.projectName", label: "Extracted Project Name" },
 ];
 
 const RULE_TYPE_OPTIONS = [
@@ -344,29 +359,11 @@ export default function ValidationRules() {
                         <SelectValue placeholder="Select field" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="vendorName">Vendor Name</SelectItem>
-                        <SelectItem value="totalAmount">Total Amount</SelectItem>
-                        <SelectItem value="taxAmount">Tax Amount</SelectItem>
-                        <SelectItem value="subtotal">Subtotal</SelectItem>
-                        <SelectItem value="currency">Currency</SelectItem>
-                        <SelectItem value="invoiceDate">Invoice Date</SelectItem>
-                        <SelectItem value="dueDate">Due Date</SelectItem>
-                        <SelectItem value="invoiceNumber">Invoice Number</SelectItem>
-                        <SelectItem value="projectName">Project Name</SelectItem>
-                        <SelectItem value="confidenceScore">Confidence Score</SelectItem>
-                        <SelectItem value="extractedData.taxId">Vendor Tax ID</SelectItem>
-                        <SelectItem value="extractedData.companyName">Company Name (Buyer)</SelectItem>
-                        <SelectItem value="extractedData.buyerTaxId">Buyer Tax ID</SelectItem>
-                        <SelectItem value="extractedData.vendorAddress">Vendor Address</SelectItem>
-                        <SelectItem value="extractedData.buyerAddress">Buyer Address</SelectItem>
-                        <SelectItem value="extractedData.projectAddress">Project Address</SelectItem>
-                        <SelectItem value="extractedData.projectCity">Project City</SelectItem>
-                        <SelectItem value="extractedData.concept">Concept/Description</SelectItem>
-                        <SelectItem value="extractedData.descriptionSummary">Description Summary</SelectItem>
-                        <SelectItem value="extractedData.notes">Notes</SelectItem>
-                        <SelectItem value="extractedData.projectName">Extracted Project Name</SelectItem>
-                        <SelectItem value="status">Invoice Status</SelectItem>
-                        <SelectItem value="fileName">File Name</SelectItem>
+                        {FIELD_OPTIONS.map((field) => (
+                          <SelectItem key={field.value} value={field.value}>
+                            {field.label}
+                          </SelectItem>
+                        ))}
                       </SelectContent>
                     </Select>
                   </div>
