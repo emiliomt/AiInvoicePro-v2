@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Plus, Edit, Trash2, Shield, AlertTriangle, Info, XCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, AlertTriangle, Info, XCircle, AlertCircle } from "lucide-react";
 import Header from "@/components/Header";
 import { ValidationRulesErrorBoundary } from "@/components/ErrorBoundary";
 
@@ -87,18 +87,57 @@ function ValidationRulesContent() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Get validation rules
-  const { data: rules, isLoading, error: queryError } = useQuery<ValidationRule[]>({
+  // Get validation rules with improved error handling
+  const { data: rules, isLoading, error, refetch } = useQuery<ValidationRule[]>({
     queryKey: ["/api/validation-rules"],
-    retry: (failureCount, error) => {
-      // Don't retry on 401/403 errors
-      if (isUnauthorizedError(error as Error)) {
-        return false;
+    queryFn: async () => {
+      console.log("🔄 Frontend: Fetching validation rules...");
+
+      try {
+        const response = await fetch('/api/validation-rules', {
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        console.log("📡 Frontend: Response status:", response.status);
+        console.log("📡 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
+
+        // Check content-type to ensure it's JSON
+        const contentType = response.headers.get('content-type');
+        console.log("📡 Frontend: Content-Type:", contentType);
+
+        if (!contentType || !contentType.includes('application/json')) {
+          const responseText = await response.text();
+          console.error("❌ Frontend: Non-JSON Response received:", responseText.substring(0, 500));
+          throw new Error(`Server returned non-JSON response (${contentType}). Response: ${responseText.substring(0, 200)}...`);
+        }
+
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error("❌ Frontend: API Error Response:", errorData);
+          throw new Error(`API Error ${response.status}: ${errorData.message || errorData.error || 'Unknown error'}`);
+        }
+
+        console.log("✅ Frontend: Response OK, parsing JSON...");
+        const data = await response.json();
+        console.log("✅ Frontend: Parsed validation rules:", data);
+
+        // Ensure we have an array
+        if (!Array.isArray(data)) {
+          console.error("❌ Frontend: Response is not an array:", data);
+          return [];
+        }
+
+        return data;
+      } catch (error) {
+        console.error("❌ Frontend: Fetch validation rules error:", error);
+        throw error;
       }
-      // Retry up to 3 times for other errors
-      return failureCount < 3;
     },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
+    retry: 1,
+    retryDelay: 1000,
   });
 
   // Create/Update rule mutation
@@ -139,15 +178,15 @@ function ValidationRulesContent() {
         if (!response.ok) {
           let errorMessage = `Server error (${response.status})`;
           let errorDetails: any = {};
-          
+
           try {
             const contentType = response.headers.get('content-type');
             console.log("📊 Frontend: Content-Type:", contentType);
-            
+
             if (contentType && contentType.includes('application/json')) {
               const errorData = await response.json();
               console.log("❌ Frontend: Server error data:", JSON.stringify(errorData, null, 2));
-              
+
               errorMessage = errorData.message || errorData.error || errorMessage;
               errorDetails = {
                 status: response.status,
@@ -155,7 +194,7 @@ function ValidationRulesContent() {
                 serverData: errorData,
                 url: response.url
               };
-              
+
               // Extract specific error messages
               if (errorData.details) {
                 errorMessage += ` - ${errorData.details}`;
@@ -169,7 +208,7 @@ function ValidationRulesContent() {
             } else {
               const errorText = await response.text();
               console.log("❌ Frontend: Server error text:", errorText);
-              
+
               errorMessage = errorText || errorMessage;
               errorDetails = {
                 status: response.status,
@@ -189,7 +228,7 @@ function ValidationRulesContent() {
           }
 
           console.error("❌ Frontend: Full error details:", errorDetails);
-          
+
           // Create enhanced error with details
           const enhancedError = new Error(errorMessage);
           (enhancedError as any).details = errorDetails;
@@ -200,7 +239,7 @@ function ValidationRulesContent() {
         try {
           const contentType = response.headers.get('content-type');
           console.log("✅ Frontend: Success Content-Type:", contentType);
-          
+
           if (contentType && contentType.includes('application/json')) {
             result = await response.json();
             console.log("✅ Frontend: Response received:", JSON.stringify(result, null, 2));
@@ -209,7 +248,7 @@ function ValidationRulesContent() {
             // Handle non-JSON success responses
             const responseText = await response.text();
             console.log("✅ Frontend: Non-JSON response:", responseText);
-            
+
             // Return a synthetic success object
             return {
               success: true,
@@ -224,7 +263,7 @@ function ValidationRulesContent() {
             responseStatus: response.status,
             responseUrl: response.url
           });
-          
+
           // Still consider it a success if the HTTP status was ok
           return {
             success: true,
@@ -235,18 +274,18 @@ function ValidationRulesContent() {
 
       } catch (error) {
         console.error("❌ Frontend: Mutation failed with error:", error);
-        
+
         // Enhanced error logging
         if (error instanceof Error) {
           console.error("❌ Frontend: Error name:", error.name);
           console.error("❌ Frontend: Error message:", error.message);
           console.error("❌ Frontend: Error stack:", error.stack);
-          
+
           // Log additional details if available
           if ((error as any).details) {
             console.error("❌ Frontend: Error details:", (error as any).details);
           }
-          
+
           throw error;
         } else {
           console.error("❌ Frontend: Non-Error object thrown:", error);
@@ -291,7 +330,7 @@ function ValidationRulesContent() {
       // Enhanced error message construction
       let errorTitle = "Save Failed";
       let errorDescription = error.message || "An unknown error occurred";
-      
+
       // Check for specific error types and provide better messages
       if (error.message.includes("Network error")) {
         errorTitle = "Network Error";
@@ -337,10 +376,10 @@ function ValidationRulesContent() {
         }
 
         const response = await apiRequest('DELETE', `/api/validation-rules/${ruleId}`);
-        
+
         if (!response.ok) {
           let errorMessage = `Failed to delete rule (${response.status})`;
-          
+
           try {
             const contentType = response.headers.get('content-type');
             if (contentType && contentType.includes('application/json')) {
@@ -372,7 +411,7 @@ function ValidationRulesContent() {
     },
     onError: (error: Error) => {
       console.error("Delete mutation error:", error);
-      
+
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -435,7 +474,7 @@ function ValidationRulesContent() {
 
       // Comprehensive form validation
       const errors: string[] = [];
-      
+
       if (!formData.name?.trim()) {
         errors.push("Rule name is required");
       }
@@ -530,6 +569,47 @@ function ValidationRulesContent() {
         return ruleValue || "No rule value specified";
     }
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="flex items-center justify-center h-32">
+          <div className="text-center">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
+            <p className="mt-2 text-gray-600">Loading validation rules...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="p-6">
+        <div className="rounded-md bg-red-50 p-4">
+          <div className="flex">
+            <div className="flex-shrink-0">
+              <AlertCircle className="h-5 w-5 text-red-400" />
+            </div>
+            <div className="ml-3">
+              <h3 className="text-sm font-medium text-red-800">
+                Error Loading Validation Rules
+              </h3>
+              <div className="mt-2 text-sm text-red-700">
+                <p className="mb-2">{error instanceof Error ? error.message : "An unknown error occurred"}</p>
+                <button
+                  onClick={() => refetch()}
+                  className="text-red-600 hover:text-red-500 underline"
+                >
+                  Try Again
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -750,15 +830,6 @@ function ValidationRulesContent() {
                 </div>
               </CardContent>
             </Card>
-          ) : isLoading ? (
-            <Card>
-              <CardContent className="p-6">
-                <div className="flex items-center justify-center">
-                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
-                  <span className="ml-2 text-gray-600">Loading validation rules...</span>
-                </div>
-              </CardContent>
-            </Card>
           ) : rules && rules.length > 0 ? (
             rules.map((rule) => (
               <Card key={rule.id} className="bg-white shadow-sm border border-gray-200">
@@ -800,8 +871,7 @@ function ValidationRulesContent() {
                         disabled={deleteRuleMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>
-                    </div>
+                      </Button>                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>

@@ -161,5 +161,84 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Debug endpoint for validation rules troubleshooting
+  app.get('/api/validation-rules/debug', isAuthenticated, async (req: any, res) => {
+    try {
+      console.log("🐛 Debug: Checking validation rules table structure and data");
+
+      // Import database connection
+      const { drizzle } = await import("drizzle-orm/neon-http");
+      const { neon } = await import("@neondatabase/serverless");
+      const { sql } = await import("drizzle-orm");
+      const client = neon(process.env.DATABASE_URL!);
+      const debugDb = drizzle(client);
+
+      // Get database table structure
+      const tableInfoResult = await debugDb.execute(sql`
+        SELECT column_name, data_type, is_nullable, column_default 
+        FROM information_schema.columns 
+        WHERE table_name = 'validation_rules' 
+        ORDER BY ordinal_position;
+      `);
+
+      // Check if table exists
+      const tableExistsResult = await debugDb.execute(sql`
+        SELECT EXISTS (
+          SELECT FROM information_schema.tables 
+          WHERE table_name = 'validation_rules'
+        );
+      `);
+
+      // Get current rules using raw SQL
+      const rawRulesResult = await debugDb.execute(sql`
+        SELECT * FROM validation_rules ORDER BY created_at DESC;
+      `);
+
+      // Get current rules using storage method
+      const currentRules = await storage.getValidationRules();
+
+      // Get sample invoice structure
+      const sampleInvoice = await debugDb.execute(sql`
+        SELECT id, vendor_name, total_amount, extracted_data 
+        FROM invoices 
+        ORDER BY created_at DESC 
+        LIMIT 1;
+      `);
+
+      console.log("🐛 Debug results:", {
+        tableExists: tableExistsResult.rows[0]?.exists,
+        tableColumns: tableInfoResult.rows.length,
+        rawRulesCount: rawRulesResult.rows.length,
+        storageRulesCount: currentRules.length
+      });
+
+      res.json({
+        tableExists: tableExistsResult.rows[0]?.exists || false,
+        tableStructure: tableInfoResult.rows,
+        rawRulesFromDb: {
+          count: rawRulesResult.rows.length,
+          rules: rawRulesResult.rows
+        },
+        storageMethodRules: {
+          count: currentRules.length,
+          rules: currentRules
+        },
+        sampleInvoiceStructure: sampleInvoice.rows[0] || null,
+        debugInfo: {
+          databaseUrl: process.env.DATABASE_URL ? "✅ Set" : "❌ Missing",
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      console.error("🐛 Debug endpoint error:", error);
+      res.status(500).json({ 
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : "No stack trace",
+        debugTimestamp: new Date().toISOString()
+      });
+    }
+  });
+
   return httpServer;
 }

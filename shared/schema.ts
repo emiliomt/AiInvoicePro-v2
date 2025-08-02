@@ -464,6 +464,27 @@ export const feedbackLogs = pgTable("feedback_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+export type FeedbackLog = typeof feedbackLogs.$inferSelect;
+export type InsertFeedbackLog = typeof feedbackLogs.$inferInsert;
+
+// Validation rules for invoice data validation
+export const validationRules = pgTable("validation_rules", {
+  id: serial("id").primaryKey(),
+  name: varchar("name").notNull(),
+  description: text("description"),
+  fieldName: varchar("field_name").notNull(),
+  ruleType: text("rule_type").notNull(), // 'required', 'min_value', 'max_value', 'regex', 'format'
+  ruleValue: text("rule_value").notNull(),
+  severity: text("severity").notNull().default("medium"), // 'low', 'medium', 'high'
+  errorMessage: text("error_message"),
+  isActive: boolean("is_active").notNull().default(true),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+export type ValidationRule = typeof validationRules.$inferSelect;
+export type InsertValidationRule = typeof validationRules.$inferInsert;
+
 // Invoice Importer module enums
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
 export const scheduleTypeEnum = pgEnum("schedule_type", ["manual", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
@@ -480,17 +501,17 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   description: text("description"),
   fileTypes: fileTypeEnum("file_types").default("both"),
   scheduleType: scheduleTypeEnum("schedule_type").default("manual"),
-  
+
   // Enhanced scheduling fields
   scheduleConfig: jsonb("schedule_config"), // Comprehensive schedule configuration object
   timezone: varchar("timezone", { length: 50 }).default("UTC"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
-  
+
   // Legacy fields for backward compatibility
   scheduleTime: varchar("schedule_time", { length: 50 }), 
   scheduleDay: varchar("schedule_day", { length: 20 }),
-  
+
   // Python RPA specific fields
   erpUrl: varchar("erp_url", { length: 500 }),
   erpUsername: varchar("erp_username", { length: 255 }),
