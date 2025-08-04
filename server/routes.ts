@@ -3,21 +3,53 @@ import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
+import passport from "passport";
+import * as replitAuthModule from "./replitAuth";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
-  // Add a simple test route first to verify routing works
-  app.get("/api/debug-test", (req, res) => {
-    console.log('🧪 DEBUG TEST ROUTE HIT');
-    res.json({ message: 'Debug test route working', timestamp: new Date().toISOString() });
+  // Create a dedicated API router with higher precedence
+  const apiRouter = express.Router();
+  
+  // Setup authentication on the main app first (for session setup)
+  setupAuth(app);
+  
+  // Mount the API router BEFORE any other middleware
+  app.use('/api', apiRouter);
+  
+  // Add authentication routes to the API router
+  apiRouter.get("/login", (req, res, next) => {
+    console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
+    console.log(`🔐 Using strategy: replitauth`);
+    
+    const authHandler = passport.authenticate('replitauth', {
+      prompt: "login consent",
+      scope: ["openid", "email", "profile", "offline_access"],
+    });
+    
+    console.log(`🔐 Calling authentication handler...`);
+    authHandler(req, res, next);
   });
 
-  // Setup authentication
-  setupAuth(app);
+  apiRouter.get("/callback", (req, res, next) => {
+    console.log('🔄 Auth callback - using strategy: replitauth');
+    console.log('🔄 Callback query params:', req.query);
+    
+    passport.authenticate('replitauth', {
+      successReturnToOrRedirect: "/",
+      failureRedirect: "/api/login",
+    })(req, res, next);
+  });
+
+  apiRouter.get("/logout", (req, res) => {
+    req.logout(() => {
+      res.redirect("/");
+    });
+  });
 
   // Basic user endpoint
-  app.get("/api/user", isAuthenticated, (req: any, res) => {
+  apiRouter.get("/user", isAuthenticated, (req: any, res) => {
     try {
       const user = req.user as any;
       const claims = user?.claims;
@@ -46,7 +78,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Health check endpoint
-  app.get("/api/health", (req, res) => {
+  apiRouter.get("/health", (req, res) => {
     res.json({ 
       status: "ok", 
       timestamp: new Date().toISOString() 
@@ -54,7 +86,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get all invoices
-  app.get("/api/invoices", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/invoices", isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -70,7 +102,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get invoice by ID
-  app.get("/api/invoices/:id", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/invoices/:id", isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
@@ -87,7 +119,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic dashboard stats
-  app.get("/api/dashboard/stats", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/dashboard/stats", isAuthenticated, async (req: any, res) => {
     try {
       const invoices = await storage.getInvoices();
 
@@ -106,7 +138,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get validation rules
-  app.get("/api/validation-rules", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/validation-rules", isAuthenticated, async (req: any, res) => {
     try {
       console.log("🔍 API: GET /api/validation-rules - Starting request");
       console.log("🔍 API: User authenticated:", !!req.user);

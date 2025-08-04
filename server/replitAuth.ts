@@ -113,48 +113,7 @@ export async function setupAuth(app: Express) {
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
-  app.get("/api/login", (req, res, next) => {
-    console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
-    console.log(`🔐 Using strategy: replitauth`);
-    console.log(`🔐 Available strategies:`, Object.keys((passport as any)._strategies || {}));
-    
-    const authHandler = passport.authenticate('replitauth', {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    });
-    
-    console.log(`🔐 Calling authentication handler...`);
-    authHandler(req, res, next);
-  });
-
-  app.get("/api/callback", (req, res, next) => {
-    console.log('🔄 Auth callback - using strategy: replitauth');
-    console.log('🔄 Callback query params:', req.query);
-    
-    passport.authenticate('replitauth', {
-      successReturnToOrRedirect: "/",
-      failureRedirect: "/api/login",
-    })(req, res, next);
-  });
-
-  app.get("/api/logout", (req, res) => {
-    req.logout(() => {
-      res.redirect(
-        client.buildEndSessionUrl(config, {
-          client_id: process.env.REPL_ID!,
-          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
-        }).href
-      );
-    });
-  });
-
-  console.log('✅ Authentication routes registered successfully');
-  
-  // Test if route handler is actually registered
-  app.get("/api/test-login", (req, res) => {
-    console.log('🧪 TEST LOGIN HANDLER CALLED');
-    res.json({ message: 'Test login handler working', timestamp: new Date().toISOString() });
-  });
+  console.log('✅ Authentication middleware setup complete');
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
