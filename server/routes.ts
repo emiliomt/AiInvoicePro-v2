@@ -7,15 +7,42 @@ import { invoiceImporterService } from "./services/invoiceImporterService";
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
+  // Add a simple test route first to verify routing works
+  app.get("/api/debug-test", (req, res) => {
+    console.log('🧪 DEBUG TEST ROUTE HIT');
+    res.json({ message: 'Debug test route working', timestamp: new Date().toISOString() });
+  });
+
   // Setup authentication
   setupAuth(app);
 
   // Basic user endpoint
   app.get("/api/user", isAuthenticated, (req: any, res) => {
-    res.json({ 
-      user: req.user,
-      message: "Authenticated successfully" 
-    });
+    try {
+      const user = req.user as any;
+      const claims = user?.claims;
+      
+      console.log('📋 User endpoint called - Claims:', claims ? 'present' : 'missing');
+      
+      if (!claims) {
+        console.log('❌ No user claims found');
+        return res.status(401).json({ message: "No user claims found" });
+      }
+      
+      const userData = {
+        id: claims.sub,
+        email: claims.email,
+        firstName: claims.first_name,
+        lastName: claims.last_name,
+        profileImageUrl: claims.profile_image_url,
+      };
+      
+      console.log('✅ Returning user data:', userData);
+      res.json(userData);
+    } catch (error) {
+      console.error('❌ User endpoint error:', error);
+      res.status(500).json({ message: "Failed to get user data" });
+    }
   });
 
   // Health check endpoint

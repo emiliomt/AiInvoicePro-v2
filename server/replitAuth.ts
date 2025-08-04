@@ -1,6 +1,6 @@
+
 import * as client from "openid-client";
 import { Strategy, type VerifyFunction } from "openid-client/passport";
-
 import passport from "passport";
 import session from "express-session";
 import type { Express, RequestHandler } from "express";
@@ -90,64 +90,48 @@ export async function setupAuth(app: Express) {
     verified(null, user);
   };
 
-  // Add strategies for both the replit domain and localhost for development
+  // Get domains and setup primary domain
   const domains = process.env.REPLIT_DOMAINS!.split(",");
+  const primaryDomain = domains[0];
   
-  for (const domain of domains) {
-    const strategy = new Strategy(
-      {
-        name: `replitauth:${domain}`,
-        config,
-        scope: "openid email profile offline_access",
-        callbackURL: `https://${domain}/api/callback`,
-      },
-      verify,
-    );
-    passport.use(strategy);
-  }
-  
-  // Add localhost strategy for development
-  const localhostStrategy = new Strategy(
+  console.log(`🔐 Setting up auth for domains: ${domains.join(", ")}`);
+  console.log(`🔐 Primary domain: ${primaryDomain}`);
+
+  // Create a single primary strategy that works for all domains
+  const primaryStrategy = new Strategy(
     {
-      name: `replitauth:localhost`,
+      name: `replitauth`,
       config,
       scope: "openid email profile offline_access",
-      callbackURL: `https://${domains[0]}/api/callback`, // Use the first domain for callback
+      callbackURL: `https://${primaryDomain}/api/callback`,
     },
     verify,
   );
-  passport.use(localhostStrategy);
+  passport.use(primaryStrategy);
+  console.log('✅ Strategy registered successfully');
 
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    try {
-      // Use the first domain for authentication since we're accessing via localhost
-      const strategyName = `replitauth:${domains[0]}`;
-      console.log(`🔐 Login attempt - hostname: ${req.hostname}, using strategy: ${strategyName}`);
-      console.log(`🔐 Available strategies:`, passport._strategies ? Object.keys(passport._strategies) : 'none');
-      console.log(`🔐 Domains available:`, domains);
-      
-      const authMiddleware = passport.authenticate(strategyName, {
-        prompt: "login consent",
-        scope: ["openid", "email", "profile", "offline_access"],
-      });
-      
-      console.log(`🔐 Executing authentication with strategy: ${strategyName}`);
-      authMiddleware(req, res, next);
-    } catch (error) {
-      console.error('🔐 Login error:', error);
-      res.status(500).json({ error: 'Authentication setup failed', details: error.message });
-    }
+    console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
+    console.log(`🔐 Using strategy: replitauth`);
+    console.log(`🔐 Available strategies:`, Object.keys((passport as any)._strategies || {}));
+    
+    const authHandler = passport.authenticate('replitauth', {
+      prompt: "login consent",
+      scope: ["openid", "email", "profile", "offline_access"],
+    });
+    
+    console.log(`🔐 Calling authentication handler...`);
+    authHandler(req, res, next);
   });
 
   app.get("/api/callback", (req, res, next) => {
-    // Use the first domain strategy for callback
-    const strategyName = `replitauth:${domains[0]}`;
-    console.log('🔄 Auth callback:', { hostname: req.hostname, strategy: strategyName, query: req.query });
+    console.log('🔄 Auth callback - using strategy: replitauth');
+    console.log('🔄 Callback query params:', req.query);
     
-    passport.authenticate(strategyName, {
+    passport.authenticate('replitauth', {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, next);
@@ -162,6 +146,14 @@ export async function setupAuth(app: Express) {
         }).href
       );
     });
+  });
+
+  console.log('✅ Authentication routes registered successfully');
+  
+  // Test if route handler is actually registered
+  app.get("/api/test-login", (req, res) => {
+    console.log('🧪 TEST LOGIN HANDLER CALLED');
+    res.json({ message: 'Test login handler working', timestamp: new Date().toISOString() });
   });
 }
 
