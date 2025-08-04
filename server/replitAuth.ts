@@ -1,4 +1,3 @@
-
 import * as client from "openid-client";
 import { Strategy, type VerifyFunction } from "openid-client/passport";
 import passport from "passport";
@@ -100,7 +99,7 @@ export async function setupAuth(app: Express) {
   // Get domains and setup primary domain
   const domains = process.env.REPLIT_DOMAINS!.split(",");
   const primaryDomain = domains[0];
-  
+
   console.log(`🔐 Setting up auth for domains: ${domains.join(", ")}`);
   console.log(`🔐 Primary domain: ${primaryDomain}`);
 
@@ -121,6 +120,49 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   console.log('✅ Authentication middleware setup complete');
+
+  // Login route
+  app.get('/api/login', (req, res, next) => {
+    console.log('🔐 LOGIN HANDLER CALLED - hostname:', req.hostname);
+    console.log('🔐 Using strategy:', primaryStrategy.name);
+    console.log('🔐 Domain matches:', domains.includes(req.hostname));
+    console.log('🔐 Calling authentication handler...');
+
+    passport.authenticate(primaryStrategy.name)(req, res, next);
+  });
+
+  // OAuth callback route
+  app.get('/api/callback', (req, res, next) => {
+    console.log('🔄 Auth callback - using strategy:', primaryStrategy.name);
+    console.log('🔄 Callback query params:', req.query);
+    console.log('🔄 Callback hostname:', req.hostname);
+    console.log('🔄 Callback originalUrl:', req.originalUrl);
+
+    passport.authenticate(primaryStrategy.name, (err: any, user: any) => {
+      if (err) {
+        console.error('❌ Auth callback error:', err);
+        return res.redirect('/');
+      }
+
+      if (!user) {
+        console.error('❌ Auth callback - no user');
+        return res.redirect('/');
+      }
+
+      console.log('✅ User object received:', { id: user.id, email: user.email });
+
+      req.logIn(user, (err) => {
+        if (err) {
+          console.error('❌ Login error:', err);
+          return res.redirect('/');
+        }
+
+        console.log('✅ User authenticated:', { isAuthenticated: req.isAuthenticated(), user: req.user ? 'exists' : 'missing' });
+        console.log('✅ Auth callback successful - redirecting to dashboard');
+        return res.redirect('/');
+      });
+    })(req, res, next);
+  });
 }
 
 export function getUser(req: any) {
@@ -141,7 +183,7 @@ export function getUser(req: any) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = req.user as any;
-    
+
     console.log('🔐 Auth check:', {
       isAuthenticated: req.isAuthenticated(),
       hasUser: !!user,
