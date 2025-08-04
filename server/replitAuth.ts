@@ -116,13 +116,8 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    // Use the first domain from REPLIT_DOMAINS for authentication
-    const strategyName = req.hostname === 'localhost' ? 
-      `replitauth:${domains[0]}` : 
-      `replitauth:${req.hostname}`;
-    
-    console.log(`🔐 Login attempt - hostname: ${req.hostname}, using strategy: ${strategyName}`);
-    
+    // Use the first domain or localhost strategy
+    const strategyName = domains.includes(req.hostname) ? `replitauth:${req.hostname}` : `replitauth:localhost`;
     passport.authenticate(strategyName, {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
@@ -130,12 +125,9 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/callback", (req, res, next) => {
-    // Use the first domain from REPLIT_DOMAINS for authentication
-    const strategyName = req.hostname === 'localhost' ? 
-      `replitauth:${domains[0]}` : 
-      `replitauth:${req.hostname}`;
-    
-    console.log(`🔐 Callback - hostname: ${req.hostname}, using strategy: ${strategyName}`);
+    // Use the first domain or localhost strategy
+    const strategyName = domains.includes(req.hostname) ? `replitauth:${req.hostname}` : `replitauth:localhost`;
+    console.log('🔄 Auth callback:', { hostname: req.hostname, strategy: strategyName });
     
     passport.authenticate(strategyName, {
       successReturnToOrRedirect: "/",
@@ -158,8 +150,16 @@ export async function setupAuth(app: Express) {
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = req.user as any;
+    
+    console.log('🔐 Auth check:', {
+      isAuthenticated: req.isAuthenticated(),
+      hasUser: !!user,
+      userExpiresAt: user?.expires_at,
+      currentTime: Math.floor(Date.now() / 1000)
+    });
 
     if (!req.isAuthenticated() || !user?.expires_at) {
+      console.log('❌ Auth failed: Not authenticated or no expiry');
       return res.status(401).json({ message: "Unauthorized" });
     }
 
