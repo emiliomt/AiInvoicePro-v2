@@ -150,10 +150,10 @@ def main():
         print(f"\n🏘️  PARQUE HEREDIA PROJECT INSIGHTS:")
         
         # Calculate material vs labor vs equipment ratios
-        material_categories = ['consumable_materials', 'non_consumable_materials']
+        material_categories = ['Consumable Materials', 'Non-Consumable Materials']
         material_total = sum(category_totals.get(cat, {}).get('amount', 0) for cat in material_categories)
-        labor_total = category_totals.get('labor', {}).get('amount', 0)
-        equipment_total = category_totals.get('tools_equipment', {}).get('amount', 0)
+        labor_total = category_totals.get('Labor', {}).get('amount', 0)
+        equipment_total = category_totals.get('Tools & Equipment', {}).get('amount', 0)
         
         print(f"   🧱 Materials: ${material_total:,.0f} COP ({(material_total/total_amount)*100:.1f}%)")
         print(f"   👷 Labor: ${labor_total:,.0f} COP ({(labor_total/total_amount)*100:.1f}%)")

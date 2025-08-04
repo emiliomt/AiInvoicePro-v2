@@ -40,7 +40,7 @@ class AnzuDynamicsInvoiceClassifier:
         
         # AnzuDynamics classification categories (matching TypeScript system)
         self.categories = {
-            "consumable_materials": {
+            "Consumable Materials": {
                 "label": "Consumable Materials",
                 "description": "Materials that are used up during construction/operations (cement, sand, fuel, paint, etc.)",
                 "keywords": [
@@ -51,8 +51,8 @@ class AnzuDynamicsInvoiceClassifier:
                     'consumables', 'supplies', 'materials', 'aggregate', 'mortar', 'brick', 'block'
                 ]
             },
-            "non_consumable_materials": {
-                "label": "Non-Consumable Materials",
+            "Non-Consumable Materials": {
+                "label": "Non-Consumable Materials", 
                 "description": "Durable materials and equipment that are reusable (machinery, equipment, assets)",
                 "keywords": [
                     'equipment', 'machinery', 'generator', 'compressor', 'pump', 'motor', 'engine', 'transmission',
@@ -62,7 +62,7 @@ class AnzuDynamicsInvoiceClassifier:
                     'conveyor', 'crane', 'hoist', 'winch', 'cable', 'chain', 'rope', 'asset', 'capital'
                 ]
             },
-            "labor": {
+            "Labor": {
                 "label": "Labor",
                 "description": "Human resources and professional services (workers, consultants, services)",
                 "keywords": [
@@ -73,7 +73,7 @@ class AnzuDynamicsInvoiceClassifier:
                     'personnel', 'manpower', 'workforce', 'professional services', 'consulting', 'engineering'
                 ]
             },
-            "tools_equipment": {
+            "Tools & Equipment": {
                 "label": "Tools & Equipment",
                 "description": "Tools, machinery, and equipment for construction work",
                 "keywords": [
@@ -122,20 +122,20 @@ AVAILABLE CATEGORIES:
 CLASSIFICATION RULES:
 1. Choose the MOST SPECIFIC category that fits the description
 2. For construction projects, prioritize based on how the item is used:
-   - If it gets consumed/used up during work → consumable_materials
-   - If it's reusable equipment/machinery → non_consumable_materials or tools_equipment
-   - If it's human work/services → labor
+   - If it gets consumed/used up during work → Consumable Materials
+   - If it's reusable equipment/machinery → Non-Consumable Materials or Tools & Equipment
+   - If it's human work/services → Labor
 3. Consider the project context if provided
 4. Use keyword matching as a secondary validation
 
 RESPONSE FORMAT:
 Return a JSON object with the following structure:
 {{
-    "category": "category_code",
+    "category": "Category Label",
     "confidence": 0.95,
     "reasoning": "Brief explanation of why this category was chosen",
-    "matched_keywords": ["key", "words", "from", "description"],
-    "alternative_category": "second_best_option_if_applicable"
+    "suggested_keywords": ["key", "words", "from", "description"],
+    "requires_review": false
 }}
 
 Confidence should be between 0.0 and 1.0, where:
@@ -193,6 +193,14 @@ Confidence should be between 0.0 and 1.0, where:
                 logger.warning(f"Invalid category returned: {result.get('category')}")
                 result["category"] = keyword_result["category"]
             
+            # Ensure requires_review is set based on confidence
+            if "requires_review" not in result:
+                result["requires_review"] = result.get("confidence", 0) < 0.7
+
+            # Rename matched_keywords to suggested_keywords if needed
+            if "matched_keywords" in result and "suggested_keywords" not in result:
+                result["suggested_keywords"] = result.pop("matched_keywords")
+
             # Add metadata and validation info
             result.update({
                 "timestamp": datetime.now().isoformat(),
@@ -251,7 +259,7 @@ Confidence should be between 0.0 and 1.0, where:
         
         if not category_scores:
             return {
-                "category": "consumable_materials",  # Default fallback
+                "category": "Consumable Materials",  # Default fallback
                 "confidence": 0.1,
                 "matched_keywords": [],
                 "method": "keyword_fallback"
@@ -284,10 +292,11 @@ Confidence should be between 0.0 and 1.0, where:
             }
         
         return {
-            "category": "consumable_materials",
+            "category": "Consumable Materials",
             "confidence": 0.0,
             "reasoning": f"Classification failed due to {error_type}",
-            "matched_keywords": [],
+            "suggested_keywords": [],
+            "requires_review": True,
             "timestamp": datetime.now().isoformat(),
             "model_used": self.model,
             "original_description": description,
