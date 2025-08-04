@@ -30,13 +30,14 @@ InvoicePro is built as a full-stack web application.
 The system uses PostgreSQL and includes entities for Users, Sessions, Invoices, Line Items, Purchase Orders, Projects, Validation Rules, Approvals, and Flags & Alerts.
 
 ### Key Components & Features
-- **AI-Powered Processing Pipeline**: Includes OCR, AI extraction via OpenAI GPT, a rule-based validation engine, discrepancy detection, and predictive analytics.
-- **RPA Invoice Importer**: Automated invoice downloading from ERP systems, with real-time console view, progress tracking, and configurable import options (file types, scheduling).
-- **Authentication & Security**: Replit Auth integration, session-based authentication, protected API routes, and file upload security.
-- **Data Processing Workflow**: Invoice upload, OCR, AI extraction, validation, PO matching, project assignment, approval workflow, discrepancy flagging, and secure data storage.
-- **User Interface**: Dashboard, Invoice Management, Approval Workflow, PO Matching, Project Validation, Reporting, and Configuration sections.
+- **AI-Powered Processing Pipeline**: Includes OCR, AI extraction via OpenAI GPT with fallback mechanisms, a rule-based validation engine, discrepancy detection, and predictive analytics.
+- **Enhanced RPA Invoice Importer**: Automated invoice downloading from ERP systems with improved retry logic, real-time WebSocket progress tracking, batch processing, and comprehensive error handling.
+- **Authentication & Security**: Replit Auth integration with Passport.js, session-based authentication with proper claims extraction, protected API routes, and file upload security.
+- **Data Processing Workflow**: Invoice upload, OCR, AI extraction with fallbacks, validation, PO matching, project assignment, approval workflow, discrepancy flagging, and secure data storage.
+- **Real-time Progress Tracking**: WebSocket-based progress updates with connection management, task completion notifications, and timeout handling.
+- **User Interface**: Dashboard, Invoice Management, Approval Workflow, PO Matching, Project Validation, Reporting, and Configuration sections with proper user information display.
 - **UI/UX Decisions**: Utilizes shadcn/ui for consistent design, aiming for a modern, responsive interface with features like a mobile-optimized menu and real-time progress visualization.
-- **Technical Implementations**: Includes robust error handling, performance optimizations (e.g., optimized data fetching, reduced API calls), and a comprehensive credential management system.
+- **Technical Implementations**: Includes robust error handling, performance optimizations (batch processing, reduced API calls), comprehensive credential management, and enhanced database schema synchronization.
 
 ## External Dependencies
 - **Database**: Neon PostgreSQL (serverless).
