@@ -116,12 +116,20 @@ export async function setupAuth(app: Express) {
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
 
   app.get("/api/login", (req, res, next) => {
-    // Use the first domain or localhost strategy
-    const strategyName = domains.includes(req.hostname) ? `replitauth:${req.hostname}` : `replitauth:localhost`;
-    passport.authenticate(strategyName, {
-      prompt: "login consent",
-      scope: ["openid", "email", "profile", "offline_access"],
-    })(req, res, next);
+    try {
+      // Use the first domain for authentication since we're accessing via localhost
+      const strategyName = `replitauth:${domains[0]}`;
+      console.log(`🔐 Login attempt - hostname: ${req.hostname}, using strategy: ${strategyName}`);
+      console.log(`🔐 Available strategies:`, passport._strategies ? Object.keys(passport._strategies) : 'none');
+      
+      passport.authenticate(strategyName, {
+        prompt: "login consent",
+        scope: ["openid", "email", "profile", "offline_access"],
+      })(req, res, next);
+    } catch (error) {
+      console.error('🔐 Login error:', error);
+      res.status(500).json({ error: 'Authentication setup failed', details: error.message });
+    }
   });
 
   app.get("/api/callback", (req, res, next) => {
