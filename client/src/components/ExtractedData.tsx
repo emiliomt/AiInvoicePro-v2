@@ -74,11 +74,11 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
     return false;
   }
-
+  
   // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
   const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
   const hasOCRText = !!invoice.ocrText;
-
+  
   return isPDFImageFile || hasOCRText;
 };
 
@@ -665,91 +665,21 @@ export default function ExtractedData() {
             </div>
           )}
         </CardContent>
+      </Card>
 
-      {/* Processing Results Section */}
-      <ProcessingResultsSection invoice={invoice} />
-    </Card>
-  );
-};
+      {/* Petty Cash Manager for petty cash invoices */}
+      {isPettyCash && <PettyCashManager invoiceId={invoice.id} />}
 
-const ProcessingResultsSection = ({ invoice }: { invoice: any }) => {
-  const results = invoice.extractedData?.processingResults;
-
-  if (!results) {
-    return (
-      <div className="mt-4 p-4 bg-gray-50 rounded-lg">
-        <h4 className="font-medium text-gray-900 mb-2">Processing Results</h4>
-        <p className="text-gray-600">No processing results available. Click 'Process Invoice' to run automation.</p>
-      </div>
-    );
-  }
-
-  return (
-    <div className="mt-4 p-4 bg-white border rounded-lg">
-      <h4 className="font-medium text-gray-900 mb-3">Processing Results</h4>
-
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <span className="text-sm font-medium text-gray-700">Petty Cash:</span>
-          <span className={`ml-2 ${results.isPettyCash ? 'text-blue-600' : 'text-gray-500'}`}>
-            {results.isPettyCash ? 'Yes' : 'No'}
-          </span>
-        </div>
-
-        <div>
-          <span className="text-sm font-medium text-gray-700">PO Match:</span>
-          <span className={`ml-2 ${results.poMatched ? 'text-green-600' : 'text-gray-500'}`}>
-            {results.poMatched ? `Yes (${results.poMatchDetails?.poId || 'Matched'})` : 'No'}
-          </span>
-        </div>
-
-        <div>
-          <span className="text-sm font-medium text-gray-700">Validation:</span>
-          <span className={`ml-2 ${results.validationPassed ? 'text-green-600' : 'text-red-600'}`}>
-            {results.validationPassed ? 'Passed' : `Failed (${results.validationErrors?.length || 0} issues)`}
-          </span>
-        </div>
-
-        <div>
-          <span className="text-sm font-medium text-gray-700">Project:</span>
-          <span className={`ml-2 ${results.projectAssigned ? 'text-purple-600' : 'text-gray-500'}`}>
-            {results.projectAssigned ? `Assigned (${results.projectId})` : 'Not Assigned'}
-          </span>
-        </div>
-      </div>
-
-      {results.discrepancies?.length > 0 && (
-        <div className="mt-3">
-          <span className="text-sm font-medium text-gray-700">Discrepancies:</span>
-          <ul className="mt-1 text-sm text-orange-600">
-            {results.discrepancies.map((discrepancy: any, index: number) => (
-              <li key={index}>• {discrepancy.message || discrepancy}</li>
-            ))}
-          </ul>
-        </div>
+      {/* Project Assignment and PO Matching for regular invoices */}
+      {!isPettyCash && (
+        <ProjectAssignment
+          invoiceId={invoice.id}
+          currentProject={(invoice as any).extractedData?.assignedProject}
+        />
       )}
 
-      {results.validationErrors?.length > 0 && (
-        <div className="mt-3">
-          <span className="text-sm font-medium text-gray-700">Validation Issues:</span>
-          <ul className="mt-1 text-sm text-red-600">
-            {results.validationErrors.map((error: any, index: number) => (
-              <li key={index}>• {error.message || error}</li>
-            ))}
-          </ul>
-        </div>
-      )}
-
-      {results.processingStatus === 'failed' && results.errorMessage && (
-        <div className="mt-3">
-          <span className="text-sm font-medium text-gray-700">Error:</span>
-          <p className="mt-1 text-sm text-red-600">{results.errorMessage}</p>
-        </div>
-      )}
-
-      <div className="mt-3 text-xs text-gray-500">
-        Status: {results.processingStatus} • Last processed: {new Date(results.lastProcessed).toLocaleString()}
-      </div>
+      {/* Discrepancy Detection Display */}
+      <DiscrepancyDisplay invoiceId={invoice.id} />
     </div>
   );
-};
+}

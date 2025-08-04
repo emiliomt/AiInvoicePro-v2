@@ -870,21 +870,12 @@ class ERPAutomationService {
 
   private async findLoginButton(page: any): Promise<string | null> {
     const selectors = [
-      '#loginButton',  // Common ID selector that was failing
-      '#btnLogin',
-      '#btn-login',
       'button:has-text("Iniciar sesión")',
       'button:has-text("Iniciar")',
       'button:has-text("Login")',
       'button:has-text("Entrar")',
-      'button:has-text("Ingresar")',
       'input[type="submit"]',
       'button[type="submit"]',
-      'input[value*="login" i]',
-      'input[value*="ingresar" i]',
-      'input[value*="entrar" i]',
-      '.login-button',
-      '.btn-login',
       'button:visible',
       'form button:last-of-type'
     ];
@@ -1179,12 +1170,8 @@ const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE
                     '--disable-gpu',
                     '--no-first-run',
                     '--disable-default-apps',
-                    '--disable-features=TranslateUI',
-                    '--disable-accelerated-2d-canvas',
-                    '--no-zygote',
-                    '--disable-blink-features=AutomationControlled'
-                ],
-                timeout: 30000 // 30 second browser launch timeout
+                    '--disable-features=TranslateUI'
+                ]
             });
 
             const context = await this.browser.newContext({
@@ -1195,18 +1182,6 @@ const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE
             });
 
             const page = await context.newPage();
-
-            // Add error handling for page events
-            page.on('error', (error) => {
-                console.error('Page error during ERP connection test:', error.message);
-            });
-            
-            page.on('pageerror', (error) => {
-                console.error('Page JavaScript error during ERP connection test:', error.message);
-            });
-
-            // Set longer default timeout for ERP pages
-            page.setDefaultTimeout(30000);
 
             // Block resources for faster connection testing
             await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());

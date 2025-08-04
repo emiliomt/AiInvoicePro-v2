@@ -11,7 +11,7 @@ import Sidebar from "@/components/Sidebar";
 
 export default function Dashboard() {
   const { toast } = useToast();
-  const { user, isAuthenticated, isLoading } = useAuth();
+  const { isAuthenticated, isLoading } = useAuth();
 
   // Redirect to login if not authenticated
   useEffect(() => {

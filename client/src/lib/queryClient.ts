@@ -7,48 +7,23 @@ async function throwIfResNotOk(res: Response) {
   }
 }
 
-export const apiRequest = async (method: string, url: string, data?: any): Promise<Response> => {
-  const token = localStorage.getItem('authToken');
+export async function apiRequest(
+  method: string,
+  url: string,
+  data?: unknown | undefined,
+): Promise<Response> {
+  const isFormData = data instanceof FormData;
 
-  const config: RequestInit = {
+  const res = await fetch(url, {
     method,
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token && { Authorization: `Bearer ${token}` }),
-    },
-  };
+    headers: data && !isFormData ? { "Content-Type": "application/json" } : {},
+    body: isFormData ? data : (data ? JSON.stringify(data) : undefined),
+    credentials: "include",
+  });
 
-  if (data && (method === 'POST' || method === 'PUT' || method === 'PATCH')) {
-    config.body = JSON.stringify(data);
-  }
-
-  try {
-    const response = await fetch(url, config);
-
-    // Handle authentication errors
-    if (response.status === 401) {
-      console.warn('Authentication failed, clearing token and redirecting');
-      localStorage.removeItem('authToken');
-      window.location.href = '/api/login';
-      throw new Error('Unauthorized - please log in again');
-    }
-
-    // Handle other HTTP errors
-    if (!response.ok && response.status >= 500) {
-      throw new Error(`Server error (${response.status}): Please try again later`);
-    }
-
-    return response;
-  } catch (error) {
-    // Handle network errors
-    if (error instanceof TypeError && error.message.includes('fetch')) {
-      throw new Error('Network error: Please check your internet connection');
-    }
-
-    // Re-throw other errors
-    throw error;
-  }
-};
+  await throwIfResNotOk(res);
+  return res;
+}
 
 type UnauthorizedBehavior = "returnNull" | "throw";
 export const getQueryFn: <T>(options: {

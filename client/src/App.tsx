@@ -30,9 +30,6 @@ import AiWorkflow from "@/pages/AiWorkflow";
 import InvoiceImporter from "@/pages/InvoiceImporter";
 import InvoicePreview from "@/pages/InvoicePreview";
 import NotFound from "@/pages/not-found";
-import { AlertCircle } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
 
 // Import the existing query client from lib
 import { queryClient } from "@/lib/queryClient";
@@ -124,30 +121,7 @@ const AppContent = React.memo(() => {
           {user ? <InvoiceImporter /> : <Landing />}
         </Route>
         <Route>
-          {user ? (
-            <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-              <Card className="w-full max-w-md mx-4">
-                <CardContent className="pt-6">
-                  <div className="flex mb-4 gap-2">
-                    <AlertCircle className="h-8 w-8 text-red-500" />
-                    <h1 className="text-2xl font-bold text-gray-900">404 Page Not Found</h1>
-                  </div>
-                  <p className="mt-4 text-sm text-gray-600 mb-4">
-                    Current URL: {window.location.pathname}
-                  </p>
-                  <p className="text-sm text-gray-600 mb-4">
-                    Available routes: /, /dashboard, /invoices, /validation-rules, /petty-cash, /reports
-                  </p>
-                  <Button 
-                    onClick={() => window.location.href = '/dashboard'}
-                    className="w-full"
-                  >
-                    Go to Dashboard
-                  </Button>
-                </CardContent>
-              </Card>
-            </div>
-          ) : <Landing />}
+          <NotFound />
         </Route>
       </Switch>
       <Toaster />
@@ -161,9 +135,9 @@ function App() {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       // Always prevent default to avoid crashes
       event.preventDefault();
-
+      
       console.error('Unhandled promise rejection:', event.reason);
-
+      
       // Check if it's a WebSocket error (common cause of crashes)
       if (event.reason && typeof event.reason === 'object') {
         const reasonStr = String(event.reason);
@@ -172,19 +146,19 @@ function App() {
           return;
         }
       }
-
+      
       // Check if it's a fetch error (network issues)
       if (event.reason instanceof TypeError && event.reason.message.includes('fetch')) {
         console.warn('Network fetch error handled gracefully');
         return;
       }
-
+      
       // Check for TanStack Query errors
       if (event.reason && (event.reason.message?.includes('QueryClient') || event.reason.name?.includes('Query'))) {
         console.warn('Query-related promise rejection handled gracefully');
         return;
       }
-
+      
       // Log specific details for debugging but don't crash
       console.warn('Unhandled promise rejection prevented:', {
         reason: event.reason,
@@ -195,7 +169,7 @@ function App() {
 
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
-
+      
       // Don't let script errors crash the entire app
       if (event.error && event.error.name === 'ChunkLoadError') {
         console.warn('Chunk load error - possible network issue or cache problem');

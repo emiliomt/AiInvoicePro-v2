@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, CheckCircle, XCircle, Clock, Target, X } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, CheckCircle, XCircle, Clock, Target } from "lucide-react";
 import { useState, useCallback, useRef, useEffect } from "react";
 import {
   AlertDialog,
@@ -118,7 +118,7 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
 // Enhanced status badge component with icons and colors
 const getStatusBadge = (invoice: Invoice) => {
   const status = invoice.status;
-
+  
   switch (status) {
     case 'po_matched':
       return (
@@ -198,7 +198,6 @@ export default function Invoices() {
   const [showProcessingSummary, setShowProcessingSummary] = useState(false);
   const [showOutcomeModal, setShowOutcomeModal] = useState(false);
   const [selectedInvoiceOutcome, setSelectedInvoiceOutcome] = useState<Invoice | null>(null);
-  const [showLatestResults, setShowLatestResults] = useState(true);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -209,16 +208,6 @@ export default function Invoices() {
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Failed to fetch invoices: ${response.status} ${response.statusText}`, errorText);
-          
-          // Handle specific error cases
-          if (response.status === 401) {
-            throw new Error('Authentication required. Please log in.');
-          } else if (response.status === 403) {
-            throw new Error('Access denied. Please check your permissions.');
-          } else if (response.status === 500) {
-            throw new Error('Server error. Please try again later.');
-          }
-          
           throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
@@ -229,13 +218,7 @@ export default function Invoices() {
         throw err;
       }
     },
-    retry: (failureCount, error: any) => {
-      // Don't retry on authentication errors
-      if (error?.message?.includes('Authentication required') || error?.message?.includes('401')) {
-        return false;
-      }
-      return failureCount < 2;
-    },
+    retry: 3,
     retryDelay: 1000,
     refetchInterval: false, // Disable automatic refetching
   });
@@ -604,101 +587,40 @@ export default function Invoices() {
 
       console.log('Sending automatic processing request:', requestPayload);
 
-      // Add timeout to prevent hanging forever
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => {
-        controller.abort();
-        console.log('Request aborted due to timeout');
-      }, 30000); // 30 second timeout
-
       const response = await fetch('/api/invoices/initiate-automatic-process', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestPayload),
-        signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        const errorText = await response.text();
-        let errorData;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch {
-          errorData = { error: errorText };
-        }
+        const errorData = await response.json();
         throw new Error(errorData.error || 'Automatic processing failed');
       }
 
       const result = await response.json();
-      console.log('Processing result:', result);
-
-      // Show detailed processing results
-      const { processedCount, totalCount, results } = result;
-      const successfulProcessing = results?.filter((r: any) => r.success) || [];
-      const failedProcessing = results?.filter((r: any) => !r.success) || [];
-
-      let description = `Successfully processed ${processedCount}/${totalCount} invoices.`;
-
-      if (successfulProcessing.length > 0) {
-        const poMatches = successfulProcessing.filter((r: any) => r.poMatches > 0).length;
-        const projectAssignments = successfulProcessing.filter((r: any) => r.projectAssigned).length;
-
-        if (poMatches > 0 || projectAssignments > 0) {
-          description += ` Found ${poMatches} PO matches and ${projectAssignments} project assignments.`;
-        }
-      }
-
-      if (failedProcessing.length > 0) {
-        description += ` ${failedProcessing.length} invoices failed processing.`;
-      }
 
       toast({
-        title: "Automatic Processing Completed",
-        description,
-        variant: processedCount === totalCount ? "default" : "destructive",
+        title: "Automatic Processing Initiated",
+        description: `Processing ${result.summary.totalInvoices} invoices. Check the status updates on the invoices page.`,
       });
 
       // Refresh the invoices list
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setSelectedInvoices([]);
-
-      // Show processing summary
-      setShowProcessingSummary(true);
 
     } catch (error: any) {
       console.error('Automatic processing failed:', error);
-
-      if (error.name === 'AbortError') {
-        toast({
-          title: "Processing Timeout",
-          description: "The processing took too long and was cancelled. Please try again or contact support.",
-          variant: "destructive",
-        });
-      } else {
-        toast({
-          title: "Automatic Processing Failed",
-          description: error.message || "Failed to initiate automatic processing",
-          variant: "destructive",
-        });
-      }
+      toast({
+        title: "Automatic Processing Failed",
+        description: error.message || "Failed to initiate automatic processing",
+        variant: "destructive",
+      });
     } finally {
       setIsProcessingAutomatic(false);
     }
-  };
-
-  // Manual reset function for stuck processing state
-  const resetProcessingState = () => {
-    console.log('Manually resetting processing state');
-    setIsProcessingAutomatic(false);
-    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-    toast({
-      title: "Processing State Reset",
-      description: "The processing state has been manually reset.",
-    });
   };
 
   const handleSelectInvoice = (invoiceId: number) => {
@@ -719,37 +641,10 @@ export default function Invoices() {
     }
   };
 
-  // Calculate processing stats
-  const calculateProcessingStats = (invoices: any[]) => {
-    let poMatched = 0;
-    let pettyCash = 0;
-    let noPOMatch = 0;
-    let failedErrors = 0;
-
-    invoices.forEach(invoice => {
-      const results = invoice.extractedData?.processingResults;
-
-      if (results?.isPettyCash) {
-        pettyCash++;
-      } else if (results?.poMatched) {
-        poMatched++;
-      } else if (results?.processingStatus === 'failed') {
-        failedErrors++;
-      } else if (results && !results.poMatched) {
-        noPOMatch++;
-      }
-    });
-
-    return { poMatched, pettyCash, noPOMatch, failedErrors };
-  };
-
-  const processingStats = calculateProcessingStats(invoices || []);
-  const totalInvoices = processingStats.poMatched + processingStats.pettyCash + processingStats.noPOMatch + processingStats.failedErrors;
-
   // Calculate processing summary
   const getProcessingSummary = () => {
     if (!invoices) return { poMatched: 0, pettyCash: 0, noPOMatch: 0, failed: 0 };
-
+    
     return {
       poMatched: invoices.filter(i => i.status === 'po_matched').length,
       pettyCash: invoices.filter(i => i.status === 'petty_cash').length,
@@ -851,73 +746,16 @@ export default function Invoices() {
                   </AlertDialogContent>
                 </AlertDialog>
               )}
-              <div className="flex items-center space-x-2">
-                <Button
-                  onClick={handleInitiateAutomaticProcess}
-                  disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
-                >
-                  {isProcessingAutomatic ? (
-                    <Loader2 size={16} className="mr-2 animate-spin" />
-                  ) : (
-                    <Play size={16} className="mr-2" />
-                  )}
-                  {isProcessingAutomatic ? "Processing..." : `Initiate Automatic Process (${selectedInvoices.length})`}
-                </Button>
-                {isProcessingAutomatic && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={resetProcessingState}
-                    className="text-red-600 hover:text-red-700"
+              <Button
+                    onClick={handleInitiateAutomaticProcess}
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
                   >
-                    Reset
+                    <Play size={16} className="mr-2" />
+                    {isProcessingAutomatic ? "Processing..." : `Initiate Automatic Process (${selectedInvoices.length})`}
                   </Button>
-                )}
-              </div>
             </div>
           </div>
         </div>
-
-        {/* Latest Processing Results */}
-        {showLatestResults && (
-          <Card className="mb-6">
-            <CardHeader>
-              <CardTitle className="flex items-center justify-between">
-                <span>Latest Processing Results</span>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => setShowLatestResults(false)}
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-4 gap-4">
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-green-600">{processingStats.poMatched}</div>
-                  <div className="text-sm text-gray-600">PO Matched</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-blue-600">{processingStats.pettyCash}</div>
-                  <div className="text-sm text-gray-600">Petty Cash</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-orange-600">{processingStats.noPOMatch}</div>
-                  <div className="text-sm text-gray-600">No PO Match</div>
-                </div>
-                <div className="text-center">
-                  <div className="text-2xl font-bold text-red-600">{processingStats.failedErrors}</div>
-                  <div className="text-sm text-gray-600">Failed/Errors</div>
-                </div>
-              </div>
-              <div className="mt-4 text-xs text-gray-500">
-                Based on {totalInvoices} total invoices with processing results
-              </div>
-            </CardContent>
-          </Card>
-        )}
 
         {showProcessingSummary && (
           <Card className="mb-6 border-l-4 border-l-blue-500">
@@ -1057,20 +895,20 @@ export default function Invoices() {
                         <div className="flex items-center space-x-3">
                           {/* Main Status Badge */}
                           {getStatusBadge(invoice)}
-
+                          
                           {/* Additional Outcome Info */}
                           {invoice.status === 'po_matched' && invoice.poMatches && (
                             <div className="text-xs text-gray-500">
                               Matched to PO #{invoice.poMatches[0]?.poId || 'N/A'}
                             </div>
                           )}
-
+                          
                           {invoice.status === 'petty_cash' && (
                             <div className="text-xs text-gray-500">
                               {formatAmount(invoice.totalAmount, invoice.currency)} petty cash
                             </div>
                           )}
-
+                          
                           {invoice.status === 'validation_failed' && invoice.validationErrors && (
                             <div className="text-xs text-red-600">
                               {invoice.validationErrors.length} validation errors
@@ -1122,7 +960,6 @@ export default function Invoices() {
                           </p>
                         </div>
                       </div>
-                      
                       <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
                         <Button
                           variant="outline"
@@ -1501,7 +1338,7 @@ export default function Invoices() {
                     {getStatusBadge(selectedInvoiceOutcome)}
                     <span className="font-medium">{selectedInvoiceOutcome.fileName}</span>
                   </div>
-
+                  
                   {/* Step-by-step results */}
                   <div className="space-y-3">
                     <div className="border rounded p-3">
@@ -1510,14 +1347,14 @@ export default function Invoices() {
                         {selectedInvoiceOutcome.classifiedItems?.length || 0} items classified
                       </div>
                     </div>
-
+                    
                     <div className="border rounded p-3">
                       <h4 className="font-medium">Petty Cash Check</h4>
                       <div className="text-sm text-gray-600 mt-1">
                         {selectedInvoiceOutcome.pettyCashFlag ? 'Classified as petty cash' : 'Not petty cash'}
                       </div>
                     </div>
-
+                    
                     {!selectedInvoiceOutcome.pettyCashFlag && (
                       <>
                         <div className="border rounded p-3">
@@ -1528,7 +1365,7 @@ export default function Invoices() {
                               'No project match found'}
                           </div>
                         </div>
-
+                        
                         <div className="border rounded p-3">
                           <h4 className="font-medium">Validation</h4>
                           <div className="text-sm text-gray-600 mt-1">
@@ -1537,7 +1374,7 @@ export default function Invoices() {
                               `Failed ${selectedInvoiceOutcome.validationErrors?.length || 0} validation rules`}
                           </div>
                         </div>
-
+                        
                         <div className="border rounded p-3">
                           <h4 className="font-medium">PO Matching</h4>
                           <div className="text-sm text-gray-600 mt-1">

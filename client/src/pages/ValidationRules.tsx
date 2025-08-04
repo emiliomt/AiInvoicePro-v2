@@ -11,9 +11,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 import { isUnauthorizedError } from "@/lib/authUtils";
-import { Plus, Edit, Trash2, Shield, AlertTriangle, Info, XCircle, AlertCircle } from "lucide-react";
+import { Plus, Edit, Trash2, Shield, AlertTriangle, Info, XCircle } from "lucide-react";
 import Header from "@/components/Header";
-import { ValidationRulesErrorBoundary } from "@/components/ErrorBoundary";
 
 interface ValidationRule {
   id: number;
@@ -34,25 +33,10 @@ const FIELD_OPTIONS = [
   { value: "invoiceNumber", label: "Invoice Number" },
   { value: "totalAmount", label: "Total Amount" },
   { value: "taxAmount", label: "Tax Amount" },
-  { value: "subtotal", label: "Subtotal" },
   { value: "invoiceDate", label: "Invoice Date" },
   { value: "dueDate", label: "Due Date" },
+  { value: "taxId", label: "Tax ID" },
   { value: "currency", label: "Currency" },
-  { value: "confidenceScore", label: "Confidence Score" },
-  { value: "projectName", label: "Project Name" },
-  { value: "fileName", label: "File Name" },
-  { value: "status", label: "Invoice Status" },
-  { value: "extractedData.taxId", label: "Vendor Tax ID (NIT)" },
-  { value: "extractedData.buyerTaxId", label: "Buyer Tax ID" },
-  { value: "extractedData.companyName", label: "Company Name (Buyer)" },
-  { value: "extractedData.vendorAddress", label: "Vendor Address" },
-  { value: "extractedData.buyerAddress", label: "Buyer Address" },
-  { value: "extractedData.projectAddress", label: "Project Address" },
-  { value: "extractedData.projectCity", label: "Project City" },
-  { value: "extractedData.concept", label: "Concept/Description" },
-  { value: "extractedData.descriptionSummary", label: "Description Summary" },
-  { value: "extractedData.notes", label: "Notes" },
-  { value: "extractedData.projectName", label: "Extracted Project Name" },
 ];
 
 const RULE_TYPE_OPTIONS = [
@@ -71,7 +55,7 @@ const SEVERITY_OPTIONS = [
   { value: "critical", label: "Critical", color: "bg-red-100 text-red-800" },
 ];
 
-function ValidationRulesContent() {
+export default function ValidationRules() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
   const [formData, setFormData] = useState({
@@ -87,214 +71,23 @@ function ValidationRulesContent() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
-  // Get validation rules with improved error handling
-  const { data: rules, isLoading, error, refetch } = useQuery<ValidationRule[]>({
+  // Get validation rules
+  const { data: rules, isLoading } = useQuery<ValidationRule[]>({
     queryKey: ["/api/validation-rules"],
-    queryFn: async () => {
-      console.log("🔄 Frontend: Fetching validation rules...");
-
-      try {
-        const response = await fetch('/api/validation-rules', {
-          headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
-          }
-        });
-
-        console.log("📡 Frontend: Response status:", response.status);
-        console.log("📡 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
-
-        // Check content-type to ensure it's JSON
-        const contentType = response.headers.get('content-type');
-        console.log("📡 Frontend: Content-Type:", contentType);
-
-        if (!contentType || !contentType.includes('application/json')) {
-          const responseText = await response.text();
-          console.error("❌ Frontend: Non-JSON Response received:", responseText.substring(0, 500));
-          throw new Error(`Server returned non-JSON response (${contentType}). Response: ${responseText.substring(0, 200)}...`);
-        }
-
-        if (!response.ok) {
-          const errorData = await response.json();
-          console.error("❌ Frontend: API Error Response:", errorData);
-          throw new Error(`API Error ${response.status}: ${errorData.message || errorData.error || 'Unknown error'}`);
-        }
-
-        console.log("✅ Frontend: Response OK, parsing JSON...");
-        const data = await response.json();
-        console.log("✅ Frontend: Parsed validation rules:", data);
-
-        // Ensure we have an array
-        if (!Array.isArray(data)) {
-          console.error("❌ Frontend: Response is not an array:", data);
-          return [];
-        }
-
-        return data;
-      } catch (error) {
-        console.error("❌ Frontend: Fetch validation rules error:", error);
-        throw error;
-      }
-    },
-    retry: 1,
-    retryDelay: 1000,
   });
 
   // Create/Update rule mutation
   const saveRuleMutation = useMutation({
     mutationFn: async (ruleData: any) => {
-      console.log("🚀 Frontend: Starting mutation with data:", JSON.stringify(ruleData, null, 2));
-
-      try {
-        // Validate data before sending
-        if (!ruleData.name?.trim()) {
-          throw new Error("Rule name is required");
-        }
-        if (!ruleData.fieldName?.trim()) {
-          throw new Error("Field name is required");
-        }
-        if (!ruleData.ruleType?.trim()) {
-          throw new Error("Rule type is required");
-        }
-        if (!ruleData.ruleValue?.trim()) {
-          throw new Error("Rule value is required");
-        }
-
-        let response;
-        let result;
-
-        if (editingRule) {
-          console.log("🔄 Frontend: Making PUT request to update rule", editingRule.id);
-          response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
-        } else {
-          console.log("🔄 Frontend: Making POST request to create new rule");
-          response = await apiRequest('POST', '/api/validation-rules', ruleData);
-        }
-
-        console.log("📊 Frontend: Response status:", response.status);
-        console.log("📊 Frontend: Response headers:", Object.fromEntries(response.headers.entries()));
-
-        // Enhanced error handling for non-ok responses
-        if (!response.ok) {
-          let errorMessage = `Server error (${response.status})`;
-          let errorDetails: any = {};
-
-          try {
-            const contentType = response.headers.get('content-type');
-            console.log("📊 Frontend: Content-Type:", contentType);
-
-            if (contentType && contentType.includes('application/json')) {
-              const errorData = await response.json();
-              console.log("❌ Frontend: Server error data:", JSON.stringify(errorData, null, 2));
-
-              errorMessage = errorData.message || errorData.error || errorMessage;
-              errorDetails = {
-                status: response.status,
-                statusText: response.statusText,
-                serverData: errorData,
-                url: response.url
-              };
-
-              // Extract specific error messages
-              if (errorData.details) {
-                errorMessage += ` - ${errorData.details}`;
-              }
-              if (errorData.code) {
-                errorMessage += ` (Code: ${errorData.code})`;
-              }
-              if (errorData.constraint) {
-                errorMessage += ` - Database constraint: ${errorData.constraint}`;
-              }
-            } else {
-              const errorText = await response.text();
-              console.log("❌ Frontend: Server error text:", errorText);
-
-              errorMessage = errorText || errorMessage;
-              errorDetails = {
-                status: response.status,
-                statusText: response.statusText,
-                responseText: errorText,
-                url: response.url
-              };
-            }
-          } catch (parseError) {
-            console.error("❌ Frontend: Could not parse error response:", parseError);
-            errorDetails = {
-              status: response.status,
-              statusText: response.statusText,
-              parseError: parseError instanceof Error ? parseError.message : String(parseError),
-              url: response.url
-            };
-          }
-
-          console.error("❌ Frontend: Full error details:", errorDetails);
-
-          // Create enhanced error with details
-          const enhancedError = new Error(errorMessage);
-          (enhancedError as any).details = errorDetails;
-          throw enhancedError;
-        }
-
-        // Enhanced success response parsing
-        try {
-          const contentType = response.headers.get('content-type');
-          console.log("✅ Frontend: Success Content-Type:", contentType);
-
-          if (contentType && contentType.includes('application/json')) {
-            result = await response.json();
-            console.log("✅ Frontend: Response received:", JSON.stringify(result, null, 2));
-            return result;
-          } else {
-            // Handle non-JSON success responses
-            const responseText = await response.text();
-            console.log("✅ Frontend: Non-JSON response:", responseText);
-
-            // Return a synthetic success object
-            return {
-              success: true,
-              message: "Rule saved successfully",
-              responseText: responseText
-            };
-          }
-        } catch (parseError) {
-          console.error("❌ Frontend: Failed to parse success response:", parseError);
-          console.error("❌ Frontend: Parse error details:", {
-            error: parseError instanceof Error ? parseError.message : String(parseError),
-            responseStatus: response.status,
-            responseUrl: response.url
-          });
-
-          // Still consider it a success if the HTTP status was ok
-          return {
-            success: true,
-            message: "Rule saved successfully (response parse failed)",
-            parseError: parseError instanceof Error ? parseError.message : String(parseError)
-          };
-        }
-
-      } catch (error) {
-        console.error("❌ Frontend: Mutation failed with error:", error);
-
-        // Enhanced error logging
-        if (error instanceof Error) {
-          console.error("❌ Frontend: Error name:", error.name);
-          console.error("❌ Frontend: Error message:", error.message);
-          console.error("❌ Frontend: Error stack:", error.stack);
-
-          // Log additional details if available
-          if ((error as any).details) {
-            console.error("❌ Frontend: Error details:", (error as any).details);
-          }
-
-          throw error;
-        } else {
-          console.error("❌ Frontend: Non-Error object thrown:", error);
-          throw new Error(`An unexpected error occurred: ${JSON.stringify(error)}`);
-        }
+      if (editingRule) {
+        const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
+        return response.json();
+      } else {
+        const response = await apiRequest('POST', '/api/validation-rules', ruleData);
+        return response.json();
       }
     },
-    onSuccess: (data) => {
-      console.log("🎉 Frontend: Mutation successful with data:", JSON.stringify(data, null, 2));
+    onSuccess: () => {
       toast({
         title: editingRule ? "Rule Updated" : "Rule Created",
         description: `Validation rule has been ${editingRule ? "updated" : "created"} successfully.`,
@@ -304,18 +97,7 @@ function ValidationRulesContent() {
       resetForm();
     },
     onError: (error: Error) => {
-      console.error("❌ Frontend: Mutation failed:");
-      console.error("    Error message:", error.message);
-      console.error("    Error stack:", error.stack);
-      console.error("    Full error object:", error);
-
-      // Log additional error details if available
-      if ((error as any).details) {
-        console.error("    Error details:", (error as any).details);
-      }
-
       if (isUnauthorizedError(error)) {
-        console.log("🔐 Frontend: Unauthorized error detected, redirecting to login");
         toast({
           title: "Unauthorized",
           description: "You are logged out. Logging in again...",
@@ -327,41 +109,9 @@ function ValidationRulesContent() {
         return;
       }
 
-      // Enhanced error message construction
-      let errorTitle = "Save Failed";
-      let errorDescription = error.message || "An unknown error occurred";
-
-      // Check for specific error types and provide better messages
-      if (error.message.includes("Network error")) {
-        errorTitle = "Network Error";
-        errorDescription = "Unable to connect to the server. Please check your internet connection and try again.";
-      } else if (error.message.includes("Server error (5")) {
-        errorTitle = "Server Error";
-        errorDescription = "The server encountered an error. Please try again in a few moments.";
-      } else if (error.message.includes("constraint")) {
-        errorTitle = "Validation Error";
-        errorDescription = "A validation rule with similar settings already exists. Please check your field name and rule type.";
-      } else if (error.message.includes("Database")) {
-        errorTitle = "Database Error";
-        errorDescription = "There was an issue saving to the database. Please try again or contact support if the problem persists.";
-      }
-
-      // Add technical details for developers in development mode
-      if (process.env.NODE_ENV === 'development' && (error as any).details) {
-        const details = (error as any).details;
-        if (details.status) {
-          errorDescription += ` (HTTP ${details.status})`;
-        }
-        if (details.serverData?.code) {
-          errorDescription += ` [${details.serverData.code}]`;
-        }
-      }
-
-      console.log("🔔 Frontend: Showing toast with:", { errorTitle, errorDescription });
-
       toast({
-        title: errorTitle,
-        description: errorDescription,
+        title: "Save Failed",
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -370,37 +120,7 @@ function ValidationRulesContent() {
   // Delete rule mutation
   const deleteRuleMutation = useMutation({
     mutationFn: async (ruleId: number) => {
-      try {
-        if (!ruleId || isNaN(ruleId)) {
-          throw new Error("Invalid rule ID");
-        }
-
-        const response = await apiRequest('DELETE', `/api/validation-rules/${ruleId}`);
-
-        if (!response.ok) {
-          let errorMessage = `Failed to delete rule (${response.status})`;
-
-          try {
-            const contentType = response.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              const errorData = await response.json();
-              errorMessage = errorData.message || errorData.error || errorMessage;
-            } else {
-              const errorText = await response.text();
-              errorMessage = errorText || errorMessage;
-            }
-          } catch (parseError) {
-            console.warn("Could not parse delete error response:", parseError);
-          }
-
-          throw new Error(errorMessage);
-        }
-
-        return response;
-      } catch (error) {
-        console.error("Delete rule error:", error);
-        throw error instanceof Error ? error : new Error("Failed to delete validation rule");
-      }
+      await apiRequest('DELETE', `/api/validation-rules/${ruleId}`);
     },
     onSuccess: () => {
       toast({
@@ -410,8 +130,6 @@ function ValidationRulesContent() {
       queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] });
     },
     onError: (error: Error) => {
-      console.error("Delete mutation error:", error);
-
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -426,7 +144,7 @@ function ValidationRulesContent() {
 
       toast({
         title: "Delete Failed",
-        description: error.message || "An unexpected error occurred while deleting the rule",
+        description: error.message,
         variant: "destructive",
       });
     },
@@ -452,7 +170,7 @@ function ValidationRulesContent() {
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleValue || "",
+      ruleValue: rule.ruleData || rule.ruleValue || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -468,74 +186,22 @@ function ValidationRulesContent() {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    try {
-      console.log("📝 Frontend: Form submission started");
-      console.log("📝 Frontend: Current form data:", JSON.stringify(formData, null, 2));
-
-      // Comprehensive form validation
-      const errors: string[] = [];
-
-      if (!formData.name?.trim()) {
-        errors.push("Rule name is required");
-      }
-      if (!formData.fieldName?.trim()) {
-        errors.push("Field name is required");
-      }
-      if (!formData.ruleType?.trim()) {
-        errors.push("Rule type is required");
-      }
-      if (!formData.ruleValue?.trim()) {
-        errors.push("Rule value is required");
-      }
-
-      // Rule-specific validation
-      if (formData.ruleType === "range" && formData.ruleValue) {
-        const rangeParts = formData.ruleValue.split(',');
-        if (rangeParts.length !== 2 || isNaN(Number(rangeParts[0])) || isNaN(Number(rangeParts[1]))) {
-          errors.push("Range rule value must be in format 'min,max' (e.g., '0,1000')");
-        }
-      }
-
-      if (formData.ruleType === "regex" && formData.ruleValue) {
-        try {
-          new RegExp(formData.ruleValue);
-        } catch (regexError) {
-          errors.push("Invalid regex pattern");
-        }
-      }
-
-      if (errors.length > 0) {
-        console.error("❌ Frontend: Form validation failed:", errors);
-        toast({
-          title: "Validation Error",
-          description: errors.join('. '),
-          variant: "destructive",
-        });
-        return;
-      }
-
-      console.log("✅ Frontend: Form validation passed, submitting data");
-
-      // Clean the form data before sending
-      const cleanFormData = {
-        name: formData.name.trim(),
-        description: formData.description?.trim() || null,
-        fieldName: formData.fieldName.trim(),
-        ruleType: formData.ruleType.trim(),
-        ruleValue: formData.ruleValue.trim(),
-        severity: formData.severity,
-        errorMessage: formData.errorMessage?.trim() || null,
-      };
-
-      saveRuleMutation.mutate(cleanFormData);
-    } catch (error) {
-      console.error("❌ Frontend: Form submission error:", error);
+    if (!formData.name || !formData.fieldName || !formData.ruleType || !formData.ruleValue) {
       toast({
-        title: "Submission Error",
-        description: "An unexpected error occurred while preparing the form data",
+        title: "Validation Error",
+        description: "Please fill in all required fields.",
         variant: "destructive",
       });
+      return;
     }
+
+    // Map ruleValue to ruleData for backend compatibility
+    const ruleData = {
+      ...formData,
+      ruleData: formData.ruleValue
+    };
+
+    saveRuleMutation.mutate(ruleData);
   };
 
   const getSeverityIcon = (severity: string) => {
@@ -566,50 +232,9 @@ function ValidationRulesContent() {
       case "comparison":
         return `Must satisfy: ${ruleValue}`;
       default:
-        return ruleValue || "No rule value specified";
+        return ruleValue;
     }
   };
-
-  if (isLoading) {
-    return (
-      <div className="p-6">
-        <div className="flex items-center justify-center h-32">
-          <div className="text-center">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto"></div>
-            <p className="mt-2 text-gray-600">Loading validation rules...</p>
-          </div>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="p-6">
-        <div className="rounded-md bg-red-50 p-4">
-          <div className="flex">
-            <div className="flex-shrink-0">
-              <AlertCircle className="h-5 w-5 text-red-400" />
-            </div>
-            <div className="ml-3">
-              <h3 className="text-sm font-medium text-red-800">
-                Error Loading Validation Rules
-              </h3>
-              <div className="mt-2 text-sm text-red-700">
-                <p className="mb-2">{error instanceof Error ? error.message : "An unknown error occurred"}</p>
-                <button
-                  onClick={() => refetch()}
-                  className="text-red-600 hover:text-red-500 underline"
-                >
-                  Try Again
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -664,21 +289,31 @@ function ValidationRulesContent() {
                         <SelectValue placeholder="Select field" />
                       </SelectTrigger>
                       <SelectContent>
-                        {FIELD_OPTIONS.map((field) => (
-                          <SelectItem key={field.value} value={field.value}>
-                            {field.label}
-                          </SelectItem>
-                        ))}
+                        <SelectItem value="vendorName">Vendor Name</SelectItem>
+                        <SelectItem value="totalAmount">Total Amount</SelectItem>
+                        <SelectItem value="taxAmount">Tax Amount</SelectItem>
+                        <SelectItem value="subtotal">Subtotal</SelectItem>
+                        <SelectItem value="currency">Currency</SelectItem>
+                        <SelectItem value="invoiceDate">Invoice Date</SelectItem>
+                        <SelectItem value="dueDate">Due Date</SelectItem>
+                        <SelectItem value="invoiceNumber">Invoice Number</SelectItem>
+                        <SelectItem value="projectName">Project Name</SelectItem>
+                        <SelectItem value="confidenceScore">Confidence Score</SelectItem>
+                        <SelectItem value="extractedData.taxId">Vendor Tax ID</SelectItem>
+                        <SelectItem value="extractedData.companyName">Company Name (Buyer)</SelectItem>
+                        <SelectItem value="extractedData.buyerTaxId">Buyer Tax ID</SelectItem>
+                        <SelectItem value="extractedData.vendorAddress">Vendor Address</SelectItem>
+                        <SelectItem value="extractedData.buyerAddress">Buyer Address</SelectItem>
+                        <SelectItem value="extractedData.projectAddress">Project Address</SelectItem>
+                        <SelectItem value="extractedData.projectCity">Project City</SelectItem>
+                        <SelectItem value="extractedData.concept">Concept/Description</SelectItem>
+                        <SelectItem value="extractedData.descriptionSummary">Description Summary</SelectItem>
+                        <SelectItem value="extractedData.notes">Notes</SelectItem>
+                        <SelectItem value="extractedData.projectName">Extracted Project Name</SelectItem>
+                        <SelectItem value="status">Invoice Status</SelectItem>
+                        <SelectItem value="fileName">File Name</SelectItem>
                       </SelectContent>
                     </Select>
-                    {formData.fieldName && (
-                      <p className="text-xs text-gray-500 mt-1">
-                        Field path: <code className="bg-gray-100 px-1 rounded">{formData.fieldName}</code>
-                        {formData.fieldName.startsWith('extractedData.') && 
-                          <span className="ml-2 text-amber-600">⚠️ Nested field in extracted data</span>
-                        }
-                      </p>
-                    )}
                   </div>
 
                   <div>
@@ -800,33 +435,12 @@ function ValidationRulesContent() {
 
         {/* Rules List */}
         <div className="grid grid-cols-1 gap-6">
-          {error ? (
+          {isLoading ? (
             <Card>
               <CardContent className="p-6">
-                <div className="text-center">
-                  <div className="text-red-500 text-4xl mb-4">⚠️</div>
-                  <h3 className="text-lg font-medium text-gray-900 mb-2">Error Loading Rules</h3>
-                  <p className="text-gray-600 mb-4">
-                    {isUnauthorizedError(error as Error) 
-                      ? "You are not authorized to view this data. Please log in again."
-                      : (error as Error)?.message || "Failed to load validation rules"
-                    }
-                  </p>
-                  {isUnauthorizedError(error as Error) ? (
-                    <Button 
-                      onClick={() => window.location.href = "/api/login"}
-                      className="bg-primary-600 hover:bg-primary-700"
-                    >
-                      Login Again
-                    </Button>
-                  ) : (
-                    <Button 
-                      onClick={() => queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] })}
-                      variant="outline"
-                    >
-                      Try Again
-                    </Button>
-                  )}
+                <div className="flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600"></div>
+                  <span className="ml-2 text-gray-600">Loading validation rules...</span>
                 </div>
               </CardContent>
             </Card>
@@ -871,7 +485,8 @@ function ValidationRulesContent() {
                         disabled={deleteRuleMutation.isPending}
                       >
                         <Trash2 className="w-4 h-4" />
-                      </Button>                    </div>
+                      </Button>
+                    </div>
                   </div>
                 </CardHeader>
                 <CardContent>
@@ -891,7 +506,7 @@ function ValidationRulesContent() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || '')}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleData || rule.ruleValue || '')}
                       </p>
                     </div>
                   </div>
@@ -925,13 +540,5 @@ function ValidationRulesContent() {
         </div>
       </main>
     </div>
-  );
-}
-
-export default function ValidationRules() {
-  return (
-    <ValidationRulesErrorBoundary>
-      <ValidationRulesContent />
-    </ValidationRulesErrorBoundary>
   );
 }
