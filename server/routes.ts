@@ -18,6 +18,7 @@ import { erpAutomationService } from "./services/erpAutomationService.js";
 import { invoiceImporterService } from "./services/invoiceImporterService.js";
 import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
+import { invoiceProcessingService } from "./services/invoiceProcessingService.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -1551,6 +1552,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error starting invoice processing:", error);
       res.status(500).json({ message: "Failed to start processing" });
+    }
+  });
+
+  // Process imported invoices endpoint (temporary bypass for testing)
+  app.post('/api/imported-invoices/process', async (req: any, res) => {
+    try {
+      console.log('🔄 Processing downloaded imported invoices...');
+      
+      const result = await invoiceProcessingService.processDownloadedInvoices();
+      
+      console.log(`✅ Processing complete: ${result.processed} processed, ${result.failed} failed`);
+      
+      res.json({
+        message: `Processing complete: ${result.processed} invoices processed successfully`,
+        summary: {
+          processed: result.processed,
+          failed: result.failed,
+          total: result.processed + result.failed
+        },
+        errors: result.errors
+      });
+    } catch (error: any) {
+      console.error('Error processing imported invoices:', error);
+      res.status(500).json({ 
+        message: 'Failed to process imported invoices',
+        error: error.message 
+      });
+    }
+  });
+
+  // Process imported invoices by log ID (allow bypass for testing)
+  app.post('/api/imported-invoices/process/:logId', async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      console.log(`🔄 Processing imported invoices for log ID: ${logId}`);
+      
+      const result = await invoiceProcessingService.processInvoicesByLogId(logId);
+      
+      console.log(`✅ Processing complete for log ${logId}: ${result.processed} processed, ${result.failed} failed`);
+      
+      res.json({
+        message: `Processing complete for log ${logId}: ${result.processed} invoices processed successfully`,
+        summary: {
+          processed: result.processed,
+          failed: result.failed,
+          total: result.processed + result.failed,
+          logId
+        },
+        errors: result.errors
+      });
+    } catch (error: any) {
+      console.error(`Error processing imported invoices for log ${req.params.logId}:`, error);
+      res.status(500).json({ 
+        message: 'Failed to process imported invoices',
+        error: error.message 
+      });
     }
   });
 
