@@ -132,7 +132,7 @@ export function registerRoutes(app: Express): Server {
   // Get all invoices
   apiRouter.get("/invoices", monitorProtectedRoute("get_invoices"), async (req: any, res: Response) => {
     try {
-      const userId = req.user?.claims?.sub;
+      const userId = (req.user as any)?.claims?.sub || req.headers['x-replit-user-id'];
       if (!userId) {
         return res.status(401).json({ message: "User not authenticated" });
       }
@@ -148,6 +148,11 @@ export function registerRoutes(app: Express): Server {
   // Get invoice by ID
   apiRouter.get("/invoices/:id", monitorProtectedRoute("get_invoice_by_id"), async (req: any, res: Response) => {
     try {
+      const userId = (req.user as any)?.claims?.sub || req.headers['x-replit-user-id'];
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
 
@@ -165,6 +170,11 @@ export function registerRoutes(app: Express): Server {
   // Basic dashboard stats
   apiRouter.get("/dashboard/stats", monitorProtectedRoute("get_dashboard_stats"), async (req: any, res: Response) => {
     try {
+      const userId = (req.user as any)?.claims?.sub || req.headers['x-replit-user-id'];
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+
       const invoices = await storage.getInvoices();
 
       const stats = {
@@ -186,7 +196,13 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log("🔍 API: GET /api/validation-rules - Starting request");
       console.log("🔍 API: User authenticated:", !!req.user);
-      console.log("🔍 API: User ID:", req.user?.claims?.sub);
+      
+      const userId = (req.user as any)?.claims?.sub || req.headers['x-replit-user-id'];
+      console.log("🔍 API: User ID:", userId);
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
 
       const rules = await storage.getValidationRules();
       console.log(`✅ API: Retrieved ${rules.length} validation rules`);
@@ -210,7 +226,13 @@ export function registerRoutes(app: Express): Server {
       console.log("📝 API: Request headers:", JSON.stringify(req.headers, null, 2));
       console.log("📝 API: Request body:", JSON.stringify(req.body, null, 2));
       console.log("📝 API: User authenticated:", !!req.user);
-      console.log("📝 API: User ID:", req.user?.claims?.sub);
+      
+      const userId = (req.user as any)?.claims?.sub || req.headers['x-replit-user-id'];
+      console.log("📝 API: User ID:", userId);
+      
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
 
       const { name, description, fieldName, ruleType, ruleValue, severity, errorMessage } = req.body;
 
