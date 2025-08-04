@@ -9,20 +9,7 @@ import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
 
 if (!process.env.REPLIT_DOMAINS) {
-  // Set default domain based on REPL_ID for Replit environment
-  const replId = process.env.REPL_ID;
-  if (replId) {
-    process.env.REPLIT_DOMAINS = `${replId}-00-mgz6pv03v93w.spock.replit.dev`;
-    console.log('🔐 Auto-set REPLIT_DOMAINS:', process.env.REPLIT_DOMAINS);
-  } else {
-    throw new Error("Environment variable REPLIT_DOMAINS not provided and REPL_ID not found");
-  }
-}
-
-// Set default ISSUER_URL if not provided
-if (!process.env.ISSUER_URL) {
-  process.env.ISSUER_URL = "https://replit.com/oidc";
-  console.log('🔐 Auto-set ISSUER_URL:', process.env.ISSUER_URL);
+  throw new Error("Environment variable REPLIT_DOMAINS not provided");
 }
 
 const getOidcConfig = memoize(

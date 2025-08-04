@@ -209,7 +209,7 @@ export default function Invoices() {
         if (!response.ok) {
           const errorText = await response.text();
           console.error(`Failed to fetch invoices: ${response.status} ${response.statusText}`, errorText);
-
+          
           // Handle specific error cases
           if (response.status === 401) {
             throw new Error('Authentication required. Please log in.');
@@ -218,7 +218,7 @@ export default function Invoices() {
           } else if (response.status === 500) {
             throw new Error('Server error. Please try again later.');
           }
-
+          
           throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
@@ -1045,7 +1045,7 @@ export default function Invoices() {
                                 <div className="flex items-center space-x-1 text-purple-600 text-xs">
                                   <span>RPA</span>
                                   {linkedFilesMap[invoice.id] ? (
-                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'})</span>
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'} links)</span>
                                   ) : (
                                     <span>(loading...)</span>
                                   )}
@@ -1122,7 +1122,7 @@ export default function Invoices() {
                           </p>
                         </div>
                       </div>
-
+                      
                       <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
                         <Button
                           variant="outline"

@@ -71,32 +71,22 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "returnNull" }),
+      queryFn: getQueryFn({ on401: "throw" }),
       staleTime: 1000 * 60 * 5, // 5 minutes
       retry: (failureCount, error: any) => {
-        // Don't retry on authentication errors to prevent loops
-        if (error?.status === 401) {
-          return false;
-        }
-        // Don't retry on 4xx errors (client errors)
-        if (error?.status >= 400 && error?.status < 500) {
+        // Don't retry on 404s or auth errors
+        if (error?.status === 404 || error?.status === 401 || error?.status === 403) {
           return false;
         }
         return failureCount < 3;
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       refetchOnWindowFocus: false, // Prevent excessive refetching
-      refetchOnMount: false, // Prevent refetch on mount to reduce auth loops
-      refetchOnReconnect: false, // Prevent refetch on reconnect
+      refetchOnMount: true,
+      refetchOnReconnect: true,
     },
     mutations: {
-      retry: (failureCount, error: any) => {
-        // Don't retry authentication errors in mutations
-        if (error?.status === 401) {
-          return false;
-        }
-        return false;
-      },
+      retry: false, // Don't retry failed mutations to prevent cascading errors
     },
   },
 });
