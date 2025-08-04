@@ -58,9 +58,21 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log('📋 User endpoint called - Claims:', req.headers['x-replit-user-id'] ? 'present' : 'missing');
 
-      const user = replitAuthModule.getUser(req); // Use the module directly
+      // Get user from Replit headers directly
+      const userId = req.headers['x-replit-user-id'] as string;
+      const userName = req.headers['x-replit-user-name'] as string;
+      const userEmail = req.headers['x-replit-user-email'] as string;
+      const userImage = req.headers['x-replit-user-profile-image'] as string;
 
-      if (!user) {
+      const user = {
+        id: userId,
+        email: userEmail,
+        firstName: userName?.split(' ')[0] || '',
+        lastName: userName?.split(' ').slice(1).join(' ') || '',
+        profileImageUrl: userImage
+      };
+
+      if (!userId) {
         console.log('❌ No user found in request');
         await authMonitoring.logAuthEvent({
           event: 'user_endpoint_access',
