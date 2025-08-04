@@ -223,6 +223,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       // Update invoice with validation status and results
       const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
       const updateData: any = {
+        status: validationResult.isValid ? 'approved' : 'rejected', // Update main status
         validationStatus,
         isValidated: validationResult.isValid,
         validationResults: {
@@ -1833,9 +1834,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check if user owns the invoice
+      // Check access permissions (user owns invoice OR it's an RPA invoice)
       const userId = (req.user as any).claims.sub;
-      if (invoice.userId !== userId) {
+      const hasAccess = invoice.userId === userId || invoice.userId === 'rpa-system';
+
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -1849,7 +1852,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user's invoices
+  // Get user's invoices (including RPA-imported invoices)
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
@@ -1864,8 +1867,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
-        const invoices = await storage.getInvoicesByUserId(userId);
-        res.json(invoices || []);
+        // Get both user's own invoices and RPA-imported invoices
+        const userInvoices = await storage.getInvoicesByUserId(userId);
+        const rpaInvoices = await storage.getInvoicesByUserId('rpa-system');
+        
+        // Combine and sort by creation date (newest first)
+        const allInvoices = [...(userInvoices || []), ...(rpaInvoices || [])];
+        allInvoices.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        
+        console.log(`Returning ${allInvoices.length} invoices (${userInvoices?.length || 0} user + ${rpaInvoices?.length || 0} RPA)`);
+        res.json(allInvoices);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
@@ -1889,7 +1900,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      if (invoice.userId !== userId) {
+      // Check access permissions (user owns invoice OR it's an RPA invoice)
+      const hasAccess = invoice.userId === userId || invoice.userId === 'rpa-system';
+
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
