@@ -168,17 +168,27 @@ export async function setupAuth(app: Express) {
 }
 
 export function getUser(req: any) {
-  if (!req.user || !req.user.claims) {
+  if (!req.user) {
     return null;
   }
 
-  const claims = req.user.claims;
+  // Handle both cases where claims are nested or directly on user object
+  const claims = req.user.claims || req.user;
+  
+  // Log the claims structure for debugging
+  console.log('🔍 Claims structure:', {
+    hasClaimsProperty: !!req.user.claims,
+    claimsKeys: Object.keys(claims),
+    claimsData: claims
+  });
+
   return {
-    id: claims.sub,
+    id: claims.sub || claims.id,
     email: claims.email,
-    firstName: claims.first_name,
-    lastName: claims.last_name,
-    profileImageUrl: claims.profile_image_url
+    firstName: claims.first_name || claims.given_name || claims.firstName || claims.name?.split(' ')[0],
+    lastName: claims.last_name || claims.family_name || claims.lastName || claims.name?.split(' ').slice(1).join(' '),
+    profileImageUrl: claims.profile_image_url || claims.picture || claims.avatar_url || claims.profileImageUrl,
+    claims: claims  // Include raw claims for debugging
   };
 }
 

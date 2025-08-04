@@ -59,6 +59,12 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log('📋 User endpoint called - User object:', (req as any).user ? 'present' : 'missing');
 
+      // Get the raw user object and inspect its structure
+      const rawUser = (req as any).user;
+      console.log('📋 Raw user object keys:', rawUser ? Object.keys(rawUser) : 'null');
+      console.log('📋 Raw user claims keys:', rawUser?.claims ? Object.keys(rawUser.claims) : 'no claims');
+      console.log('📋 Raw user claims:', rawUser?.claims);
+
       // Extract user data from the authenticated request
       const user = replitAuthModule.getUser(req);
 
