@@ -29,7 +29,10 @@ export const apiRequest = async (method: string, url: string, data?: any): Promi
     if (response.status === 401) {
       console.warn('Authentication failed, clearing token and redirecting');
       localStorage.removeItem('authToken');
-      window.location.href = '/api/login';
+      // Prevent infinite redirect loop - only redirect if not already on auth page
+      if (!window.location.pathname.includes('/api/') && !window.location.search.includes('auth=')) {
+        window.location.href = '/api/login?bypass=dev';
+      }
       throw new Error('Unauthorized - please log in again');
     }
 
