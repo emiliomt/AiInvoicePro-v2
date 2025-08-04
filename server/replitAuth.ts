@@ -72,6 +72,12 @@ export async function setupAuth(app: Express) {
   app.use(passport.initialize());
   app.use(passport.session());
 
+  console.log('🔐 Setting up authentication...');
+  console.log('🔐 Environment check:', {
+    REPL_ID: process.env.REPL_ID ? 'set' : 'NOT SET',
+    REPLIT_DOMAINS: process.env.REPLIT_DOMAINS ? 'set' : 'NOT SET'
+  });
+
   const config = await getOidcConfig();
 
   const verify: VerifyFunction = async (
@@ -121,11 +127,15 @@ export async function setupAuth(app: Express) {
       const strategyName = `replitauth:${domains[0]}`;
       console.log(`🔐 Login attempt - hostname: ${req.hostname}, using strategy: ${strategyName}`);
       console.log(`🔐 Available strategies:`, passport._strategies ? Object.keys(passport._strategies) : 'none');
+      console.log(`🔐 Domains available:`, domains);
       
-      passport.authenticate(strategyName, {
+      const authMiddleware = passport.authenticate(strategyName, {
         prompt: "login consent",
         scope: ["openid", "email", "profile", "offline_access"],
-      })(req, res, next);
+      });
+      
+      console.log(`🔐 Executing authentication with strategy: ${strategyName}`);
+      authMiddleware(req, res, next);
     } catch (error) {
       console.error('🔐 Login error:', error);
       res.status(500).json({ error: 'Authentication setup failed', details: error.message });
@@ -133,9 +143,9 @@ export async function setupAuth(app: Express) {
   });
 
   app.get("/api/callback", (req, res, next) => {
-    // Use the first domain or localhost strategy
-    const strategyName = domains.includes(req.hostname) ? `replitauth:${req.hostname}` : `replitauth:localhost`;
-    console.log('🔄 Auth callback:', { hostname: req.hostname, strategy: strategyName });
+    // Use the first domain strategy for callback
+    const strategyName = `replitauth:${domains[0]}`;
+    console.log('🔄 Auth callback:', { hostname: req.hostname, strategy: strategyName, query: req.query });
     
     passport.authenticate(strategyName, {
       successReturnToOrRedirect: "/",
