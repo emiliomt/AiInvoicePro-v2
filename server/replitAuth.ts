@@ -22,99 +22,9 @@ const getOidcConfig = memoize(
   { maxAge: 3600 * 1000 }
 );
 
-export async function setupAuth(app: Express): Promise<void> {
-  console.log('🔐 Setting up authentication...');
-  console.log('🔐 Environment check:', {
-    REPL_ID: process.env.REPL_ID ? 'set' : 'missing',
-    REPLIT_DOMAINS: process.env.REPLIT_DOMAINS ? 'set' : 'missing'
-  });
 
-  // Setup session middleware
-  app.use(getSession());
 
-  // Initialize passport
-  app.use(passport.initialize());
-  app.use(passport.session());
 
-  try {
-    const config = await getOidcConfig();
-    const domains = process.env.REPLIT_DOMAINS!.split(',');
-    console.log('🔐 Setting up auth for domains:', domains[0]);
-    console.log('🔐 Primary domain:', domains[0]);
-
-    // Create strategy with proper callback URL
-    const strategy = new Strategy(
-      {
-        client: config,
-        params: {
-          scope: "openid email profile",
-          response_type: "code",
-        },
-        callbackURL: `https://${domains[0]}/api/callback`,
-        passReqToCallback: false,
-      },
-      ((tokenSet: any, done: any) => {
-        console.log('🔐 Token received, processing user claims...');
-        return done(null, tokenSet.claims());
-      }) as VerifyFunction
-    );
-
-    passport.use("replitauth", strategy);
-    console.log('✅ Strategy registered successfully');
-
-    // Serialize user
-    passport.serializeUser((user: any, done) => {
-      console.log('🔐 Serializing user:', user.sub);
-      done(null, user);
-    });
-
-    // Deserialize user
-    passport.deserializeUser(async (user: any, done) => {
-      console.log('🔐 Deserializing user:', user?.sub);
-      try {
-        // Validate token expiry
-        if (user.exp && user.exp < Date.now() / 1000) {
-          console.log('🔐 Token expired for user:', user.sub);
-          return done(null, false);
-        }
-        done(null, user);
-      } catch (error) {
-        console.error('🔐 Deserialization error:', error);
-        done(error, null);
-      }
-    });
-
-    console.log('✅ Authentication middleware setup complete');
-  } catch (error) {
-    console.error('❌ Failed to setup authentication:', error);
-    throw error;
-  }
-}
-
-export const isAuthenticated: RequestHandler = (req, res, next) => {
-  const user = (req as any).user;
-  const isAuth = req.isAuthenticated();
-  
-  console.log('🔐 Auth check:', {
-    isAuthenticated: isAuth,
-    hasUser: !!user,
-    userExpiresAt: user?.exp,
-    currentTime: Math.floor(Date.now() / 1000)
-  });
-
-  if (isAuth && user) {
-    // Check token expiry
-    if (user.exp && user.exp < Date.now() / 1000) {
-      console.log('❌ Auth failed: Token expired');
-      return res.status(401).json({ message: "Token expired" });
-    }
-    console.log('✅ Auth successful');
-    return next();
-  }
-  
-  console.log('❌ Auth failed: Not authenticated or no expiry');
-  res.status(401).json({ message: "Unauthorized" });
-};
 
 export function getSession() {
   const sessionTtl = 7 * 24 * 60 * 60 * 1000; // 1 week
@@ -139,9 +49,7 @@ export function getSession() {
   });
 }
 
-export function getUser(req: any) {
-  return req.user;
-}
+
 
 function updateUserSession(
   user: any,
