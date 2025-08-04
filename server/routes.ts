@@ -56,12 +56,12 @@ export function registerRoutes(app: Express): Server {
   // Basic user endpoint
   apiRouter.get("/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      console.log('📋 User endpoint called - Claims:', req.headers['x-replit-user-id'] ? 'present' : 'missing');
+      console.log('📋 User endpoint called - User object:', (req as any).user ? 'present' : 'missing');
 
       // Extract user data from the authenticated request
-      const user = (req as any).user;
+      const user = replitAuthModule.getUser(req);
 
-      if (!user || !user.claims) {
+      if (!user) {
         console.log('❌ No user found in request');
         await authMonitoring.logAuthEvent({
           event: 'user_endpoint_access',
@@ -73,13 +73,16 @@ export function registerRoutes(app: Express): Server {
         return res.status(401).json({ error: 'Not authenticated' });
       }
 
-      const userClaims = user.claims;
+      console.log('📋 User object structure:', Object.keys(user));
+
+      // Handle both direct claims and nested claims structure
+      const userClaims = user.claims || user;
       const userData = {
         id: userClaims.sub,
         email: userClaims.email,
-        firstName: userClaims.first_name,
-        lastName: userClaims.last_name,
-        profileImageUrl: userClaims.profile_image_url
+        firstName: userClaims.first_name || userClaims.given_name,
+        lastName: userClaims.last_name || userClaims.family_name,
+        profileImageUrl: userClaims.profile_image_url || userClaims.picture
       };
 
       console.log('✅ Returning user data:', userData);
