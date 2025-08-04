@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle, Upload, AlertTriangle, Plus, Download, Settings, Brain } from "lucide-react";
+import { CheckCircle, Upload, AlertTriangle, Plus, Download, Settings, Brain, RefreshCw } from "lucide-react";
 
 interface PendingApproval {
   id: number;
@@ -212,7 +212,26 @@ export default function Sidebar() {
               </div>
               <span className="font-medium text-gray-900">Validation Rules</span>
             </Button>
-            
+             {/* Placeholder for AI Workflow - assuming this is part of a larger sidebar structure not fully provided */}
+            {/* <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <Link to="/ai-workflow" className="flex items-center space-x-2">
+                  <Zap className="h-4 w-4" />
+                  <span>AI Workflow</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem> */}
+
+            {/* New Automatic Processing section */}
+            {/* <SidebarMenuItem>
+              <SidebarMenuButton asChild>
+                <Link to="/automatic-processing" className="flex items-center space-x-2">
+                  <RefreshCw className="h-4 w-4" />
+                  <span>Automatic Processing</span>
+                </Link>
+              </SidebarMenuButton>
+            </SidebarMenuItem> */}
+
           </div>
         </CardContent>
       </Card>
