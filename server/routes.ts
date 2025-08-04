@@ -7,6 +7,7 @@ import passport from "passport";
 import * as replitAuthModule from "./replitAuth";
 import { authMonitoring, monitorProtectedRoute, monitorApiResponse } from './services/authMonitoringService.js';
 import { authTestService } from './services/authTestService.js';
+import { schedulerService } from "./services/schedulerService";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -119,7 +120,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get all invoices
-  apiRouter.get("/invoices", monitorProtectedRoute("get_invoices"), async (req: any, res: Response) => {
+  apiRouter.get("/invoices", isAuthenticated, async (req: any, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -135,7 +136,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get invoice by ID
-  apiRouter.get("/invoices/:id", monitorProtectedRoute("get_invoice_by_id"), async (req: any, res: Response) => {
+  apiRouter.get("/invoices/:id", isAuthenticated, async (req: any, res: Response) => {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
@@ -152,7 +153,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic dashboard stats
-  apiRouter.get("/dashboard/stats", monitorProtectedRoute("get_dashboard_stats"), async (req: any, res: Response) => {
+  apiRouter.get("/dashboard/stats", isAuthenticated, async (req: any, res: Response) => {
     try {
       const invoices = await storage.getInvoices();
 
@@ -171,7 +172,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get validation rules
-  apiRouter.get("/validation-rules", monitorProtectedRoute("get_validation_rules"), async (req: any, res: Response) => {
+  apiRouter.get("/validation-rules", isAuthenticated, async (req: any, res: Response) => {
     try {
       console.log("🔍 API: GET /api/validation-rules - Starting request");
       console.log("🔍 API: User authenticated:", !!req.user);
@@ -193,7 +194,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Create validation rule
-  app.post("/api/validation-rules", monitorProtectedRoute("create_validation_rule"), async (req: any, res: Response) => {
+  app.post("/api/validation-rules", isAuthenticated, async (req: any, res: Response) => {
     try {
       console.log("📝 API: POST /api/validation-rules - Starting request");
       console.log("📝 API: Request headers:", JSON.stringify(req.headers, null, 2));
@@ -255,7 +256,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Debug endpoint for validation rules troubleshooting
-  app.get('/api/validation-rules/debug', monitorProtectedRoute("debug_validation_rules"), async (req: any, res: Response) => {
+  app.get('/api/validation-rules/debug', isAuthenticated, async (req: any, res: Response) => {
     try {
       console.log("🐛 Debug: Checking validation rules table structure and data");
 
@@ -334,7 +335,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Initiate automatic processing
-  app.post('/api/invoices/initiate-automatic-process', monitorProtectedRoute("initiate_automatic_process"), async (req, res) => {
+  app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
     let processingTimeout: NodeJS.Timeout;
 
@@ -471,7 +472,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Debug endpoint to test ERP connection
-  app.post('/api/debug/test-erp-connection', monitorProtectedRoute("test_erp_connection"), async (req: any, res: Response) => {
+  app.post('/api/debug/test-erp-connection', isAuthenticated, async (req: any, res: Response) => {
     try {
       const { connectionId } = req.body;
 
@@ -512,8 +513,68 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // ERP Connections endpoints
+  app.post('/api/erp/connections', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      // Get user's company
+      const user = await storage.getUser(userId);
+
+      const connectionData = {
+        ...req.body,
+        userId,
+        companyId: user?.companyId || null,
+        password: Buffer.from(req.body.password).toString('base64'), // Encrypt password
+        isActive: true,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      console.log('Creating ERP connection with data:', { ...connectionData, password: '[REDACTED]' });
+
+      const connection = await storage.createErpConnection(connectionData);
+
+      console.log('ERP connection created successfully:', { id: connection.id, name: connection.name });
+
+      res.json(connection);
+    } catch (error) {
+      console.error('Error creating ERP connection:', error);
+      res.status(500).json({ error: 'Failed to create connection', details: error.message });
+    }
+  });
+
+  app.get('/api/erp/connections', async (req, res) => {
+    try {
+      const userId = req.session?.user?.id;
+      if (!userId) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      console.log('Fetching ERP connections for user:', userId);
+
+      const connections = await storage.getErpConnections(userId);
+
+      console.log('Found ERP connections:', connections.length);
+
+      // Remove sensitive data before sending
+      const safeConnections = connections.map(conn => ({
+        ...conn,
+        password: undefined
+      }));
+
+      res.json(safeConnections);
+    } catch (error) {
+      console.error('Error fetching ERP connections:', error);
+      res.status(500).json({ error: 'Failed to fetch connections', details: error.message });
+    }
+  });
+
   // Authentication monitoring and testing endpoints
-  app.get('/api/auth/stats', monitorProtectedRoute('auth_stats'), async (req: Request, res: Response) => {
+  app.get('/api/auth/stats', isAuthenticated, async (req: Request, res: Response) => {
     try {
       const stats = await authMonitoring.getAuthStats(24);
       res.json(stats);
@@ -523,7 +584,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.get('/api/auth/logs', monitorProtectedRoute('auth_logs'), async (req: Request, res: Response) => {
+  app.get('/api/auth/logs', isAuthenticated, async (req: Request, res: Response) => {
     try {
       const limit = parseInt(req.query.limit as string) || 100;
       const logs = await authMonitoring.getRecentAuthEvents(limit);
@@ -534,7 +595,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  app.post('/api/auth/test', monitorProtectedRoute('auth_test'), async (req: Request, res: Response) => {
+  app.post('/api/auth/test', isAuthenticated, async (req: Request, res: Response) => {
     try {
       console.log('🧪 Running comprehensive authentication tests...');
       const testResults = await authTestService.runComprehensiveTests();

@@ -398,10 +398,10 @@ export const erpConnections = pgTable("erp_connections", {
   description: text("description"),
   downloadPath: varchar("download_path", { length: 500 }), // For Python RPA downloads
   xmlPath: varchar("xml_path", { length: 500 }), // For Python RPA XML storage
-  isActive: boolean("is_active").default(true),
+  isActive: boolean("is_active").default(true).notNull(),
   lastUsed: timestamp("last_used"),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
 
 // ERP tasks table

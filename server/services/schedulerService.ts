@@ -1,6 +1,11 @@
 import * as cron from 'node-cron';
 import { storage } from '../storage';
-// We'll need to define executeTaskAsync here or import it properly
+
+// Stub for executeTaskAsync - should be implemented or imported properly
+async function executeTaskAsync(taskId: number, connection: any, description: string) {
+  console.log(`Executing task ${taskId}: ${description}`);
+  // Implementation needed
+}
 
 export class SchedulerService {
   private scheduledJobs: Map<number, cron.ScheduledTask> = new Map();
@@ -23,11 +28,11 @@ export class SchedulerService {
 
   private async loadActiveScheduledTasks() {
     try {
-      const activeTasks = await storage.getActiveScheduledTasks();
+      const activeTasks = await storage.getScheduledTasks();
       
       // Remove tasks that are no longer active
-      for (const [taskId, job] of this.scheduledJobs) {
-        const isStillActive = activeTasks.some(task => task.id === taskId);
+      for (const [taskId, job] of this.scheduledJobs.entries()) {
+        const isStillActive = activeTasks.some((task: any) => task.id === taskId);
         if (!isStillActive) {
           job.stop();
           this.scheduledJobs.delete(taskId);
@@ -38,7 +43,7 @@ export class SchedulerService {
       // Add or update active tasks
       for (const task of activeTasks) {
         if (task.cronExpression) {
-          this.scheduleTask(task);
+          await this.scheduleTask(task);
         }
       }
     } catch (error) {
@@ -46,7 +51,7 @@ export class SchedulerService {
     }
   }
 
-  private scheduleTask(task: any) {
+  private async scheduleTask(task: any) {
     try {
       // Stop existing job if it exists
       if (this.scheduledJobs.has(task.id)) {
@@ -66,7 +71,6 @@ export class SchedulerService {
           await this.executeScheduledTask(task);
         },
         {
-          scheduled: true,
           timezone: task.timezone || 'UTC',
         }
       );
@@ -173,10 +177,10 @@ export class SchedulerService {
     const task = await storage.getScheduledTask(taskId);
     if (task && task.isActive && task.cronExpression) {
       // Get full task details with workflow and connection
-      const tasks = await storage.getActiveScheduledTasks();
-      const fullTask = tasks.find(t => t.id === taskId);
+      const tasks = await storage.getScheduledTasks();
+      const fullTask = tasks.find((t: any) => t.id === taskId);
       if (fullTask) {
-        this.scheduleTask(fullTask);
+        await this.scheduleTask(fullTask);
       }
     }
   }
