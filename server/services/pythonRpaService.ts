@@ -1,4 +1,100 @@
-static async processInvoicesAutomatically(): Promise<any> {
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+// Fix for __dirname in ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+export class PythonRPAService {
+  
+  /**
+   * Execute Python command
+   */
+  private static async executePythonCommand(command: string): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const [cmd, ...args] = command.split(' ');
+      const process = spawn(cmd, args, { 
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: path.join(__dirname)
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', (code) => {
+        if (code === 0) {
+          resolve(stdout.trim());
+        } else {
+          reject(new Error(`Command failed with code ${code}: ${stderr}`));
+        }
+      });
+
+      process.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Execute Python script with arguments
+   */
+  private static async executePythonScript(scriptName: string, args: string[] = []): Promise<any> {
+    return new Promise((resolve, reject) => {
+      const scriptPath = path.join(__dirname, scriptName);
+      const process = spawn('python3', [scriptPath, ...args], {
+        stdio: ['pipe', 'pipe', 'pipe'],
+        cwd: __dirname
+      });
+
+      let stdout = '';
+      let stderr = '';
+
+      process.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+
+      process.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+
+      process.on('close', (code) => {
+        if (code === 0) {
+          try {
+            // Try to parse JSON output
+            const result = JSON.parse(stdout.trim());
+            resolve(result);
+          } catch (parseError) {
+            // If not JSON, return the raw output
+            resolve({ 
+              success: true, 
+              output: stdout.trim(),
+              processedInvoices: 0
+            });
+          }
+        } else {
+          reject(new Error(`Python script failed with code ${code}: ${stderr}`));
+        }
+      });
+
+      process.on('error', (error) => {
+        reject(error);
+      });
+    });
+  }
+
+  /**
+   * Process invoices automatically using Python RPA
+   */
+  static async processInvoicesAutomatically(): Promise<any> {
     const startTime = Date.now();
     
     try {
@@ -15,11 +111,11 @@ static async processInvoicesAutomatically(): Promise<any> {
 
       console.log('🚀 [PYTHON_RPA] Executing process_automation.py...');
       
-      // Add timeout to Python script execution
+      // Increase timeout to 4 minutes (240 seconds) to match the API timeout better
       const result = await Promise.race([
         this.executePythonScript('process_automation.py', []),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Python script execution timeout after 20 seconds')), 20000)
+          setTimeout(() => reject(new Error('Python script execution timeout after 240 seconds')), 240000)
         )
       ]);
 
@@ -35,7 +131,7 @@ static async processInvoicesAutomatically(): Promise<any> {
         processingTimeMs: processingTime,
         details: result
       };
-    } catch (error) {
+    } catch (error: any) {
       const processingTime = Date.now() - startTime;
       console.error(`❌ [PYTHON_RPA] Python RPA processing failed after ${processingTime}ms:`, error);
       console.error('❌ [PYTHON_RPA] Error details:', {
@@ -54,3 +150,42 @@ static async processInvoicesAutomatically(): Promise<any> {
       };
     }
   }
+
+  /**
+   * Test RPA connectivity and Python environment
+   */
+  static async testRPAEnvironment(): Promise<any> {
+    try {
+      console.log('🧪 [PYTHON_RPA] Testing RPA environment...');
+      
+      // Test Python availability
+      const pythonVersion = await this.executePythonCommand('python3 --version');
+      console.log('✅ [PYTHON_RPA] Python version:', pythonVersion);
+
+      // Test process_automation.py existence
+      const scriptPath = path.join(__dirname, 'process_automation.py');
+      const fs = await import('fs');
+      const scriptExists = fs.existsSync(scriptPath);
+      
+      return {
+        success: true,
+        pythonAvailable: true,
+        pythonVersion: pythonVersion,
+        scriptExists: scriptExists,
+        scriptPath: scriptPath,
+        environment: 'ready'
+      };
+    } catch (error: any) {
+      console.error('❌ [PYTHON_RPA] Environment test failed:', error);
+      return {
+        success: false,
+        pythonAvailable: false,
+        error: error.message,
+        environment: 'not_ready'
+      };
+    }
+  }
+}
+
+// Export singleton instance
+export const pythonRPAService = new PythonRPAService();

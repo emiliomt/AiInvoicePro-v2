@@ -8,6 +8,7 @@ import * as replitAuthModule from "./replitAuth";
 import { authMonitoring, monitorProtectedRoute, monitorApiResponse } from './services/authMonitoringService.js';
 import { authTestService } from './services/authTestService.js';
 import { schedulerService } from "./services/schedulerService";
+import { PythonRPAService } from "./services/pythonRpaService";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -344,7 +345,7 @@ export function registerRoutes(app: Express): Server {
 
     try {
       console.log('🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...');
-      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', req.user?.claims?.sub);
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', (req.user as any)?.claims?.sub);
       console.log('🚀 [AUTOMATIC_PROCESSING] Request body:', JSON.stringify(req.body, null, 2));
 
       // Ensure we always return JSON with proper headers
@@ -363,68 +364,85 @@ export function registerRoutes(app: Express): Server {
         }
       }, 300000); // 5 minute timeout for browser automation
 
-      // Call the Invoice Importer service for automatic processing
+      // Call the Python RPA Service directly for more reliable processing
       let result;
       try {
-        console.log('🔄 [AUTOMATIC_PROCESSING] Starting invoice importer service...');
+        console.log('🔄 [AUTOMATIC_PROCESSING] Starting Python RPA service...');
 
-        // Get all active invoice importer configurations
-        const configs = await storage.getInvoiceImporterConfigs();
-        console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
-
-        if (configs.length === 0) {
-          throw new Error('No invoice importer configurations found');
+        // First try direct Python RPA processing
+        result = await PythonRPAService.processInvoicesAutomatically();
+        
+        if (result.success) {
+          console.log('✅ [AUTOMATIC_PROCESSING] Python RPA processing completed successfully');
+        } else {
+          console.log('⚠️ [AUTOMATIC_PROCESSING] Python RPA processing completed with warnings');
         }
 
-        // Process each configuration
-        const processedConfigurations = [];
-        for (const config of configs) {
-          if (config.isActive) {
-            console.log(`🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`);
-            try {
-              await invoiceImporterService.executeImportTask(config.id);
-              processedConfigurations.push({
-                configId: config.id,
-                taskName: config.taskName,
-                status: 'completed'
-              });
-            } catch (configError) {
-              console.error(`❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`, configError);
-              processedConfigurations.push({
-                configId: config.id,
-                taskName: config.taskName,
-                status: 'failed',
-                error: configError.message
-              });
+      } catch (rpaError: any) {
+        console.error('❌ [AUTOMATIC_PROCESSING] Python RPA service failed, falling back to invoice importer:', rpaError.message);
+
+        // Fallback to invoice importer service
+        try {
+          console.log('🔄 [AUTOMATIC_PROCESSING] Falling back to invoice importer service...');
+
+          // Get all active invoice importer configurations
+          const configs = await storage.getInvoiceImporterConfigs();
+          console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
+
+          if (configs.length === 0) {
+            throw new Error('No invoice importer configurations found');
+          }
+
+          // Process each configuration
+          const processedConfigurations = [];
+          for (const config of configs) {
+            if (config.isActive) {
+              console.log(`🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`);
+              try {
+                await invoiceImporterService.executeImportTask(config.id);
+                processedConfigurations.push({
+                  configId: config.id,
+                  taskName: config.taskName,
+                  status: 'completed'
+                });
+              } catch (configError: any) {
+                console.error(`❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`, configError);
+                processedConfigurations.push({
+                  configId: config.id,
+                  taskName: config.taskName,
+                  status: 'failed',
+                  error: configError.message
+                });
+              }
             }
           }
+
+          result = {
+            success: true,
+            message: `Processed ${processedConfigurations.length} import configurations`,
+            processedConfigurations,
+            processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
+            timestamp: new Date().toISOString()
+          };
+
+          console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
+        } catch (importerError: any) {
+          console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service also failed:', importerError.message);
+
+          // Return a more user-friendly response for RPA failures
+          const isRpaFailure = importerError.message.includes('selector') || importerError.message.includes('login') || importerError.message.includes('RPA');
+
+          result = {
+            success: true, // Mark as success since it switched to manual mode
+            warning: true,
+            message: isRpaFailure
+              ? 'RPA automation encountered login issues and switched to manual processing mode. Your import configurations are ready for manual invoice upload.'
+              : importerError.message || 'Automatic processing completed with warnings',
+            processedInvoices: 0,
+            manualModeEnabled: isRpaFailure,
+            timestamp: new Date().toISOString()
+          };
         }
-
-        result = {
-          success: true,
-          message: `Processed ${processedConfigurations.length} import configurations`,
-          processedConfigurations,
-          processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
-          timestamp: new Date().toISOString()
-        };
-
-        console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
-      } catch (importerError) {
-        console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service failed:', importerError.message);
-
-        // Return a more user-friendly response for RPA failures
-        const isRpaFailure = importerError.message.includes('selector') || importerError.message.includes('login') || importerError.message.includes('RPA');
-
-        result = {
-          success: true, // Mark as success since it switched to manual mode
-          warning: true,
-          message: isRpaFailure
-            ? 'RPA automation encountered login issues and switched to manual processing mode. Your import configurations are ready for manual invoice upload.'
-            : importerError.message || 'Automatic processing completed with warnings',
-          processedInvoices: 0,
-          manualModeEnabled: isRpaFailure,
-          timestamp: new Date().toISOString()
-        };
       }
 
       // Clear timeout since we're responding
@@ -459,10 +477,11 @@ export function registerRoutes(app: Express): Server {
       }
 
       const processingTime = Date.now() - startTime;
-      console.error('❌ [AUTOMATIC_PROCESSING] Failed after', processingTime, 'ms:', error);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error stack:', error.stack);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error name:', error.name);
-      console.error('❌ [AUTOMATIC_PROCESSING] Error message:', error.message);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [AUTOMATIC_PROCESSING] Failed after', processingTime, 'ms:', errorMessage);
+      console.error('❌ [AUTOMATIC_PROCESSING] Error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('❌ [AUTOMATIC_PROCESSING] Error name:', error instanceof Error ? error.name : 'Unknown');
+      console.error('❌ [AUTOMATIC_PROCESSING] Error message:', errorMessage);
 
       // Always return JSON, never let Express return HTML
       res.setHeader('Content-Type', 'application/json');
@@ -471,12 +490,104 @@ export function registerRoutes(app: Express): Server {
         res.status(500).json({
           success: false,
           error: 'Automatic processing failed',
-          message: error.message || 'Unknown error occurred',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
           processingTimeMs: processingTime,
           timestamp: new Date().toISOString()
         });
       } else {
         console.warn('⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent');
+      }
+    }
+  });
+
+  // Test Python RPA environment endpoint
+  app.get('/api/rpa/test-environment', isAuthenticated, async (req, res) => {
+    try {
+      console.log('🧪 [RPA_TEST] Testing Python RPA environment...');
+      
+      const result = await PythonRPAService.testRPAEnvironment();
+      
+      console.log('✅ [RPA_TEST] Environment test completed:', JSON.stringify(result, null, 2));
+      
+      res.json({
+        success: true,
+        data: result,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [RPA_TEST] Environment test failed:', errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: 'RPA environment test failed',
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Direct Python RPA processing endpoint (with extended timeout)
+  app.post('/api/invoices/python-rpa-process', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    let processingTimeout: NodeJS.Timeout;
+
+    try {
+      console.log('🚀 [PYTHON_RPA_DIRECT] Starting direct Python RPA processing...');
+      
+      // Ensure we always return JSON with proper headers
+      res.setHeader('Content-Type', 'application/json');
+      
+      // Set up timeout to prevent hanging - matched to Python script timeout
+      processingTimeout = setTimeout(() => {
+        console.error('⏰ [PYTHON_RPA_DIRECT] Processing timeout after 4.5 minutes');
+        if (!res.headersSent) {
+          res.status(408).json({
+            success: false,
+            error: 'Python RPA processing timeout',
+            message: 'Python RPA processing took too long and was cancelled.',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }, 270000); // 4.5 minute timeout (slightly longer than Python script timeout)
+
+      // Call Python RPA Service directly
+      const result = await PythonRPAService.processInvoicesAutomatically();
+      
+      // Clear timeout since we got a response
+      clearTimeout(processingTimeout);
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [PYTHON_RPA_DIRECT] Processing completed in ${processingTime}ms`);
+      
+      if (!res.headersSent) {
+        res.status(200).json({
+          success: result.success,
+          message: result.message || 'Python RPA processing completed',
+          data: result,
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
+      }
+
+    } catch (error: any) {
+      // Clear timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+      }
+
+      const processingTime = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [PYTHON_RPA_DIRECT] Failed after', processingTime, 'ms:', errorMessage);
+      
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Python RPA processing failed',
+          message: errorMessage || 'Unknown error occurred',
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
       }
     }
   });
