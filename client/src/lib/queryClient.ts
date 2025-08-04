@@ -71,15 +71,11 @@ export const getQueryFn: <T>(options: {
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
-      queryFn: getQueryFn({ on401: "throw" }),
+      queryFn: getQueryFn({ on401: "returnNull" }),
       staleTime: 1000 * 60 * 5, // 5 minutes
       retry: (failureCount, error: any) => {
-        // Handle authentication errors
+        // Don't retry on authentication errors to prevent loops
         if (error?.status === 401) {
-          console.error('Authentication error:', 'invalid_request');
-          console.error('Auth error:', 'Unauthorized - please log in again');
-          localStorage.removeItem('auth_token');
-          window.location.href = '/';
           return false;
         }
         // Don't retry on 4xx errors (client errors)
@@ -90,17 +86,13 @@ export const queryClient = new QueryClient({
       },
       retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 30000),
       refetchOnWindowFocus: false, // Prevent excessive refetching
-      refetchOnMount: true,
-      refetchOnReconnect: true,
+      refetchOnMount: false, // Prevent refetch on mount to reduce auth loops
+      refetchOnReconnect: false, // Prevent refetch on reconnect
     },
     mutations: {
       retry: (failureCount, error: any) => {
-        // Handle authentication errors in mutations
+        // Don't retry authentication errors in mutations
         if (error?.status === 401) {
-          console.error('Authentication error:', 'invalid_request');
-          console.error('Auth error:', 'Unauthorized - please log in again');
-          localStorage.removeItem('auth_token');
-          window.location.href = '/';
           return false;
         }
         return false;
