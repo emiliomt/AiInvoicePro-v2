@@ -74,8 +74,16 @@ export const queryClient = new QueryClient({
       queryFn: getQueryFn({ on401: "throw" }),
       staleTime: 1000 * 60 * 5, // 5 minutes
       retry: (failureCount, error: any) => {
-        // Don't retry on 404s or auth errors
-        if (error?.status === 404 || error?.status === 401 || error?.status === 403) {
+        // Handle authentication errors
+        if (error?.status === 401) {
+          console.error('Authentication error:', 'invalid_request');
+          console.error('Auth error:', 'Unauthorized - please log in again');
+          localStorage.removeItem('auth_token');
+          window.location.href = '/';
+          return false;
+        }
+        // Don't retry on 4xx errors (client errors)
+        if (error?.status >= 400 && error?.status < 500) {
           return false;
         }
         return failureCount < 3;
@@ -86,7 +94,17 @@ export const queryClient = new QueryClient({
       refetchOnReconnect: true,
     },
     mutations: {
-      retry: false, // Don't retry failed mutations to prevent cascading errors
+      retry: (failureCount, error: any) => {
+        // Handle authentication errors in mutations
+        if (error?.status === 401) {
+          console.error('Authentication error:', 'invalid_request');
+          console.error('Auth error:', 'Unauthorized - please log in again');
+          localStorage.removeItem('auth_token');
+          window.location.href = '/';
+          return false;
+        }
+        return false;
+      },
     },
   },
 });

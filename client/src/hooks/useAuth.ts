@@ -11,7 +11,7 @@ export interface User {
 }
 
 export function useAuth() {
-  const { data: user, isLoading, error, refetch } = useQuery<User>({
+  const { data: user, isLoading, error, refetch } = useQuery<User | null>({
     queryKey: ['/api/user'],
     queryFn: async () => {
       try {
@@ -28,7 +28,7 @@ export function useAuth() {
       } catch (err: any) {
         console.error('Auth error:', err.message || 'Unauthorized - please log in again');
         console.warn('Authentication failed, clearing token and redirecting');
-        
+
         // For all authentication errors, return null instead of throwing
         // This prevents unhandled promise rejections
         return null;

@@ -45,7 +45,7 @@ const AppContent = React.memo(() => {
     const urlParams = new URLSearchParams(window.location.search);
     const authStatus = urlParams.get('auth');
     const message = urlParams.get('message');
-    
+
     if (authStatus === 'success') {
       console.log('Authentication successful');
       // Clear the URL parameters after handling
