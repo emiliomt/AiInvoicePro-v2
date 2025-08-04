@@ -13,7 +13,7 @@
   --card-foreground: hsl(20, 14.3%, 4.1%);
   --border: hsl(20, 5.9%, 90%);
   --input: hsl(20, 5.9%, 90%);
-  --primary: hsl(214, 76%, 59%); /* AnzuDynamics Blue #4A90E2 */
+  --primary: hsl(207, 90%, 54%);
   --primary-foreground: hsl(211, 100%, 99%);
   --secondary: hsl(60, 4.8%, 95.9%);
   --secondary-foreground: hsl(24, 9.8%, 10%);
@@ -32,12 +32,12 @@
   --warning: hsl(38, 92%, 50%);
   --warning-foreground: hsl(48, 100%, 95%);
   
-  /* Chart colors - AnzuDynamics theme */
-  --chart-1: hsl(214, 76%, 59%); /* Primary Blue */
-  --chart-2: hsl(120, 61%, 50%); /* Success Green */
-  --chart-3: hsl(38, 92%, 50%); /* Warning Orange */
-  --chart-4: hsl(0, 84.2%, 60.2%); /* Error Red */
-  --chart-5: hsl(280, 65%, 60%); /* Purple accent */
+  /* Chart colors */
+  --chart-1: hsl(207, 90%, 54%);
+  --chart-2: hsl(120, 61%, 50%);
+  --chart-3: hsl(38, 92%, 50%);
+  --chart-4: hsl(0, 84.2%, 60.2%);
+  --chart-5: hsl(280, 65%, 60%);
 }
 
 .dark {
@@ -51,7 +51,7 @@
   --card-foreground: hsl(0, 0%, 98%);
   --border: hsl(240, 3.7%, 15.9%);
   --input: hsl(240, 3.7%, 15.9%);
-  --primary: hsl(214, 76%, 59%); /* AnzuDynamics Blue #4A90E2 */
+  --primary: hsl(207, 90%, 54%);
   --primary-foreground: hsl(211, 100%, 99%);
   --secondary: hsl(240, 3.7%, 15.9%);
   --secondary-foreground: hsl(0, 0%, 98%);

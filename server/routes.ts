@@ -18,7 +18,6 @@ import { erpAutomationService } from "./services/erpAutomationService.js";
 import { invoiceImporterService } from "./services/invoiceImporterService.js";
 import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
-import classificationResultsRouter from './routes/classificationResults';
 
 // Configure multer for file uploads
 const upload = multer({
@@ -5763,9 +5762,6 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
       });
     }
   });
-
-  // Add classification results routes
-  app.use('/api/classification-results', classificationResultsRouter);
 
   return httpServer;
 }
