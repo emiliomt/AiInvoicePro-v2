@@ -274,7 +274,7 @@ export default function ValidationRules() {
           </p>
         </div>
 
-        <div className="mb-6">
+        <div className="mb-6 flex gap-4">
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
               <Button 

@@ -1,11 +1,11 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
 import { sql, eq, desc, gte } from 'drizzle-orm';
-import { 
-  invoices, 
-  lineItems, 
-  approvals, 
-  companies, 
+import {
+  invoices,
+  lineItems,
+  approvals,
+  companies,
   users,
   projects,
   purchaseOrders,
@@ -109,7 +109,7 @@ export interface IStorage {
   createValidationRule(rule: InsertValidationRule): Promise<ValidationRule>;
   updateValidationRule(id: number, updates: Partial<InsertValidationRule>): Promise<ValidationRule>;
   deleteValidationRule(id: number): Promise<void>;
-  validateInvoiceData(invoiceData: any): Promise<any>;
+  validateInvoiceData(invoiceData: any): Promise<ValidationResult>;
   validateAllApprovedInvoices(): Promise<any>;
 
   // Invoice Importer methods
@@ -164,7 +164,7 @@ export interface IStorage {
   getImportLogsWithDetails(): Promise<any[]>;
   getUsersByCompany(companyId: number): Promise<User[]>;
 
-  // Users  
+  // Users
   upsertUser(user: UpsertUser): Promise<User>;
   getUser(id: string): Promise<User | null>;
   getUsers(): Promise<User[]>;
@@ -356,8 +356,8 @@ class PostgresStorage implements IStorage {
 
       // First, get the linked files so we can delete the physical files
       const linkedFilesQuery = `
-        SELECT file_path, original_file_name 
-        FROM imported_invoices 
+        SELECT file_path, original_file_name
+        FROM imported_invoices
         WHERE linked_invoice_id = $1
       `;
       const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
@@ -406,7 +406,7 @@ class PostgresStorage implements IStorage {
   }
 
   async getInvoicesByUserId(userId: string): Promise<Invoice[]> {
-    // Get user's company to include RPA invoices for the same company
+    // Get user information to find company
     const user = await this.getUser(userId);
     if (!user || !user.companyId) {
       // If no company, only return user's own invoices
@@ -949,8 +949,8 @@ class PostgresStorage implements IStorage {
 
           // Get linked files that will be deleted so we can remove physical files
           const linkedFilesQuery = `
-            SELECT file_path, original_file_name 
-            FROM imported_invoices 
+            SELECT file_path, original_file_name
+            FROM imported_invoices
             WHERE linked_invoice_id = ANY($1)
           `;
           const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
@@ -1033,16 +1033,6 @@ class PostgresStorage implements IStorage {
             )
           );
 
-        // Delete invoice flags
-        // await db
-        //   .delete(invoiceFlags)
-        //   .where(
-        //     inArray(
-        //       invoiceFlags.invoiceId,
-        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
-        //     )
-        //   );
-
         // Delete feedback logs
         await db
           .delete(feedbackLogs)
@@ -1073,16 +1063,6 @@ class PostgresStorage implements IStorage {
             )
           );
 
-        // Delete feedback logs
-        // await db
-        //   .delete(feedbackLogs)
-        //   .where(
-        //     inArray(
-        //       feedbackLogs.invoiceId,
-        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
-        //     )
-        //   );
-
         // Finally delete the invoices
         await db.delete(invoices).where(eq(invoices.companyId, companyId));
       }
@@ -1098,13 +1078,13 @@ class PostgresStorage implements IStorage {
   async getSetting(key: string): Promise<Setting | null> {
     try {
       const [setting] = await db.select().from(settings).where(eq(settings.key, key));
-      
+
       if (!setting) {
         // Return default settings if not found
         const defaultSettings: Record<string, any> = {
           petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
-          user_preferences: { 
-            key, 
+          user_preferences: {
+            key,
             value: JSON.stringify({
               fullName: '',
               department: '',
@@ -1119,7 +1099,7 @@ class PostgresStorage implements IStorage {
         };
         return defaultSettings[key] || null;
       }
-      
+
       return setting;
     } catch (error) {
       console.error('Error in getSetting:', error);
@@ -1141,7 +1121,7 @@ class PostgresStorage implements IStorage {
           updatedAt: new Date()
         }
       }).returning();
-      
+
       return setting;
     } catch (error) {
       console.error('Error in updateSetting:', error);
@@ -1162,7 +1142,7 @@ class PostgresStorage implements IStorage {
           updatedAt: new Date()
         }
       }).returning();
-      
+
       return result;
     } catch (error) {
       console.error('Error in setSetting:', error);
@@ -1259,9 +1239,7 @@ class PostgresStorage implements IStorage {
     }
   }
 
-  // Additional methods for complete interface compatibility
-
-
+  // Validation rules methods
   async getValidationRules(): Promise<ValidationRule[]> {
     try {
       const rules = await db.select().from(validationRules).orderBy(desc(validationRules.createdAt));
@@ -1318,8 +1296,82 @@ class PostgresStorage implements IStorage {
     }
   }
 
-  async validateInvoiceData(invoiceData: any): Promise<any> {
-    return { isValid: true, violations: [] };
+  async validateInvoiceData(invoiceData: any): Promise<ValidationResult> {
+    try {
+      console.log('Starting invoice validation with data:', {
+        vendorName: invoiceData.vendorName,
+        totalAmount: invoiceData.totalAmount,
+        invoiceNumber: invoiceData.invoiceNumber
+      });
+
+      const rules = await this.getValidationRules();
+      console.log(`Retrieved ${rules.length} validation rules`);
+
+      const violations: ValidationViolation[] = [];
+
+      for (const rule of rules) {
+        if (!rule.isActive) {
+          console.log(`Skipping inactive rule: ${rule.name}`);
+          continue;
+        }
+
+        try {
+          const fieldValue = getFieldValue(invoiceData, rule.fieldName);
+          console.log(`Validating rule "${rule.name}" for field "${rule.fieldName}" with value:`, fieldValue);
+
+          const isValid = await validateField(fieldValue, rule);
+
+          if (!isValid) {
+            const violation: ValidationViolation = {
+              ruleId: rule.id,
+              fieldName: rule.fieldName,
+              message: rule.errorMessage || `Validation failed for ${rule.fieldName}: ${rule.ruleType} check failed`,
+              severity: rule.severity,
+              actualValue: fieldValue,
+              expectedValue: rule.ruleValue,
+            };
+            violations.push(violation);
+            console.log(`Validation violation found:`, violation);
+          } else {
+            console.log(`Rule "${rule.name}" passed validation`);
+          }
+        } catch (ruleError: any) {
+          console.error(`Error validating rule "${rule.name}":`, ruleError);
+          violations.push({
+            ruleId: rule.id,
+            fieldName: rule.fieldName,
+            message: `Validation error: ${ruleError instanceof Error ? ruleError.message : 'Unknown error'}`,
+            severity: 'high',
+            actualValue: getFieldValue(invoiceData, rule.fieldName),
+            expectedValue: rule.ruleValue,
+          });
+        }
+      }
+
+      const result: ValidationResult = {
+        isValid: violations.length === 0,
+        violations,
+        validatedAt: new Date(),
+      };
+
+      console.log(`Validation completed. Result: ${result.isValid ? 'VALID' : 'INVALID'} with ${violations.length} violations`);
+      return result;
+
+    } catch (error: any) {
+      console.error('Critical error in validation process:', error);
+      return {
+        isValid: false,
+        violations: [{
+          ruleId: 0,
+          fieldName: 'system',
+          message: `Validation system error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          severity: 'critical',
+          actualValue: null,
+          expectedValue: null,
+        }],
+        validatedAt: new Date(),
+      };
+    }
   }
 
   async validateAllApprovedInvoices(): Promise<any> {
@@ -1458,18 +1510,6 @@ class PostgresStorage implements IStorage {
     }).where(eq(importedInvoices.id, id));
   }
 
-  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
-    const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
-    return result || null;
-  }
-
-  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void> {
-     await db.update(invoiceImporterConfigs).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoiceImporterConfigs.id, id));
-  }
-
   // Enhanced import logs with comprehensive metadata
   async getImportLogsWithDetails(): Promise<any[]> {
     const result = await db
@@ -1482,10 +1522,10 @@ class PostgresStorage implements IStorage {
         startTime: invoiceImporterLogs.startedAt,
         endTime: invoiceImporterLogs.completedAt,
         duration: sql<number>`
-          CASE 
-            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL 
+          CASE
+            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL
             THEN EXTRACT(EPOCH FROM (${invoiceImporterLogs.completedAt} - ${invoiceImporterLogs.startedAt}))
-            ELSE NULL 
+            ELSE NULL
           END
         `,
         status: invoiceImporterLogs.status,
@@ -1498,7 +1538,7 @@ class PostgresStorage implements IStorage {
         errorMessage: invoiceImporterLogs.errorMessage,
         createdAt: invoiceImporterLogs.createdAt,
         triggeredBy: sql<string>`
-          CASE 
+          CASE
             WHEN ${invoiceImporterConfigs.scheduleType} = 'once' THEN 'Manual'
             ELSE 'Scheduled'
           END
@@ -1520,6 +1560,199 @@ class PostgresStorage implements IStorage {
   // Get users by company for multi-tenant filtering
   async getUsersByCompany(companyId: number): Promise<User[]> {
     return await db.select().from(users).where(eq(users.companyId, companyId));
+  }
+}
+
+// Add validation interfaces
+interface ValidationViolation {
+  ruleId: number;
+  fieldName: string;
+  message: string;
+  severity: string;
+  actualValue: any;
+  expectedValue: any;
+}
+
+interface ValidationResult {
+  isValid: boolean;
+  violations: ValidationViolation[];
+  validatedAt: Date;
+}
+
+function getFieldValue(data: any, fieldPath: string): any {
+  if (!fieldPath || !data) return undefined;
+
+  console.log(`Getting field value for path: "${fieldPath}" from data keys:`, Object.keys(data));
+
+  // Handle direct field access
+  if (data.hasOwnProperty(fieldPath)) {
+    const value = data[fieldPath];
+    console.log(`Direct field "${fieldPath}" found with value:`, value);
+    return value;
+  }
+
+  // Handle nested field access (e.g., "extractedData.taxId")
+  const keys = fieldPath.split('.');
+  let value = data;
+
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i];
+    if (value === null || value === undefined) {
+      console.log(`Field path "${fieldPath}" returned undefined at key "${key}"`);
+      return undefined;
+    }
+
+    if (typeof value === 'object' && value.hasOwnProperty(key)) {
+      value = value[key];
+    } else {
+      console.log(`Field path "${fieldPath}" not found at key "${key}"`);
+      return undefined;
+    }
+  }
+
+  console.log(`Field path "${fieldPath}" resolved to:`, value);
+  return value;
+}
+
+async function validateField(value: any, rule: ValidationRule): Promise<boolean> {
+  if (!rule.isActive) return true;
+
+  console.log(`Validating field with rule type: ${rule.ruleType}, value:`, value, 'rule value:', rule.ruleValue);
+
+  switch (rule.ruleType) {
+    case 'required':
+      const isRequired = rule.ruleValue?.toLowerCase() === 'true';
+      if (!isRequired) return true;
+      const hasValue = value !== null && value !== undefined && value !== '' && value !== 'N/A';
+      console.log(`Required field validation: hasValue=${hasValue}`);
+      return hasValue;
+
+    case 'regex':
+      if (!value || typeof value !== 'string') {
+        console.log(`Regex validation failed: value is not a string`);
+        return false;
+      }
+      try {
+        const regex = new RegExp(rule.ruleValue);
+        const isValid = regex.test(value);
+        console.log(`Regex validation result: ${isValid}`);
+        return isValid;
+      } catch (error: any) {
+        console.error(`Invalid regex pattern for rule ${rule.id}:`, error);
+        return false;
+      }
+
+    case 'range':
+      if (value === null || value === undefined || value === '') return true; // Allow empty for optional fields
+      const numValue = parseFloat(value.toString());
+      if (isNaN(numValue)) {
+        console.log(`Range validation failed: value is not a number`);
+        return false;
+      }
+
+      try {
+        const [min, max] = rule.ruleValue.split(',').map(v => parseFloat(v.trim()));
+        const isValid = numValue >= min && numValue <= max;
+        console.log(`Range validation: ${numValue} between ${min} and ${max} = ${isValid}`);
+        return isValid;
+      } catch (error: any) {
+        console.error(`Invalid range format for rule ${rule.id}:`, error);
+        return false;
+      }
+
+    case 'enum':
+      if (!value) return true; // Allow empty for optional fields
+      const allowedValues = rule.ruleValue.split(',').map(v => v.trim().toLowerCase());
+      const isValid = allowedValues.includes(value.toString().toLowerCase());
+      console.log(`Enum validation: "${value}" in [${allowedValues.join(', ')}] = ${isValid}`);
+      return isValid;
+
+    case 'comparison':
+      if (value === null || value === undefined || value === '') return true;
+      const numVal = parseFloat(value.toString());
+      if (isNaN(numVal)) return false;
+
+      try {
+        // Parse comparison operators like ">1000", "<=5000", "=100", "!=0"
+        const comparisonRegex = /^(>=|<=|>|<|=|!=)\s*(-?\d+(?:\.\d+)?)$/;
+        const match = rule.ruleValue.trim().match(comparisonRegex);
+
+        if (!match) {
+          console.error(`Invalid comparison format: ${rule.ruleValue}`);
+          return false;
+        }
+
+        const [, operator, expectedValueStr] = match;
+        const expectedValue = parseFloat(expectedValueStr);
+
+        let isValid = false;
+        switch (operator) {
+          case '>':
+            isValid = numVal > expectedValue;
+            break;
+          case '>=':
+            isValid = numVal >= expectedValue;
+            break;
+          case '<':
+            isValid = numVal < expectedValue;
+            break;
+          case '<=':
+            isValid = numVal <= expectedValue;
+            break;
+          case '=':
+            isValid = Math.abs(numVal - expectedValue) < 0.01; // Allow small floating point differences
+            break;
+          case '!=':
+            isValid = Math.abs(numVal - expectedValue) >= 0.01;
+            break;
+          default:
+            return false;
+        }
+
+        console.log(`Comparison validation: ${numVal} ${operator} ${expectedValue} = ${isValid}`);
+        return isValid;
+      } catch (error: any) {
+        console.error(`Error in comparison validation for rule ${rule.id}:`, error);
+        return false;
+      }
+
+    case 'format':
+      if (!value || typeof value !== 'string') return true; // Allow empty for optional fields
+
+      switch (rule.ruleValue.toLowerCase()) {
+        case 'email':
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          const emailValid = emailRegex.test(value);
+          console.log(`Email format validation: ${emailValid}`);
+          return emailValid;
+        case 'phone':
+          const phoneRegex = /^\+?[\d\s\-\(\)]+$/;
+          const phoneValid = phoneRegex.test(value);
+          console.log(`Phone format validation: ${phoneValid}`);
+          return phoneValid;
+        case 'url':
+          try {
+            new URL(value);
+            console.log(`URL format validation: true`);
+            return true;
+          } catch {
+            console.log(`URL format validation: false`);
+            return false;
+          }
+        case 'nit':
+          // Colombian NIT format: XXXXXXXXX-X (9 digits, hyphen, 1 check digit)
+          const nitRegex = /^\d{8,9}-\d$/;
+          const nitValid = nitRegex.test(value);
+          console.log(`NIT format validation: ${nitValid}`);
+          return nitValid;
+        default:
+          console.log(`Unknown format type: ${rule.ruleValue}, defaulting to true`);
+          return true;
+      }
+
+    default:
+      console.warn(`Unknown validation rule type: ${rule.ruleType}, defaulting to true`);
+      return true;
   }
 }
 
