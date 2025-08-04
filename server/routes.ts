@@ -5,29 +5,34 @@ import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
 import passport from "passport";
 import * as replitAuthModule from "./replitAuth";
+import { authMonitoring, monitorProtectedRoute, monitorApiResponse } from './services/authMonitoringService.js';
+import { authTestService } from './services/authTestService.js';
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
   // Create a dedicated API router with higher precedence
   const apiRouter = express.Router();
-  
+
   // Setup authentication on the main app first (for session setup)
   setupAuth(app);
-  
+
+  // Add global API response monitoring
+  app.use('/api', monitorApiResponse());
+
   // Mount the API router BEFORE any other middleware
   app.use('/api', apiRouter);
-  
+
   // Add authentication routes to the API router
   apiRouter.get("/login", (req, res, next) => {
     console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
     console.log(`🔐 Using strategy: replitauth`);
-    
+
     const authHandler = passport.authenticate('replitauth', {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
     });
-    
+
     console.log(`🔐 Calling authentication handler...`);
     authHandler(req, res, next);
   });
@@ -35,7 +40,7 @@ export function registerRoutes(app: Express): Server {
   apiRouter.get("/callback", (req, res, next) => {
     console.log('🔄 Auth callback - using strategy: replitauth');
     console.log('🔄 Callback query params:', req.query);
-    
+
     passport.authenticate('replitauth', {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
@@ -49,44 +54,71 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic user endpoint
-  apiRouter.get("/user", isAuthenticated, (req: any, res) => {
+  apiRouter.get("/user", isAuthenticated, async (req: Request, res: Response) => {
     try {
-      const user = req.user as any;
-      const claims = user?.claims;
-      
-      console.log('📋 User endpoint called - Claims:', claims ? 'present' : 'missing');
-      
-      if (!claims) {
-        console.log('❌ No user claims found');
-        return res.status(401).json({ message: "No user claims found" });
+      console.log('📋 User endpoint called - Claims:', req.headers['x-replit-user-id'] ? 'present' : 'missing');
+
+      const user = replitAuthModule.getUser(req); // Use the module directly
+
+      if (!user) {
+        console.log('❌ No user found in request');
+        await authMonitoring.logAuthEvent({
+          event: 'user_endpoint_access',
+          userAgent: req.headers['user-agent'],
+          ip: req.ip,
+          success: false,
+          details: { error: 'No user in request' }
+        });
+        return res.status(401).json({ error: 'Not authenticated' });
       }
-      
-      const userData = {
-        id: claims.sub,
-        email: claims.email,
-        firstName: claims.first_name,
-        lastName: claims.last_name,
-        profileImageUrl: claims.profile_image_url,
-      };
-      
-      console.log('✅ Returning user data:', userData);
-      res.json(userData);
+
+      console.log('✅ Returning user data:', {
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl
+      });
+
+      await authMonitoring.logAuthEvent({
+        event: 'user_endpoint_access',
+        userId: user.id,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+        success: true,
+        details: { email: user.email }
+      });
+
+      res.json({
+        id: user.id,
+        email: user.email,
+        firstName: user.firstName,
+        lastName: user.lastName,
+        profileImageUrl: user.profileImageUrl
+      });
     } catch (error) {
-      console.error('❌ User endpoint error:', error);
-      res.status(500).json({ message: "Failed to get user data" });
+      console.error('❌ Error in user endpoint:', error);
+      await authMonitoring.logAuthEvent({
+        event: 'user_endpoint_error',
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+        success: false,
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      res.status(500).json({ error: 'Internal server error' });
     }
   });
 
   // Health check endpoint
   apiRouter.get("/health", (req, res) => {
-    res.json({ 
-      status: "ok", 
-      timestamp: new Date().toISOString() 
+    res.json({
+      status: "ok",
+      timestamp: new Date().toISOString()
     });
   });
 
   // Get all invoices
-  apiRouter.get("/invoices", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/invoices", monitorProtectedRoute("get_invoices"), async (req: any, res: Response) => {
     try {
       const userId = req.user?.claims?.sub;
       if (!userId) {
@@ -102,7 +134,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get invoice by ID
-  apiRouter.get("/invoices/:id", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/invoices/:id", monitorProtectedRoute("get_invoice_by_id"), async (req: any, res: Response) => {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
@@ -119,7 +151,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic dashboard stats
-  apiRouter.get("/dashboard/stats", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/dashboard/stats", monitorProtectedRoute("get_dashboard_stats"), async (req: any, res: Response) => {
     try {
       const invoices = await storage.getInvoices();
 
@@ -138,7 +170,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get validation rules
-  apiRouter.get("/validation-rules", isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/validation-rules", monitorProtectedRoute("get_validation_rules"), async (req: any, res: Response) => {
     try {
       console.log("🔍 API: GET /api/validation-rules - Starting request");
       console.log("🔍 API: User authenticated:", !!req.user);
@@ -152,7 +184,7 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("❌ API: Error fetching validation rules:", error);
       console.error("❌ API: Error stack:", error instanceof Error ? error.stack : "No stack");
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to fetch validation rules",
         error: error instanceof Error ? error.message : String(error)
       });
@@ -160,7 +192,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Create validation rule
-  app.post("/api/validation-rules", isAuthenticated, async (req: any, res) => {
+  app.post("/api/validation-rules", monitorProtectedRoute("create_validation_rule"), async (req: any, res: Response) => {
     try {
       console.log("📝 API: POST /api/validation-rules - Starting request");
       console.log("📝 API: Request headers:", JSON.stringify(req.headers, null, 2));
@@ -173,13 +205,13 @@ export function registerRoutes(app: Express): Server {
       // Validation
       if (!name || !fieldName || !ruleType || !ruleValue) {
         console.log("❌ API: Validation failed - Missing required fields");
-        console.log("❌ API: Field check:", { 
-          name: !!name, 
-          fieldName: !!fieldName, 
-          ruleType: !!ruleType, 
-          ruleValue: !!ruleValue 
+        console.log("❌ API: Field check:", {
+          name: !!name,
+          fieldName: !!fieldName,
+          ruleType: !!ruleType,
+          ruleValue: !!ruleValue
         });
-        return res.status(400).json({ 
+        return res.status(400).json({
           message: "Missing required fields",
           required: ["name", "fieldName", "ruleType", "ruleValue"],
           received: { name: !!name, fieldName: !!fieldName, ruleType: !!ruleType, ruleValue: !!ruleValue }
@@ -212,7 +244,7 @@ export function registerRoutes(app: Express): Server {
       console.error("❌ API: Error detail:", (error as any)?.detail);
       console.error("❌ API: Full error object:", error);
 
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to create validation rule",
         error: error instanceof Error ? error.message : String(error),
         code: (error as any)?.code,
@@ -222,7 +254,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Debug endpoint for validation rules troubleshooting
-  app.get('/api/validation-rules/debug', isAuthenticated, async (req: any, res) => {
+  app.get('/api/validation-rules/debug', monitorProtectedRoute("debug_validation_rules"), async (req: any, res: Response) => {
     try {
       console.log("🐛 Debug: Checking validation rules table structure and data");
 
@@ -235,16 +267,16 @@ export function registerRoutes(app: Express): Server {
 
       // Get database table structure
       const tableInfoResult = await debugDb.execute(sql`
-        SELECT column_name, data_type, is_nullable, column_default 
-        FROM information_schema.columns 
-        WHERE table_name = 'validation_rules' 
+        SELECT column_name, data_type, is_nullable, column_default
+        FROM information_schema.columns
+        WHERE table_name = 'validation_rules'
         ORDER BY ordinal_position;
       `);
 
       // Check if table exists
       const tableExistsResult = await debugDb.execute(sql`
         SELECT EXISTS (
-          SELECT FROM information_schema.tables 
+          SELECT FROM information_schema.tables
           WHERE table_name = 'validation_rules'
         );
       `);
@@ -259,9 +291,9 @@ export function registerRoutes(app: Express): Server {
 
       // Get sample invoice structure
       const sampleInvoice = await debugDb.execute(sql`
-        SELECT id, vendor_name, total_amount, extracted_data 
-        FROM invoices 
-        ORDER BY created_at DESC 
+        SELECT id, vendor_name, total_amount, extracted_data
+        FROM invoices
+        ORDER BY created_at DESC
         LIMIT 1;
       `);
 
@@ -292,7 +324,7 @@ export function registerRoutes(app: Express): Server {
 
     } catch (error) {
       console.error("🐛 Debug endpoint error:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: error instanceof Error ? error.message : String(error),
         stack: error instanceof Error ? error.stack : "No stack trace",
         debugTimestamp: new Date().toISOString()
@@ -301,7 +333,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Initiate automatic processing
-  app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
+  app.post('/api/invoices/initiate-automatic-process', monitorProtectedRoute("initiate_automatic_process"), async (req, res) => {
     const startTime = Date.now();
     let processingTimeout: NodeJS.Timeout;
 
@@ -330,15 +362,15 @@ export function registerRoutes(app: Express): Server {
       let result;
       try {
         console.log('🔄 [AUTOMATIC_PROCESSING] Starting invoice importer service...');
-        
+
         // Get all active invoice importer configurations
         const configs = await storage.getInvoiceImporterConfigs();
         console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
-        
+
         if (configs.length === 0) {
           throw new Error('No invoice importer configurations found');
         }
-        
+
         // Process each configuration
         const processedConfigurations = [];
         for (const config of configs) {
@@ -362,7 +394,7 @@ export function registerRoutes(app: Express): Server {
             }
           }
         }
-        
+
         result = {
           success: true,
           message: `Processed ${processedConfigurations.length} import configurations`,
@@ -370,11 +402,11 @@ export function registerRoutes(app: Express): Server {
           processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
           timestamp: new Date().toISOString()
         };
-        
+
         console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
       } catch (importerError) {
         console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service failed:', importerError.message);
-        
+
         // Return error response instead of fallback
         result = {
           success: false,
@@ -422,10 +454,10 @@ export function registerRoutes(app: Express): Server {
 
       // Always return JSON, never let Express return HTML
       res.setHeader('Content-Type', 'application/json');
-      
+
       if (!res.headersSent) {
-        res.status(500).json({ 
-          success: false, 
+        res.status(500).json({
+          success: false,
           error: 'Automatic processing failed',
           message: error.message || 'Unknown error occurred',
           processingTimeMs: processingTime,
@@ -438,10 +470,10 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Debug endpoint to test ERP connection
-  app.post('/api/debug/test-erp-connection', isAuthenticated, async (req: any, res) => {
+  app.post('/api/debug/test-erp-connection', monitorProtectedRoute("test_erp_connection"), async (req: any, res: Response) => {
     try {
       const { connectionId } = req.body;
-      
+
       if (!connectionId) {
         return res.status(400).json({ error: 'Connection ID is required' });
       }
@@ -452,12 +484,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       console.log('🔍 [DEBUG] Testing ERP connection:', connection.name);
-      
+
       // Import the ERP automation service
       const { erpAutomationService } = await import('./services/erpAutomationService');
-      
+
       const testResult = await erpAutomationService.testConnection(connection);
-      
+
       res.json({
         success: testResult.success,
         message: testResult.message,
@@ -469,14 +501,76 @@ export function registerRoutes(app: Express): Server {
           username: connection.username
         }
       });
-      
+
     } catch (error) {
       console.error('ERP connection test failed:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         error: error instanceof Error ? error.message : 'Unknown error',
         stack: error instanceof Error ? error.stack : undefined
       });
     }
+  });
+
+  // Authentication monitoring and testing endpoints
+  app.get('/api/auth/stats', monitorProtectedRoute('auth_stats'), async (req: Request, res: Response) => {
+    try {
+      const stats = await authMonitoring.getAuthStats(24);
+      res.json(stats);
+    } catch (error) {
+      console.error('Error fetching auth stats:', error);
+      res.status(500).json({ error: 'Failed to fetch auth stats' });
+    }
+  });
+
+  app.get('/api/auth/logs', monitorProtectedRoute('auth_logs'), async (req: Request, res: Response) => {
+    try {
+      const limit = parseInt(req.query.limit as string) || 100;
+      const logs = await authMonitoring.getRecentAuthEvents(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching auth logs:', error);
+      res.status(500).json({ error: 'Failed to fetch auth logs' });
+    }
+  });
+
+  app.post('/api/auth/test', monitorProtectedRoute('auth_test'), async (req: Request, res: Response) => {
+    try {
+      console.log('🧪 Running comprehensive authentication tests...');
+      const testResults = await authTestService.runComprehensiveTests();
+
+      const overallSuccess = testResults.every(suite => suite.overallSuccess);
+      const totalTests = testResults.reduce((sum, suite) => sum + suite.results.length, 0);
+      const passedTests = testResults.reduce((sum, suite) =>
+        sum + suite.results.filter(r => r.passed).length, 0);
+
+      console.log(`🧪 Tests completed: ${passedTests}/${totalTests} passed`);
+
+      res.json({
+        overallSuccess,
+        summary: {
+          totalTests,
+          passedTests,
+          failedTests: totalTests - passedTests
+        },
+        testSuites: testResults
+      });
+    } catch (error) {
+      console.error('Error running auth tests:', error);
+      res.status(500).json({ error: 'Failed to run auth tests' });
+    }
+  });
+
+  // Graceful shutdown
+  process.on('SIGTERM', () => {
+    console.log('Received SIGTERM, shutting down gracefully');
+    schedulerService.stop();
+    process.exit(0);
+  });
+
+  process.on('SIGINT', () => {
+    console.log('Received SIGINT, shutting down gracefully');
+    schedulerService.stop();
+    process.exit(0);
   });
 
   return httpServer;
