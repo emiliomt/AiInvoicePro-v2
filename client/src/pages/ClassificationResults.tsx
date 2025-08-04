@@ -87,18 +87,10 @@ interface ClassificationStats {
 }
 
 const CATEGORIES = [
+  'CONSUMABLE_MATERIALS',
+  'NON_CONSUMABLE_MATERIALS', 
   'LABOR',
-  'MATERIALS', 
-  'EQUIPMENT',
-  'SERVICES',
-  'UTILITIES',
-  'TRAVEL',
-  'OFFICE_SUPPLIES',
-  'RENT_FACILITIES',
-  'INSURANCE',
-  'TAXES_FEES',
-  'SUBCONTRACTOR',
-  'OTHER'
+  'TOOLS_EQUIPMENT'
 ];
 
 const STATUS_COLORS = {
@@ -140,9 +132,9 @@ export default function ClassificationResults() {
 
   // Fetch classification statistics
   const { data: stats } = useQuery({
-    queryKey: ['/api/classification-stats'],
+    queryKey: ['/api/classification-results/stats'],
     queryFn: async () => {
-      const response = await fetch('/api/classification-stats');
+      const response = await fetch('/api/classification-results/stats');
       if (!response.ok) throw new Error('Failed to fetch classification stats');
       return response.json();
     }
@@ -208,10 +200,13 @@ export default function ClassificationResults() {
   // Export results mutation
   const exportResultsMutation = useMutation({
     mutationFn: async (format: 'csv' | 'excel') => {
-      const response = await fetch(`/api/classification-results/export?format=${format}`, {
+      const response = await fetch('/api/classification-results/export', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemIds: selectedItems.length > 0 ? selectedItems : undefined })
+        body: JSON.stringify({ 
+          itemIds: selectedItems.length > 0 ? selectedItems : undefined,
+          format 
+        })
       });
       if (!response.ok) throw new Error('Failed to export results');
       
@@ -219,15 +214,15 @@ export default function ClassificationResults() {
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `classification-results.${format}`;
+      a.download = `resultados-clasificacion-anzudynamics.${format === 'csv' ? 'csv' : 'xlsx'}`;
       a.click();
       window.URL.revokeObjectURL(url);
     },
     onSuccess: () => {
       setIsExportDialogOpen(false);
       toast({
-        title: "Export Complete",
-        description: "Classification results have been exported successfully.",
+        title: "Exportación Completa / Export Complete",
+        description: "Los resultados de clasificación han sido exportados exitosamente / Classification results have been exported successfully.",
       });
     }
   });
@@ -292,8 +287,12 @@ export default function ClassificationResults() {
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
-          <h1 className="text-3xl font-bold text-gray-900">Classification Results</h1>
-          <p className="text-gray-600">Review and manage AI-classified invoice line items</p>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Resultados de Clasificación / Classification Results
+          </h1>
+          <p className="text-gray-600 dark:text-gray-300">
+            Revise y gestione los elementos de línea de factura clasificados por IA / Review and manage AI-classified invoice line items
+          </p>
         </div>
         <div className="flex space-x-3">
           <Button
@@ -302,7 +301,7 @@ export default function ClassificationResults() {
             disabled={filteredItems.length === 0}
           >
             <Download className="w-4 h-4 mr-2" />
-            Export
+            Exportar / Export
           </Button>
           {selectedItems.length > 0 && (
             <Button
@@ -310,7 +309,7 @@ export default function ClassificationResults() {
               disabled={bulkApproveMutation.isPending}
             >
               <CheckCircle className="w-4 h-4 mr-2" />
-              Approve Selected ({selectedItems.length})
+              Aprobar Seleccionados / Approve Selected ({selectedItems.length})
             </Button>
           )}
         </div>
@@ -323,8 +322,8 @@ export default function ClassificationResults() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Total Items</p>
-                  <p className="text-3xl font-bold text-gray-900">{stats.totalItems}</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Total Items / Elementos Totales</p>
+                  <p className="text-3xl font-bold text-gray-900 dark:text-white">{stats.totalItems}</p>
                 </div>
                 <FileText className="w-8 h-8 text-blue-600" />
               </div>
@@ -335,7 +334,7 @@ export default function ClassificationResults() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Auto-Approval Rate</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Auto-Approval Rate / Tasa de Auto-aprobación</p>
                   <p className="text-3xl font-bold text-green-600">{stats.autoApprovalRate}%</p>
                 </div>
                 <TrendingUp className="w-8 h-8 text-green-600" />
@@ -347,7 +346,7 @@ export default function ClassificationResults() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Need Review</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Need Review / Necesitan Revisión</p>
                   <p className="text-3xl font-bold text-yellow-600">{stats.itemsNeedingReview}</p>
                 </div>
                 <Clock className="w-8 h-8 text-yellow-600" />
@@ -359,8 +358,8 @@ export default function ClassificationResults() {
             <CardContent className="p-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">Avg Confidence</p>
-                  <p className="text-3xl font-bold text-blue-600">{stats.averageConfidence}%</p>
+                  <p className="text-sm font-medium text-gray-600 dark:text-gray-300">Avg Confidence / Confianza Promedio</p>
+                  <p className="text-3xl font-bold" style={{color: 'hsl(214, 76%, 59%)'}}>{stats.averageConfidence}%</p>
                 </div>
                 <Target className="w-8 h-8 text-blue-600" />
               </div>
@@ -377,7 +376,7 @@ export default function ClassificationResults() {
               <div className="relative">
                 <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
                 <Input
-                  placeholder="Search by description, vendor, or invoice..."
+                  placeholder="Buscar por descripción, proveedor o factura... / Search by description, vendor, or invoice..."
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
                   className="pl-10"
@@ -386,10 +385,10 @@ export default function ClassificationResults() {
             </div>
             <Select value={filterCategory} onValueChange={setFilterCategory}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by category" />
+                <SelectValue placeholder="Filtrar por categoría / Filter by category" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Categories</SelectItem>
+                <SelectItem value="all">Todas las Categorías / All Categories</SelectItem>
                 {CATEGORIES.map(category => (
                   <SelectItem key={category} value={category}>{category}</SelectItem>
                 ))}
@@ -397,28 +396,28 @@ export default function ClassificationResults() {
             </Select>
             <Select value={filterStatus} onValueChange={setFilterStatus}>
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Filter by status" />
+                <SelectValue placeholder="Filtrar por estado / Filter by status" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all">All Statuses</SelectItem>
-                <SelectItem value="auto_approved">Auto Approved</SelectItem>
-                <SelectItem value="needs_review">Needs Review</SelectItem>
-                <SelectItem value="manual_override">Manual Override</SelectItem>
-                <SelectItem value="rejected">Rejected</SelectItem>
+                <SelectItem value="all">Todos los Estados / All Statuses</SelectItem>
+                <SelectItem value="auto_approved">Auto Aprobado / Auto Approved</SelectItem>
+                <SelectItem value="needs_review">Necesita Revisión / Needs Review</SelectItem>
+                <SelectItem value="manual_override">Anulación Manual / Manual Override</SelectItem>
+                <SelectItem value="rejected">Rechazado / Rejected</SelectItem>
               </SelectContent>
             </Select>
           </div>
           {selectedItems.length > 0 && (
             <div className="flex justify-between items-center mt-4 pt-4 border-t">
               <span className="text-sm text-gray-600">
-                {selectedItems.length} items selected
+                {selectedItems.length} elementos seleccionados / items selected
               </span>
               <div className="space-x-2">
                 <Button variant="outline" size="sm" onClick={selectAllVisible}>
-                  Select All Visible
+                  Seleccionar Todos / Select All Visible
                 </Button>
                 <Button variant="outline" size="sm" onClick={clearSelection}>
-                  Clear Selection
+                  Limpiar Selección / Clear Selection
                 </Button>
               </div>
             </div>
@@ -429,9 +428,9 @@ export default function ClassificationResults() {
       {/* Results Table */}
       <Card>
         <CardHeader>
-          <CardTitle>Classification Results ({filteredItems.length})</CardTitle>
+          <CardTitle>Resultados de Clasificación / Classification Results ({filteredItems.length})</CardTitle>
           <CardDescription>
-            Review AI classifications and make corrections as needed
+            Revise las clasificaciones de IA y haga correcciones según sea necesario / Review AI classifications and make corrections as needed
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -447,14 +446,14 @@ export default function ClassificationResults() {
                       className="rounded"
                     />
                   </TableHead>
-                  <TableHead>Invoice</TableHead>
-                  <TableHead>Vendor</TableHead>
-                  <TableHead>Description</TableHead>
-                  <TableHead>Category</TableHead>
-                  <TableHead>Confidence</TableHead>
-                  <TableHead>Amount</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead>Actions</TableHead>
+                  <TableHead>Factura / Invoice</TableHead>
+                  <TableHead>Proveedor / Vendor</TableHead>
+                  <TableHead>Descripción / Description</TableHead>
+                  <TableHead>Categoría / Category</TableHead>
+                  <TableHead>Confianza / Confidence</TableHead>
+                  <TableHead>Monto / Amount</TableHead>
+                  <TableHead>Estado / Status</TableHead>
+                  <TableHead>Acciones / Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
