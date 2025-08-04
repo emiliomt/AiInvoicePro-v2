@@ -39,7 +39,7 @@ function cleanAmount(value: string | null): string | null {
   if (!numericMatch) return null;
 
   let numericValue = numericMatch[0];
-  
+
   // Validate maximum value to prevent database overflow (10,2 precision = max 99,999,999.99)
   const MAX_DB_VALUE = 99999999.99;
 
@@ -95,13 +95,13 @@ function cleanAmount(value: string | null): string | null {
 
   const num = parseFloat(numericValue);
   if (isNaN(num) || num < 0) return null;
-  
+
   // Cap at maximum database value to prevent overflow
   const cappedNum = Math.min(num, MAX_DB_VALUE);
   if (cappedNum !== num) {
     console.warn(`⚠️ Amount capped from ${num} to ${cappedNum} to prevent database overflow`);
   }
-  
+
   return cappedNum.toFixed(2);
 }
 
@@ -450,7 +450,7 @@ function extractLineItems(xmlContent: string): Array<{
 
   // Extract all credit note lines (for CreditNote documents) - using improved pattern matching
   const creditLineMatches = xmlContent.match(/<cac:CreditNoteLine[\s\S]*?<\/cac:CreditNoteLine>/g);
-  
+
   if (creditLineMatches) {
     for (const creditLineMatch of creditLineMatches) {
       const lineContent = creditLineMatch;
@@ -501,28 +501,28 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     // Check if this is an AttachedDocument wrapper with embedded CDATA content
     const isAttachedDocument = cleanedXmlContent.includes('<AttachedDocument') || cleanedXmlContent.includes('<cac:AttachedDocument');
     const hasEmbeddedContent = cleanedXmlContent.includes('<cbc:Description><![CDATA[') && cleanedXmlContent.includes(']]></cbc:Description>');
-    
+
     if (isAttachedDocument && hasEmbeddedContent) {
       // Enhanced detection: Look for Invoice or CreditNote root elements outside CDATA
       const hasTopLevelInvoice = /<(Invoice|CreditNote)[\s>]/.test(cleanedXmlContent.replace(/<!\[CDATA\[.*?\]\]>/g, ''));
-      
+
       // If no Invoice/CreditNote found at top level (excluding CDATA), this is a pure wrapper
       if (!hasTopLevelInvoice) {
         console.log('Detected AttachedDocument wrapper with embedded CDATA content, extracting...');
-        
+
         // Extract the CDATA content from Description tag
         const cdataPattern = /<cbc:Description><!\[CDATA\[(.*?)\]\]><\/cbc:Description>/;
         const cdataMatch = cleanedXmlContent.match(cdataPattern);
-        
+
         if (cdataMatch && cdataMatch[1]) {
           const embeddedXml = cdataMatch[1].trim();
-          
+
           if (enableDebug) {
             console.log('DEBUG: Found embedded XML content in CDATA section');
             console.log(`DEBUG: Embedded XML length: ${embeddedXml.length} characters`);
             console.log('DEBUG: Recursively parsing embedded content...');
           }
-          
+
           // Recursively call parseInvoiceXML on the embedded content
           return parseInvoiceXML(embeddedXml, enableDebug);
         } else {
@@ -683,6 +683,128 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     const concept = extractTextFromXMLTag(cleanedXmlContent, 'Note') ||
                    extractTextFromXMLTag(cleanedXmlContent, 'Description');
 
+    // Enhanced invoice number extraction with priority for readable formats
+    let invoiceNumber = null;
+
+    // Try common invoice number fields in order of preference (added ParentDocumentID for CreditNote)
+    const invoiceNumberFields = [
+      'InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number',
+      'InvoiceID', 'DocumentID', 'ParentDocumentID', 'ID'
+    ];
+
+    // Score and select the best invoice number
+    let bestScore = 0;
+    let bestNumber = null;
+
+    for (const field of invoiceNumberFields) {
+      const candidate = extractTextFromXMLTag(cleanedXmlContent, field);
+      if (candidate) {
+        const score = scoreInvoiceNumber(candidate);
+        if (score > bestScore) {
+          bestScore = score;
+          bestNumber = candidate;
+        }
+      }
+    }
+
+    invoiceNumber = bestNumber;
+
+    // If no good number found, try UUID as last resort but clean it
+    if (!invoiceNumber || bestScore < 3) {
+      const uuid = extractTextFromXMLTag(cleanedXmlContent, 'UUID');
+      if (uuid) {
+        // Try to extract meaningful parts from UUID or look for readable patterns
+        const readablePatterns = [
+          /(?:FE|INV|FACT|DOC)[-\s]*(\d+)/i,
+          /(\d{4,})/,  // At least 4 consecutive digits
+          /(^[A-Z0-9]{3,15})/i // Alphanumeric string 3-15 chars at start
+        ];
+
+        for (const pattern of readablePatterns) {
+          const match = uuid.match(pattern);
+          if (match) {
+            invoiceNumber = match[0];
+            break;
+          }
+        }
+
+        // If still very long, take first meaningful part
+        if (!invoiceNumber && uuid.length > 30) {
+          invoiceNumber = uuid.substring(0, 20);
+        } else if (!invoiceNumber) {
+          invoiceNumber = uuid;
+        }
+      }
+    }
+
+    // Use regex patterns as fallback for better Spanish/Latin American support
+    const regexData = extractWithRegexPatterns(cleanedXmlContent);
+
+    // Extract dates
+    const invoiceDate = extractTextFromXMLTag(cleanedXmlContent, 'IssueDate');
+    const dueDate = extractTextFromXMLTag(cleanedXmlContent, 'DueDate');
+
+    // Extract amounts with priority order and enhanced patterns
+    let totalAmount = null;
+    let taxAmount = null;
+    let subtotal = null;
+    let currency = 'COP';
+
+    // Enhanced subtotal extraction (TaxExclusiveAmount) - THIS FIXES THE N/A ISSUE
+    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxExclusiveAmount');
+    if (amountResult.amount) {
+      subtotal = amountResult.amount;
+      currency = amountResult.currency;
+    } else {
+      // Fallback to LineExtensionAmount
+      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'LineExtensionAmount');
+      if (amountResult.amount) {
+        subtotal = amountResult.amount;
+        currency = amountResult.currency || currency;
+      } else {
+        // Try TaxableAmount as last resort
+        amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxableAmount');
+        if (amountResult.amount) {
+          subtotal = amountResult.amount;
+          currency = amountResult.currency || currency;
+        }
+      }
+    }
+
+    // Get total amount (TaxInclusiveAmount has priority)
+    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxInclusiveAmount');
+    if (amountResult.amount) {
+      totalAmount = amountResult.amount;
+      currency = amountResult.currency || currency;
+    } else {
+      // Fallback to PayableAmount
+      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'PayableAmount');
+      if (amountResult.amount) {
+        totalAmount = amountResult.amount;
+        currency = amountResult.currency || currency;
+      }
+    }
+
+    // Get tax amount
+    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxAmount');
+    if (amountResult.amount) {
+      taxAmount = amountResult.amount;
+      currency = amountResult.currency || currency;
+    }
+
+    // Calculate subtotal if we have total and tax but no subtotal
+    if (totalAmount && taxAmount && !subtotal) {
+      const totalNum = parseFloat(totalAmount);
+      const taxNum = parseFloat(taxAmount);
+      if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
+        subtotal = (totalNum - taxNum).toFixed(2);
+      }
+    }
+
+    // Extract additional fields
+    const concept = extractTextFromXMLTag(cleanedXmlContent, 'Note') ||
+                   extractTextFromXMLTag(cleanedXmlContent, 'Description');
+
     // Enhanced project name extraction with multiple sources
     let projectName = extractTextFromXMLTag(cleanedXmlContent, 'ProjectReference') ||
                      extractTextFromXMLTag(cleanedXmlContent, 'OrderReference') ||
@@ -722,12 +844,12 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
         const match = searchContent.match(pattern);
         if (match && match[1]) {
           let candidateProject = match[1].trim();
-          
+
           // Clean up common prefixes and suffixes
           candidateProject = candidateProject.replace(/^(DE\s+|THE\s+|EL\s+|LA\s+|EN\s+|PARA\s+)/i, '');
           candidateProject = candidateProject.replace(/(\s+EN\s+|\s+IN\s+|\s+AT\s+|\s+UBICADO).*$/i, '');
           candidateProject = candidateProject.replace(/(\s+PHASE|\s+FASE|\s+ETAPA).*$/i, '');
-          
+
           // Validate that it's not too generic or short
           if (candidateProject.length >= 5 && 
               !candidateProject.match(/^(SERVICIOS?|TRABAJO|OBRA|PROJECT|CONSTRUCTION)$/i) &&
@@ -737,7 +859,7 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
           }
         }
       }
-      
+
       // If still no project name found, try to extract from address context
       if (!projectName) {
         const addressContext = [
@@ -745,7 +867,7 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
           extractTextFromXMLTag(cleanedXmlContent, 'CityName') || '',
           projectAddress || ''
         ].join(' ');
-        
+
         // Look for proper nouns in address that might indicate project
         const addressProjectPattern = /(PARQUE|CONJUNTO|RESIDENCIAL|URBANIZACIÓN|EDIFICIO)\s+([A-ZÁÉÍÓÚÑ\s]{3,25})/i;
         const addressMatch = addressContext.match(addressProjectPattern);
