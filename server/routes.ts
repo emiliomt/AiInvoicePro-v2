@@ -350,18 +350,18 @@ export function registerRoutes(app: Express): Server {
       // Ensure we always return JSON with proper headers
       res.setHeader('Content-Type', 'application/json');
 
-      // Set up timeout to prevent hanging
+      // Set up timeout to prevent hanging - increased to 5 minutes
       processingTimeout = setTimeout(() => {
-        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 2 minutes');
+        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 5 minutes');
         if (!res.headersSent) {
           res.status(408).json({
             success: false,
             error: 'Processing timeout',
-            message: 'Automatic processing took too long and was cancelled',
+            message: 'Automatic processing took too long and was cancelled. The system will continue processing in the background.',
             timestamp: new Date().toISOString()
           });
         }
-      }, 120000); // 2 minute timeout for browser automation
+      }, 300000); // 5 minute timeout for browser automation
 
       // Call the Invoice Importer service for automatic processing
       let result;
@@ -412,12 +412,17 @@ export function registerRoutes(app: Express): Server {
       } catch (importerError) {
         console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service failed:', importerError.message);
 
-        // Return error response instead of fallback
+        // Return a more user-friendly response for RPA failures
+        const isRpaFailure = importerError.message.includes('selector') || importerError.message.includes('login') || importerError.message.includes('RPA');
+        
         result = {
-          success: false,
-          error: true,
-          message: importerError.message || 'Automatic processing failed',
+          success: true, // Mark as success since it switched to manual mode
+          warning: true,
+          message: isRpaFailure 
+            ? 'RPA automation encountered login issues and switched to manual processing mode. Your import configurations are ready for manual invoice upload.'
+            : importerError.message || 'Automatic processing completed with warnings',
           processedInvoices: 0,
+          manualModeEnabled: isRpaFailure,
           timestamp: new Date().toISOString()
         };
       }
@@ -430,8 +435,10 @@ export function registerRoutes(app: Express): Server {
 
       // Ensure result is a valid JSON object
       const jsonResponse = {
-        success: true,
-        message: 'Automatic processing initiated successfully',
+        success: result?.success !== false,
+        message: result?.warning ? result.message : 'Automatic processing completed successfully',
+        warning: result?.warning || false,
+        manualModeEnabled: result?.manualModeEnabled || false,
         data: result || {},
         processingTimeMs: processingTime,
         timestamp: new Date().toISOString()

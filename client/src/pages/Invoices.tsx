@@ -470,7 +470,7 @@ export default function Invoices() {
 
       toast({
         title: "Download Started",
-        description: hasLinkedFiles 
+        description: hasLinkedFiles
           ? `Downloading ${invoice.fileName} with ${linkedInfo.linkedFiles.length} linked file(s)`
           : `Downloading ${invoice.fileName}`,
       });
@@ -618,18 +618,40 @@ export default function Invoices() {
 
       const result = await response.json();
 
-      toast({
-        title: "Automatic Processing Initiated",
-        description: `Processing completed. Check the updated invoices below.`,
-      });
-
-      // Refresh the invoices list
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      setSelectedInvoices([]);
-
+      // Updated success/error handling
+      if (result.success) {
+        if (result.warning || result.manualModeEnabled) {
+          toast({
+            title: "Processing Complete with Notes",
+            description: `⚠️ ${result.message}`,
+            variant: "default", // Use default for warnings
+          });
+        } else {
+          toast({
+            title: "Automatic Processing Initiated",
+            description: `✅ Processing completed. Check the updated invoices below.`,
+          });
+        }
+        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+        setSelectedInvoices([]);
+      } else {
+        if (response.status === 408) {
+          toast({
+            title: "Processing Timeout",
+            description: "⏰ Processing took longer than expected. The system may still be working in the background. Please check back in a few minutes.",
+            variant: "destructive",
+          });
+        } else {
+          toast({
+            title: "Automatic Processing Failed",
+            description: result.message || "Failed to initiate automatic processing",
+            variant: "destructive",
+          });
+        }
+      }
     } catch (error: any) {
       console.error('Automatic processing failed:', error);
-      
+
       if (error.name === 'AbortError') {
         toast({
           title: "Processing Timeout",
@@ -694,7 +716,7 @@ export default function Invoices() {
   // Show processing summary if there are recent processing results
   useEffect(() => {
     if (invoices && invoices.length > 0) {
-      const hasProcessingResults = invoices.some(i => 
+      const hasProcessingResults = invoices.some(i =>
         ['po_matched', 'petty_cash', 'no_po_match', 'validation_failed', 'processing_failed'].includes(i.status)
       );
       if (hasProcessingResults && !showProcessingSummary) {
@@ -831,9 +853,9 @@ export default function Invoices() {
                   <div className="text-sm text-gray-600">Failed/Errors</div>
                 </div>
               </div>
-              <Button 
-                variant="ghost" 
-                size="sm" 
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={() => setShowProcessingSummary(false)}
                 className="mt-2"
               >
@@ -888,7 +910,7 @@ export default function Invoices() {
                 <CardContent className="py-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center space-x-2">
-                      <Checkbox 
+                      <Checkbox
                         checked={selectedInvoices.length === invoices?.length && invoices.length > 0}
                         onCheckedChange={handleSelectAll}
                       />
@@ -913,7 +935,7 @@ export default function Invoices() {
                     <CardHeader>
                       <div className="flex justify-between items-start">
                         <div className="flex items-start space-x-3">
-                          <Checkbox 
+                          <Checkbox
                             checked={selectedInvoices.includes(invoice.id)}
                             onCheckedChange={() => handleSelectInvoice(invoice.id)}
                           />
@@ -935,7 +957,7 @@ export default function Invoices() {
                                 <div className="flex items-center space-x-1 text-purple-600 text-xs">
                                   <span>RPA</span>
                                   {linkedFilesMap[invoice.id] ? (
-                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'} links)</span>
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'})</span>
                                   ) : (
                                     <span>(loading...)</span>
                                   )}
@@ -1037,8 +1059,8 @@ export default function Invoices() {
                             </Button>
                           </>
                         )}
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => handleDownload(invoice)}
                           className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-blue-600 border-blue-300" : ""}
@@ -1102,7 +1124,7 @@ export default function Invoices() {
                                 onClick={() => deleteMutation.mutate(invoice.id)}
                                 className="bg-red-600 hover:bg-red-700"
                                 disabled={deleteMutation.isPending}
->
+                              >
                                 {deleteMutation.isPending ? "Deleting..." : "Delete"}
                               </AlertDialogAction>
                             </AlertDialogFooter>
@@ -1143,7 +1165,7 @@ export default function Invoices() {
                         <Badge className={getStatusColor(selectedInvoice.status)}>
                           {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                         </Badge>
-</div>
+                      </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Upload Date</label>
@@ -1412,8 +1434,8 @@ export default function Invoices() {
                         <div className="border rounded p-3">
                           <h4 className="font-medium">Project Matching</h4>
                           <div className="text-sm text-gray-600 mt-1">
-                            {selectedInvoiceOutcome.projectMatch ? 
-                              `Matched to project: ${selectedInvoiceOutcome.projectMatch}` : 
+                            {selectedInvoiceOutcome.projectMatch ?
+                              `Matched to project: ${selectedInvoiceOutcome.projectMatch}` :
                               'No project match found'}
                           </div>
                         </div>
@@ -1421,8 +1443,8 @@ export default function Invoices() {
                         <div className="border rounded p-3">
                           <h4 className="font-medium">Validation</h4>
                           <div className="text-sm text-gray-600 mt-1">
-                            {selectedInvoiceOutcome.validationResult?.isValid ? 
-                              'Passed all validation rules' : 
+                            {selectedInvoiceOutcome.validationResult?.isValid ?
+                              'Passed all validation rules' :
                               `Failed ${selectedInvoiceOutcome.validationErrors?.length || 0} validation rules`}
                           </div>
                         </div>
@@ -1430,8 +1452,8 @@ export default function Invoices() {
                         <div className="border rounded p-3">
                           <h4 className="font-medium">PO Matching</h4>
                           <div className="text-sm text-gray-600 mt-1">
-                            {selectedInvoiceOutcome.poMatches?.length ? 
-                              `Matched to ${selectedInvoiceOutcome.poMatches.length} PO(s)` : 
+                            {selectedInvoiceOutcome.poMatches?.length ?
+                              `Matched to ${selectedInvoiceOutcome.poMatches.length} PO(s)` :
                               'No PO matches found'}
                           </div>
                         </div>

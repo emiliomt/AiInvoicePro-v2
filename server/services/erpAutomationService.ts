@@ -269,6 +269,7 @@ class ERPAutomationService {
   private createFallbackScript(taskDescription: string, connection: ERPConnection): RPAScript {
     const isInvoiceTask = taskDescription.toLowerCase().includes('invoice') || 
                          taskDescription.toLowerCase().includes('factura');
+    const isSinco = connection.baseUrl.includes('sincoerp.com');
 
     const steps: RPAStep[] = [
       {
@@ -289,24 +290,61 @@ class ERPAutomationService {
       },
       {
         action: 'type',
-        selector: 'input[name="username"], input[name="user"], #username, .username',
+        selector: 'input[name="username"], input[name="user"], #username, .username, input[id*="txtUsuario"], input[name*="txtUsuario"]',
         value: connection.username,
         timeout: 5000,
         description: 'Enter username'
-      },
-      {
-        action: 'type',
-        selector: 'input[name="password"], #password, .password',
-        value: connection.password,
-        timeout: 5000,
-        description: 'Enter password'
-      },
-      {
-        action: 'click',
-        selector: 'input[type="submit"], button[type="submit"], .login-btn, .btn-login',
-        timeout: 5000,
-        description: 'Click login button'
-      },
+      }
+    ];
+
+    if (isSinco) {
+      // SINCO has a two-step login process
+      steps.push(
+        {
+          action: 'click',
+          selector: 'input[value="Siguiente"], input[value="SIGUIENTE"], input[id*="btnSiguiente"], #btnSiguiente',
+          timeout: 5000,
+          description: 'Click "Siguiente" button'
+        },
+        {
+          action: 'wait',
+          timeout: 2000,
+          description: 'Wait for password field to appear'
+        },
+        {
+          action: 'type',
+          selector: 'input[name="password"], #password, .password, input[id*="txtClave"], input[name*="txtClave"]',
+          value: connection.password,
+          timeout: 5000,
+          description: 'Enter password'
+        },
+        {
+          action: 'click',
+          selector: 'input[value="Ingresar"], input[value="INGRESAR"], input[id*="btnIngresar"], #btnIngresar, input[type="submit"], button[type="submit"]',
+          timeout: 5000,
+          description: 'Click "Ingresar" button'
+        }
+      );
+    } else {
+      // Standard single-step login
+      steps.push(
+        {
+          action: 'type',
+          selector: 'input[name="password"], #password, .password',
+          value: connection.password,
+          timeout: 5000,
+          description: 'Enter password'
+        },
+        {
+          action: 'click',
+          selector: 'input[type="submit"], button[type="submit"], .login-btn, .btn-login',
+          timeout: 5000,
+          description: 'Click login button'
+        }
+      );
+    }
+
+    steps.push(
       {
         action: 'wait',
         timeout: 5000,
@@ -317,7 +355,7 @@ class ERPAutomationService {
         timeout: 1000,
         description: 'Take screenshot after login'
       }
-    ];
+    );
 
     if (isInvoiceTask) {
       steps.push(
@@ -870,9 +908,19 @@ class ERPAutomationService {
 
   private async findLoginButton(page: any): Promise<string | null> {
     const selectors = [
-      '#loginButton',  // Common ID selector that was failing
+      // SINCO-specific selectors first
+      'input[value="Siguiente"]',
+      'input[value="SIGUIENTE"]',
+      'input[value="Ingresar"]',
+      'input[value="INGRESAR"]',
+      'input[id*="btnSiguiente"]',
+      'input[id*="btnIngresar"]',
+      '#btnSiguiente',
+      '#btnIngresar',
+      '#loginButton',
       '#btnLogin',
       '#btn-login',
+      'button:has-text("Siguiente")',
       'button:has-text("Iniciar sesión")',
       'button:has-text("Iniciar")',
       'button:has-text("Login")',
@@ -883,6 +931,7 @@ class ERPAutomationService {
       'input[value*="login" i]',
       'input[value*="ingresar" i]',
       'input[value*="entrar" i]',
+      'input[value*="siguiente" i]',
       '.login-button',
       '.btn-login',
       'button:visible',
