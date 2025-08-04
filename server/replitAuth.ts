@@ -67,12 +67,10 @@ async function upsertUser(
 }
 
 export async function setupAuth(app: Express) {
-  console.log('🔐 Setting up authentication...');
   app.set("trust proxy", 1);
   app.use(getSession());
   app.use(passport.initialize());
   app.use(passport.session());
-  console.log('🔐 Passport middleware initialized');
 
   const config = await getOidcConfig();
 
@@ -100,11 +98,9 @@ export async function setupAuth(app: Express) {
       verify,
     );
     passport.use(strategy);
-    console.log(`🔐 Registered strategy: replitauth:${domain}`);
   }
   
   // Add localhost strategy for development
-  console.log('🔐 Setting up localhost strategy...');
   const localhostStrategy = new Strategy(
     {
       name: `replitauth:localhost`,
@@ -115,25 +111,34 @@ export async function setupAuth(app: Express) {
     verify,
   );
   passport.use(localhostStrategy);
-  console.log('🔐 Registered localhost strategy');
 
   passport.serializeUser((user: Express.User, cb) => cb(null, user));
   passport.deserializeUser((user: Express.User, cb) => cb(null, user));
-  console.log('🔐 Passport serialization configured');
 
-  // Login route moved to routes.ts to ensure proper registration order
-
-  // Callback route moved to routes.ts to ensure proper registration order
-
-  // Logout route moved to routes.ts to ensure proper registration order
-  
-  // Add test route to verify auth setup is working
-  app.get("/api/auth-test", (req, res) => {
-    console.log('🔐 Auth test route called');
-    res.json({ message: "Auth setup is working", hostname: req.hostname });
+  app.get("/api/login", (req, res, next) => {
+    passport.authenticate(`replitauth:${req.hostname}`, {
+      prompt: "login consent",
+      scope: ["openid", "email", "profile", "offline_access"],
+    })(req, res, next);
   });
 
-  console.log('🔐 Authentication middleware configured. Routes are registered in routes.ts');
+  app.get("/api/callback", (req, res, next) => {
+    passport.authenticate(`replitauth:${req.hostname}`, {
+      successReturnToOrRedirect: "/",
+      failureRedirect: "/api/login",
+    })(req, res, next);
+  });
+
+  app.get("/api/logout", (req, res) => {
+    req.logout(() => {
+      res.redirect(
+        client.buildEndSessionUrl(config, {
+          client_id: process.env.REPL_ID!,
+          post_logout_redirect_uri: `${req.protocol}://${req.hostname}`,
+        }).href
+      );
+    });
+  });
 }
 
 export const isAuthenticated: RequestHandler = async (req, res, next) => {

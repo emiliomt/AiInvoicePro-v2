@@ -4,37 +4,27 @@ import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
 
-export async function registerRoutes(app: Express): Promise<Server> {
+export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
   // Setup authentication
-  await setupAuth(app);
+  setupAuth(app);
 
   // Basic user endpoint  
   app.get("/api/user", (req: any, res) => {
     console.log('🔍 User endpoint - isAuthenticated:', !!req.isAuthenticated());
     console.log('🔍 User endpoint - user exists:', !!req.user);
-    console.log('🔍 User endpoint - session user:', (req.session as any)?.user);
     console.log('🔍 User endpoint - session ID:', req.sessionID);
     
-    // Check both passport auth and session-based auth for development
-    const sessionUser = (req.session as any)?.user;
-    if (req.isAuthenticated() && req.user) {
-      console.log('✅ User endpoint - passport auth passed');
-      return res.json({ 
-        user: req.user,
-        message: "Authenticated successfully" 
-      });
-    } else if (sessionUser) {
-      console.log('✅ User endpoint - session auth passed');
-      return res.json({ 
-        user: sessionUser,
-        message: "Authenticated successfully (session)" 
-      });
+    if (!req.isAuthenticated() || !req.user) {
+      console.log('❌ User endpoint - auth failed');
+      return res.status(401).json({ message: "Unauthorized" });
     }
-    
-    console.log('❌ User endpoint - auth failed');
-    return res.status(401).json({ message: "Unauthorized" });
+    console.log('✅ User endpoint - auth passed');
+    res.json({ 
+      user: req.user,
+      message: "Authenticated successfully" 
+    });
   });
 
   // Health check endpoint
@@ -42,64 +32,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json({ 
       status: "ok", 
       timestamp: new Date().toISOString() 
-    });
-  });
-
-  // Authentication endpoints (moved here to ensure they work)
-  app.get("/api/login", (req, res) => {
-    console.log('🔐 Login route called directly from routes.ts');
-    console.log('🔐 Hostname:', req.hostname);
-    console.log('🔐 Query params:', req.query);
-    console.log('🔐 req.query.bypass:', req.query.bypass);
-    console.log('🔐 bypass check:', req.query.bypass === 'dev');
-    
-    // Always use development mode for now to avoid OAuth PKCE issues
-    console.log('🔐 Development mode activated (OAuth bypass)');
-    // Create a mock user session for development
-    (req.session as any).user = {
-      id: 'dev-user-123',
-      email: 'dev@example.com',
-      name: 'Development User',
-      picture: 'https://via.placeholder.com/150'
-    };
-    console.log('🔐 Mock user session created');
-    return res.redirect('/?auth=success');
-  });
-
-  app.get("/api/callback", (req, res) => {
-    console.log('🔐 Callback route called directly from routes.ts');
-    console.log('🔐 Query params:', req.query);
-    
-    // Handle the OAuth callback manually for now
-    if (req.query.code) {
-      console.log('🔐 OAuth code received:', req.query.code);
-      // For now, just redirect to home page with success
-      // Later we'll implement proper token exchange
-      res.redirect('/?auth=success');
-    } else if (req.query.error) {
-      console.log('🔐 OAuth error:', req.query.error);
-      // If OAuth fails due to PKCE, fall back to development mode
-      console.log('🔐 OAuth failed, setting development session');
-      (req.session as any).user = {
-        id: 'dev-user-123',
-        email: 'dev@example.com',
-        name: 'Development User',
-        picture: 'https://via.placeholder.com/150'
-      };
-      res.redirect('/?auth=dev');
-    } else {
-      console.log('🔐 Callback called without code or error');
-      res.redirect('/?auth=error&message=No authorization code received');
-    }
-  });
-
-  app.get("/api/logout", (req, res) => {
-    console.log('🔐 Logout route called');
-    req.session.destroy((err) => {
-      if (err) {
-        console.error('🔐 Session destroy error:', err);
-      }
-      res.redirect('/');
     });
   });
 

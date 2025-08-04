@@ -26,19 +26,27 @@ export function useAuth() {
         const data = await response.json();
         return data.user;
       } catch (err: any) {
-        console.error('Auth error:', err.message || 'Unauthorized - please log in again');
-        console.warn('Authentication failed, clearing token and redirecting');
-        
-        // For all authentication errors, return null instead of throwing
-        // This prevents unhandled promise rejections
-        return null;
+        console.error('Auth error:', err.message);
+        // For network errors or other issues, return null instead of throwing
+        if (err.message.includes('fetch')) {
+          return null;
+        }
+        throw err;
       }
     },
-    retry: false, // Don't retry authentication failures to prevent loops
+    retry: (failureCount, error: any) => {
+      // Don't retry on 401 (unauthorized) errors or network errors
+      if (error?.message?.includes('401') || error?.message?.includes('fetch')) {
+        return false;
+      }
+      return failureCount < 2;
+    },
     retryDelay: 1000,
     staleTime: 5 * 60 * 1000, // 5 minutes
     gcTime: 10 * 60 * 1000, // 10 minutes
   });
 
-  return { user, isLoading, error, refetch };
+  const isAuthenticated = !!user;
+
+  return { user, isLoading, error, refetch, isAuthenticated };
 }

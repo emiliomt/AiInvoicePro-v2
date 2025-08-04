@@ -15,21 +15,12 @@ export default function Landing() {
               </div>
               <h1 className="text-xl font-bold text-gray-900">InvoicePro</h1>
             </div>
-            <div className="flex gap-2">
-              <Button 
-                onClick={() => window.location.href = '/api/login'}
-                className="bg-primary-600 hover:bg-primary-700"
-              >
-                Sign In
-              </Button>
-              <Button 
-                onClick={() => window.location.href = '/api/login?bypass=dev'}
-                variant="outline"
-                className="text-xs"
-              >
-                Dev Mode
-              </Button>
-            </div>
+            <Button 
+              onClick={() => window.location.href = '/api/login'}
+              className="bg-primary-600 hover:bg-primary-700"
+            >
+              Sign In
+            </Button>
           </div>
         </div>
       </header>
@@ -46,23 +37,13 @@ export default function Landing() {
             and streamlined approval workflows. Save time, reduce errors, and focus on what matters.
           </p>
           <div className="mt-10">
-            <div className="flex gap-4 justify-center">
-              <Button 
-                size="lg"
-                onClick={() => window.location.href = '/api/login'}
-                className="bg-primary-600 hover:bg-primary-700 text-lg px-8 py-4"
-              >
-                Get Started Free
-              </Button>
-              <Button 
-                size="lg"
-                onClick={() => window.location.href = '/api/login?bypass=dev'}
-                variant="outline"
-                className="text-lg px-8 py-4"
-              >
-                Demo Mode
-              </Button>
-            </div>
+            <Button 
+              size="lg"
+              onClick={() => window.location.href = '/api/login'}
+              className="bg-primary-600 hover:bg-primary-700 text-lg px-8 py-4"
+            >
+              Get Started Free
+            </Button>
           </div>
         </div>
 
