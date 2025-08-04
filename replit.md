@@ -1,29 +1,27 @@
-# AnzuDynamics Invoice Procurement Platform
+# Invoice Line Item Classifier - AI-Powered Classification System
 
 ## Overview
-An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities. The platform now features a comprehensive binary Pass/Fail validation system specifically tailored for Colombian business requirements, replacing ambiguous "Pending" statuses with clear, actionable validation results.
+The Invoice Line Item Classifier is a Python application that uses OpenAI's GPT-4 API to automatically categorize invoice descriptions into predefined business expense categories. This tool helps organizations classify expenses with confidence scores and detailed reasoning, supporting both single-item and batch processing capabilities. The system provides comprehensive error handling, CSV export functionality, and detailed reporting features.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
-A comprehensive full-stack invoice procurement platform built with React frontend, Express.js backend, and PostgreSQL database. The system includes advanced RPA automation, AI-powered processing, and comprehensive validation capabilities.
+The Invoice Line Item Classifier is a standalone Python application that leverages OpenAI's GPT-4 API for intelligent expense categorization. The system includes:
 
 ### Core Components
-- **React Frontend**: Dynamic invoice management interface with Tanstack Query
-- **Express.js Backend**: RESTful API with comprehensive security protocols
-- **PostgreSQL Database**: Robust data persistence with Drizzle ORM
-- **Binary Validation System**: Pass/Fail validation engine with Colombian business rules
-- **RPA Automation**: Playwright-based browser automation for reliable data extraction
-- **AI Processing**: OpenAI integration for invoice data extraction and classification
+- **InvoiceLineItemClassifier**: Main classification engine using OpenAI GPT-4
+- **Classification Categories**: 12 predefined business expense categories (LABOR, MATERIALS, EQUIPMENT, etc.)
+- **Batch Processing**: Handle multiple invoice items simultaneously
+- **Export System**: CSV export functionality with comprehensive data formatting
+- **Error Handling**: Robust fallback mechanisms for API failures
 
 ### Key Features
-- **Binary Validation**: Clear Pass/Fail status with specific failure reasons and action items
-- **Colombian Business Rules**: COP currency handling, NIT validation, approval thresholds
-- **Multi-language Processing**: Adaptive parsing for different invoice formats
-- **Token-based Matching**: Advanced PDF and XML invoice matching algorithms
-- **Company-based Isolation**: Multi-tenant architecture with data segregation
-- **Comprehensive Tracking**: Invoice status monitoring and duplicate detection
+- **AI-Powered Classification**: Uses OpenAI GPT-4 for intelligent categorization
+- **Confidence Scoring**: Returns confidence levels (0.0-1.0) for each classification
+- **Detailed Results**: Includes reasoning and keywords for each classification
+- **Summary Reports**: Generate classification statistics and distribution reports
+- **Environment Configuration**: Support for .env files and environment variables
 
 ### Files Structure
 - `invoice_classifier.py`: Main classifier implementation
@@ -42,10 +40,8 @@ A comprehensive full-stack invoice procurement platform built with React fronten
     - typing-extensions>=4.0.0 (Type annotations support)
 
 ## Recent Changes
-- **August 2025**: Implemented comprehensive binary Pass/Fail validation system
-- **Database Schema**: Added validation_status, validation_score, validated_at columns to invoices table
-- **Validation Service**: Created InvoiceValidator class with Colombian business rules
-- **API Endpoints**: Added validation APIs for single and batch processing
-- **Colombian Rules**: Implemented COP currency handling, NIT validation, approval thresholds
-- **Testing**: Created comprehensive validation tests demonstrating binary logic
-- **Documentation**: Generated detailed validation system documentation
+- **January 2025**: Created standalone Python invoice classification application
+- **Core Features**: Implemented AI-powered classification with 12 expense categories
+- **Testing**: Added comprehensive test suite with mocked API responses
+- **Documentation**: Created detailed README and usage examples
+- **Sample Data**: Provided sample invoice data for testing and demonstration

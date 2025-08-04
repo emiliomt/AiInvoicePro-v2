@@ -7,7 +7,6 @@ import { processInvoiceOCR } from "./services/ocrService";
 import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
 import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
 import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
-import { invoiceValidator } from "./services/invoiceValidationService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
@@ -2785,91 +2784,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error AI classifying invoice:", error);
       res.status(500).json({ message: "Failed to AI classify invoice" });
-    }
-  });
-
-  // Binary Validation API - Pass/Fail validation system
-  app.post('/api/invoices/:id/validate', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      
-      if (isNaN(invoiceId)) {
-        return res.status(400).json({ message: "Invalid invoice ID" });
-      }
-
-      console.log(`Starting binary validation for invoice ${invoiceId}`);
-      
-      const validationResult = await invoiceValidator.validateInvoice(invoiceId);
-      
-      console.log(`Validation completed for invoice ${invoiceId}:`, {
-        status: validationResult.status,
-        score: validationResult.overallScore,
-        failures: validationResult.failures.length,
-        warnings: validationResult.warnings.length
-      });
-
-      res.json(validationResult);
-    } catch (error) {
-      console.error("Error validating invoice:", error);
-      res.status(500).json({ 
-        message: "Failed to validate invoice",
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Get validation results for an invoice
-  app.get('/api/invoices/:id/validation-results', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      
-      if (isNaN(invoiceId)) {
-        return res.status(400).json({ message: "Invalid invoice ID" });
-      }
-
-      const validationResults = await storage.getInvoiceValidationResults(invoiceId);
-      res.json(validationResults);
-    } catch (error) {
-      console.error("Error fetching validation results:", error);
-      res.status(500).json({ message: "Failed to fetch validation results" });
-    }
-  });
-
-  // Batch validate multiple invoices
-  app.post('/api/invoices/validate-batch', isAuthenticated, async (req: any, res) => {
-    try {
-      const { invoiceIds } = req.body;
-      
-      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
-        return res.status(400).json({ message: "Invoice IDs array is required" });
-      }
-
-      console.log(`Starting batch validation for ${invoiceIds.length} invoices`);
-      
-      const results = [];
-      for (const invoiceId of invoiceIds) {
-        try {
-          const validationResult = await invoiceValidator.validateInvoice(parseInt(invoiceId));
-          results.push({
-            invoiceId: parseInt(invoiceId),
-            ...validationResult
-          });
-        } catch (error) {
-          results.push({
-            invoiceId: parseInt(invoiceId),
-            status: "Failed",
-            error: error instanceof Error ? error.message : 'Unknown error'
-          });
-        }
-      }
-
-      res.json({
-        message: `Validated ${results.length} invoices`,
-        results
-      });
-    } catch (error) {
-      console.error("Error batch validating invoices:", error);
-      res.status(500).json({ message: "Failed to batch validate invoices" });
     }
   });
 
