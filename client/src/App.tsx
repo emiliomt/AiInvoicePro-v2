@@ -48,6 +48,9 @@ const AppContent = React.memo(() => {
     );
   }
 
+  // Debug logging for routing issues
+  console.log('AppContent rendering - User:', user ? 'authenticated' : 'not authenticated', 'isLoading:', isLoading);
+
   return (
     <div>
       <Switch>
