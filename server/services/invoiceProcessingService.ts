@@ -12,7 +12,7 @@ export class InvoiceProcessingService {
    */
   async processDownloadedInvoices(): Promise<{ processed: number; failed: number; errors: string[] }> {
     console.log('🔄 Starting processing of downloaded imported invoices...');
-    
+
     // Find all downloaded but unprocessed imported invoices
     const downloadedInvoices = await db
       .select()
@@ -28,7 +28,7 @@ export class InvoiceProcessingService {
     for (const importedInvoice of downloadedInvoices) {
       try {
         console.log(`🔄 Processing: ${importedInvoice.originalFileName}`);
-        
+
         // Check if this invoice has a corresponding XML file with data
         const hasMatchedXml = importedInvoice.metadata && 
                               typeof importedInvoice.metadata === 'object' && 
@@ -41,10 +41,10 @@ export class InvoiceProcessingService {
           // Look for the corresponding XML file
           const xmlFileName = (importedInvoice.metadata as any).matched_xml;
           const xmlFilePath = importedInvoice.filePath?.replace('/pdfs/', '/xmls/').replace('.pdf', '.xml');
-          
+
           if (xmlFilePath && fs.existsSync(xmlFilePath)) {
             console.log(`📄 Processing XML file: ${xmlFileName}`);
-            
+
             try {
               const xmlContent = fs.readFileSync(xmlFilePath, 'utf-8');
               extractedData = parseInvoiceXML(xmlContent, true);
@@ -60,12 +60,12 @@ export class InvoiceProcessingService {
         // If no XML data or XML processing failed, try to process the PDF
         if (!extractedData && importedInvoice.filePath && fs.existsSync(importedInvoice.filePath)) {
           console.log(`📄 Processing PDF file: ${importedInvoice.originalFileName}`);
-          
+
           try {
             // For now, we'll extract basic info from filename and metadata
             const metadata = importedInvoice.metadata as any;
             const fileName = importedInvoice.originalFileName || '';
-            
+
             // Extract basic information from filename pattern (e.g., FE114740_830000818_Crowe_CO_SAS.pdf)
             const fileNameParts = fileName.replace('.pdf', '').split('_');
             const invoiceNumber = fileNameParts[0] || null;
@@ -131,7 +131,29 @@ export class InvoiceProcessingService {
 
         // Insert invoice record
         const [newInvoice] = await db.insert(invoices).values(invoiceData).returning();
-        
+
+        // If we have line items from XML extraction, insert them and classify
+        if (extractedData.lineItems && extractedData.lineItems.length > 0) {
+          const { lineItems } = await import('../../shared/schema.js');
+          const { ClassificationService } = await import('./classificationService.js');
+
+          for (const item of extractedData.lineItems) {
+            // Insert line item
+            const [lineItem] = await db.insert(lineItems).values({
+              invoiceId: newInvoice.id,
+              description: item.description,
+              quantity: item.quantity || '1',
+              unitPrice: item.unitPrice || '0.00',
+              totalPrice: item.totalPrice || '0.00',
+            }).returning();
+
+            // Classify the line item after insertion
+            await ClassificationService.classifyAndStore(lineItem.id, 'rpa-system');
+          }
+
+          console.log(`✅ Inserted and classified ${extractedData.lineItems.length} line items for invoice ${newInvoice.id}`);
+        }
+
         // Update imported invoice status and link to created invoice
         await db
           .update(importedInvoices)
@@ -147,7 +169,7 @@ export class InvoiceProcessingService {
 
       } catch (error: any) {
         console.error(`❌ Failed to process ${importedInvoice.originalFileName}:`, error);
-        
+
         // Update status to failed
         await db
           .update(importedInvoices)
@@ -186,7 +208,7 @@ export class InvoiceProcessingService {
    */
   async processInvoicesByLogId(logId: number): Promise<{ processed: number; failed: number; errors: string[] }> {
     console.log(`🔄 Processing imported invoices for log ID: ${logId}`);
-    
+
     const downloadedInvoices = await db
       .select()
       .from(importedInvoices)
@@ -203,7 +225,7 @@ export class InvoiceProcessingService {
 
     // Temporarily update our search to process this specific batch
     const originalSelect = db.select;
-    
+
     // Process the filtered invoices
     let processed = 0;
     let failed = 0;
@@ -212,7 +234,7 @@ export class InvoiceProcessingService {
     for (const importedInvoice of downloadedInvoices) {
       try {
         console.log(`🔄 Processing: ${importedInvoice.originalFileName}`);
-        
+
         // Check if this invoice has a corresponding XML file with data
         const hasMatchedXml = importedInvoice.metadata && 
                               typeof importedInvoice.metadata === 'object' && 
@@ -225,10 +247,10 @@ export class InvoiceProcessingService {
           // Look for the corresponding XML file
           const xmlFileName = (importedInvoice.metadata as any).matched_xml;
           const xmlFilePath = importedInvoice.filePath?.replace('/pdfs/', '/xmls/').replace('.pdf', '.xml');
-          
+
           if (xmlFilePath && fs.existsSync(xmlFilePath)) {
             console.log(`📄 Processing XML file: ${xmlFileName}`);
-            
+
             try {
               const xmlContent = fs.readFileSync(xmlFilePath, 'utf-8');
               extractedData = parseInvoiceXML(xmlContent, true);
@@ -244,10 +266,10 @@ export class InvoiceProcessingService {
         // If no XML data or XML processing failed, try to process basic info from filename
         if (!extractedData) {
           console.log(`📄 Processing basic info for: ${importedInvoice.originalFileName}`);
-          
+
           const metadata = importedInvoice.metadata as any;
           const fileName = importedInvoice.originalFileName || '';
-          
+
           // Extract basic information from filename pattern
           const fileNameParts = fileName.replace('.pdf', '').split('_');
           const invoiceNumber = fileNameParts[0] || null;
@@ -305,7 +327,29 @@ export class InvoiceProcessingService {
 
         // Insert invoice record
         const [newInvoice] = await db.insert(invoices).values(invoiceData).returning();
-        
+
+        // If we have line items from XML extraction, insert them and classify
+        if (extractedData.lineItems && extractedData.lineItems.length > 0) {
+          const { lineItems } = await import('../../shared/schema.js');
+          const { ClassificationService } = await import('./classificationService.js');
+
+          for (const item of extractedData.lineItems) {
+            // Insert line item
+            const [lineItem] = await db.insert(lineItems).values({
+              invoiceId: newInvoice.id,
+              description: item.description,
+              quantity: item.quantity || '1',
+              unitPrice: item.unitPrice || '0.00',
+              totalPrice: item.totalPrice || '0.00',
+            }).returning();
+
+            // Classify the line item after insertion
+            await ClassificationService.classifyAndStore(lineItem.id, 'rpa-system');
+          }
+
+          console.log(`✅ Inserted and classified ${extractedData.lineItems.length} line items for invoice ${newInvoice.id}`);
+        }
+
         // Update imported invoice status and link to created invoice
         await db
           .update(importedInvoices)
@@ -321,7 +365,7 @@ export class InvoiceProcessingService {
 
       } catch (error: any) {
         console.error(`❌ Failed to process ${importedInvoice.originalFileName}:`, error);
-        
+
         // Update status to failed
         await db
           .update(importedInvoices)

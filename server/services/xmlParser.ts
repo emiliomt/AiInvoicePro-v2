@@ -805,6 +805,9 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     const concept = extractTextFromXMLTag(cleanedXmlContent, 'Note') ||
                    extractTextFromXMLTag(cleanedXmlContent, 'Description');
 
+    // Extract line items first
+    const lineItems = extractLineItems(cleanedXmlContent);
+
     // Enhanced project name extraction with multiple sources
     let projectName = extractTextFromXMLTag(cleanedXmlContent, 'ProjectReference') ||
                      extractTextFromXMLTag(cleanedXmlContent, 'OrderReference') ||
@@ -897,9 +900,6 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
         projectCity = deliveryCity;
       }
     }
-
-    // Extract line items
-    const lineItems = extractLineItems(cleanedXmlContent);
 
     // Create description summary from line items
     const descriptionSummary = lineItems.length > 0 
