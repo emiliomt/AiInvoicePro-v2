@@ -116,6 +116,21 @@ export async function setupAuth(app: Express) {
   console.log('✅ Authentication middleware setup complete');
 }
 
+export function getUser(req: any) {
+  if (!req.user || !req.user.claims) {
+    return null;
+  }
+
+  const claims = req.user.claims;
+  return {
+    id: claims.sub,
+    email: claims.email,
+    firstName: claims.first_name,
+    lastName: claims.last_name,
+    profileImageUrl: claims.profile_image_url
+  };
+}
+
 export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = req.user as any;

@@ -58,9 +58,10 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log('📋 User endpoint called - Claims:', req.headers['x-replit-user-id'] ? 'present' : 'missing');
 
-      const user = replitAuthModule.getUser(req); // Use the module directly
+      // Extract user data from the authenticated request
+      const user = (req as any).user;
 
-      if (!user) {
+      if (!user || !user.claims) {
         console.log('❌ No user found in request');
         await authMonitoring.logAuthEvent({
           event: 'user_endpoint_access',
@@ -72,30 +73,27 @@ export function registerRoutes(app: Express): Server {
         return res.status(401).json({ error: 'Not authenticated' });
       }
 
-      console.log('✅ Returning user data:', {
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profileImageUrl: user.profileImageUrl
-      });
+      const userClaims = user.claims;
+      const userData = {
+        id: userClaims.sub,
+        email: userClaims.email,
+        firstName: userClaims.first_name,
+        lastName: userClaims.last_name,
+        profileImageUrl: userClaims.profile_image_url
+      };
+
+      console.log('✅ Returning user data:', userData);
 
       await authMonitoring.logAuthEvent({
         event: 'user_endpoint_access',
-        userId: user.id,
+        userId: userData.id,
         userAgent: req.headers['user-agent'],
         ip: req.ip,
         success: true,
-        details: { email: user.email }
+        details: { email: userData.email }
       });
 
-      res.json({
-        id: user.id,
-        email: user.email,
-        firstName: user.firstName,
-        lastName: user.lastName,
-        profileImageUrl: user.profileImageUrl
-      });
+      res.json(userData);
     } catch (error) {
       console.error('❌ Error in user endpoint:', error);
       await authMonitoring.logAuthEvent({
