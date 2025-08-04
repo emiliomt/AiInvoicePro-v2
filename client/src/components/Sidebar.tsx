@@ -212,7 +212,7 @@ export default function Sidebar() {
               </div>
               <span className="font-medium text-gray-900">Validation Rules</span>
             </Button>
-            
+
           </div>
         </CardContent>
       </Card>
