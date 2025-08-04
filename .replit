@@ -94,3 +94,16 @@ args = "sleep 3"
 [[workflows.workflow.tasks]]
 task = "shell.exec"
 args = "npm run dev"
+
+[[workflows.workflow]]
+name = "Test Comprehensive Workflow"
+author = 43658475
+mode = "sequential"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "cd server/services"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "python comprehensive_workflow.py test"
