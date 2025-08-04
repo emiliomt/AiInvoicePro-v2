@@ -1,0 +1,36 @@
+<html xmlns="http://www.w3.org/1999/xhtml"><head>
+    <script>
+        const temaIV = true;
+        const sitio = (window.location.host + '_' + window.location.pathname.split('/')[1]).toLowerCase();
+        const theme = localStorage.getItem(sitio + '_css_theme');
+
+        if (theme != 'TemaCuatro') {
+            const base = window.location.href.replace(/login_iv.aspx.*/ig, '');
+            window.location.href = base + 'Login.aspx'
+        }
+    </script>
+    <meta name="Content-Type" content="text/html; charset=utf-8"><meta http-equiv="X-UA-Compatible" content="IE=Edge"><meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"><meta http-equiv="Pragma" content="no-cache"><meta http-equiv="expires" content="0"><title>
+	SINCO ERP - Ingreso a la aplicación
+</title><link rel="shortcut icon" href="CascadingStyleSheets/images/favicon_iv.ico"><link rel="apple-touch-icon" href="CascadingStyleSheets/images/logosincoerp_54.png"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.svg" as="font" type="image/svg+xml" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/antipasto_regular-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/MYRIADPROREGULAR.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.eot" as="font" type="application/vnd.ms-fontobject" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.svg" as="font" type="image/svg+xml" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.ttf" as="font" type="font/ttf" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.woff" as="font" type="font/woff" crossorigin="anonymous"><link rel="preload" href="CascadingStyleSheets/Estandar/roboto-light-webfont.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link href="CascadingStyleSheets/Estandar/Estandar.css" rel="stylesheet"><link href="CascadingStyleSheets/login/login.css" rel="stylesheet"><link href="CascadingStyleSheets/default/temacuatro_login.css" rel="stylesheet">
+
+    <script>
+        window.addEventListener('keydown', function (e) {
+            e = e || window.event;
+            if (e.keyCode == 73 && e.ctrlKey && !e.altKey) {
+                e.preventDefault();
+
+                var sitio = (window.location.host + '_' + window.location.pathname.split('/')[1]).toLowerCase();
+                var theme = localStorage.getItem(sitio + '_css_theme');
+
+                if (theme == 'TemaCuatro') {
+                    localStorage.removeItem(sitio + '_css_theme');
+                    window.location.reload();
+                } else {
+                    localStorage.setItem(sitio + '_css_theme', 'TemaCuatro');
+                    window.location.reload()
+
+                }
+            }
+        });
+    </script>
+    <link rel="preload" href="CascadingStyleSheets/images/fondo.webp" as="image"><script>var id_session = '644852e7-d4da-41dd-8eb2-cf7e0f6b4365';</script><script src="Scripts/Sinco/modules/cookie.cleaner.js?v=638899118120655920"></script></head></html>
