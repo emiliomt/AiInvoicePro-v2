@@ -124,13 +124,7 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
       isAuthenticated: req.isAuthenticated(),
       hasUser: !!user,
       userExpiresAt: user?.expires_at,
-      currentTime: Math.floor(Date.now() / 1000),
-      userClaims: user?.claims ? 'present' : 'missing',
-      replitHeaders: {
-        userId: req.headers['x-replit-user-id'] ? 'present' : 'missing',
-        userName: req.headers['x-replit-user-name'] ? 'present' : 'missing',
-        userEmail: req.headers['x-replit-user-email'] ? 'present' : 'missing'
-      }
+      currentTime: Math.floor(Date.now() / 1000)
     });
 
     if (!req.isAuthenticated() || !user?.expires_at) {
