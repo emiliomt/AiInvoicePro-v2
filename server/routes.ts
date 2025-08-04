@@ -222,7 +222,10 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
       // Update invoice with validation status and results
       const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+      const newInvoiceStatus = validationResult.isValid ? 'approved' : 'rejected';
+      
       const updateData: any = {
+        status: newInvoiceStatus, // Update main invoice status
         validationStatus,
         isValidated: validationResult.isValid,
         validationResults: {
@@ -2648,6 +2651,89 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error validating all approved invoices:", error);
       res.status(500).json({ message: "Failed to validate approved invoices" });
+    }
+  });
+
+  // Validate a specific invoice and update its status
+  app.post('/api/invoices/:id/validate', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check if user owns the invoice
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      console.log(`Manual validation triggered for invoice ${invoiceId}`);
+
+      // Prepare validation data
+      const validationData = {
+        vendorName: invoice.vendorName,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: invoice.totalAmount ? parseFloat(invoice.totalAmount.toString()) : 0,
+        taxAmount: invoice.taxAmount ? parseFloat(invoice.taxAmount.toString()) : 0,
+        subtotal: invoice.extractedData?.subtotal ? parseFloat(invoice.extractedData.subtotal.toString()) : 0,
+        currency: invoice.currency || 'USD',
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        'extractedData.taxId': invoice.extractedData?.taxId,
+        'extractedData.companyName': invoice.extractedData?.companyName,
+        'extractedData.buyerTaxId': invoice.extractedData?.buyerTaxId,
+        'extractedData.vendorAddress': invoice.extractedData?.vendorAddress,
+        'extractedData.buyerAddress': invoice.extractedData?.buyerAddress,
+        'extractedData.projectAddress': invoice.extractedData?.projectAddress,
+        'extractedData.projectCity': invoice.extractedData?.projectCity,
+        'extractedData.concept': invoice.extractedData?.concept,
+        'extractedData.descriptionSummary': invoice.extractedData?.descriptionSummary,
+        'extractedData.notes': invoice.extractedData?.notes,
+        'extractedData.projectName': invoice.extractedData?.projectName,
+        status: invoice.status,
+        fileName: invoice.fileName,
+        confidenceScore: invoice.extractedData?.confidenceScore || 0
+      };
+
+      const validationResult = await storage.validateInvoiceData(validationData);
+
+      // Update invoice with validation status and results
+      const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+      const newInvoiceStatus = validationResult.isValid ? 'approved' : 'rejected';
+      
+      const updateData: any = {
+        status: newInvoiceStatus,
+        validationStatus,
+        isValidated: validationResult.isValid,
+        validationResults: {
+          violations: validationResult.violations,
+          validatedAt: validationResult.validatedAt,
+          totalViolations: validationResult.violations.length,
+          criticalViolations: validationResult.violations.filter(v => v.severity === 'critical').length,
+          highViolations: validationResult.violations.filter(v => v.severity === 'high').length
+        }
+      };
+
+      await storage.updateInvoice(invoice.id, updateData);
+
+      console.log(`Invoice ${invoiceId} validation completed: ${validationStatus} with ${validationResult.violations.length} violations`);
+
+      res.json({
+        message: `Invoice validation completed: ${validationStatus}`,
+        validationResult: {
+          isValid: validationResult.isValid,
+          status: newInvoiceStatus,
+          violations: validationResult.violations,
+          totalViolations: validationResult.violations.length
+        }
+      });
+
+    } catch (error) {
+      console.error("Error validating invoice:", error);
+      res.status(500).json({ message: "Failed to validate invoice" });
     }
   });
 
