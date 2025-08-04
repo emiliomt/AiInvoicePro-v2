@@ -175,12 +175,7 @@ export function getUser(req: any) {
   // Handle both cases where claims are nested or directly on user object
   const claims = req.user.claims || req.user;
   
-  // Log the claims structure for debugging
-  console.log('🔍 Claims structure:', {
-    hasClaimsProperty: !!req.user.claims,
-    claimsKeys: Object.keys(claims),
-    claimsData: claims
-  });
+  // Extract user data from claims
 
   return {
     id: claims.sub || claims.id,

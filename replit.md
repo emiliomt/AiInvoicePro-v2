@@ -21,9 +21,10 @@ InvoicePro is built as a full-stack web application.
 - **Runtime**: Node.js with Express.js.
 - **Language**: TypeScript with ESM.
 - **Database**: PostgreSQL with Drizzle ORM.
-- **Authentication**: Replit Auth with session-based authentication.
+- **Authentication**: Replit Auth with session-based authentication and Passport.js.
 - **File Processing**: Multer for uploads, Tesseract.js for OCR.
 - **AI Integration**: OpenAI API for intelligent data extraction.
+- **Process Automation**: Enhanced Python-based workflow engine with fallback mechanisms.
 
 ### Database Design
 The system uses PostgreSQL and includes entities for Users, Sessions, Invoices, Line Items, Purchase Orders, Projects, Validation Rules, Approvals, and Flags & Alerts.

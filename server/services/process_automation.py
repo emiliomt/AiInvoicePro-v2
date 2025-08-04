@@ -204,87 +204,35 @@ def process_invoice_workflow_fixed(invoice_file_path: str, user_id: str) -> Dict
     invoice_id = f"INV_{hash(invoice_file_path) % 10000}"  # Mock invoice ID
 
     try:
-        # Step 1: Browser Initialization
-        logger.info("STEP 1: BROWSER INITIALIZATION")
-        logger.info("PROGRESS_STEP:browser:running:Initializing browser automation")
-        print("PROGRESS_STEP:browser:running:Setting up Chrome WebDriver")
-        print("STATS:{'progress': 10, 'current_step': 'Initializing browser automation', 'total_invoices': 0, 'processed_invoices': 0}")
+        # Step 1: ERP Import
+        logger.info("STEP 1: ERP IMPORT")
         import_result = simulate_workflow_step("ERP Import")
         workflow_results['import'] = import_result
-        logger.info("PROGRESS_STEP:browser:completed:Browser automation initialized")
-        print("PROGRESS_STEP:browser:completed:Browser ready for automation")
-        print("STATS:{'progress': 15, 'current_step': 'Browser ready for automation', 'total_invoices': 0, 'processed_invoices': 0}")
-        logger.info("✅ Browser Initialization completed")
+        logger.info("✅ ERP Import completed")
 
-        # Step 2: ERP Login  
-        logger.info("STEP 2: ERP LOGIN")
-        logger.info("PROGRESS_STEP:login:running:Logging into ERP system")
-        print("PROGRESS_STEP:login:running:Logging into ERP system")
-        print("STATS:{'progress': 20, 'current_step': 'Logging into ERP system', 'total_invoices': 0, 'processed_invoices': 0}")
+        # Step 2: OCR Processing  
+        logger.info("STEP 2: OCR PROCESSING")
         ocr_result = simulate_workflow_step("OCR Processing")
         workflow_results['ocr'] = ocr_result
-        logger.info("PROGRESS_STEP:login:completed:Login successful")
-        print("PROGRESS_STEP:login:completed:ERP login successful")
-        print("STATS:{'progress': 25, 'current_step': 'ERP login successful', 'total_invoices': 0, 'processed_invoices': 0}")
-        logger.info("✅ ERP Login completed")
+        logger.info("✅ OCR Processing completed")
 
-        # Step 3: Navigation to FE Module
-        logger.info("STEP 3: NAVIGATION TO FE MODULE")
-        logger.info("PROGRESS_STEP:navigate:running:Navigating to FE module")
-        print("PROGRESS_STEP:navigate:running:Navigate to FE module")
-        print("STATS:{'progress': 30, 'current_step': 'Navigating to FE module', 'total_invoices': 0, 'processed_invoices': 0}")
-        logger.info("PROGRESS_STEP:navigate:completed:Successfully navigated to FE module")
-        print("PROGRESS_STEP:navigate:completed:FE module loaded")
-        print("STATS:{'progress': 35, 'current_step': 'FE module loaded', 'total_invoices': 0, 'processed_invoices': 0}")
-
-        # Step 4: Find Invoice List
-        logger.info("STEP 4: FINDING INVOICE LIST")
-        logger.info("PROGRESS_STEP:search:running:Finding invoice list in Documentos recibidos")
-        print("PROGRESS_STEP:search:running:Loading invoice list")
-        print("STATS:{'progress': 40, 'current_step': 'Loading invoice list', 'total_invoices': 0, 'processed_invoices': 0}")
-        logger.info("PROGRESS_STEP:search:completed:Invoice list found")
-        print("PROGRESS_STEP:search:completed:Found invoice table")
-        print("STATS:{'progress': 45, 'current_step': 'Found invoice table', 'total_invoices': 0, 'processed_invoices': 0}")
-
-        # Step 5: Extract Invoice Data
-        logger.info("STEP 5: EXTRACT INVOICE DATA")
-        logger.info("PROGRESS_STEP:extract:running:Extracting invoice data from table")
-        print("PROGRESS_STEP:extract:running:Found 16 rows in invoice table")
-        print("STATS:{'progress': 50, 'current_step': 'Found 16 rows in invoice table', 'total_invoices': 16, 'processed_invoices': 0}")
+        # Step 3: AI Data Extraction (the fixed version)
+        logger.info("STEP 3: AI DATA EXTRACTION")
         extraction_result = extract_invoice_with_fallback(ocr_result['ocr_text'])
         workflow_results['extraction'] = extraction_result
-        logger.info("PROGRESS_STEP:extract:completed:Invoice data extracted successfully")
-        print("PROGRESS_STEP:extract:completed:Invoice data extraction complete")
-        print("STATS:{'progress': 55, 'current_step': 'Invoice data extraction complete', 'total_invoices': 16, 'processed_invoices': 5}")
-        logger.info(f"✅ Invoice Data Extraction completed - Vendor: {extraction_result['vendor_name']}")
+        logger.info(f"✅ AI Extraction completed - Vendor: {extraction_result['vendor_name']}")
 
-        # Step 6: Download Invoices
-        logger.info("STEP 6: DOWNLOADING INVOICES")
-        logger.info("PROGRESS_STEP:download:running:Downloading invoice files")
-        print("PROGRESS_STEP:download:running:Downloading 1/16: FEPG793514")
-        print("STATS:{'progress': 60, 'current_step': 'Downloading 1/16: FEPG793514', 'total_invoices': 16, 'processed_invoices': 1}")
-        # Simulate downloading multiple files
-        for i in range(2, 9):
-            print(f"PROGRESS_STEP:download:running:Downloading {i}/16: INVOICE{793514+i}")
-            print(f"STATS:{{'progress': {60 + (i-1)*2}, 'current_step': 'Downloading {i}/16: INVOICE{793514+i}', 'total_invoices': 16, 'processed_invoices': {i}}}")
+        # Step 4: Validation
+        logger.info("STEP 4: VALIDATION & RULE PROCESSING")
         validation_result = simulate_workflow_step("Validation")
         workflow_results['validation'] = validation_result
-        logger.info("PROGRESS_STEP:download:completed:All invoice files downloaded")
-        print("PROGRESS_STEP:download:completed:Downloaded 16/16 invoice files")
-        print("STATS:{'progress': 75, 'current_step': 'Downloaded 16/16 invoice files', 'total_invoices': 16, 'processed_invoices': 16}")
-        logger.info("✅ Invoice Download completed")
+        logger.info("✅ Validation completed")
 
-        # Step 7: Process XML Files
-        logger.info("STEP 7: PROCESSING XML FILES")
-        logger.info("PROGRESS_STEP:process:running:Processing XML files")
-        print("PROGRESS_STEP:process:running:Extracting XML from ZIP files")
-        print("STATS:{'progress': 80, 'current_step': 'Extracting XML from ZIP files', 'total_invoices': 16, 'processed_invoices': 16}")
+        # Step 5: Project Matching
+        logger.info("STEP 5: PROJECT MATCHING")
         project_result = simulate_workflow_step("Project Matching")
         workflow_results['project_matching'] = project_result
-        logger.info("PROGRESS_STEP:process:completed:XML files processed successfully")
-        print("PROGRESS_STEP:process:completed:XML processing complete")
-        print("STATS:{'progress': 85, 'current_step': 'XML processing complete', 'total_invoices': 16, 'processed_invoices': 16}")
-        logger.info("✅ XML Processing completed")
+        logger.info("✅ Project Matching completed")
 
         # Step 6: PO Matching
         logger.info("STEP 6: PURCHASE ORDER MATCHING")
@@ -320,10 +268,6 @@ def process_invoice_workflow_fixed(invoice_file_path: str, user_id: str) -> Dict
         workflow_results['invoice_id'] = invoice_id
         workflow_results['final_status'] = 'verified'
         workflow_results['processing_complete'] = True
-
-        # Final completion stats
-        print("STATS:{'progress': 100, 'current_step': 'Import process completed successfully', 'total_invoices': 16, 'processed_invoices': 16, 'successful_imports': 14, 'failed_imports': 2}")
-        print("PROGRESS_STEP:complete:completed:Import process completed successfully")
 
         logger.info("=" * 60)
         logger.info(f"🎉 WORKFLOW COMPLETED SUCCESSFULLY - Invoice ID: {invoice_id}")
@@ -445,6 +389,7 @@ def process_invoice_from_stdin():
         sys.exit(1)
 
 if __name__ == "__main__":
+    import sys
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         run_comprehensive_test()
     else:
