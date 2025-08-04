@@ -21,6 +21,7 @@ import {
   savedWorkflows,
   scheduledTasks,
   feedbackLogs,
+  invoiceValidationResults,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -57,7 +58,9 @@ import {
   type SavedWorkflow,
   type InsertSavedWorkflow,
   type ScheduledTask,
-  type InsertScheduledTask
+  type InsertScheduledTask,
+  type InvoiceValidationResult,
+  type InsertInvoiceValidationResult
 } from "@shared/schema";
 import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns } from "drizzle-orm";
 
@@ -111,6 +114,11 @@ export interface IStorage {
   deleteValidationRule(id: number): Promise<void>;
   validateInvoiceData(invoiceData: any): Promise<any>;
   validateAllApprovedInvoices(): Promise<any>;
+  
+  // Binary validation methods
+  getInvoiceValidationResults(invoiceId: number): Promise<InvoiceValidationResult[]>;
+  createInvoiceValidationResult(result: InsertInvoiceValidationResult): Promise<InvoiceValidationResult>;
+  getLatestValidationResult(invoiceId: number): Promise<InvoiceValidationResult | null>;
 
   // Invoice Importer methods
   createInvoiceImporterConfig(config: InsertInvoiceImporterConfig): Promise<InvoiceImporterConfig>;
@@ -1520,6 +1528,34 @@ class PostgresStorage implements IStorage {
   // Get users by company for multi-tenant filtering
   async getUsersByCompany(companyId: number): Promise<User[]> {
     return await db.select().from(users).where(eq(users.companyId, companyId));
+  }
+
+  // Binary validation methods implementation
+  async getInvoiceValidationResults(invoiceId: number): Promise<InvoiceValidationResult[]> {
+    return await db
+      .select()
+      .from(invoiceValidationResults)
+      .where(eq(invoiceValidationResults.invoiceId, invoiceId))
+      .orderBy(desc(invoiceValidationResults.validatedAt));
+  }
+
+  async createInvoiceValidationResult(result: InsertInvoiceValidationResult): Promise<InvoiceValidationResult> {
+    const [validationResult] = await db
+      .insert(invoiceValidationResults)
+      .values(result)
+      .returning();
+    return validationResult;
+  }
+
+  async getLatestValidationResult(invoiceId: number): Promise<InvoiceValidationResult | null> {
+    const results = await db
+      .select()
+      .from(invoiceValidationResults)
+      .where(eq(invoiceValidationResults.invoiceId, invoiceId))
+      .orderBy(desc(invoiceValidationResults.validatedAt))
+      .limit(1);
+    
+    return results.length > 0 ? results[0] : null;
   }
 }
 

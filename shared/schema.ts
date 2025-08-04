@@ -71,6 +71,13 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "matched",
 ]);
 
+// Validation status enum for binary Pass/Fail validation
+export const validationStatusEnum = pgEnum("validation_status", [
+  "passed",
+  "failed",
+  "warning",
+]);
+
 // Approval status enum
 export const approvalStatusEnum = pgEnum("approval_status", [
   "pending",
@@ -98,6 +105,11 @@ export const invoices = pgTable("invoices", {
   extractedData: jsonb("extracted_data"),
   projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
+  // Binary validation fields
+  validationStatus: validationStatusEnum("validation_status"),
+  validationScore: decimal("validation_score", { precision: 5, scale: 2 }), // 0-100 percentage
+  validatedAt: timestamp("validated_at"),
+  validatedBy: varchar("validated_by"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -347,6 +359,23 @@ export const invoiceFlags = pgTable("invoice_flags", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Binary validation results table for detailed validation tracking
+export const invoiceValidationResults = pgTable("invoice_validation_results", {
+  id: serial("id").primaryKey(),
+  invoiceId: integer("invoice_id").references(() => invoices.id).notNull(),
+  status: validationStatusEnum("status").notNull(), // passed, failed, warning
+  overallScore: decimal("overall_score", { precision: 5, scale: 2 }).notNull(), // 0-100
+  failures: jsonb("failures"), // Array of failed validation rules
+  warnings: jsonb("warnings"), // Array of warning validation rules  
+  passedRules: text("passed_rules").array(), // Array of passed rule names
+  validatedAt: timestamp("validated_at").defaultNow(),
+  validatedBy: varchar("validated_by"),
+  autoValidated: boolean("auto_validated").default(true), // false for manual overrides
+  overrideReason: text("override_reason"), // reason for manual override
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
 // Predictive alerts table
 export const predictiveAlerts = pgTable("predictive_alerts", {
   id: serial("id").primaryKey(),
@@ -565,6 +594,7 @@ export const invoicesRelations = relations(invoices, ({ one, many }) => ({
   poMatches: many(invoicePoMatches),
   flags: many(invoiceFlags),
   predictiveAlerts: many(predictiveAlerts),
+  validationResults: many(invoiceValidationResults),
 }));
 
 export const lineItemsRelations = relations(lineItems, ({ one, many }) => ({
@@ -675,6 +705,13 @@ export const verifiedInvoiceProjectRelations = relations(verifiedInvoiceProject,
 export const invoiceFlagsRelations = relations(invoiceFlags, ({ one }) => ({
   invoice: one(invoices, {
     fields: [invoiceFlags.invoiceId],
+    references: [invoices.id],
+  }),
+}));
+
+export const invoiceValidationResultsRelations = relations(invoiceValidationResults, ({ one }) => ({
+  invoice: one(invoices, {
+    fields: [invoiceValidationResults.invoiceId],
     references: [invoices.id],
   }),
 }));
@@ -861,6 +898,9 @@ export type VerifiedInvoiceProject = typeof verifiedInvoiceProject.$inferSelect;
 
 export type InsertInvoiceFlag = typeof invoiceFlags.$inferInsert;
 export type InvoiceFlag = typeof invoiceFlags.$inferSelect;
+
+export type InsertInvoiceValidationResult = typeof invoiceValidationResults.$inferInsert;
+export type InvoiceValidationResult = typeof invoiceValidationResults.$inferSelect;
 
 export type InsertPredictiveAlert = typeof predictiveAlerts.$inferInsert;
 export type PredictiveAlert = typeof predictiveAlerts.$inferSelect;
