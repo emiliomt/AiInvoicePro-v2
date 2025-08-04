@@ -437,7 +437,7 @@ function extractLineItems(xmlContent: string): Array<{
     const totalPriceResult = extractAmountFromXMLTag(lineContent, 'LineExtensionAmount');
     const totalPrice = totalPriceResult.amount || '0.00';
 
-    const itemType = extractTextFromXMLTag(lineContent, 'ClassificationCode');
+    const itemType = extractTextFromXMLTag(lineContent, 'ClassificationCode') || undefined;
 
     lineItems.push({
       description,
@@ -479,6 +479,29 @@ function extractLineItems(xmlContent: string): Array<{
   }
 
   return lineItems;
+}
+
+// Helper function for scoring invoice numbers
+function scoreInvoiceNumber(number: string): number {
+  let score = 0;
+
+  // Prefer shorter numbers (more readable)
+  if (number.length <= 15) score += 3;
+  else if (number.length <= 25) score += 2;
+  else if (number.length <= 35) score += 1;
+
+  // Prefer numbers without UUIDs characteristics
+  if (!number.includes('-') || number.split('-').length <= 2) score += 2;
+
+  // Prefer numbers with digits
+  if (/\d/.test(number)) score += 2;
+
+  // Prefer numbers that look like invoice patterns
+  if (/^(FE|INV|FACT|DOC)/i.test(number)) score += 3;
+  if (/^\d+$/.test(number)) score += 2; // Pure numeric
+  if (/^[A-Z]{1,3}\d+$/i.test(number)) score += 2; // Letter prefix + numbers
+
+  return score;
 }
 
 export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false): ExtractedInvoiceData {
@@ -531,28 +554,6 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
       } else {
         console.log('AttachedDocument detected but has top-level invoice data, proceeding with normal parsing');
       }
-    }
-    // Define scoring function first
-    function scoreInvoiceNumber(number: string): number {
-      let score = 0;
-
-      // Prefer shorter numbers (more readable)
-      if (number.length <= 15) score += 3;
-      else if (number.length <= 25) score += 2;
-      else if (number.length <= 35) score += 1;
-
-      // Prefer numbers without UUIDs characteristics
-      if (!number.includes('-') || number.split('-').length <= 2) score += 2;
-
-      // Prefer numbers with digits
-      if (/\d/.test(number)) score += 2;
-
-      // Prefer numbers that look like invoice patterns
-      if (/^(FE|INV|FACT|DOC)/i.test(number)) score += 3;
-      if (/^\d+$/.test(number)) score += 2; // Pure numeric
-      if (/^[A-Z]{1,3}\d+$/i.test(number)) score += 2; // Letter prefix + numbers
-
-      return score;
     }
 
     // Extract supplier info
@@ -683,129 +684,28 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
     const concept = extractTextFromXMLTag(cleanedXmlContent, 'Note') ||
                    extractTextFromXMLTag(cleanedXmlContent, 'Description');
 
-    // Enhanced invoice number extraction with priority for readable formats
-    let invoiceNumber = null;
+    // Extract delivery/project address information first
+    let projectAddress = null;
+    let projectCity = null;
 
-    // Try common invoice number fields in order of preference (added ParentDocumentID for CreditNote)
-    const invoiceNumberFields = [
-      'InvoiceNumber', 'SerieNumber', 'SerialNumber', 'Number',
-      'InvoiceID', 'DocumentID', 'ParentDocumentID', 'ID'
-    ];
+    // Look for delivery address that might be project location
+    const deliveryPattern = /<cac:Delivery[^>]*>(.*?)<\/cac:Delivery>/gi;
+    const deliveryMatch = deliveryPattern.exec(cleanedXmlContent);
 
-    // Score and select the best invoice number
-    let bestScore = 0;
-    let bestNumber = null;
+    if (deliveryMatch) {
+      const deliveryContent = deliveryMatch[1];
+      const deliveryStreet = extractTextFromXMLTag(deliveryContent, 'StreetName');
+      const deliveryCity = extractTextFromXMLTag(deliveryContent, 'CityName');  
+      const deliveryState = extractTextFromXMLTag(deliveryContent, 'CountrySubentity');
 
-    for (const field of invoiceNumberFields) {
-      const candidate = extractTextFromXMLTag(cleanedXmlContent, field);
-      if (candidate) {
-        const score = scoreInvoiceNumber(candidate);
-        if (score > bestScore) {
-          bestScore = score;
-          bestNumber = candidate;
-        }
+      if (deliveryStreet) {
+        const addressParts = [deliveryStreet, deliveryCity, deliveryState].filter(Boolean);
+        projectAddress = addressParts.join(', ');
+        projectCity = deliveryCity;
       }
     }
 
-    invoiceNumber = bestNumber;
-
-    // If no good number found, try UUID as last resort but clean it
-    if (!invoiceNumber || bestScore < 3) {
-      const uuid = extractTextFromXMLTag(cleanedXmlContent, 'UUID');
-      if (uuid) {
-        // Try to extract meaningful parts from UUID or look for readable patterns
-        const readablePatterns = [
-          /(?:FE|INV|FACT|DOC)[-\s]*(\d+)/i,
-          /(\d{4,})/,  // At least 4 consecutive digits
-          /(^[A-Z0-9]{3,15})/i // Alphanumeric string 3-15 chars at start
-        ];
-
-        for (const pattern of readablePatterns) {
-          const match = uuid.match(pattern);
-          if (match) {
-            invoiceNumber = match[0];
-            break;
-          }
-        }
-
-        // If still very long, take first meaningful part
-        if (!invoiceNumber && uuid.length > 30) {
-          invoiceNumber = uuid.substring(0, 20);
-        } else if (!invoiceNumber) {
-          invoiceNumber = uuid;
-        }
-      }
-    }
-
-    // Use regex patterns as fallback for better Spanish/Latin American support
-    const regexData = extractWithRegexPatterns(cleanedXmlContent);
-
-    // Extract dates
-    const invoiceDate = extractTextFromXMLTag(cleanedXmlContent, 'IssueDate');
-    const dueDate = extractTextFromXMLTag(cleanedXmlContent, 'DueDate');
-
-    // Extract amounts with priority order and enhanced patterns
-    let totalAmount = null;
-    let taxAmount = null;
-    let subtotal = null;
-    let currency = 'COP';
-
-    // Enhanced subtotal extraction (TaxExclusiveAmount) - THIS FIXES THE N/A ISSUE
-    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxExclusiveAmount');
-    if (amountResult.amount) {
-      subtotal = amountResult.amount;
-      currency = amountResult.currency;
-    } else {
-      // Fallback to LineExtensionAmount
-      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'LineExtensionAmount');
-      if (amountResult.amount) {
-        subtotal = amountResult.amount;
-        currency = amountResult.currency || currency;
-      } else {
-        // Try TaxableAmount as last resort
-        amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxableAmount');
-        if (amountResult.amount) {
-          subtotal = amountResult.amount;
-          currency = amountResult.currency || currency;
-        }
-      }
-    }
-
-    // Get total amount (TaxInclusiveAmount has priority)
-    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxInclusiveAmount');
-    if (amountResult.amount) {
-      totalAmount = amountResult.amount;
-      currency = amountResult.currency || currency;
-    } else {
-      // Fallback to PayableAmount
-      amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'PayableAmount');
-      if (amountResult.amount) {
-        totalAmount = amountResult.amount;
-        currency = amountResult.currency || currency;
-      }
-    }
-
-    // Get tax amount
-    amountResult = extractAmountFromXMLTag(cleanedXmlContent, 'TaxAmount');
-    if (amountResult.amount) {
-      taxAmount = amountResult.amount;
-      currency = amountResult.currency || currency;
-    }
-
-    // Calculate subtotal if we have total and tax but no subtotal
-    if (totalAmount && taxAmount && !subtotal) {
-      const totalNum = parseFloat(totalAmount);
-      const taxNum = parseFloat(taxAmount);
-      if (!isNaN(totalNum) && !isNaN(taxNum) && totalNum > taxNum) {
-        subtotal = (totalNum - taxNum).toFixed(2);
-      }
-    }
-
-    // Extract additional fields
-    const concept = extractTextFromXMLTag(cleanedXmlContent, 'Note') ||
-                   extractTextFromXMLTag(cleanedXmlContent, 'Description');
-
-    // Extract line items first
+    // Extract line items
     const lineItems = extractLineItems(cleanedXmlContent);
 
     // Enhanced project name extraction with multiple sources
@@ -877,27 +777,6 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
         if (addressMatch && addressMatch[0]) {
           projectName = addressMatch[0].trim();
         }
-      }
-    }
-
-    // Extract delivery/project address information
-    let projectAddress = null;
-    let projectCity = null;
-
-    // Look for delivery address that might be project location
-    const deliveryPattern = /<cac:Delivery[^>]*>(.*?)<\/cac:Delivery>/gi;
-    const deliveryMatch = deliveryPattern.exec(cleanedXmlContent);
-
-    if (deliveryMatch) {
-      const deliveryContent = deliveryMatch[1];
-      const deliveryStreet = extractTextFromXMLTag(deliveryContent, 'StreetName');
-      const deliveryCity = extractTextFromXMLTag(deliveryContent, 'CityName');
-      const deliveryState = extractTextFromXMLTag(deliveryContent, 'CountrySubentity');
-
-      if (deliveryStreet) {
-        const addressParts = [deliveryStreet, deliveryCity, deliveryState].filter(Boolean);
-        projectAddress = addressParts.join(', ');
-        projectCity = deliveryCity;
       }
     }
 
