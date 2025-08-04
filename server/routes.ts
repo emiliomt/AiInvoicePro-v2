@@ -182,81 +182,26 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
     // Automatically validate the invoice after extraction
     try {
-      console.log(`Starting automatic validation for invoice ${invoice.id}`);
-      
-      // Prepare validation data with proper field mapping
-      const validationData = {
-        vendorName: cleanedData.vendorName,
-        invoiceNumber: cleanedData.invoiceNumber,
+      const validationResult = await storage.validateInvoiceData({
+        ...cleanedData,
         totalAmount: cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount.toString()) : 0,
-        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0,
-        subtotal: extractedData.subtotal ? parseFloat(extractedData.subtotal.toString()) : 0,
-        currency: cleanedData.currency || 'USD',
-        invoiceDate: cleanedData.invoiceDate,
-        dueDate: cleanedData.dueDate,
-        // Include extracted data fields for validation
-        'extractedData.taxId': extractedData.taxId,
-        'extractedData.companyName': extractedData.companyName,
-        'extractedData.buyerTaxId': extractedData.buyerTaxId,
-        'extractedData.vendorAddress': extractedData.vendorAddress,
-        'extractedData.buyerAddress': extractedData.buyerAddress,
-        'extractedData.projectAddress': extractedData.projectAddress,
-        'extractedData.projectCity': extractedData.projectCity,
-        'extractedData.concept': extractedData.concept,
-        'extractedData.descriptionSummary': extractedData.descriptionSummary,
-        'extractedData.notes': extractedData.notes,
-        'extractedData.projectName': extractedData.projectName,
-        status: invoice.status,
-        fileName: invoice.fileName,
-        confidenceScore: extractedData.confidenceScore || 0
-      };
-
-      console.log(`Validation data prepared for invoice ${invoice.id}:`, {
-        vendor: validationData.vendorName,
-        amount: validationData.totalAmount,
-        taxId: validationData['extractedData.taxId'],
-        buyerTaxId: validationData['extractedData.buyerTaxId']
+        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0
       });
 
-      const validationResult = await storage.validateInvoiceData(validationData);
-
-      // Update invoice with validation status and results
+      // Update invoice with validation status
       const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
-      const updateData: any = {
-        status: validationResult.isValid ? 'approved' : 'rejected', // Update main status
+      await storage.updateInvoice(invoice.id, {
         validationStatus,
-        isValidated: validationResult.isValid,
-        validationResults: {
-          violations: validationResult.violations,
-          validatedAt: validationResult.validatedAt,
-          totalViolations: validationResult.violations.length,
-          criticalViolations: validationResult.violations.filter(v => v.severity === 'critical').length,
-          highViolations: validationResult.violations.filter(v => v.severity === 'high').length
-        }
-      };
+        isValidated: validationResult.isValid
+      });
 
-      await storage.updateInvoice(invoice.id, updateData);
-
-      console.log(`Invoice ${invoice.id} validation completed: ${validationStatus} with ${validationResult.violations.length} violations`);
-      
-      if (validationResult.violations.length > 0) {
-        console.log(`Validation violations for invoice ${invoice.id}:`, validationResult.violations.map(v => ({
-          field: v.fieldName,
-          message: v.message,
-          severity: v.severity
-        })));
-      }
-
+      console.log(`Invoice ${invoice.id} validation completed: ${validationStatus}`);
     } catch (validationError) {
       console.error(`Validation failed for invoice ${invoice.id}:`, validationError);
       // Keep as pending if validation fails
       await storage.updateInvoice(invoice.id, {
         validationStatus: 'pending',
-        isValidated: false,
-        validationResults: {
-          error: validationError instanceof Error ? validationError.message : 'Unknown validation error',
-          validatedAt: new Date()
-        }
+        isValidated: false
       });
     }
 
@@ -1834,11 +1779,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check access permissions (user owns invoice OR it's an RPA invoice)
+      // Check if user owns the invoice
       const userId = (req.user as any).claims.sub;
-      const hasAccess = invoice.userId === userId || invoice.userId === 'rpa-system';
-
-      if (!hasAccess) {
+      if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -1852,7 +1795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user's invoices (including RPA-imported invoices)
+  // Get user's invoices
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
@@ -1867,16 +1810,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
-        // Get both user's own invoices and RPA-imported invoices
-        const userInvoices = await storage.getInvoicesByUserId(userId);
-        const rpaInvoices = await storage.getInvoicesByUserId('rpa-system');
-        
-        // Combine and sort by creation date (newest first)
-        const allInvoices = [...(userInvoices || []), ...(rpaInvoices || [])];
-        allInvoices.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-        
-        console.log(`Returning ${allInvoices.length} invoices (${userInvoices?.length || 0} user + ${rpaInvoices?.length || 0} RPA)`);
-        res.json(allInvoices);
+        const invoices = await storage.getInvoicesByUserId(userId);
+        res.json(invoices || []);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
@@ -1900,10 +1835,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check access permissions (user owns invoice OR it's an RPA invoice)
-      const hasAccess = invoice.userId === userId || invoice.userId === 'rpa-system';
-
-      if (!hasAccess) {
+      if (invoice.userId !== userId) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -2613,44 +2545,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/validation-rules/validate', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceData = req.body;
-      console.log('Manual validation request received for data:', invoiceData);
       const validationResult = await storage.validateInvoiceData(invoiceData);
       res.json(validationResult);
     } catch (error) {
       console.error("Error validating invoice data:", error);
       res.status(500).json({ message: "Failed to validate invoice data" });
-    }
-  });
-
-  // Test validation system endpoint
-  app.post('/api/validation-rules/test', isAuthenticated, async (req: any, res) => {
-    try {
-      // Test with sample data
-      const testData = {
-        vendorName: "Test Vendor",
-        invoiceNumber: "INV-2024-001",
-        totalAmount: 1000,
-        taxAmount: 190,
-        currency: "USD",
-        'extractedData.taxId': "123456789-0",
-        'extractedData.buyerTaxId': "987654321-1"
-      };
-
-      console.log('Testing validation system with data:', testData);
-      const validationResult = await storage.validateInvoiceData(testData);
-      
-      res.json({
-        message: "Validation test completed",
-        testData,
-        validationResult,
-        rulesCount: (await storage.getValidationRules()).length
-      });
-    } catch (error) {
-      console.error("Error testing validation system:", error);
-      res.status(500).json({ 
-        message: "Failed to test validation system",
-        error: error instanceof Error ? error.message : "Unknown error"
-      });
     }
   });
 
