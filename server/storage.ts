@@ -1,6 +1,3 @@
-import { drizzle } from "drizzle-orm/neon-http";
-import { neon } from "@neondatabase/serverless";
-
 import { 
   invoices, 
   lineItems, 
@@ -56,13 +53,7 @@ import {
   type InsertScheduledTask
 } from "@shared/schema";
 import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns, gte } from "drizzle-orm";
-
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is required");
-}
-
-const client = neon(process.env.DATABASE_URL);
-const db = drizzle(client);
+import { db } from "./db";
 
 export interface IStorage {
   // Companies
@@ -953,7 +944,7 @@ class PostgresStorage implements IStorage {
             eq(invoices.userId, userId),
             and(
               eq(invoices.userId, 'rpa-system'),
-              eq(invoices.companyId, user.companyId)
+              user.companyId ? eq(invoices.companyId, user.companyId) : sql`false`
             )
           )
         );
@@ -1499,17 +1490,7 @@ class PostgresStorage implements IStorage {
     }).where(eq(importedInvoices.id, id));
   }
 
-  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
-    const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
-    return result || null;
-  }
 
-  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void> {
-     await db.update(invoiceImporterConfigs).set({
-      ...updates,
-      updatedAt: new Date()
-    }).where(eq(invoiceImporterConfigs.id, id));
-  }
 
   // Enhanced import logs with comprehensive metadata
   async getImportLogsWithDetails(): Promise<any[]> {
@@ -1584,7 +1565,7 @@ export async function getInvoicesCount24Hours(): Promise<number> {
     const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
     const result = await db.select({ count: sql`count(*)` })
       .from(invoices)
-      .where(gte(invoices.uploadedAt, yesterday));
+      .where(gte(invoices.createdAt, yesterday));
     return Number(result[0].count);
   } catch (error) {
     console.error('Error getting 24h invoice count:', error);
@@ -1597,8 +1578,8 @@ export async function getInvoicesByStatus(status: string, limit: number = 50): P
   try {
     return await db.select()
       .from(invoices)
-      .where(eq(invoices.status, status))
-      .orderBy(desc(invoices.uploadedAt))
+      .where(eq(invoices.status, status as any))
+      .orderBy(desc(invoices.createdAt))
       .limit(limit);
   } catch (error) {
     console.error('Error getting invoices by status:', error);
@@ -1611,7 +1592,7 @@ export async function getRecentInvoices(limit: number = 50): Promise<any[]> {
   try {
     return await db.select()
       .from(invoices)
-      .orderBy(desc(invoices.uploadedAt))
+      .orderBy(desc(invoices.createdAt))
       .limit(limit);
   } catch (error) {
     console.error('Error getting recent invoices:', error);
