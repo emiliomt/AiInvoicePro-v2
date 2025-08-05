@@ -978,19 +978,41 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // For now, return a mock successful test since we don't have the actual ERP testing logic
-      // In a real implementation, this would test the actual ERP connection
-      console.log('✅ ERP connection test simulated for:', connection.name);
+      console.log('🔗 Running actual ERP connection test for:', connection.name);
+
+      // Import and use the actual ERP automation service
+      const { erpAutomationService } = await import('./services/erpAutomationService');
       
-      // Update last_used timestamp
-      await storage.updateErpConnection(connectionId, { 
-        lastUsed: new Date() 
-      });
+      // Decode the password for testing
+      const decodedPassword = Buffer.from(connection.password, 'base64').toString('utf8');
+      
+      // Create connection object for testing
+      const testConnection = {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decodedPassword
+      };
+
+      // Run the actual connection test
+      const testResult = await erpAutomationService.testConnection(testConnection);
+      
+      console.log('🧪 ERP connection test result:', testResult.success ? '✅ Success' : '❌ Failed');
+      
+      if (testResult.success) {
+        // Update last_used timestamp on successful test
+        await storage.updateErpConnection(connectionId, { 
+          lastUsed: new Date() 
+        });
+      }
 
       res.json({
-        success: true,
-        message: `Successfully connected to ${connection.name}`,
-        details: {
+        success: testResult.success,
+        message: testResult.message || (testResult.success 
+          ? `Successfully connected to ${connection.name}` 
+          : 'Connection test failed'),
+        details: testResult.details || {
           connectionName: connection.name,
           baseUrl: connection.baseUrl,
           username: connection.username,
