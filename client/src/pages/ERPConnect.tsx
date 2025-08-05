@@ -39,17 +39,6 @@ interface ERPConnection {
   updatedAt: string;
 }
 
-interface ERPConnection {
-  id: number;
-  name: string;
-  baseUrl: string;
-  username: string;
-  description?: string;
-  isActive: boolean;
-  lastUsed?: string;
-  createdAt: string;
-}
-
 export default function ERPConnect() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConnection, setEditingConnection] = useState<ERPConnection | null>(null);
@@ -69,8 +58,17 @@ export default function ERPConnect() {
   });
 
   // Fetch ERP connections
-  const { data: connections = [], isLoading } = useQuery<ERPConnection[]>({
+  const { data: connections = [], isLoading, error, refetch } = useQuery<ERPConnection[]>({
     queryKey: ['/api/erp/connections'],
+  });
+
+  // Debug connections state
+  console.log('🔍 ERP Connections State:', {
+    connectionsCount: connections.length,
+    connections: connections.map(c => ({ id: c.id, name: c.name })),
+    isLoading,
+    error: error?.message,
+    timestamp: Date.now()
   });
 
   // Create connection mutation
@@ -83,17 +81,26 @@ export default function ERPConnect() {
         hasPassword: !!data.password
       });
 
-      const result = await apiRequest('POST', '/api/erp/connections', data);
+      const response = await apiRequest('POST', '/api/erp/connections', data);
+      const result = await response.json();
       console.log('✅ ERP connection created:', result);
       return result;
     },
-    onSuccess: () => {
-      console.log('✅ ERP connection creation successful');
+    onSuccess: async (result) => {
+      console.log('✅ ERP connection creation successful, result:', result);
+      console.log('🔄 Invalidating queries...');
+      
+      // Force refetch to ensure we get the latest data
+      await queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
+      await refetch();
+      
+      console.log('✅ Queries invalidated and refetched');
+      
       toast({
         title: 'Success',
         description: 'ERP connection created successfully.',
       });
-      queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
+      
       setIsDialogOpen(false);
       form.reset();
     },
@@ -389,6 +396,9 @@ export default function ERPConnect() {
         </Dialog>
       </div>
 
+      {/* Debug rendering */}
+      {console.log('🔍 Rendering connections list with', connections.length, 'connections')}
+      
       {connections.length === 0 ? (
         <Card>
           <CardContent className="flex flex-col items-center justify-center py-12">
