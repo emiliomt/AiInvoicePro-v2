@@ -200,10 +200,40 @@ def process_invoice_workflow_fixed(invoice_file_path: str, user_id: str) -> Dict
     logger.info("🚀 STARTING ANZU DYNAMICS INVOICE PROCESSING WORKFLOW")
     logger.info("=" * 60)
 
+    # Output progress for Node.js to capture
+    task_id = f"TASK_{hash(invoice_file_path) % 10000}"
+    print(f"PROGRESS_UPDATE:{json.dumps({'taskId': task_id, 'type': 'stats', 'data': {'total': 10, 'processed': 0, 'successful': 0, 'failed': 0, 'percentage': 0}})}")
+
     workflow_results = {}
     invoice_id = f"INV_{hash(invoice_file_path) % 10000}"  # Mock invoice ID
 
+    # Define workflow steps
+    steps = [
+        "ERP Import", "OCR Processing", "AI Data Extraction", "Validation",
+        "Project Matching", "PO Matching", "Classification", "Approval Workflow",
+        "Final Validation", "Petty Cash"
+    ]
+
     try:
+        for step_num, step_name in enumerate(steps, 1):
+            # Send step start
+            print(f"PROGRESS_UPDATE:{json.dumps({'taskId': task_id, 'type': 'step_update', 'data': {'step_id': step_num, 'step_name': step_name, 'status': 'running'}})}")
+            print(f"LOG_UPDATE:{json.dumps({'taskId': task_id, 'message': f'Starting {step_name}...', 'level': 'info'})}")
+            
+            logger.info(f"STEP {step_num}: {step_name.upper()}")
+            result = simulate_workflow_step(step_name)
+            workflow_results[step_name.lower().replace(' ', '_')] = result
+            
+            # Send step completion
+            print(f"PROGRESS_UPDATE:{json.dumps({'taskId': task_id, 'type': 'step_update', 'data': {'step_id': step_num, 'step_name': step_name, 'status': 'completed', 'processing_time': 2.5}})}")
+            print(f"LOG_UPDATE:{json.dumps({'taskId': task_id, 'message': f'✅ {step_name} completed', 'level': 'info'})}")
+            
+            # Update overall progress
+            progress_percentage = (step_num / len(steps)) * 100
+            print(f"PROGRESS_UPDATE:{json.dumps({'taskId': task_id, 'type': 'stats', 'data': {'total': len(steps), 'processed': step_num, 'successful': step_num, 'failed': 0, 'percentage': progress_percentage}})}")
+            
+            logger.info(f"✅ {step_name} completed")
+
         # Step 1: ERP Import
         logger.info("STEP 1: ERP IMPORT")
         import_result = simulate_workflow_step("ERP Import")
@@ -268,6 +298,10 @@ def process_invoice_workflow_fixed(invoice_file_path: str, user_id: str) -> Dict
         workflow_results['invoice_id'] = invoice_id
         workflow_results['final_status'] = 'verified'
         workflow_results['processing_complete'] = True
+
+        # Send completion
+        print(f"PROGRESS_UPDATE:{json.dumps({'taskId': task_id, 'type': 'task_complete', 'data': {'completed': True, 'result': workflow_results}})}")
+        print(f"LOG_UPDATE:{json.dumps({'taskId': task_id, 'message': '🎉 Workflow completed successfully!', 'level': 'info'})}")
 
         logger.info("=" * 60)
         logger.info(f"🎉 WORKFLOW COMPLETED SUCCESSFULLY - Invoice ID: {invoice_id}")

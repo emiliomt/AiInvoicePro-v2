@@ -588,3 +588,454 @@ export default function ProgressTracker({
     </Dialog>
   );
 }
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from './ui/dialog';
+import { Progress } from './ui/progress';
+import { Badge } from './ui/badge';
+import { Button } from './ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
+import { ScrollArea } from './ui/scroll-area';
+import { 
+  CheckCircle, 
+  XCircle, 
+  Clock, 
+  Play, 
+  Wifi, 
+  WifiOff, 
+  AlertTriangle,
+  Loader2
+} from 'lucide-react';
+
+interface ProgressStep {
+  id: number;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startTime?: string;
+  endTime?: string;
+  processingTime?: number;
+}
+
+interface ProgressStats {
+  total: number;
+  processed: number;
+  successful: number;
+  failed: number;
+  percentage: number;
+}
+
+interface LogEntry {
+  id: string;
+  message: string;
+  level: 'info' | 'error' | 'warn';
+  timestamp: string;
+}
+
+interface ProgressTrackerProps {
+  isOpen: boolean;
+  onClose: () => void;
+  taskId: string;
+  taskType: 'rpa' | 'invoice_importer';
+  title?: string;
+}
+
+export function ProgressTracker({ 
+  isOpen, 
+  onClose, 
+  taskId, 
+  taskType, 
+  title = 'Processing Progress' 
+}: ProgressTrackerProps) {
+  const [isConnected, setIsConnected] = useState(false);
+  const [useWebSocket, setUseWebSocket] = useState(true);
+  const [stats, setStats] = useState<ProgressStats>({
+    total: 0,
+    processed: 0,
+    successful: 0,
+    failed: 0,
+    percentage: 0
+  });
+  const [steps, setSteps] = useState<ProgressStep[]>([]);
+  const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [isCompleted, setIsCompleted] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [autoScroll, setAutoScroll] = useState(true);
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollingRef = useRef<NodeJS.Timeout | null>(null);
+  const logsEndRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const scrollToBottom = useCallback(() => {
+    if (autoScroll && logsEndRef.current) {
+      logsEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
+  }, [autoScroll]);
+
+  const addLog = useCallback((message: string, level: 'info' | 'error' | 'warn' = 'info') => {
+    const logEntry: LogEntry = {
+      id: `${Date.now()}_${Math.random()}`,
+      message,
+      level,
+      timestamp: new Date().toISOString()
+    };
+
+    setLogs(prev => [...prev, logEntry].slice(-100)); // Keep last 100 logs
+  }, []);
+
+  const connectWebSocket = useCallback(() => {
+    if (!taskId || !useWebSocket) return;
+
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${encodeURIComponent('current_user')}`;
+      
+      const ws = new WebSocket(wsUrl);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        setIsConnected(true);
+        setError(null);
+        addLog('✅ WebSocket connection established');
+        
+        // Subscribe to task updates
+        ws.send(JSON.stringify({
+          type: 'subscribe',
+          taskId: taskId
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleProgressUpdate(data);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onclose = () => {
+        setIsConnected(false);
+        addLog('⚠️ WebSocket connection closed', 'warn');
+        
+        // Attempt reconnection if not completed
+        if (!isCompleted && useWebSocket) {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            addLog('🔄 Attempting to reconnect...', 'info');
+            connectWebSocket();
+          }, 3000);
+        }
+      };
+
+      ws.onerror = (error) => {
+        setIsConnected(false);
+        setError('WebSocket connection failed');
+        addLog('❌ WebSocket error, falling back to polling', 'error');
+        setUseWebSocket(false);
+      };
+
+    } catch (error) {
+      setError('Failed to establish WebSocket connection');
+      setUseWebSocket(false);
+    }
+  }, [taskId, useWebSocket, isCompleted, addLog]);
+
+  const handleProgressUpdate = useCallback((data: any) => {
+    switch (data.type) {
+      case 'progress':
+        if (data.data.stats) {
+          setStats(data.data.stats);
+        }
+        if (data.data.step) {
+          setSteps(prev => {
+            const newSteps = [...prev];
+            const existingIndex = newSteps.findIndex(s => s.id === data.data.step.id);
+            if (existingIndex >= 0) {
+              newSteps[existingIndex] = { ...newSteps[existingIndex], ...data.data.step };
+            } else {
+              newSteps.push(data.data.step);
+            }
+            return newSteps.sort((a, b) => a.id - b.id);
+          });
+        }
+        break;
+
+      case 'log':
+        addLog(data.data.message, data.data.level);
+        break;
+
+      case 'step_update':
+        setSteps(prev => {
+          const newSteps = [...prev];
+          const existingIndex = newSteps.findIndex(s => s.id === data.data.step_id);
+          if (existingIndex >= 0) {
+            newSteps[existingIndex] = {
+              ...newSteps[existingIndex],
+              name: data.data.step_name,
+              status: data.data.status,
+              processingTime: data.data.processing_time
+            };
+          } else {
+            newSteps.push({
+              id: data.data.step_id,
+              name: data.data.step_name,
+              status: data.data.status,
+              processingTime: data.data.processing_time
+            });
+          }
+          return newSteps.sort((a, b) => a.id - b.id);
+        });
+        break;
+
+      case 'stats':
+        setStats(data.data);
+        break;
+
+      case 'task_complete':
+        setIsCompleted(true);
+        addLog('🎉 Task completed successfully!', 'info');
+        if (data.data.clearOnComplete) {
+          setTimeout(() => {
+            setLogs([]);
+          }, 2000);
+        }
+        break;
+
+      case 'task_cancelled':
+        setIsCompleted(true);
+        addLog(`❌ Task cancelled: ${data.data.reason || 'Unknown reason'}`, 'error');
+        break;
+
+      case 'task_timeout':
+        setIsCompleted(true);
+        addLog('⏰ Task timed out', 'error');
+        break;
+    }
+  }, [addLog]);
+
+  const pollProgress = useCallback(async () => {
+    if (!taskId || useWebSocket) return;
+
+    try {
+      const endpoint = taskType === 'rpa' 
+        ? `/api/rpa/progress/${taskId}`
+        : `/api/invoice-importer/progress/${taskId}`;
+      
+      const response = await fetch(endpoint);
+      if (response.ok) {
+        const data = await response.json();
+        handleProgressUpdate({ type: 'progress', data });
+      }
+    } catch (error) {
+      console.error('Polling error:', error);
+    }
+  }, [taskId, taskType, useWebSocket, handleProgressUpdate]);
+
+  useEffect(() => {
+    if (isOpen && taskId) {
+      // Reset state
+      setStats({ total: 0, processed: 0, successful: 0, failed: 0, percentage: 0 });
+      setSteps([]);
+      setLogs([]);
+      setIsCompleted(false);
+      setError(null);
+
+      if (useWebSocket) {
+        connectWebSocket();
+      } else {
+        // Start polling
+        pollProgress();
+        pollingRef.current = setInterval(pollProgress, 2000);
+      }
+    }
+
+    return () => {
+      // Cleanup
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
+      }
+      if (pollingRef.current) {
+        clearInterval(pollingRef.current);
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+    };
+  }, [isOpen, taskId, useWebSocket, connectWebSocket, pollProgress]);
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [logs, scrollToBottom]);
+
+  const getStepIcon = (status: ProgressStep['status']) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'failed':
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'running':
+        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      default:
+        return <Clock className="w-4 h-4 text-gray-400" />;
+    }
+  };
+
+  const getLogIcon = (level: LogEntry['level']) => {
+    switch (level) {
+      case 'error':
+        return '❌';
+      case 'warn':
+        return '⚠️';
+      default:
+        return 'ℹ️';
+    }
+  };
+
+  const getLogColor = (level: LogEntry['level']) => {
+    switch (level) {
+      case 'error':
+        return 'text-red-600';
+      case 'warn':
+        return 'text-yellow-600';
+      default:
+        return 'text-gray-700';
+    }
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            {title}
+            <Badge variant={isConnected ? 'default' : 'secondary'} className="ml-2">
+              {isConnected ? <Wifi className="w-3 h-3" /> : <WifiOff className="w-3 h-3" />}
+              {isConnected ? 'Connected' : useWebSocket ? 'Connecting...' : 'Polling'}
+            </Badge>
+          </DialogTitle>
+        </DialogHeader>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 h-full">
+          {/* Left Column - Progress & Steps */}
+          <div className="space-y-4">
+            {/* Overall Progress */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Overall Progress</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <Progress value={stats.percentage} className="mb-2" />
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                  <div>Total: {stats.total}</div>
+                  <div>Processed: {stats.processed}</div>
+                  <div className="text-green-600">Success: {stats.successful}</div>
+                  <div className="text-red-600">Failed: {stats.failed}</div>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Steps */}
+            <Card>
+              <CardHeader className="pb-2">
+                <CardTitle className="text-sm">Processing Steps</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <ScrollArea className="h-48">
+                  <div className="space-y-2">
+                    {steps.map((step) => (
+                      <div key={step.id} className="flex items-center gap-2 p-2 rounded border">
+                        {getStepIcon(step.status)}
+                        <div className="flex-1">
+                          <div className="text-sm font-medium">{step.name}</div>
+                          {step.processingTime && (
+                            <div className="text-xs text-gray-500">
+                              {step.processingTime}s
+                            </div>
+                          )}
+                        </div>
+                        <Badge 
+                          variant={step.status === 'completed' ? 'default' : 
+                                  step.status === 'failed' ? 'destructive' : 
+                                  step.status === 'running' ? 'secondary' : 'outline'}
+                          className="text-xs"
+                        >
+                          {step.status}
+                        </Badge>
+                      </div>
+                    ))}
+                  </div>
+                </ScrollArea>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Right Column - Logs */}
+          <Card>
+            <CardHeader className="pb-2">
+              <CardTitle className="text-sm flex items-center justify-between">
+                Real-time Logs
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setAutoScroll(!autoScroll)}
+                  >
+                    Auto-scroll: {autoScroll ? 'On' : 'Off'}
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLogs([])}
+                  >
+                    Clear
+                  </Button>
+                </div>
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-64">
+                <div className="space-y-1 font-mono text-xs">
+                  {logs.map((log) => (
+                    <div key={log.id} className={`p-1 rounded ${getLogColor(log.level)}`}>
+                      <span className="text-gray-500">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </span>{' '}
+                      {getLogIcon(log.level)} {log.message}
+                    </div>
+                  ))}
+                  <div ref={logsEndRef} />
+                </div>
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Error Display */}
+        {error && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg flex items-center gap-2">
+            <AlertTriangle className="w-4 h-4 text-red-500" />
+            <span className="text-red-700 text-sm">{error}</span>
+          </div>
+        )}
+
+        {/* Action Buttons */}
+        <div className="flex justify-end gap-2 mt-4">
+          {!useWebSocket && (
+            <Button
+              variant="outline"
+              onClick={() => {
+                setUseWebSocket(true);
+                setError(null);
+              }}
+            >
+              Retry WebSocket
+            </Button>
+          )}
+          <Button onClick={onClose}>
+            {isCompleted ? 'Close' : 'Minimize'}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

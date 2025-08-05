@@ -543,3 +543,244 @@ export function getProgressTracker(): ProgressTracker | null {
 }
 
 export default ProgressTracker;
+import { Server as HTTPServer } from 'http';
+import { WebSocketServer, WebSocket } from 'ws';
+import { storage } from '../storage';
+
+interface ProgressUpdate {
+  type: 'progress' | 'task_complete' | 'task_cancelled' | 'task_timeout' | 'log' | 'step_update' | 'stats';
+  taskId: string;
+  userId?: string;
+  data: any;
+  timestamp: string;
+}
+
+interface UserConnection {
+  ws: WebSocket;
+  userId: string;
+  taskIds: Set<string>;
+  lastPing: number;
+}
+
+class ProgressTracker {
+  private wss: WebSocketServer | null = null;
+  private connections = new Map<string, UserConnection>();
+  private taskProgress = new Map<string, any>();
+  private cleanupInterval: NodeJS.Timeout | null = null;
+
+  initialize(server: HTTPServer) {
+    this.wss = new WebSocketServer({ 
+      server,
+      path: '/ws'
+    });
+
+    this.wss.on('connection', (ws, req) => {
+      const url = new URL(req.url!, `http://${req.headers.host}`);
+      const userId = url.searchParams.get('userId');
+      
+      if (!userId) {
+        ws.close(1008, 'User ID required');
+        return;
+      }
+
+      const connectionId = `${userId}_${Date.now()}`;
+      console.log(`📡 WebSocket connection established for user ${userId}`);
+
+      this.connections.set(connectionId, {
+        ws,
+        userId,
+        taskIds: new Set(),
+        lastPing: Date.now()
+      });
+
+      ws.on('message', (data) => {
+        try {
+          const message = JSON.parse(data.toString());
+          this.handleClientMessage(connectionId, message);
+        } catch (error) {
+          console.error('Invalid WebSocket message:', error);
+        }
+      });
+
+      ws.on('close', () => {
+        console.log(`📡 WebSocket connection closed for user ${userId}`);
+        this.connections.delete(connectionId);
+      });
+
+      ws.on('error', (error) => {
+        console.error('WebSocket error:', error);
+        this.connections.delete(connectionId);
+      });
+
+      // Send connection confirmation
+      this.sendToConnection(connectionId, {
+        type: 'connection_established',
+        userId,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    // Setup cleanup interval
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleConnections();
+    }, 30000);
+
+    console.log('✅ Progress tracker WebSocket server initialized');
+  }
+
+  private handleClientMessage(connectionId: string, message: any) {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+
+    switch (message.type) {
+      case 'subscribe':
+        if (message.taskId) {
+          connection.taskIds.add(message.taskId);
+          // Send current progress if available
+          const progress = this.taskProgress.get(message.taskId);
+          if (progress) {
+            this.sendToConnection(connectionId, {
+              type: 'progress',
+              taskId: message.taskId,
+              data: progress,
+              timestamp: new Date().toISOString()
+            });
+          }
+        }
+        break;
+
+      case 'unsubscribe':
+        if (message.taskId) {
+          connection.taskIds.delete(message.taskId);
+        }
+        break;
+
+      case 'ping':
+        connection.lastPing = Date.now();
+        this.sendToConnection(connectionId, {
+          type: 'pong',
+          timestamp: new Date().toISOString()
+        });
+        break;
+    }
+  }
+
+  private sendToConnection(connectionId: string, data: any) {
+    const connection = this.connections.get(connectionId);
+    if (connection && connection.ws.readyState === WebSocket.OPEN) {
+      try {
+        connection.ws.send(JSON.stringify(data));
+      } catch (error) {
+        console.error('Error sending WebSocket message:', error);
+        this.connections.delete(connectionId);
+      }
+    }
+  }
+
+  private cleanupStaleConnections() {
+    const now = Date.now();
+    const staleThreshold = 60000; // 1 minute
+
+    for (const [connectionId, connection] of this.connections.entries()) {
+      if (now - connection.lastPing > staleThreshold) {
+        console.log(`🧹 Cleaning up stale connection: ${connectionId}`);
+        connection.ws.close();
+        this.connections.delete(connectionId);
+      }
+    }
+  }
+
+  sendProgress(taskId: string, update: Partial<ProgressUpdate>) {
+    const progressUpdate: ProgressUpdate = {
+      type: 'progress',
+      taskId,
+      data: update.data || {},
+      timestamp: new Date().toISOString(),
+      ...update
+    };
+
+    // Store progress
+    this.taskProgress.set(taskId, {
+      ...this.taskProgress.get(taskId),
+      ...progressUpdate.data,
+      lastUpdate: progressUpdate.timestamp
+    });
+
+    // Send to relevant connections
+    for (const [connectionId, connection] of this.connections.entries()) {
+      if (connection.taskIds.has(taskId) || update.userId === connection.userId) {
+        this.sendToConnection(connectionId, progressUpdate);
+      }
+    }
+
+    console.log(`📊 Progress update sent for task ${taskId}:`, update.type);
+  }
+
+  getTaskProgress(taskId: string) {
+    return this.taskProgress.get(taskId) || null;
+  }
+
+  completeTask(taskId: string, result: any) {
+    this.sendProgress(taskId, {
+      type: 'task_complete',
+      data: { completed: true, result }
+    });
+
+    // Clean up after delay
+    setTimeout(() => {
+      this.taskProgress.delete(taskId);
+    }, 300000); // 5 minutes
+  }
+
+  cancelTask(taskId: string, reason?: string) {
+    this.sendProgress(taskId, {
+      type: 'task_cancelled',
+      data: { cancelled: true, reason }
+    });
+
+    this.taskProgress.delete(taskId);
+  }
+
+  sendLog(taskId: string, message: string, level: 'info' | 'error' | 'warn' = 'info') {
+    this.sendProgress(taskId, {
+      type: 'log',
+      data: { message, level, timestamp: new Date().toISOString() }
+    });
+  }
+
+  sendStats(taskId: string, stats: any) {
+    this.sendProgress(taskId, {
+      type: 'stats',
+      data: stats
+    });
+  }
+
+  destroy() {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    if (this.wss) {
+      this.wss.close();
+    }
+
+    this.connections.clear();
+    this.taskProgress.clear();
+  }
+}
+
+let progressTracker: ProgressTracker | null = null;
+
+export function initializeProgressTracker(server: HTTPServer): ProgressTracker {
+  if (progressTracker) {
+    progressTracker.destroy();
+  }
+
+  progressTracker = new ProgressTracker();
+  progressTracker.initialize(server);
+  return progressTracker;
+}
+
+export function getProgressTracker(): ProgressTracker | null {
+  return progressTracker;
+}
