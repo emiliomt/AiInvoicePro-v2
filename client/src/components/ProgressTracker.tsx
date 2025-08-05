@@ -246,7 +246,7 @@ export default function ProgressTracker({
   // Connection management
   useEffect(() => {
     if (isOpen) {
-      if (useWebSocket) {
+      if (wsEnabled) {
         connectWebSocket();
       } else {
         startHttpPolling();
@@ -265,11 +265,11 @@ export default function ProgressTracker({
       }
       setConnectionStatus('disconnected');
     };
-  }, [isOpen, connectWebSocket, startHttpPolling, stopPolling, useWebSocket]);
+  }, [isOpen, connectWebSocket, startHttpPolling, stopPolling, wsEnabled]);
 
   // Retry connection
   const retryConnection = () => {
-    setUseWebSocket(true);
+    setWsEnabled(true);
     reconnectAttemptsRef.current = 0;
     connectWebSocket();
   };
@@ -474,7 +474,7 @@ export default function ProgressTracker({
           )}
 
           {/* Connection Status */}
-          {connectionStatus !== 'connected' && useWebSocket && (
+          {connectionStatus !== 'connected' && wsEnabled && (
             <div className="flex items-center justify-between p-2 bg-yellow-50 border border-yellow-200 rounded text-sm">
               <span>Connection {connectionStatus}</span>
               <Button variant="outline" size="sm" onClick={retryConnection}>
