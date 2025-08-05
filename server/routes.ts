@@ -373,7 +373,7 @@ export function registerRoutes(app: Express): Server {
 
         // First try direct Python RPA processing
         result = await PythonRPAService.processInvoicesAutomatically();
-        
+
         if (result.success) {
           console.log('✅ [AUTOMATIC_PROCESSING] Python RPA processing completed successfully');
         } else {
@@ -506,11 +506,11 @@ export function registerRoutes(app: Express): Server {
   app.get('/api/rpa/test-environment', isAuthenticated, async (req, res) => {
     try {
       console.log('🧪 [RPA_TEST] Testing Python RPA environment...');
-      
+
       const result = await PythonRPAService.testRPAEnvironment();
-      
+
       console.log('✅ [RPA_TEST] Environment test completed:', JSON.stringify(result, null, 2));
-      
+
       res.json({
         success: true,
         data: result,
@@ -519,7 +519,7 @@ export function registerRoutes(app: Express): Server {
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ [RPA_TEST] Environment test failed:', errorMessage);
-      
+
       res.status(500).json({
         success: false,
         error: 'RPA environment test failed',
@@ -536,10 +536,10 @@ export function registerRoutes(app: Express): Server {
 
     try {
       console.log('🚀 [PYTHON_RPA_DIRECT] Starting direct Python RPA processing...');
-      
+
       // Ensure we always return JSON with proper headers
       res.setHeader('Content-Type', 'application/json');
-      
+
       // Set up timeout to prevent hanging - matched to Python script timeout
       processingTimeout = setTimeout(() => {
         console.error('⏰ [PYTHON_RPA_DIRECT] Processing timeout after 4.5 minutes');
@@ -555,13 +555,13 @@ export function registerRoutes(app: Express): Server {
 
       // Call Python RPA Service directly
       const result = await PythonRPAService.processInvoicesAutomatically();
-      
+
       // Clear timeout since we got a response
       clearTimeout(processingTimeout);
-      
+
       const processingTime = Date.now() - startTime;
       console.log(`✅ [PYTHON_RPA_DIRECT] Processing completed in ${processingTime}ms`);
-      
+
       if (!res.headersSent) {
         res.status(200).json({
           success: result.success,
@@ -581,7 +581,7 @@ export function registerRoutes(app: Express): Server {
       const processingTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ [PYTHON_RPA_DIRECT] Failed after', processingTime, 'ms:', errorMessage);
-      
+
       if (!res.headersSent) {
         res.status(500).json({
           success: false,
@@ -597,13 +597,13 @@ export function registerRoutes(app: Express): Server {
   // XML invoice processing endpoint
   app.post('/api/rpa/process-xml', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
-    
+
     try {
       console.log('📄 [XML_PROCESSING] Starting XML invoice processing...');
-      
+
       const { xmlContent, fileName, taskId } = req.body;
       const userId = (req.user as any)?.claims?.sub || 'unknown';
-      
+
       if (!xmlContent) {
         return res.status(400).json({
           success: false,
@@ -611,17 +611,17 @@ export function registerRoutes(app: Express): Server {
           timestamp: new Date().toISOString()
         });
       }
-      
+
       const result = await xmlProcessingService.processXmlInvoice({
         xmlContent,
         userId,
         fileName,
         taskId
       });
-      
+
       const processingTime = Date.now() - startTime;
       console.log(`✅ [XML_PROCESSING] Processing completed in ${processingTime}ms`);
-      
+
       res.status(result.success ? 200 : 400).json({
         success: result.success,
         message: result.success ? 'XML processing completed successfully' : 'XML processing failed',
@@ -634,12 +634,12 @@ export function registerRoutes(app: Express): Server {
         processingTimeMs: processingTime,
         timestamp: new Date().toISOString()
       });
-      
+
     } catch (error: any) {
       const processingTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ [XML_PROCESSING] Processing failed:', errorMessage);
-      
+
       res.status(500).json({
         success: false,
         error: 'XML processing failed',
@@ -653,13 +653,13 @@ export function registerRoutes(app: Express): Server {
   // Batch XML processing endpoint
   app.post('/api/rpa/process-xml-batch', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
-    
+
     try {
       console.log('📄 [XML_BATCH] Starting batch XML processing...');
-      
+
       const { files, taskId } = req.body;
       const userId = (req.user as any)?.claims?.sub || 'unknown';
-      
+
       if (!files || !Array.isArray(files) || files.length === 0) {
         return res.status(400).json({
           success: false,
@@ -667,12 +667,12 @@ export function registerRoutes(app: Express): Server {
           timestamp: new Date().toISOString()
         });
       }
-      
+
       const result = await xmlProcessingService.batchProcessXmlFiles(files, userId, taskId || `batch_${Date.now()}`);
-      
+
       const processingTime = Date.now() - startTime;
       console.log(`✅ [XML_BATCH] Batch processing completed in ${processingTime}ms`);
-      
+
       res.status(200).json({
         success: true,
         message: `Batch processing completed: ${result.processed}/${files.length} successful`,
@@ -685,12 +685,12 @@ export function registerRoutes(app: Express): Server {
         processingTimeMs: processingTime,
         timestamp: new Date().toISOString()
       });
-      
+
     } catch (error: any) {
       const processingTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ [XML_BATCH] Batch processing failed:', errorMessage);
-      
+
       res.status(500).json({
         success: false,
         error: 'Batch XML processing failed',
@@ -706,7 +706,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const { taskId } = req.params;
       const userId = (req.user as any)?.claims?.sub || 'unknown';
-      
+
       // Note: This would need to be implemented in progressTracker service
       // For now, return a simple response
       res.json({
@@ -716,11 +716,11 @@ export function registerRoutes(app: Express): Server {
         message: 'Check WebSocket connection for real-time updates',
         timestamp: new Date().toISOString()
       });
-      
+
     } catch (error: any) {
       const errorMessage = error instanceof Error ? error.message : String(error);
       console.error('❌ [RPA_PROGRESS] Failed to get progress:', errorMessage);
-      
+
       res.status(500).json({
         success: false,
         error: 'Failed to get progress',

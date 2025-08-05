@@ -141,8 +141,26 @@ export default function ERPConnect() {
   // Test connection mutation
   const testConnectionMutation = useMutation({
     mutationFn: async (id: number) => {
-      const response = await apiRequest('POST', `/api/erp/connections/${id}/test`);
-      return await response.json();
+      try {
+        const response = await apiRequest('POST', `/api/erp/connections/${id}/test`);
+        const contentType = response.headers.get('content-type');
+        
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`HTTP ${response.status}: ${errorText}`);
+        }
+        
+        if (contentType && contentType.includes('application/json')) {
+          return await response.json();
+        } else {
+          // Handle non-JSON responses (like HTML error pages)
+          const text = await response.text();
+          throw new Error(`Server returned non-JSON response. Status: ${response.status}`);
+        }
+      } catch (error) {
+        console.error('ERP connection test error:', error);
+        throw error;
+      }
     },
     onSuccess: (data, id) => {
       setTestingConnection(null);
@@ -166,9 +184,24 @@ export default function ERPConnect() {
     },
     onError: (error: any) => {
       setTestingConnection(null);
+      console.error('Connection test failed:', error);
+      
+      let errorMessage = 'Failed to test connection';
+      if (error.message) {
+        if (error.message.includes('<!DOCTYPE')) {
+          errorMessage = 'Server returned an error page. Please check your connection settings and try again.';
+        } else if (error.message.includes('HTTP 401')) {
+          errorMessage = 'Authentication failed. Please check your credentials.';
+        } else if (error.message.includes('HTTP 404')) {
+          errorMessage = 'Connection not found. Please refresh the page and try again.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
+      
       toast({
         title: 'Test Failed',
-        description: error.message || 'Failed to test connection',
+        description: errorMessage,
         variant: 'destructive',
       });
     },

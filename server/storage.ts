@@ -574,15 +574,15 @@ class PostgresStorage implements IStorage {
   async createErpConnection(connection: InsertErpConnection): Promise<ErpConnection> {
     try {
       console.log('Inserting ERP connection into database:', { ...connection, password: '[REDACTED]' });
-      
+
       const [result] = await db.insert(erpConnections).values({
         ...connection,
         createdAt: new Date(),
         updatedAt: new Date()
       }).returning();
-      
+
       console.log('ERP connection inserted successfully:', { id: result.id, name: result.name });
-      
+
       return result;
     } catch (error) {
       console.error('Database error creating ERP connection:', error);
@@ -599,19 +599,19 @@ class PostgresStorage implements IStorage {
     try {
       if (userId) {
         console.log('Querying ERP connections for user:', userId);
-        
+
         const results = await db.select().from(erpConnections)
           .where(eq(erpConnections.userId, userId))
           .orderBy(desc(erpConnections.createdAt));
-          
+
         console.log('Found ERP connections for user:', results.length);
-        
+
         return results;
       }
-      
+
       const results = await db.select().from(erpConnections).orderBy(desc(erpConnections.createdAt));
       console.log('Found total ERP connections:', results.length);
-      
+
       return results;
     } catch (error) {
       console.error('Database error fetching ERP connections:', error);
@@ -812,7 +812,7 @@ class PostgresStorage implements IStorage {
     return result || null;
   }
 
-  async getSavedWorkflows(): Promise<SavedWorkflow[]> {
+  async getSavedWorkflows(): Promise<SavedWorkflow[]>{
     return await db.select().from(savedWorkflows).orderBy(desc(savedWorkflows.createdAt));
   }
 
