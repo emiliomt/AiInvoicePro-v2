@@ -1,6 +1,6 @@
 import { XmlInvoiceParser } from './xmlInvoiceParser';
 import { storage } from '../storage';
-import { progressTracker } from './progressTracker';
+import { getProgressTracker } from './progressTracker';
 import { ocrService } from './ocrService';
 import { OpenAI } from 'openai';
 

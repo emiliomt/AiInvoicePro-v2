@@ -1,194 +1,286 @@
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server } from 'http';
 
-interface ProgressUpdate {
+export interface ProgressUpdate {
+  type: 'progress' | 'log' | 'error' | 'completed';
   taskId: number;
-  step: number;
-  totalSteps: number;
-  status: 'processing' | 'completed' | 'failed';
+  step?: number;
+  totalSteps?: number;
+  status?: 'running' | 'completed' | 'failed' | 'idle';
   message: string;
+  data?: {
+    total_invoices?: number;
+    processed_invoices?: number;
+    successful_imports?: number;
+    failed_imports?: number;
+    progress?: number;
+  };
   timestamp: Date;
-  data?: any;
 }
 
 interface UserConnection {
-  userId: string;
   ws: WebSocket;
+  taskIds: Set<string>;
 }
 
-class ProgressTracker {
-  private wss: WebSocketServer | null = null;
-  private connections: Map<string, UserConnection[]> = new Map();
+export class ProgressTracker {
+  private wss: WebSocketServer;
+  private connections = new Map<string, UserConnection[]>();
+  private taskProgress = new Map<string, ProgressUpdate>();
 
-  initialize(server: Server) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
+  constructor(server: Server) {
+    this.wss = new WebSocketServer({ 
+      server, 
+      path: '/ws',
+      verifyClient: (info: any) => {
+        // Basic verification - in production, add proper auth
+        return true;
+      }
+    });
 
-    this.wss.on('connection', (ws: WebSocket, req) => {
-      console.log('WebSocket connection established');
+    this.wss.on('connection', this.handleConnection.bind(this));
+    console.log('Progress tracker WebSocket server initialized');
+  }
 
-      ws.on('message', (message: Buffer) => {
-        try {
-          const messageStr = message.toString();
-
-          // Validate that the message is not empty
-          if (!messageStr || messageStr.trim() === '') {
-            console.warn('Received empty WebSocket message');
-            return;
-          }
-
-          const data = JSON.parse(messageStr);
-
-          if (data.type === 'subscribe' && data.userId) {
-            this.addConnection(data.userId, ws);
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-          // Send error response back to client
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Invalid message format'
-            }));
-          }
-        }
-      });
-
-      ws.on('close', () => {
-        this.removeConnection(ws);
-      });
-
-      ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        this.removeConnection(ws);
-      });
-
-      // Send initial connection confirmation
-      if (ws.readyState === WebSocket.OPEN) {
+  private handleConnection(ws: WebSocket, request: any) {
+    console.log('New WebSocket connection established');
+    
+    ws.on('message', (data) => {
+      try {
+        const message = JSON.parse(data.toString());
+        this.handleMessage(ws, message);
+      } catch (error) {
+        console.error('Error parsing WebSocket message:', error);
         ws.send(JSON.stringify({
-          type: 'connected',
-          message: 'WebSocket connection established'
+          type: 'error',
+          message: 'Invalid message format'
         }));
       }
     });
+
+    ws.on('close', () => {
+      this.handleDisconnection(ws);
+    });
+
+    ws.on('error', (error) => {
+      console.error('WebSocket error:', error);
+      this.handleDisconnection(ws);
+    });
+
+    // Send connection confirmation
+    ws.send(JSON.stringify({
+      type: 'connected',
+      message: 'WebSocket connection established',
+      timestamp: new Date().toISOString()
+    }));
   }
 
-  private addConnection(userId: string, ws: WebSocket) {
-    if (!this.connections.has(userId)) {
-      this.connections.set(userId, []);
-    }
-
-    this.connections.get(userId)!.push({ userId, ws });
-    console.log(`User ${userId} subscribed to progress updates`);
-
-    // Send subscription confirmation
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({
-        type: 'subscribed',
-        userId: userId,
-        message: 'Successfully subscribed to progress updates'
-      }));
+  private handleMessage(ws: WebSocket, message: any) {
+    switch (message.type) {
+      case 'subscribe':
+        this.subscribeToTask(ws, message.taskId, message.userId);
+        break;
+      case 'unsubscribe':
+        this.unsubscribeFromTask(ws, message.taskId, message.userId);
+        break;
+      case 'ping':
+        ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
+        break;
+      default:
+        console.warn('Unknown message type:', message.type);
     }
   }
 
-  private removeConnection(ws: WebSocket) {
-    for (const [userId, connections] of this.connections) {
+  private subscribeToTask(ws: WebSocket, taskId: string, userId?: string) {
+    const connectionKey = userId || 'anonymous';
+    
+    if (!this.connections.has(connectionKey)) {
+      this.connections.set(connectionKey, []);
+    }
+
+    const userConnections = this.connections.get(connectionKey)!;
+    let connection = userConnections.find(conn => conn.ws === ws);
+    
+    if (!connection) {
+      connection = { ws, taskIds: new Set() };
+      userConnections.push(connection);
+    }
+
+    connection.taskIds.add(taskId);
+
+    // Send current progress if available
+    const currentProgress = this.taskProgress.get(taskId);
+    if (currentProgress) {
+      ws.send(JSON.stringify(currentProgress));
+    }
+
+    console.log(`Subscribed to task ${taskId} for user ${connectionKey}`);
+  }
+
+  private unsubscribeFromTask(ws: WebSocket, taskId: string, userId?: string) {
+    const connectionKey = userId || 'anonymous';
+    const userConnections = this.connections.get(connectionKey);
+    
+    if (userConnections) {
+      const connection = userConnections.find(conn => conn.ws === ws);
+      if (connection) {
+        connection.taskIds.delete(taskId);
+      }
+    }
+
+    console.log(`Unsubscribed from task ${taskId} for user ${connectionKey}`);
+  }
+
+  private handleDisconnection(ws: WebSocket) {
+    // Remove this WebSocket from all connections
+    for (const [userId, connections] of Array.from(this.connections.entries())) {
       const index = connections.findIndex((conn: UserConnection) => conn.ws === ws);
       if (index !== -1) {
         connections.splice(index, 1);
         if (connections.length === 0) {
           this.connections.delete(userId);
         }
-        console.log(`User ${userId} unsubscribed from progress updates`);
         break;
       }
     }
+    console.log('WebSocket connection closed and cleaned up');
   }
 
-  sendProgress(userId: string, progress: ProgressUpdate) {
-    const connections = this.connections.get(userId);
-    if (!connections || connections.length === 0) {
-      // Don't spam logs - only log this occasionally
-      if (Math.random() < 0.1) {
-        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
-      }
-      return;
-    }
+  public sendProgress(taskId: number | string, update: Partial<ProgressUpdate>) {
+    const taskIdStr = taskId.toString();
+    
+    const progressUpdate: ProgressUpdate = {
+      type: 'progress',
+      taskId: parseInt(taskIdStr),
+      message: 'Processing...',
+      timestamp: new Date(),
+      ...update
+    };
 
-    try {
-      // Ensure timestamp is serializable
-      const progressData = {
-        ...progress,
-        timestamp: progress.timestamp.toISOString(),
-        type: 'progress'
-      };
+    // Store the latest progress
+    this.taskProgress.set(taskIdStr, progressUpdate);
 
-      const message = JSON.stringify(progressData);
-
-      connections.forEach(({ ws }) => {
-        if (ws.readyState === WebSocket.OPEN) {
+    // Send to all subscribed connections
+    const message = JSON.stringify(progressUpdate);
+    
+    for (const userConnections of Array.from(this.connections.values())) {
+      for (const connection of userConnections) {
+        if (connection.taskIds.has(taskIdStr) && connection.ws.readyState === WebSocket.OPEN) {
           try {
-            ws.send(message);
+            connection.ws.send(message);
           } catch (error) {
-            console.error('Error sending message to WebSocket:', error);
+            console.error('Error sending progress update:', error);
           }
         }
-      });
-    } catch (error) {
-      console.error('Error serializing progress data:', error);
+      }
     }
+
+    console.log(`Progress update sent for task ${taskId}:`, update.message);
   }
 
-  private sendMessage(userId: string, message: any) {
-    const connections = this.connections.get(userId);
-    if (!connections || connections.length === 0) {
-      // Don't spam logs - only log this occasionally
-      if (Math.random() < 0.1) {
-        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
-      }
-      return;
-    }
+  public sendLog(taskId: number | string, message: string, level: 'info' | 'warning' | 'error' = 'info') {
+    const taskIdStr = taskId.toString();
+    
+    const logUpdate = {
+      type: 'log',
+      taskId: parseInt(taskIdStr),
+      message,
+      level,
+      timestamp: new Date().toISOString()
+    };
 
-    const messageString = JSON.stringify(message);
-
-    connections.forEach(({ ws }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(messageString);
-        } catch (error) {
-          console.error('Error sending message to WebSocket:', error);
+    const messageStr = JSON.stringify(logUpdate);
+    
+    for (const userConnections of Array.from(this.connections.values())) {
+      for (const connection of userConnections) {
+        if (connection.taskIds.has(taskIdStr) && connection.ws.readyState === WebSocket.OPEN) {
+          try {
+            connection.ws.send(messageStr);
+          } catch (error) {
+            console.error('Error sending log update:', error);
+          }
         }
       }
-    });
+    }
   }
 
-  sendTaskComplete(userId: string, taskId: number, success: boolean, message: string, result?: any) {
-    this.sendMessage(userId, {
-      type: 'task_complete',
-      taskId,
-      success,
-      message,
-      result,
-      timestamp: new Date().toISOString()
-    });
+  public getTaskProgress(taskId: string): ProgressUpdate | undefined {
+    return this.taskProgress.get(taskId);
   }
 
-  sendTaskCancelled(userId: string, taskId: number, reason: string) {
-    this.sendMessage(userId, {
-      type: 'task_cancelled',
-      taskId,
-      reason,
-      timestamp: new Date().toISOString()
-    });
+  public clearTaskProgress(taskId: string) {
+    this.taskProgress.delete(taskId);
   }
 
-  sendTaskTimeout(userId: string, taskId: number, duration: number) {
-    this.sendMessage(userId, {
-      type: 'task_timeout',
-      taskId,
-      duration,
-      timestamp: new Date().toISOString()
-    });
+  // Parse Python stdout for progress updates
+  public parseProgressFromOutput(output: string): Partial<ProgressUpdate> | null {
+    try {
+      // Look for STATS: {json} format in output
+      const statsMatch = output.match(/STATS:\s*(\{[^}]+\})/);
+      if (statsMatch) {
+        const stats = JSON.parse(statsMatch[1]);
+        return {
+          data: stats,
+          message: `Processed ${stats.processed_invoices || 0} of ${stats.total_invoices || 0} invoices`
+        };
+      }
+
+      // Look for step indicators
+      const stepMatch = output.match(/STEP:\s*(\d+)(?:\/(\d+))?\s*-\s*(.+)/);
+      if (stepMatch) {
+        const [, step, totalSteps, message] = stepMatch;
+        return {
+          step: parseInt(step),
+          totalSteps: totalSteps ? parseInt(totalSteps) : 12,
+          message: message.trim()
+        };
+      }
+
+      // Look for progress percentage
+      const progressMatch = output.match(/PROGRESS:\s*(\d+)%/);
+      if (progressMatch) {
+        const progress = parseInt(progressMatch[1]);
+        return {
+          data: { progress },
+          message: `${progress}% complete`
+        };
+      }
+
+      return null;
+    } catch (error) {
+      console.error('Error parsing progress from output:', error);
+      return null;
+    }
+  }
+
+  // Clean up old progress data
+  public cleanup() {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+    
+    for (const [taskId, progress] of Array.from(this.taskProgress.entries())) {
+      if (progress.timestamp < oneHourAgo) {
+        this.taskProgress.delete(taskId);
+      }
+    }
   }
 }
 
-export const progressTracker = new ProgressTracker();
+// Global instance
+let progressTracker: ProgressTracker | null = null;
+
+export function initializeProgressTracker(server: Server): ProgressTracker {
+  if (!progressTracker) {
+    progressTracker = new ProgressTracker(server);
+    
+    // Set up cleanup interval
+    setInterval(() => {
+      progressTracker?.cleanup();
+    }, 10 * 60 * 1000); // Clean up every 10 minutes
+  }
+  
+  return progressTracker;
+}
+
+export function getProgressTracker(): ProgressTracker | null {
+  return progressTracker;
+}

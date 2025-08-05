@@ -1,6 +1,6 @@
 import { storage } from '../storage';
 import type { InvoiceImporterConfig, ErpConnection } from '@shared/schema';
-import { progressTracker } from './progressTracker';
+import { getProgressTracker } from './progressTracker';
 import fs from 'fs/promises';
 import path from 'path';
 
@@ -113,7 +113,15 @@ class InvoiceImporterService {
       console.log(`Import task ${logId} initialized, starting RPA process...`);
 
       // Send initial progress update
-      await this.updateStepStatus(logId, progress, 1, 'running', 'Starting import process...');
+      const progressTracker = getProgressTracker();
+      if (progressTracker) {
+        progressTracker.sendProgress(logId, {
+          step: 1,
+          totalSteps: 12,
+          status: 'running',
+          message: 'Starting import process...'
+        });
+      }
 
       // Get ERP connection or use manual configuration
       let connection: any = null;

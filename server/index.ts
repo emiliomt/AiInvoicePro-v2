@@ -1,7 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { progressTracker } from "./services/progressTracker";
+import { initializeProgressTracker } from "./services/progressTracker";
 
 const app = express();
 app.use(express.json());
@@ -62,8 +62,8 @@ app.use((req, res, next) => {
     const server = await registerRoutes(app);
     console.log('Routes registered successfully');
 
-  // Initialize progress tracker WebSocket
-    progressTracker.initialize(server);
+    // Initialize progress tracker WebSocket
+    const progressTracker = initializeProgressTracker(server);
     console.log('Progress tracker initialized');
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {

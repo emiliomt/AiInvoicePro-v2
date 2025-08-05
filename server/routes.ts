@@ -1274,5 +1274,64 @@ export function registerRoutes(app: Express): Server {
     process.exit(0);
   });
 
+  // Progress tracking API routes
+  apiRouter.get("/rpa/progress/:taskId", async (req: Request, res: Response) => {
+    try {
+      const { getProgressTracker } = await import('./services/progressTracker');
+      const progressTracker = getProgressTracker();
+      
+      if (!progressTracker) {
+        return res.status(503).json({ 
+          error: 'Progress tracking service not available' 
+        });
+      }
+
+      const taskId = req.params.taskId;
+      const progress = progressTracker.getTaskProgress(taskId);
+      
+      if (!progress) {
+        return res.status(404).json({ 
+          error: 'Task progress not found' 
+        });
+      }
+
+      res.json(progress);
+    } catch (error) {
+      console.error('Error getting progress:', error);
+      res.status(500).json({ 
+        error: 'Failed to get progress' 
+      });
+    }
+  });
+
+  apiRouter.post("/progress-update", async (req: Request, res: Response) => {
+    try {
+      const { getProgressTracker } = await import('./services/progressTracker');
+      const progressTracker = getProgressTracker();
+      
+      if (!progressTracker) {
+        return res.status(503).json({ 
+          error: 'Progress tracking service not available' 
+        });
+      }
+
+      const { taskId, ...updateData } = req.body;
+      
+      if (!taskId) {
+        return res.status(400).json({ 
+          error: 'Task ID is required' 
+        });
+      }
+
+      progressTracker.sendProgress(taskId, updateData);
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating progress:', error);
+      res.status(500).json({ 
+        error: 'Failed to update progress' 
+      });
+    }
+  });
+
   return httpServer;
 }

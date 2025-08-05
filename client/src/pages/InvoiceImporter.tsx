@@ -1,2692 +1,537 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { Card, CardContent, CardHeader, CardTitle } from '../components/ui/card';
-import { Button } from '../components/ui/button';
-import { Input } from '../components/ui/input';
-import { Label } from '../components/ui/label';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { Badge } from '../components/ui/badge';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '../components/ui/tabs';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '../components/ui/dialog';
-import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap, Edit3, RotateCcw, TimerIcon, Database, Info } from 'lucide-react';
-import { useToast } from '../hooks/use-toast';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { z } from 'zod';
+import { Plus, Play, Settings2, Trash2, Edit } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
+import { useToast } from '@/hooks/use-toast';
+import { apiRequest } from '@/lib/queryClient';
 import Header from '@/components/Header';
-import { ProgressTracker } from '../components/ProgressTracker';
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Progress } from '../components/ui/progress';
-import { ScrollArea } from '../components/ui/scroll-area';
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '../components/ui/tooltip';
+import InvoiceImporterProgress from '@/components/InvoiceImporterProgress';
 
-interface ImportConfig {
+// Form schema for invoice importer configuration
+const importerConfigSchema = z.object({
+  name: z.string().min(1, 'Configuration name is required'),
+  taskName: z.string().min(1, 'Task name is required'),
+  connectionId: z.number().optional(),
+  isManualConfig: z.boolean().default(false),
+  erpUrl: z.string().url().optional(),
+  erpUsername: z.string().optional(),
+  erpPassword: z.string().optional(),
+  sincoFullPath: z.string().optional(),
+  downloadPath: z.string().optional(),
+  description: z.string().optional(),
+  isActive: z.boolean().default(true),
+});
+
+type ImporterConfigForm = z.infer<typeof importerConfigSchema>;
+
+interface ImporterConfig {
   id: number;
+  name: string;
   taskName: string;
-  connectionId: number;
-  fileTypes: string;
-  scheduleType: string;
-  lastRun: string | null;
-  nextRun: string | null;
+  connectionId?: number;
+  isManualConfig: boolean;
+  erpUrl?: string;
+  erpUsername?: string;
+  sincoFullPath?: string;
+  downloadPath?: string;
+  description?: string;
   isActive: boolean;
-  status: 'idle' | 'running' | 'completed' | 'failed' | 'paused';
-  currentStep?: string;
-  progress?: number;
-  headless?: boolean;
-  zipDownloadTimeout?: number;
-  stats?: {
-    total_invoices: number;
-    processed_invoices: number;
-    successful_imports: number;
-    failed_imports: number;
-    skipped_imports: number;
-    current_step: string;
-    progress: number;
-  };
-  connection?: {
-    id: number;
-    name: string;
-    baseUrl: string;
-    isActive: boolean;
-    username: string;
-    lastUsed: string | null;
-  };
-}
-
-interface ImportLog {
-  id: number;
-  configId: number;
-  timestamp: string;
-  status: 'success' | 'error' | 'warning';
-  message: string;
-  documentsProcessed: number;
-  errorsCount: number;
+  createdAt: string;
+  updatedAt: string;
 }
 
 interface ERPConnection {
   id: number;
   name: string;
   baseUrl: string;
-  isActive: boolean;
   username: string;
-  lastUsed: string | null;
+  isActive: boolean;
 }
 
 export default function InvoiceImporter() {
-  const [configs, setConfigs] = useState<ImportConfig[]>([]);
-  const [logs, setLogs] = useState<ImportLog[]>([]);
-  const [importLogs, setImportLogs] = useState<any[]>([]);
-  const [selectedLogDetails, setSelectedLogDetails] = useState<any>(null);
-  const [showLogDetails, setShowLogDetails] = useState(false);
-  const [erpConnections, setErpConnections] = useState<ERPConnection[]>([]);
-  const [selectedConfig, setSelectedConfig] = useState<{
-    id: number;
-    name: string;
-    jobId?: number;
-  } | null>(null);
-  const [showCreateDialog, setShowCreateDialog] = useState(false);
-  const [showEditDialog, setShowEditDialog] = useState(false);
-  const [editingConfig, setEditingConfig] = useState<ImportConfig | null>(null);
-  const [activeTab, setActiveTab] = useState('configurations');
-  const [newConfig, setNewConfig] = useState({
-    name: '',
-    connectionId: '',
-    fileTypes: 'pdf',
-    scheduleType: 'manual',
-    scheduleConfig: {
-      timeOfDay: '09:00',
-      timezone: 'UTC',
-      daysOfWeek: [] as string[],
-      hourInterval: 1,
-      timeSlots: ['09:00'] as string[],
-      cronExpression: '',
-      weekdaysOnly: false,
-      weekendsOnly: false,
-      specificDays: [] as string[]
-    },
-    startDate: '',
-    endDate: '',
-    isPaused: false,
-    // Legacy fields for backward compatibility
-    schedule: 'manual',
-    executionsPerDay: 3,
-    spacingValue: 120,
-    spacingUnit: 'minutes',
-    startTime: '09:00',
-    headless: true, // Default to true for Replit environment
-    zipDownloadTimeout: 60 // Default ZIP download timeout in seconds
-  });
-  const [showProgressTracker, setShowProgressTracker] = useState(false);
-  const [runningConfigId, setRunningConfigId] = useState<number | null>(null);
-  const [runningConfigName, setRunningConfigName] = useState<string>('');
-  const [runningJobId, setRunningJobId] = useState<number | null>(null);
-
-  // Console view state
-  const [showConsoleView, setShowConsoleView] = useState(false);
-  const [consoleConfig, setConsoleConfig] = useState<ImportConfig | null>(null);
-  const [consoleLogs, setConsoleLogs] = useState<string[]>([]);
-  const [autoScroll, setAutoScroll] = useState(true);
-  const [clearOnComplete, setClearOnComplete] = useState(false);
-
-  // WebSocket state for real-time updates
-  const [ws, setWs] = useState<WebSocket | null>(null);
-  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
-  const wsRef = useRef<WebSocket | null>(null);
-
-  // Progress polling state
-  // Removed progressPollingInterval - now handled by ProgressTracker
-
-  // User state for WebSocket
-  const [user] = useState({ id: 'current-user' });
-
-  // ZIP timeout input display state
-  const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
-  const [editZipTimeoutInput, setEditZipTimeoutInput] = useState('60');
-  
-  // Refs for uncontrolled inputs
-  const zipTimeoutRef = useRef<HTMLInputElement>(null);
-  const editZipTimeoutRef = useRef<HTMLInputElement>(null);
-
+  const [isDialogOpen, setIsDialogOpen] = useState(false);
+  const [editingConfig, setEditingConfig] = useState<ImporterConfig | null>(null);
+  const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
   const { toast } = useToast();
   const queryClient = useQueryClient();
-  const [runningConfigs, setRunningConfigs] = useState<Set<number>>(new Set());
 
-  useEffect(() => {
-    fetchConfigs();
-    fetchLogs();
-    fetchERPConnections();
-    fetchImportLogs();
-    initializeWebSocket();
+  const form = useForm<ImporterConfigForm>({
+    resolver: zodResolver(importerConfigSchema),
+    defaultValues: {
+      name: '',
+      taskName: '',
+      isManualConfig: false,
+      description: '',
+      isActive: true,
+    },
+  });
 
-    return () => {
-      // Clean up WebSocket connection
-      if (wsRef.current) {
-        wsRef.current.close();
-        wsRef.current = null;
-      }
-      if (ws) {
-        ws.close();
-      }
-    };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  // Watch manual config toggle
+  const isManualConfig = form.watch('isManualConfig');
 
-  // Initialize WebSocket connection for real-time updates
-  const initializeWebSocket = () => {
-    // Prevent multiple connections
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected, skipping initialization');
-      return;
-    }
+  // Fetch invoice importer configurations
+  const { data: configs = [], isLoading } = useQuery<ImporterConfig[]>({
+    queryKey: ['/api/invoice-importer/configs'],
+    refetchInterval: 5000, // Refresh every 5 seconds to get latest status
+  });
 
-    // Close any existing connection
-    if (wsRef.current) {
-      wsRef.current.close();
-    }
+  // Fetch ERP connections for dropdown
+  const { data: connections = [] } = useQuery<ERPConnection[]>({
+    queryKey: ['/api/erp/connections'],
+  });
 
-    // Wrap WebSocket creation in a promise to handle errors properly
-    const connectWebSocket = () => {
-      return new Promise<void>((resolve, reject) => {
-        try {
-          setConnectionStatus('connecting');
-          const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const wsUrl = `${protocol}//${window.location.host}/ws`;
+  // Fetch logs for progress tracking
+  const { data: logs = [] } = useQuery({
+    queryKey: ['/api/invoice-importer/logs'],
+    refetchInterval: 2000, // Refresh every 2 seconds when tasks are running
+    enabled: runningTasks.size > 0,
+  });
 
-          const websocket = new WebSocket(wsUrl);
-          wsRef.current = websocket;
-
-          websocket.onopen = () => {
-            console.log('WebSocket connected for Invoice Importer');
-            setConnectionStatus('connected');
-            setWs(websocket);
-
-            try {
-              // Subscribe to progress updates with actual user ID
-              websocket.send(JSON.stringify({
-                type: 'subscribe',
-                userId: user?.id || 'current-user',
-              }));
-              resolve();
-            } catch (sendError) {
-              console.error('Error sending WebSocket subscribe message:', sendError);
-              reject(sendError);
-            }
-          };
-
-          websocket.onmessage = (event) => {
-            try {
-              const data = JSON.parse(event.data);
-
-              if (data.type === 'progress') {
-                handleRealTimeProgressUpdate(data);
-              } else if (data.type === 'task_complete') {
-                handleTaskComplete(data);
-              } else if (data.type === 'logs') {
-                handleRealTimeLogs(data);
-              }
-            } catch (error) {
-              console.error('Error parsing WebSocket message:', error);
-            }
-          };
-
-          websocket.onclose = (event) => {
-            console.log('WebSocket disconnected', event.code, event.reason);
-            setConnectionStatus('disconnected');
-            setWs(null);
-            wsRef.current = null;
-
-            // Only retry if not manually closed and it's not a permanent failure
-            if (event.code !== 1000 && event.code !== 1001) {
-              setTimeout(() => {
-                initializeWebSocket();
-              }, 5000);
-            }
-          };
-
-          websocket.onerror = (error) => {
-            console.error('WebSocket error:', error);
-            setConnectionStatus('error');
-            wsRef.current = null;
-            reject(error);
-          };
-
-        } catch (error) {
-          console.error('Failed to create WebSocket connection:', error);
-          setConnectionStatus('error');
-          reject(error);
-        }
-      });
-    };
-
-    // Connect with proper error handling
-    connectWebSocket().catch((error) => {
-      console.warn('WebSocket connection failed, continuing without real-time updates:', error);
-      setConnectionStatus('error');
-    });
-  };
-
-  // Handle real-time progress updates
-  const handleRealTimeProgressUpdate = (data: any) => {
-    const configId = data.data?.configId || data.taskId;
-    const currentStep = data.data?.currentStep || data.message;
-    const progress = data.data?.progress || data.step || 0;
-
-    setConfigs(prevConfigs => 
-      prevConfigs.map(config => {
-        if (config.id === configId) {
-          return {
-            ...config,
-            status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
-            currentStep: currentStep || config.currentStep,
-            progress: progress,
-            stats: { ...config.stats, ...data.data }
-          };
-        }
-        return config;
-      })
-    );
-
-    // If console view is open for this config, update it with real-time logs
-    if (consoleConfig && consoleConfig.id === configId) {
-      setConsoleConfig(prev => prev ? {
-        ...prev,
-        status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
-        currentStep: currentStep || prev.currentStep,
-        progress: progress,
-        stats: { ...prev.stats, ...data.data }
-      } : null);
-
-      // Handle real-time log streaming
-      if (data.data?.currentLogLine) {
-        // Add individual log line in real-time
-        const timestamp = new Date().toLocaleTimeString();
-        const cleanLine = data.data.currentLogLine.replace('Python RPA: ', '').trim();
-        const formattedLogLine = `[${timestamp}] ${cleanLine}`;
-
-        setConsoleLogs(prev => {
-          const newLogs = [...prev, formattedLogLine];
-          // Keep only last 15 lines for performance and readability
-          return newLogs.slice(-15);
-        });
-
-        // Auto-scroll if enabled
-        if (autoScroll) {
-          setTimeout(() => {
-            const consoleElement = document.getElementById('console-logs');
-            if (consoleElement?.querySelector('.overflow-auto')) {
-              const scrollArea = consoleElement.querySelector('.overflow-auto') as HTMLElement;
-              scrollArea.scrollTop = scrollArea.scrollHeight;
-            }
-          }, 50); // Faster scroll for real-time feel
-        }
-      }
-    }
-  };
-
-  // Handle real-time log updates
-  const handleRealTimeLogs = (data: any) => {
-    if (consoleConfig && data.data && data.data.configId === consoleConfig.id) {
-      const timestamp = new Date(data.data.timestamp || new Date()).toLocaleTimeString();
-      let logMessage = data.data.logs || data.message || 'Unknown message';
-
-      // Format Python RPA logs better
-      if (logMessage.includes('Python RPA:')) {
-        logMessage = logMessage.replace('Python RPA:', '').trim();
-      }
-
-      const formattedLog = `[${timestamp}] ${logMessage}`;
-
-      // Keep only last 15 lines for performance
-      setConsoleLogs(prev => {
-        const newLogs = [...prev, formattedLog];
-        return newLogs.slice(-15); // Always maintain 15-line limit
-      });
-
-      // Auto-scroll to bottom if enabled
-      if (autoScroll) {
-        setTimeout(() => {
-          const consoleElement = document.getElementById('console-logs');
-          if (consoleElement?.querySelector('.overflow-auto')) {
-            const scrollArea = consoleElement.querySelector('.overflow-auto') as HTMLElement;
-            scrollArea.scrollTop = scrollArea.scrollHeight;
-          }
-        }, 100);
-      }
-    }
-  };
-
-  // Handle task completion
-  const handleTaskComplete = (data: any) => {
-    const configId = data.data?.configId || data.configId;
-
-    setConfigs(prevConfigs => 
-      prevConfigs.map(config => {
-        if (config.id === configId) {
-          return {
-            ...config,
-            status: data.success ? 'completed' : 'failed',
-            lastRun: new Date().toISOString(),
-            progress: 100,
-            stats: data.data ? {
-              total_invoices: data.data.totalInvoices || 0,
-              processed_invoices: data.data.totalInvoices || 0,
-              successful_imports: data.data.successfulImports || 0,
-              failed_imports: data.data.failedImports || 0,
-              skipped_imports: data.data.skippedImports || 0,
-              current_step: 'Completed',
-              progress: 100
-            } : config.stats
-          };
-        }
-        return config;
-      })
-    );
-
-    if (consoleConfig && consoleConfig.id === configId) {
-      setConsoleConfig(prev => prev ? {
-        ...prev,
-        status: data.success ? 'completed' : 'failed',
-        lastRun: new Date().toISOString(),
-        progress: 100,
-        stats: data.data ? {
-          total_invoices: data.data.totalInvoices || 0,
-          processed_invoices: data.data.totalInvoices || 0,
-          successful_imports: data.data.successfulImports || 0,
-          failed_imports: data.data.failedImports || 0,
-          skipped_imports: data.data.skippedImports || 0,
-          current_step: 'Completed',
-          progress: 100
-        } : prev.stats
-      } : null);
-
-      // Add completion message to logs
-      const timestamp = new Date().toLocaleTimeString();
-      const completionLog = `[${timestamp}] === Import ${data.success ? 'completed successfully' : 'failed'} ===`;
-      setConsoleLogs(prev => [...prev, completionLog]);
-
-      // Clear logs if option is enabled (after a delay to show completion)
-      if (clearOnComplete) {
-        setTimeout(() => {
-          setConsoleLogs([]);
-        }, 3000);
-      }
-    }
-
-    setRunningConfigId(null);
-
-    toast({
-      title: data.success ? "Import Completed" : "Import Failed",
-      description: data.message || (data.success ? "Invoice import completed successfully" : "Invoice import failed"),
-      variant: data.success ? "default" : "destructive"
-    });
-  };
-
-  const fetchConfigs = async () => {
-    try {
-      const response = await fetch('/api/invoice-importer/configs');
-      if (response.ok) {
-        const data = await response.json();
-        setConfigs(data);
-      }
-    } catch (error) {
-      console.error('Error fetching configs:', error);
-    }
-  };
-
-  const fetchLogs = async () => {
-    try {
-      const response = await fetch('/api/invoice-importer/logs');
-      if (response.ok) {
-        const data = await response.json();
-        setLogs(data);
-      }
-    } catch (error) {
-      console.error('Error fetching logs:', error);
-    }
-  };
-
-  const fetchERPConnections = async () => {
-    try {
-      const response = await fetch('/api/erp/connections');
-      if (response.ok) {
-        const data = await response.json();
-        setErpConnections(data.filter((conn: ERPConnection) => conn.isActive));
-      }
-    } catch (error) {
-      console.error('Error fetching ERP connections:', error);
-    }
-  };
-
-  const fetchImportLogs = async () => {
-    try {
-      const response = await fetch('/api/import-logs');
-      if (response.ok) {
-        const logsData = await response.json();
-        setImportLogs(logsData);
-      } else {
-        console.error('Failed to fetch import logs');
-      }
-    } catch (error) {
-      console.error('Error fetching import logs:', error);
-    }
-  };
-
-  const handleViewLogDetails = async (logId: number) => {
-    try {
-      const response = await fetch(`/api/import-logs/${logId}`);
-      if (response.ok) {
-        const logDetails = await response.json();
-        setSelectedLogDetails(logDetails);
-        setShowLogDetails(true);
-      } else {
-        toast({
-          title: "Error",
-          description: "Failed to fetch log details",
-          variant: "destructive"
-        });
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: "Failed to fetch log details",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const formatDuration = (seconds: number | null) => {
-    if (!seconds) return 'N/A';
-    const hours = Math.floor(seconds / 3600);
-    const minutes = Math.floor((seconds % 3600) / 60);
-    const secs = seconds % 60;
-
-    if (hours > 0) {
-      return `${hours}h ${minutes}m ${secs}s`;
-    } else if (minutes > 0) {
-      return `${minutes}m ${secs}s`;
-    } else {
-      return `${secs}s`;
-    }
-  };
-
-  const getStatusBadgeVariant = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
-      case 'failed': return 'bg-red-100 text-red-800 border-red-200';
-      case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'pending': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-
-
-
-
-  // Open console view for a specific configuration
-  const openConsoleView = (config: ImportConfig) => {
-    setConsoleConfig(config);
-    setConsoleLogs([]); // Clear previous logs
-    setShowConsoleView(true);
-
-    // Start fetching existing logs for this config
-    fetchConfigLogs(config.id);
-  };
-
-  // Fetch logs for a specific config
-  const fetchConfigLogs = async (configId: number) => {
-    try {
-      const response = await fetch(`/api/invoice-importer/logs/config/${configId}`);
-      if (response.ok) {
-        const logs = await response.json();
-        const formattedLogs = logs.map((log: any) => 
-          `[${new Date(log.createdAt).toLocaleTimeString()}] ${log.logs || log.message || 'No details'}`
-        );
-        setConsoleLogs(formattedLogs);
-      }
-    } catch (error) {
-      console.error('Error fetching config logs:', error);
-    }
-  };
-
-  // Status helper functions
-  const getStatusIcon = (status: string | undefined) => {
-    switch (status || 'idle') {
-      case 'running': return <Loader2 className="w-4 h-4 animate-spin text-blue-600" />;
-      case 'completed': return <CheckCircle className="w-4 h-4 text-green-600" />;
-      case 'failed': return <XCircle className="w-4 h-4 text-red-600" />;
-      case 'paused': return <Pause className="w-4 h-4 text-yellow-600" />;
-      default: return <Clock className="w-4 h-4 text-gray-400" />;
-    }
-  };
-
-  const getStatusColor = (status: string | undefined) => {
-    switch (status || 'idle') {
-      case 'running': return 'bg-blue-100 text-blue-800 border-blue-200';
-      case 'completed': return 'bg-green-100 text-green-800 border-green-200';
-      case 'failed': return 'bg-red-100 text-red-800 border-red-200';
-      case 'paused': return 'bg-yellow-100 text-yellow-800 border-yellow-200';
-      case 'idle': return 'bg-gray-100 text-gray-800 border-gray-200';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200';
-    }
-  };
-
-  const formatLastRun = (lastRun: string | null) => {
-    if (!lastRun) return 'Never';
-    const date = new Date(lastRun);
-    return date.toLocaleString();
-  };
-
-  const handleRunNow = async (configId: number) => {
-    try {
-      setRunningConfigs(prev => prev.add(configId));
-
-      const response = await fetch(`/api/invoice-importer/run/${configId}`, {
+  // Create configuration mutation
+  const createConfigMutation = useMutation({
+    mutationFn: (data: ImporterConfigForm) =>
+      apiRequest('/api/invoice-importer/configs', {
         method: 'POST',
-        credentials: 'include',
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to start import task');
-      }
-
-      const result = await response.json();
-      console.log('Import task started:', result);
-
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
+      setIsDialogOpen(false);
+      form.reset();
       toast({
-        title: "Import Started",
-        description: result.message || "Invoice import process has been initiated.",
+        title: 'Configuration Created',
+        description: 'Invoice importer configuration has been created successfully.',
       });
-
-      // Update the config status to show it's running and start real-time updates
-      if (result.logId) {
-        console.log(`🚀 Starting in-card progress tracking for configId: ${configId}, logId: ${result.logId}`);
-
-        // Update config status immediately to show running state
-        setConfigs(prevConfigs => 
-          prevConfigs.map(config => 
-            config.id === configId 
-              ? { 
-                  ...config, 
-                  status: 'running', 
-                  progress: 0, 
-                  currentStep: 'Initializing import process...',
-                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, skipped_imports: 0, current_step: 'Initializing import process...', progress: 0 }
-                }
-              : config
-          )
-        );
-
-        // Start polling for progress updates as backup to WebSocket
-        startConfigProgressPolling(configId, result.logId);
-      }
-
-      // Refresh the logs after a short delay
-      setTimeout(() => {
-        queryClient.invalidateQueries({ queryKey: ['importLogs'] });
-      }, 1000);
-
-    } catch (error) {
-      console.error('Error running import task:', error);
+    },
+    onError: (error: any) => {
       toast({
-        title: "Error",
-        description: "Failed to start the import task. Please try again.",
-        variant: "destructive",
+        title: 'Error',
+        description: error.message || 'Failed to create configuration',
+        variant: 'destructive',
       });
-    } finally {
-      setRunningConfigs(prev => {
-        const newSet = new Set(prev);
-        newSet.delete(configId);
-        return newSet;
-      });
-    }
-  };
+    },
+  });
 
-  // Track active polling sessions to prevent duplicates
-  const pollingSessionsRef = useRef<Map<number, boolean>>(new Map());
-
-  // Cleanup function to stop all polling sessions
-  const stopAllPolling = () => {
-    console.log('🛑 Stopping all active polling sessions');
-    pollingSessionsRef.current.clear();
-  };
-
-  // In-card progress polling system with session management
-  const startConfigProgressPolling = (configId: number, logId: number) => {
-    // Stop any existing polling for this config
-    if (pollingSessionsRef.current.has(configId)) {
-      console.log(`Stopping existing polling session for config ${configId}`);
-      pollingSessionsRef.current.delete(configId);
-    }
-
-    console.log(`Starting in-card progress polling for config ${configId}, logId: ${logId}`);
-    pollingSessionsRef.current.set(configId, true);
-
-    const pollProgress = async () => {
-      // Check if this polling session should continue
-      if (!pollingSessionsRef.current.get(configId)) {
-        console.log(`Polling session cancelled for config ${configId}`);
-        return;
-      }
-      try {
-        const response = await fetch(`/api/rpa/progress/${logId}`, {
-          credentials: 'include',
-        });
-
-        if (response.ok) {
-          const data = await response.json();
-          console.log(`📊 Progress poll result for config ${configId}, logId ${logId}:`, data);
-
-          // Update the config with progress data
-          setConfigs(prevConfigs => 
-            prevConfigs.map(config => 
-              config.id === configId 
-                ? {
-                    ...config,
-                    status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
-                    progress: data.progressPercent || 0,
-                    currentStep: data.stage || 'Processing...',
-                    stats: {
-                      total_invoices: data.total || 0,
-                      processed_invoices: data.processed || 0,
-                      successful_imports: data.success || 0,
-                      failed_imports: data.failed || 0,
-                      skipped_imports: data.skipped || 0,
-                      current_step: data.stage || 'Processing...',
-                      progress: data.progressPercent || 0
-                    }
-                  }
-                : config
-            )
-          );
-
-          // Continue polling if still running or initializing
-          if (data.status === 'running' || data.status === 'processing' || data.status === 'initializing' || data.progressPercent < 100) {
-            setTimeout(pollProgress, 4000); // Poll every 4 seconds to reduce UI flickering
-          } else {
-            console.log(`✅ Progress polling completed for config ${configId} with status: ${data.status}`);
-            // Clean up polling session
-            pollingSessionsRef.current.delete(configId);
-          }
-        } else {
-          console.error(`❌ Progress polling failed for config ${configId}: ${response.status} ${response.statusText}`);
-          // For failed status, stop polling to prevent endless loops
-          if (response.status === 404 || data?.status === 'failed') {
-            console.log(`🛑 Stopping polling for config ${configId} due to failure or job not found`);
-            pollingSessionsRef.current.delete(configId);
-          } else {
-            // Only retry on temporary errors
-            setTimeout(pollProgress, 5000);
-          }
-        }
-      } catch (error) {
-        console.error(`❌ Error polling progress for config ${configId}:`, error);
-        // Clean up polling session on repeated errors
-        pollingSessionsRef.current.delete(configId);
-        console.log(`🛑 Stopped polling for config ${configId} due to error`);
-      }
-    };
-
-    // Start polling immediately
-    pollProgress();
-  };
-
-  const validateMultipleDailySchedule = () => {
-    if (newConfig.schedule !== 'multiple_daily') return true;
-
-    const { executionsPerDay, spacingValue, spacingUnit } = newConfig;
-    const spacingInMinutes = spacingUnit === 'hours' ? spacingValue * 60 : spacingValue;
-    const totalTimeRequired = (executionsPerDay - 1) * spacingInMinutes;
-    const minutesInDay = 24 * 60;
-
-    if (totalTimeRequired >= minutesInDay) {
-      toast({
-        title: "Invalid Schedule",
-        description: `Cannot fit ${executionsPerDay} executions with ${spacingValue} ${spacingUnit} spacing in a single day`,
-        variant: "destructive"
-      });
-      return false;
-    }
-
-    return true;
-  };
-
-  const handleCreateConfig = async () => {
-    if (!newConfig.name) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter a configuration name",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    // Require ERP connection selection
-    if (!newConfig.connectionId) {
-      toast({
-        title: "Missing Information",
-        description: "Please select an ERP connection",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!validateMultipleDailySchedule()) {
-      return;
-    }
-
-    // Get the selected ERP connection to auto-populate credentials
-    const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
-    if (!selectedConnection) {
-      toast({
-        title: "Invalid Connection",
-        description: "Selected ERP connection not found",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    try {
-      const configData = {
-        taskName: newConfig.name,
-        connectionId: parseInt(newConfig.connectionId),
-        fileTypes: newConfig.fileTypes,
-        scheduleType: newConfig.scheduleType,
-        scheduleConfig: newConfig.scheduleConfig,
-        timezone: newConfig.scheduleConfig.timezone,
-        startDate: newConfig.startDate || null,
-        endDate: newConfig.endDate || null,
-        isPaused: newConfig.isPaused,
-        // ERP credentials will be automatically retrieved from the selected connection
-        erpUrl: selectedConnection.baseUrl,
-        erpUsername: selectedConnection.username,
-        erpPassword: '', // Password will be retrieved from connection on server side
-        isManualConfig: false, // Always false - only connection-based configs allowed
-        headless: newConfig.headless,
-        zipDownloadTimeout: newConfig.zipDownloadTimeout,
-        // Legacy fields for backward compatibility
-        scheduleTime: newConfig.scheduleConfig.timeOfDay,
-        scheduleDay: newConfig.scheduleConfig.daysOfWeek.join(',')
-      };
-
-      const response = await fetch('/api/invoice-importer/configs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(configData)
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Configuration Created",
-          description: "Import configuration created successfully"
-        });
-        setShowCreateDialog(false);
-        setNewConfig({ 
-          name: '', 
-          connectionId: '', 
-          fileTypes: 'pdf', 
-          scheduleType: 'manual',
-          scheduleConfig: {
-            timeOfDay: '09:00',
-            timezone: 'UTC',
-            daysOfWeek: [],
-            hourInterval: 1,
-            timeSlots: ['09:00'],
-            cronExpression: '',
-            weekdaysOnly: false,
-            weekendsOnly: false,
-            specificDays: []
-          },
-          startDate: '',
-          endDate: '',
-          isPaused: false,
-          // Legacy fields for backward compatibility
-          schedule: 'manual',
-          executionsPerDay: 3,
-          spacingValue: 120,
-          spacingUnit: 'minutes',
-          startTime: '09:00',
-          headless: true,
-          zipDownloadTimeout: 60
-        });
-        fetchConfigs();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to create configuration');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create configuration",
-        variant: "destructive"
-      });
-    }
-  };
-
-  const handleDeleteConfig = async (configId: number) => {
-    try {
-        const response = await fetch(`/api/invoice-importer/configs/${configId}`, {
-            method: 'DELETE'
-        });
-
-        if (response.ok) {
-            toast({
-                title: "Configuration Deleted",
-                description: "Import configuration deleted successfully"
-            });
-            fetchConfigs(); // Refresh configurations after deletion
-        } else {
-            const errorData = await response.json();
-            throw new Error(errorData.error || 'Failed to delete configuration');
-        }
-    } catch (error) {
-        toast({
-            title: "Error",
-            description: error instanceof Error ? error.message : "Failed to delete configuration",
-            variant: "destructive"
-        });
-    }
-  };
-
-  const handleEditConfig = (config: ImportConfig) => {
-    setEditingConfig(config);
-
-    // Initialize the edit input display state and ref value
-    setEditZipTimeoutInput(String(config.zipDownloadTimeout || 60));
-    
-    // Set the ref value when dialog opens
-    setTimeout(() => {
-      if (editZipTimeoutRef.current) {
-        editZipTimeoutRef.current.value = String(config.zipDownloadTimeout || 60);
-      }
-    }, 100);
-
-    // Populate form with existing config data
-    setNewConfig({
-      name: config.taskName,
-      connectionId: config.connectionId.toString(),
-      fileTypes: config.fileTypes,
-      scheduleType: config.scheduleType,
-      scheduleConfig: {
-        timeOfDay: '09:00',
-        timezone: 'UTC',
-        daysOfWeek: [] as string[],
-        hourInterval: 1,
-        timeSlots: ['09:00'] as string[],
-        cronExpression: '',
-        weekdaysOnly: false,
-        weekendsOnly: false,
-        specificDays: [] as string[]
-      },
-      startDate: '',
-      endDate: '',
-      isPaused: false,
-      // Legacy fields for backward compatibility
-      schedule: config.scheduleType,
-      executionsPerDay: 3,
-      spacingValue: 120,
-      spacingUnit: 'minutes',
-      startTime: '09:00',
-      headless: config.headless !== undefined ? config.headless : true,
-      zipDownloadTimeout: config.zipDownloadTimeout || 60
-    });
-
-    setShowEditDialog(true);
-  };
-
-  const handleUpdateConfig = async () => {
-    if (!editingConfig) return;
-
-    if (!newConfig.name) {
-      toast({
-        title: "Missing Information",
-        description: "Please enter a configuration name",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!newConfig.connectionId) {
-      toast({
-        title: "Missing Information",
-        description: "Please select an ERP connection",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    if (!validateMultipleDailySchedule()) {
-      return;
-    }
-
-    try {
-      // Get the selected ERP connection for validation
-      const selectedConnection = erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId));
-      if (!selectedConnection) {
-        toast({
-          title: "Invalid Connection",
-          description: "Selected ERP connection not found",
-          variant: "destructive"
-        });
-        return;
-      }
-
-      const configData = {
-        taskName: newConfig.name,
-        connectionId: parseInt(newConfig.connectionId),
-        fileTypes: newConfig.fileTypes,
-        scheduleType: newConfig.scheduleType,
-        scheduleConfig: newConfig.scheduleConfig,
-        startDate: newConfig.startDate || null,
-        endDate: newConfig.endDate || null,
-        isPaused: newConfig.isPaused,
-        // ERP credentials will be automatically retrieved from the connection
-        erpUrl: selectedConnection.baseUrl,
-        erpUsername: selectedConnection.username,
-        erpPassword: '', // Password will be retrieved from connection on server side
-        isManualConfig: false, // Always false - only connection-based configs allowed
-        headless: newConfig.headless,
-        zipDownloadTimeout: newConfig.zipDownloadTimeout,
-        // Legacy fields for backward compatibility
-        scheduleTime: newConfig.scheduleConfig.timeOfDay,
-        scheduleDay: newConfig.scheduleConfig.daysOfWeek.join(',')
-      };
-
-      const response = await fetch(`/api/invoice-importer/configs/${editingConfig.id}`, {
+  // Update configuration mutation
+  const updateConfigMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: ImporterConfigForm }) =>
+      apiRequest(`/api/invoice-importer/configs/${id}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(configData)
-      });
-
-      if (response.ok) {
-        toast({
-          title: "Configuration Updated",
-          description: "Import configuration updated successfully"
-        });
-        setShowEditDialog(false);
-        setEditingConfig(null);
-        setNewConfig({ 
-          name: '', 
-          connectionId: '', 
-          fileTypes: 'pdf', 
-          scheduleType: 'manual',
-          scheduleConfig: {
-            timeOfDay: '09:00',
-            timezone: 'UTC',
-            daysOfWeek: [],
-            hourInterval: 1,
-            timeSlots: ['09:00'],
-            cronExpression: '',
-            weekdaysOnly: false,
-            weekendsOnly: false,
-            specificDays: []
-          },
-          startDate: '',
-          endDate: '',
-          isPaused: false,
-          schedule: 'manual',
-          executionsPerDay: 3,
-          spacingValue: 120,
-          spacingUnit: 'minutes',
-          startTime: '09:00',
-          headless: true,
-          zipDownloadTimeout: 60
-        });
-        fetchConfigs();
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to update configuration');
-      }
-    } catch (error) {
+        body: JSON.stringify(data),
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
+      setIsDialogOpen(false);
+      form.reset();
+      setEditingConfig(null);
       toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to update configuration",
-        variant: "destructive"
+        title: 'Configuration Updated',
+        description: 'Invoice importer configuration has been updated successfully.',
       });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to update configuration',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  // Delete configuration mutation
+  const deleteConfigMutation = useMutation({
+    mutationFn: (id: number) =>
+      apiRequest(`/api/invoice-importer/configs/${id}`, {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
+      toast({
+        title: 'Configuration Deleted',
+        description: 'Invoice importer configuration has been deleted successfully.',
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: 'Error',
+        description: error.message || 'Failed to delete configuration',
+        variant: 'destructive',
+      });
+    },
+  });
+
+  const onSubmit = (data: ImporterConfigForm) => {
+    if (editingConfig) {
+      updateConfigMutation.mutate({ id: editingConfig.id, data });
+    } else {
+      createConfigMutation.mutate(data);
     }
   };
 
-  // Test progress simulation for demonstration
-  const handleTestProgress = async (configId: number) => {
-    try {
-      const response = await fetch(`/api/invoice-importer/test-progress/${configId}`, {
-        method: 'POST'
-      });
+  const handleEdit = (config: ImporterConfig) => {
+    setEditingConfig(config);
+    form.reset({
+      name: config.name,
+      taskName: config.taskName,
+      connectionId: config.connectionId,
+      isManualConfig: config.isManualConfig,
+      erpUrl: config.erpUrl || '',
+      erpUsername: config.erpUsername || '',
+      erpPassword: '', // Don't populate password for security
+      sincoFullPath: config.sincoFullPath || '',
+      downloadPath: config.downloadPath || '',
+      description: config.description || '',
+      isActive: config.isActive,
+    });
+    setIsDialogOpen(true);
+  };
 
-      if (response.ok) {
-        toast({
-          title: "Test Progress Started",
-          description: "Progress simulation started. Watch the progress bar update in real-time!"
-        });
-
-        // Note: Progress tracking handled by ProgressTracker component
-
-        // Update config status to show it's running
-        setConfigs(prevConfigs =>
-          prevConfigs.map(config =>
-            config.id === configId
-              ? { ...config, status: 'running', progress: 0, currentStep: 'Starting test simulation' }
-              : config
-          )
-        );
-      } else {
-        const errorData = await response.json();
-        throw new Error(errorData.message || 'Failed to start test progress');
-      }
-    } catch (error) {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to start test progress",
-        variant: "destructive"
-      });
+  const handleDelete = (id: number) => {
+    if (confirm('Are you sure you want to delete this configuration?')) {
+      deleteConfigMutation.mutate(id);
     }
   };
+
+  const handleAddNew = () => {
+    setEditingConfig(null);
+    form.reset();
+    setIsDialogOpen(true);
+  };
+
+  const handleStartImport = (configId: number) => {
+    setRunningTasks(prev => new Set(prev).add(configId));
+  };
+
+  const getConfigStatus = (configId: number) => {
+    const latestLog = logs.find((log: any) => log.configId === configId);
+    if (!latestLog) return 'idle';
+    return latestLog.status === 'running' ? 'running' : 
+           latestLog.status === 'completed' ? 'completed' : 
+           latestLog.status === 'failed' ? 'failed' : 'idle';
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900"></div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <div className="flex justify-between items-center mb-6">
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
-            <p className="text-gray-600 mt-2">Configure automated ERP invoice import processes</p>
+            <p className="text-gray-600 mt-2">
+              Automated invoice importing from ERP systems with real-time progress tracking
+            </p>
           </div>
-          <Button 
-            onClick={() => setShowCreateDialog(true)}
-            className="flex items-center space-x-2"
-          >
-            <Plus className="w-4 h-4" />
-            <span>Create Import Configuration</span>
-          </Button>
+          <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
+            <DialogTrigger asChild>
+              <Button onClick={handleAddNew} className="flex items-center gap-2">
+                <Plus size={16} />
+                Add Configuration
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>
+                  {editingConfig ? 'Edit Importer Configuration' : 'Add Importer Configuration'}
+                </DialogTitle>
+                <DialogDescription>
+                  Configure automated invoice importing from your ERP system.
+                </DialogDescription>
+              </DialogHeader>
+              <Form {...form}>
+                <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
+                  <FormField
+                    control={form.control}
+                    name="name"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Configuration Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., SINCO Invoice Import" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                  
+                  <FormField
+                    control={form.control}
+                    name="taskName"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Task Name</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., Import Daily Invoices" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="isManualConfig"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Manual Configuration</FormLabel>
+                          <div className="text-sm text-muted-foreground">
+                            Use manual ERP credentials instead of existing connection
+                          </div>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  {!isManualConfig ? (
+                    <FormField
+                      control={form.control}
+                      name="connectionId"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>ERP Connection</FormLabel>
+                          <Select 
+                            onValueChange={(value) => field.onChange(parseInt(value))}
+                            value={field.value?.toString() || ''}
+                          >
+                            <FormControl>
+                              <SelectTrigger>
+                                <SelectValue placeholder="Select an ERP connection" />
+                              </SelectTrigger>
+                            </FormControl>
+                            <SelectContent>
+                              {connections.map((connection) => (
+                                <SelectItem key={connection.id} value={connection.id.toString()}>
+                                  {connection.name} ({connection.baseUrl})
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : (
+                    <>
+                      <FormField
+                        control={form.control}
+                        name="erpUrl"
+                        render={({ field }) => (
+                          <FormItem>
+                            <FormLabel>ERP URL</FormLabel>
+                            <FormControl>
+                              <Input placeholder="https://your-erp-system.com" {...field} />
+                            </FormControl>
+                            <FormMessage />
+                          </FormItem>
+                        )}
+                      />
+                      <div className="grid grid-cols-2 gap-4">
+                        <FormField
+                          control={form.control}
+                          name="erpUsername"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Username</FormLabel>
+                              <FormControl>
+                                <Input placeholder="your.username" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name="erpPassword"
+                          render={({ field }) => (
+                            <FormItem>
+                              <FormLabel>Password</FormLabel>
+                              <FormControl>
+                                <Input type="password" placeholder="••••••••" {...field} />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <FormField
+                    control={form.control}
+                    name="sincoFullPath"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>SINCO Full Path (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., /full/path/to/sinco" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="downloadPath"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Download Path (Optional)</FormLabel>
+                        <FormControl>
+                          <Input placeholder="e.g., /downloads/invoices" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="description"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Description (Optional)</FormLabel>
+                        <FormControl>
+                          <Textarea 
+                            placeholder="Brief description of this configuration..." 
+                            className="resize-none"
+                            {...field} 
+                          />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="isActive"
+                    render={({ field }) => (
+                      <FormItem className="flex flex-row items-center justify-between rounded-lg border p-4">
+                        <div className="space-y-0.5">
+                          <FormLabel className="text-base">Active</FormLabel>
+                          <div className="text-sm text-muted-foreground">
+                            Enable this configuration for automated imports
+                          </div>
+                        </div>
+                        <FormControl>
+                          <Switch
+                            checked={field.value}
+                            onCheckedChange={field.onChange}
+                          />
+                        </FormControl>
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="flex justify-end space-x-3">
+                    <Button 
+                      type="button" 
+                      variant="outline" 
+                      onClick={() => setIsDialogOpen(false)}
+                    >
+                      Cancel
+                    </Button>
+                    <Button 
+                      type="submit"
+                      disabled={createConfigMutation.isPending || updateConfigMutation.isPending}
+                    >
+                      {editingConfig ? 'Update' : 'Create'} Configuration
+                    </Button>
+                  </div>
+                </form>
+              </Form>
+            </DialogContent>
+          </Dialog>
         </div>
 
-        <Tabs value={activeTab} onValueChange={setActiveTab}>
-          <TabsList className="grid w-full grid-cols-3">
-            <TabsTrigger value="configurations">Configurations</TabsTrigger>
-            <TabsTrigger value="logs">Import Logs</TabsTrigger>
-            <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
-          </TabsList>
-
-
-
-          <TabsContent value="configurations" className="space-y-4">
-            {configs.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <Settings className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-600">No import configurations found</p>
-                  <p className="text-sm text-gray-500 mt-2">Create your first configuration to start importing invoices automatically</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="grid gap-4">
-                {configs.map((config) => (
-                  <Card 
-                    key={config.id}
-                  >
-                    <CardHeader>
-                      <div className="flex justify-between items-center">
-                        <div className="flex items-center space-x-3">
-                          <div className="flex items-center space-x-2">
-                            {getStatusIcon(config.status)}
-                            <CardTitle className="text-lg">{config.taskName}</CardTitle>
-                          </div>
-                          <Badge className={`border ${getStatusColor(config.status || 'idle')}`}>
-                            {(config.status || 'idle').charAt(0).toUpperCase() + (config.status || 'idle').slice(1)}
-                          </Badge>
-                        </div>
-                        <div className="flex items-center space-x-2" onClick={(e) => e.stopPropagation()}>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleRunNow(config.id)}
-                            disabled={runningConfigs.has(config.id)}
-                          >
-                            {runningConfigs.has(config.id) ? (
-                              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                            ) : (
-                              <Play className="w-4 h-4 mr-2" />
-                            )}
-                            {runningConfigs.has(config.id) ? 'Running...' : 'Run Now'}
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="sm" 
-                            onClick={() => handleEditConfig(config)}
-                            disabled={config.status === 'running'}
-                          >
-                            <Edit3 className="w-4 h-4 mr-2" />
-                            Edit
-                          </Button>
-                          <AlertDialog>
-                            <AlertDialogTrigger asChild>
-                              <Button variant="destructive" size="sm">
-                                <Trash2 className="w-4 h-4 mr-2" />
-                                Delete
-                              </Button>
-                            </AlertDialogTrigger>
-                            <AlertDialogContent>
-                              <AlertDialogHeader>
-                                <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                                <AlertDialogDescription>
-                                  This action cannot be undone. This will permanently delete the configuration.
-                                </AlertDialogDescription>
-                              </AlertDialogHeader>
-                              <AlertDialogFooter>
-                                <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                <AlertDialogAction onClick={() => handleDeleteConfig(config.id)}>Delete</AlertDialogAction>
-                              </AlertDialogFooter>
-                            </AlertDialogContent>
-                          </AlertDialog>
-                        </div>
-                      </div>
-                    </CardHeader>
-                    <CardContent>
-                      <div className="grid grid-cols-2 gap-4 mb-4">
-                        <div>
-                          <p className="text-sm text-gray-600">ERP Connection</p>
-                          <p className="font-medium">{config.connection?.name || `Connection ID: ${config.connectionId}`}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">File Types</p>
-                          <p className="font-medium">{config.fileTypes}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Schedule</p>
-                          <p className="font-medium">{config.scheduleType}</p>
-                        </div>
-                        <div>
-                          <p className="text-sm text-gray-600">Last Run</p>
-                          <p className="font-medium">{formatLastRun(config.lastRun)}</p>
-                        </div>
-                      </div>
-
-                      {/* Progress bar for running tasks */}
-                      {config.status === 'running' && (
-                        <div className="space-y-2">
-                          <div className="flex justify-between items-center">
-                            <p className="text-sm text-gray-600">
-                              {config.currentStep || 'Processing...'}
-                            </p>
-                            <p className="text-sm text-gray-600">
-                              {config.progress ? `${Math.round(config.progress)}%` : '0%'}
-                            </p>
-                          </div>
-                          <Progress value={config.progress || 0} className="w-full" />
-                          {config.stats && (
-                            <TooltipProvider>
-                              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 text-xs text-gray-600 bg-gray-50 dark:bg-gray-800 p-2 rounded">
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="font-medium cursor-help flex items-center gap-1">
-                                      Total: <span className="text-blue-600">{config.stats.total_invoices || 0}</span>
-                                      <Info className="w-3 h-3 opacity-60" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Total invoices found in ERP system</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className="text-gray-400">|</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="font-medium cursor-help flex items-center gap-1">
-                                      Processed: <span className="text-yellow-600">{config.stats.processed_invoices || 0}</span>
-                                      <Info className="w-3 h-3 opacity-60" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Invoices attempted for processing</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className="text-gray-400">|</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="font-medium cursor-help flex items-center gap-1">
-                                      Success: <span className="text-green-600">{config.stats.successful_imports || 0}</span>
-                                      <Info className="w-3 h-3 opacity-60" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Successfully imported and processed invoices</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className="text-gray-400">|</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="font-medium cursor-help flex items-center gap-1">
-                                      Failed: <span className="text-red-600">{config.stats.failed_imports || 0}</span>
-                                      <Info className="w-3 h-3 opacity-60" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Invoices that failed to process due to errors</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                                <span className="text-gray-400">|</span>
-                                <Tooltip>
-                                  <TooltipTrigger asChild>
-                                    <span className="font-medium cursor-help flex items-center gap-1">
-                                      Skipped: <span className="text-orange-600">{config.stats.skipped_imports || 0}</span>
-                                      <Info className="w-3 h-3 opacity-60" />
-                                    </span>
-                                  </TooltipTrigger>
-                                  <TooltipContent>
-                                    <p>Invoices skipped (already imported previously)</p>
-                                  </TooltipContent>
-                                </Tooltip>
-                              </div>
-                            </TooltipProvider>
-                          )}
-                        </div>
-                      )}
-
-
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            )}
-          </TabsContent>
-
-          <TabsContent value="logs" className="space-y-4">
-            {importLogs.length === 0 ? (
-              <Card>
-                <CardContent className="text-center py-8">
-                  <FileText className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-                  <p className="text-gray-600">No import logs found</p>
-                  <p className="text-sm text-gray-500 mt-2">Check back after running your configurations</p>
-                </CardContent>
-              </Card>
-            ) : (
-              <div className="space-y-4">
-                {/* Header */}
-                <div className="flex justify-between items-center">
-                  <div>
-                    <h3 className="text-lg font-semibold text-gray-900">Import Execution History</h3>
-                    <p className="text-sm text-gray-600">Complete history of import processes with detailed metadata</p>
-                  </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    onClick={fetchImportLogs}
-                    className="flex items-center space-x-2"
-                  >
-                    <Download className="w-4 h-4" />
-                    <span>Refresh</span>
-                  </Button>
-                </div>
-
-                {/* Import Logs Table */}
+        {configs.length === 0 ? (
+          <Card>
+            <CardContent className="flex flex-col items-center justify-center py-12">
+              <Settings2 className="h-16 w-16 text-gray-400 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Import Configurations</h3>
+              <p className="text-gray-600 text-center mb-4">
+                Create your first invoice importer configuration to start automating invoice processing.
+              </p>
+              <Button onClick={handleAddNew} className="flex items-center gap-2">
+                <Plus size={16} />
+                Add Configuration
+              </Button>
+            </CardContent>
+          </Card>
+        ) : (
+          <div className="grid gap-6 lg:grid-cols-2">
+            {configs.map((config) => (
+              <div key={config.id} className="space-y-4">
                 <Card>
-                  <CardContent className="p-0">
-                    <div className="overflow-x-auto">
-                      <table className="w-full">
-                        <thead className="bg-gray-50 border-b border-gray-200">
-                          <tr>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Configuration
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Start Time
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Duration
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              File Type
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Results
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Status
-                            </th>
-                            <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                              Actions
-                            </th>
-                          </tr>
-                        </thead>
-                        <tbody className="bg-white divide-y divide-gray-200">
-                          {importLogs.map((log) => (
-                            <tr key={log.logId} className="hover:bg-gray-50">
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex flex-col">
-                                  <div className="text-sm font-medium text-gray-900">
-                                    {log.configurationName || 'Unknown Config'}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    ID: {log.logId} • ERP: {log.erpConnectionId}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex flex-col">
-                                  <div className="text-sm text-gray-900">
-                                    {log.startTime ? new Date(log.startTime).toLocaleDateString() : 'N/A'}
-                                  </div>
-                                  <div className="text-xs text-gray-500">
-                                    {log.startTime ? new Date(log.startTime).toLocaleTimeString() : 'N/A'}
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {formatDuration(log.duration)}
-                                </div>
-                                <div className="text-xs text-gray-500">
-                                  {log.triggeredBy || 'Manual'}
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <Badge variant="outline" className="text-xs">
-                                  {log.fileType?.toUpperCase() || 'N/A'}
-                                </Badge>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="text-sm text-gray-900">
-                                  {/* Enhanced Statistics Display */}
-                                  <div className="grid grid-cols-2 gap-2 mb-2">
-                                    <div className="flex items-center space-x-1">
-                                      <Database size={12} className="text-blue-500" />
-                                      <span className="text-xs text-gray-600">Total:</span>
-                                      <span className="font-medium text-blue-600">{log.totalInvoices || 0}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                      <CheckCircle size={12} className="text-green-500" />
-                                      <span className="text-xs text-gray-600">Success:</span>
-                                      <span className="font-medium text-green-600">{log.successfulImports || 0}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                      <XCircle size={12} className="text-red-500" />
-                                      <span className="text-xs text-gray-600">Failed:</span>
-                                      <span className="font-medium text-red-600">{log.failedImports || 0}</span>
-                                    </div>
-                                    <div className="flex items-center space-x-1">
-                                      <Pause size={12} className="text-orange-500" />
-                                      <span className="text-xs text-gray-600">Skipped:</span>
-                                      <span className="font-medium text-orange-600">{log.skippedImports || 0}</span>
-                                    </div>
-                                  </div>
-                                  {/* Progress bar for visual representation */}
-                                  <div className="w-full bg-gray-200 rounded-full h-2">
-                                    <div className="flex h-2 rounded-full overflow-hidden">
-                                      <div 
-                                        className="bg-green-500" 
-                                        style={{ 
-                                          width: `${log.totalInvoices > 0 ? ((log.successfulImports || 0) / log.totalInvoices) * 100 : 0}%` 
-                                        }}
-                                      ></div>
-                                      <div 
-                                        className="bg-red-500" 
-                                        style={{ 
-                                          width: `${log.totalInvoices > 0 ? ((log.failedImports || 0) / log.totalInvoices) * 100 : 0}%` 
-                                        }}
-                                      ></div>
-                                      <div 
-                                        className="bg-orange-500" 
-                                        style={{ 
-                                          width: `${log.totalInvoices > 0 ? ((log.skippedImports || 0) / log.totalInvoices) * 100 : 0}%` 
-                                        }}
-                                      ></div>
-                                    </div>
-                                  </div>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap">
-                                <div className="flex items-center space-x-2">
-                                  {getStatusIcon(log.status)}
-                                  <Badge className={getStatusBadgeVariant(log.status)}>
-                                    {log.status?.charAt(0).toUpperCase() + log.status?.slice(1) || 'Unknown'}
-                                  </Badge>
-                                </div>
-                              </td>
-                              <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  onClick={() => handleViewLogDetails(log.logId)}
-                                  className="text-blue-600 hover:text-blue-900"
-                                >
-                                  <Eye className="w-4 h-4 mr-1" />
-                                  View Logs
-                                </Button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <CardTitle className="text-lg">{config.name}</CardTitle>
+                        <CardDescription>{config.taskName}</CardDescription>
+                      </div>
+                      <div className="flex gap-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleEdit(config)}
+                        >
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDelete(config.id)}
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="space-y-2 text-sm text-gray-600">
+                      {config.description && <p>{config.description}</p>}
+                      <p><strong>Type:</strong> {config.isManualConfig ? 'Manual Configuration' : 'ERP Connection'}</p>
+                      {config.sincoFullPath && <p><strong>Path:</strong> {config.sincoFullPath}</p>}
                     </div>
                   </CardContent>
                 </Card>
-              </div>
-            )}
-          </TabsContent>
 
-          <TabsContent value="schedule" className="space-y-4">
-            <ScheduleOverview />
-          </TabsContent>
-        </Tabs>
-
-        <Dialog open={showCreateDialog} onOpenChange={setShowCreateDialog}>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Import Configuration</DialogTitle>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div>
-                <Label htmlFor="config-name">Configuration Name</Label>
-                <Input
-                  id="config-name"
-                  value={newConfig.name}
-                  onChange={(e) => setNewConfig({ ...newConfig, name: e.target.value })}
-                  placeholder="Enter configuration name"
+                {/* Progress Tracker Component */}
+                <InvoiceImporterProgress
+                  configId={config.id}
+                  configName={config.name}
+                  onStartImport={() => handleStartImport(config.id)}
                 />
               </div>
-              <div>
-                <Label htmlFor="erp-connection">ERP Connection</Label>
-                <Select
-                  value={newConfig.connectionId}
-                  onValueChange={(value) => setNewConfig({ ...newConfig, connectionId: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select ERP connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {erpConnections.map((connection) => (
-                      <SelectItem key={connection.id} value={connection.id.toString()}>
-                        {connection.name} ({connection.baseUrl})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div>
-                <Label htmlFor="file-types">File Types</Label>
-                <Select
-                  value={newConfig.fileTypes}
-                  onValueChange={(value) => setNewConfig({ ...newConfig, fileTypes: value })}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="pdf">PDF only</SelectItem>
-                    <SelectItem value="xml">XML only</SelectItem>
-                    <SelectItem value="both">Both PDF and XML</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {/* Dynamic Scheduling Interface */}
-              <div className="space-y-4">
-                <Label>Schedule Configuration</Label>
-
-                {/* Schedule Type Selector */}
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { value: 'manual', label: 'Manual', icon: '🔘' },
-                    { value: 'daily', label: 'Daily', icon: '🔁' },
-                    { value: 'weekly', label: 'Weekly', icon: '🔁' },
-                    { value: 'hourly', label: 'Hourly', icon: '🔁' },
-                    { value: 'multiple_daily', label: 'Multiple Daily', icon: '🔁' },
-                    { value: 'cron', label: 'Advanced (Cron)', icon: '⏰' }
-                  ].map((schedule) => (
-                    <Button
-                      key={schedule.value}
-                      type="button"
-                      variant={newConfig.scheduleType === schedule.value ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setNewConfig({ 
-                        ...newConfig, 
-                        scheduleType: schedule.value,
-                        schedule: schedule.value // Keep legacy field in sync
-                      })}
-                      className="flex flex-col items-center p-2 h-auto"
-                    >
-                      <span className="text-lg mb-1">{schedule.icon}</span>
-                      <span className="text-xs">{schedule.label}</span>
-                    </Button>
-                  ))}
-                </div>
-
-                {/* Dynamic Schedule Configuration */}
-                {newConfig.scheduleType !== 'manual' && (
-                  <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
-                    {/* Daily Schedule */}
-                    {newConfig.scheduleType === 'daily' && (
-                      <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-gray-700">Daily Schedule</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="daily-time">Time of Day</Label>
-                            <Input
-                              id="daily-time"
-                              type="time"
-                              value={newConfig.scheduleConfig.timeOfDay}
-                              onChange={(e) => setNewConfig({
-                                ...newConfig,
-                                scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
-                              })}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="timezone">Time Zone</Label>
-                            <Select
-                              value={newConfig.scheduleConfig.timezone}
-                              onValueChange={(value) => setNewConfig({
-                                ...newConfig,
-                                scheduleConfig: { ...newConfig.scheduleConfig, timezone: value }
-                              })}
-                            >
-                              <SelectTrigger>
-                                <SelectValue />
-                              </SelectTrigger>
-                              <SelectContent>
-                                <SelectItem value="UTC">UTC</SelectItem>
-                                <SelectItem value="America/New_York">Eastern (EST/EDT)</SelectItem>
-                                <SelectItem value="America/Chicago">Central (CST/CDT)</SelectItem>
-                                <SelectItem value="America/Denver">Mountain (MST/MDT)</SelectItem>
-                                <SelectItem value="America/Los_Angeles">Pacific (PST/PDT)</SelectItem>
-                                <SelectItem value="America/Bogota">Colombia (COT)</SelectItem>
-                              </SelectContent>
-                            </Select>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Weekly Schedule */}
-                    {newConfig.scheduleType === 'weekly' && (
-                      <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-gray-700">Weekly Schedule</h4>
-                        <div>
-                          <Label>Days of Week</Label>
-                          <div className="grid grid-cols-7 gap-2 mt-2">
-                            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                              <Button
-                                key={day}
-                                type="button"
-                                variant={newConfig.scheduleConfig.daysOfWeek.includes(day) ? "default" : "outline"}
-                                size="sm"
-                                onClick={() => {
-                                  const days = newConfig.scheduleConfig.daysOfWeek;
-                                  const newDays = days.includes(day)
-                                    ? days.filter(d => d !== day)
-                                    : [...days, day];
-                                  setNewConfig({
-                                    ...newConfig,
-                                    scheduleConfig: { ...newConfig.scheduleConfig, daysOfWeek: newDays }
-                                  });
-                                }}
-                                className="text-xs p-1"
-                              >
-                                {day}
-                              </Button>
-                            ))}
-                          </div>
-                        </div>
-                        <div>
-                          <Label htmlFor="weekly-time">Time of Day</Label>
-                          <Input
-                            id="weekly-time"
-                            type="time"
-                            value={newConfig.scheduleConfig.timeOfDay}
-                            onChange={(e) => setNewConfig({
-                              ...newConfig,
-                              scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
-                            })}
-                          />
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Hourly Schedule */}
-                    {newConfig.scheduleType === 'hourly' && (
-                      <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-gray-700">Hourly Schedule</h4>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <Label htmlFor="hour-interval">Repeat every X hours</Label>
-                            <Input
-                              id="hour-interval"
-                              type="number"
-                              min="1"
-                              max="24"
-                              value={newConfig.scheduleConfig.hourInterval}
-                              onChange={(e) => setNewConfig({
-                                ...newConfig,
-                                scheduleConfig: { ...newConfig.scheduleConfig, hourInterval: parseInt(e.target.value) || 1 }
-                              })}
-                            />
-                          </div>
-                          <div>
-                            <Label htmlFor="starting-at">Starting at (optional)</Label>
-                            <Input
-                              id="starting-at"
-                              type="time"
-                              value={newConfig.scheduleConfig.timeOfDay}
-                              onChange={(e) => setNewConfig({
-                                ...newConfig,
-                                scheduleConfig: { ...newConfig.scheduleConfig, timeOfDay: e.target.value }
-                              })}
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Multiple Times Per Day Schedule */}
-                    {newConfig.scheduleType === 'multiple_daily' && (
-                      <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-gray-700">Multiple Times Per Day</h4>
-                        <div>
-                          <Label>Time Slots</Label>
-                          <div className="space-y-2 mt-2">
-                            {newConfig.scheduleConfig.timeSlots.map((time, index) => (
-                              <div key={index} className="flex items-center space-x-2">
-                                <Input
-                                  type="time"
-                                  value={time}
-                                  onChange={(e) => {
-                                    const newTimeSlots = [...newConfig.scheduleConfig.timeSlots];
-                                    newTimeSlots[index] = e.target.value;
-                                    setNewConfig({
-                                      ...newConfig,
-                                      scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
-                                    });
-                                  }}
-                                  className="flex-1"
-                                />
-                                {newConfig.scheduleConfig.timeSlots.length > 1 && (
-                                  <Button
-                                    type="button"
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => {
-                                      const newTimeSlots = newConfig.scheduleConfig.timeSlots.filter((_, i) => i !== index);
-                                      setNewConfig({
-                                        ...newConfig,
-                                        scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
-                                      });
-                                    }}
-                                  >
-                                    Remove
-                                  </Button>
-                                )}
-                              </div>
-                            ))}
-                            <Button
-                              type="button"
-                              variant="outline"
-                              size="sm"
-                              onClick={() => {
-                                const newTimeSlots = [...newConfig.scheduleConfig.timeSlots, '12:00'];
-                                setNewConfig({
-                                  ...newConfig,
-                                  scheduleConfig: { ...newConfig.scheduleConfig, timeSlots: newTimeSlots }
-                                });
-                              }}
-                            >
-                              Add Time Slot
-                            </Button>
-                          </div>
-                        </div>
-
-                        {/* Optional Filters */}
-                        <div className="space-y-2">
-                          <Label>Optional Filters</Label>
-                          <div className="space-y-2">
-                            <div className="flex items-center space-x-2">
-                              <Checkbox
-                                id="weekdays-only"
-                                checked={newConfig.scheduleConfig.weekdaysOnly}
-                                onCheckedChange={(checked) => setNewConfig({
-                                  ...newConfig,
-                                  scheduleConfig: { 
-                                    ...newConfig.scheduleConfig, 
-                                    weekdaysOnly: checked === true,
-                                    weekendsOnly: checked === true ? false : newConfig.scheduleConfig.weekendsOnly
-                                  }
-                                })}
-                              />
-                              <Label htmlFor="weekdays-only" className="text-sm">Weekdays only</Label>
-                            </div>
-                            <div className="flex items-center space-x-2">
-                              <Checkbox
-                                id="weekends-only"
-                                checked={newConfig.scheduleConfig.weekendsOnly}
-                                onCheckedChange={(checked) => setNewConfig({
-                                  ...newConfig,
-                                  scheduleConfig: { 
-                                    ...newConfig.scheduleConfig, 
-                                    weekendsOnly: checked === true,
-                                    weekdaysOnly: checked === true ? false : newConfig.scheduleConfig.weekdaysOnly
-                                  }
-                                })}
-                              />
-                              <Label htmlFor="weekends-only" className="text-sm">Weekends only</Label>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* Advanced Cron Schedule */}
-                    {newConfig.scheduleType === 'cron' && (
-                      <div className="space-y-3">
-                        <h4 className="font-medium text-sm text-gray-700">Advanced (Cron Expression)</h4>
-                        <div>
-                          <Label htmlFor="cron-input">Cron Expression</Label>
-                          <Input
-                            id="cron-input"
-                            placeholder="0 9 * * 1 (Every Monday at 9:00 AM)"
-                            value={newConfig.scheduleConfig.cronExpression}
-                            onChange={(e) => setNewConfig({
-                              ...newConfig,
-                              scheduleConfig: { ...newConfig.scheduleConfig, cronExpression: e.target.value }
-                            })}
-                          />
-                          <p className="text-xs text-gray-500 mt-1">
-                            Format: minute hour day month dayofweek
-                          </p>
-                        </div>
-                        {newConfig.scheduleConfig.cronExpression && (
-                          <div className="text-xs text-blue-600 bg-blue-50 p-2 rounded border">
-                            <strong>Preview:</strong> {newConfig.scheduleConfig.cronExpression}
-                          </div>
-                        )}
-                        <Button
-                          type="button"
-                          variant="outline"
-                          size="sm"
-                          onClick={() => setNewConfig({
-                            ...newConfig,
-                            scheduleType: 'daily'
-                          })}
-                        >
-                          Switch to Basic Mode
-                        </Button>
-                      </div>
-                    )}
-
-                    {/* Common Schedule Options */}
-                    <div className="space-y-3 border-t pt-3">
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
-                          <Label htmlFor="start-date">Start Date (optional)</Label>
-                          <Input
-                            id="start-date"
-                            type="date"
-                            value={newConfig.startDate}
-                            onChange={(e) => setNewConfig({ ...newConfig, startDate: e.target.value })}
-                          />
-                        </div>
-                        <div>
-                          <Label htmlFor="end-date">End Date (optional)</Label>
-                          <Input
-                            id="end-date"
-                            type="date"
-                            value={newConfig.endDate}
-                            onChange={(e) => setNewConfig({ ...newConfig, endDate: e.target.value })}
-                          />
-                        </div>
-                      </div>
-
-                      <div className="flex items-center space-x-2">
-                        <Checkbox
-                          id="pause-schedule"
-                          checked={newConfig.isPaused}
-                          onCheckedChange={(checked) => setNewConfig({ ...newConfig, isPaused: checked === true })}
-                        />
-                        <Label htmlFor="pause-schedule" className="text-sm">Pause schedule after creation</Label>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {/* Python RPA Configuration */}
-              <div className="space-y-4 p-4 bg-blue-50 rounded-lg border">
-                <h4 className="font-medium text-sm text-blue-700">Python RPA Configuration</h4>
-
-                {newConfig.connectionId && (
-                  <div className="p-3 bg-white rounded border-l-4 border-blue-400">
-                    <p className="text-sm text-gray-600">
-                      <strong>ERP Connection:</strong> {erpConnections.find(conn => conn.id === parseInt(newConfig.connectionId))?.name}
-                    </p>
-                    <p className="text-sm text-gray-500">
-                      ERP URL, Username, and Password will be automatically imported from the selected connection.
-                    </p>
-                  </div>
-                )}
-
-                {!newConfig.connectionId && (
-                  <div className="p-3 bg-yellow-50 rounded border-l-4 border-yellow-400">
-                    <p className="text-sm text-yellow-700">
-                      Please select an ERP connection above to configure the automation credentials.
-                    </p>
-                  </div>
-                )}
-              </div>
-
-              {/* Browser Configuration */}
-              <div className="space-y-4">
-                <h4 className="text-sm font-medium text-gray-700">Browser Configuration</h4>
-                <div className="flex items-center space-x-2">
-                  <Checkbox
-                    id="headless"
-                    checked={newConfig.headless}
-                    onCheckedChange={(checked) => setNewConfig(prev => ({ ...prev, headless: checked === true }))}
-                  />
-                  <Label htmlFor="headless" className="text-sm">
-                    Run Chrome in headless mode (recommended for server environments)
-                  </Label>
-                </div>
-                <p className="text-xs text-gray-500">
-                  Headless mode runs the browser without a visible interface, which is more stable for automated tasks. 
-                  Disable only for debugging purposes.
-                </p>
-
-                {/* ZIP Download Timeout */}
-                <div>
-                  <Label htmlFor="zip-timeout" className="text-sm">ZIP Download Timeout (seconds)</Label>
-                  <Input
-                    ref={zipTimeoutRef}
-                    id="zip-timeout"
-                    type="number"
-                    min="10"
-                    max="300"
-                    defaultValue="60"
-                    onChange={(e) => {
-                      const value = e.target.value;
-                      
-                      // Update the config state with parsed value if valid
-                      if (value !== '') {
-                        const numValue = parseInt(value);
-                        if (!isNaN(numValue) && numValue >= 10 && numValue <= 300) {
-                          setNewConfig(prev => ({ 
-                            ...prev, 
-                            zipDownloadTimeout: numValue 
-                          }));
-                        }
-                      }
-                    }}
-                    onBlur={(e) => {
-                      const value = e.target.value;
-                      if (value === '' || isNaN(parseInt(value))) {
-                        if (zipTimeoutRef.current) {
-                          zipTimeoutRef.current.value = '60';
-                        }
-                        setNewConfig(prev => ({ 
-                          ...prev, 
-                          zipDownloadTimeout: 60 
-                        }));
-                      }
-                    }}
-                    placeholder="60"
-                    className="mt-1"
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Time to wait for ZIP files to download (10-300 seconds). Default: 60 seconds.
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2">
-                <Button variant="outline" onClick={() => setShowCreateDialog(false)}>
-                  Cancel
-                </Button>
-                <Button onClick={handleCreateConfig}>
-                  Create Configuration
-                </Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Console View Dialog */}
-        <Dialog open={showConsoleView} onOpenChange={setShowConsoleView}>
-          <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className="flex items-center space-x-2">
-                    {consoleConfig && getStatusIcon(consoleConfig.status)}
-                    <DialogTitle>
-                      {consoleConfig?.taskName} - Console
-                    </DialogTitle>
-                  </div>
-                  {consoleConfig && (
-                    <Badge className={`border ${getStatusColor(consoleConfig.status || 'idle')}`}>
-                      {(consoleConfig.status || 'idle').charAt(0).toUpperCase() + (consoleConfig.status || 'idle').slice(1)}
-                    </Badge>
-                  )}
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className={`w-2 h-2 rounded-full ${
-                    connectionStatus === 'connected' ? 'bg-green-500' : 
-                    connectionStatus === 'connecting' ? 'bg-yellow-500' : 'bg-red-500'
-                  }`} />
-                  <span className="text-xs text-gray-500">
-                    {connectionStatus === 'connected' ? 'Live' : 
-                     connectionStatus === 'connecting' ? 'Connecting' : 'Offline'}
-                  </span>
-                </div>
-              </div>
-            </DialogHeader>
-
-            <div className="flex-1 flex flex-col min-h-0">
-              {/* Stats Summary */}
-              {consoleConfig?.stats && (
-                <div className="grid grid-cols-4 gap-4 mb-4 p-4 bg-gray-50 rounded-lg">
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-blue-600">{(consoleConfig.stats.successful_imports || 0) + (consoleConfig.stats.failed_imports || 0)}</p>
-                    <p className="text-sm text-gray-600">Total Processed</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-orange-600">{consoleConfig.stats.processed_invoices}</p>
-                    <p className="text-sm text-gray-600">Processed</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-green-600">{consoleConfig.stats.successful_imports}</p>
-                    <p className="text-sm text-gray-600">Successful</p>
-                  </div>
-                  <div className="text-center">
-                    <p className="text-2xl font-bold text-red-600">{consoleConfig.stats.failed_imports}</p>
-                    <p className="text-sm text-gray-600">Failed</p>
-                  </div>
-                </div>
-              )}
-
-              {/* Current Step and Progress */}
-              {consoleConfig?.status === 'running' && (
-                <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
-                  <div className="flex justify-between items-center mb-2">
-                    <p className="text-sm font-medium text-blue-800">
-                      Current Step: {consoleConfig.currentStep || consoleConfig.stats?.current_step || 'Processing...'}
-                    </p>
-                    <p className="text-sm text-blue-700">
-                      {consoleConfig.progress || consoleConfig.stats?.progress || 0}%
-                    </p>
-                  </div>
-                  <Progress 
-                    value={consoleConfig.progress || consoleConfig.stats?.progress || 0} 
-                    className="w-full bg-blue-100" 
-                  />
-                </div>
-              )}
-
-              {/* Console Controls */}
-              <div className="flex items-center justify-between mb-4">
-                <div className="flex items-center space-x-4">
-                  <h4 className="font-medium text-gray-700">Console Logs</h4>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="auto-scroll"
-                      checked={autoScroll}
-                      onChange={(e) => setAutoScroll(e.target.checked)}
-                      className="rounded"
-                    />
-                    <label htmlFor="auto-scroll" className="text-sm text-gray-600">Auto-scroll</label>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <input
-                      type="checkbox"
-                      id="clear-on-complete"
-                      checked={clearOnComplete}
-                      onChange={(e) => setClearOnComplete(e.target.checked)}
-                      className="rounded"
-                    />
-                    <label htmlFor="clear-on-complete" className="text-sm text-gray-600">Clear on complete</label>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setConsoleLogs([])}
-                  >
-                    Clear Logs
-                  </Button>
-                  {consoleConfig && consoleConfig.status !== 'running' && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleRunNow(consoleConfig.id)}
-                    >
-                      <Play className="w-4 h-4 mr-2" />
-                      Run Again
-                    </Button>
-                  )}
-                </div>
-              </div>
-
-              {/* Console Output */}
-              <div className="flex-1 min-h-0">
-                <ScrollArea 
-                  id="console-logs"
-                  className="h-full w-full border rounded-lg p-4 bg-black text-green-400 font-mono text-sm"
-                >
-                  {consoleLogs.length === 0 ? (
-                    <div className="text-gray-500 italic">
-                      No logs available. Run the import process to see real-time logs here.
-                    </div>
-                  ) : (
-                    <div className="space-y-1">
-                      {consoleLogs.map((log, index) => {
-                        // Determine log color based on content
-                        let colorClass = 'text-green-400';
-                        if (log.toLowerCase().includes('error') || log.toLowerCase().includes('failed')) {
-                          colorClass = 'text-red-400';
-                        } else if (log.toLowerCase().includes('warning') || log.toLowerCase().includes('warn')) {
-                          colorClass = 'text-yellow-400';
-                        } else if (log.toLowerCase().includes('success') || log.toLowerCase().includes('completed')) {
-                          colorClass = 'text-green-300';
-                        } else if (log.toLowerCase().includes('progress') || log.toLowerCase().includes('processing')) {
-                          colorClass = 'text-blue-400';
-                        } else if (log.toLowerCase().includes('info') || log.toLowerCase().includes('starting')) {
-                          colorClass = 'text-cyan-400';
-                        }
-
-                        return (
-                          <div key={index} className={`whitespace-pre-wrap ${colorClass}`}>
-                            {log}
-                          </div>
-                        );
-                      })}
-                      {consoleConfig?.status === 'running' && (
-                        <div className="flex items-center space-x-2 text-yellow-400 mt-2 pt-2 border-t border-gray-700">
-                          <Loader2 className="w-3 h-3 animate-spin" />
-                          <span>Process running... Real-time logs will appear above</span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                </ScrollArea>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Log Details Dialog */}
-        <Dialog open={showLogDetails} onOpenChange={setShowLogDetails}>
-          <DialogContent className="max-w-4xl max-h-[90vh] flex flex-col">
-            <DialogHeader>
-              <DialogTitle className="flex items-center space-x-2">
-                <FileText className="w-5 h-5" />
-                <span>Import Log Details</span>
-                {selectedLogDetails && (
-                  <Badge className={getStatusBadgeVariant(selectedLogDetails.status)}>
-                    {selectedLogDetails.status?.charAt(0).toUpperCase() + selectedLogDetails.status?.slice(1)}
-                  </Badge>
-                )}
-              </DialogTitle>
-            </DialogHeader>
-
-            {selectedLogDetails && (
-              <div className="flex-1 min-h-0 space-y-4">
-                {/* Log Overview */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-gray-50 rounded-lg">
-                  <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide">Configuration</div>
-                    <div className="font-medium">{selectedLogDetails.configurationName || 'N/A'}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide">Duration</div>
-                    <div className="font-medium">{formatDuration(selectedLogDetails.duration)}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide">Total Invoices</div>
-                    <div className="font-medium">{selectedLogDetails.totalInvoices || 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-xs text-gray-500 uppercase tracking-wide">Success Rate</div>
-                    <div className="font-medium">
-                      {selectedLogDetails.totalInvoices > 0 
-                        ? `${Math.round((selectedLogDetails.successfulImports / selectedLogDetails.totalInvoices) * 100)}%`
-                        : 'N/A'}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Execution Statistics */}
-                <div className="grid grid-cols-3 gap-4">
-                  <Card className="text-center">
-                    <CardContent className="pt-4">
-                      <div className="text-2xl font-bold text-blue-600">{selectedLogDetails.successfulImports || 0}</div>
-                      <div className="text-sm text-gray-500">Successful</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="text-center">
-                    <CardContent className="pt-4">
-                      <div className="text-2xl font-bold text-red-600">{selectedLogDetails.failedImports || 0}</div>
-                      <div className="text-sm text-gray-500">Failed</div>
-                    </CardContent>
-                  </Card>
-                  <Card className="text-center">
-                    <CardContent className="pt-4">
-                      <div className="text-2xl font-bold text-gray-600">{selectedLogDetails.processedInvoices || 0}</div>
-                      <div className="text-sm text-gray-500">Processed</div>
-                    </CardContent>
-                  </Card>
-                </div>
-
-                {/* Console Logs */}
-                <div className="flex-1 min-h-0">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="font-medium">Console Output</h4>
-                    <Badge variant="outline" className="text-xs">
-                      {selectedLogDetails.formattedLogs?.length || 0} lines
-                    </Badge>
-                  </div>
-                  <ScrollArea className="h-64 w-full border rounded-lg p-4 bg-black text-green-400 font-mono text-sm">
-                    {selectedLogDetails.formattedLogs && selectedLogDetails.formattedLogs.length > 0 ? (
-                      <div className="space-y-1">
-                        {selectedLogDetails.formattedLogs.map((log: string, index: number) => (
-                          <div key={index} className="whitespace-pre-wrap">
-                            {log}
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <div className="text-gray-500 italic">
-                        No console logs available for this execution.
-                      </div>
-                    )}
-                  </ScrollArea>
-                </div>
-
-                {/* Imported Invoices */}
-                {selectedLogDetails.importedInvoices && selectedLogDetails.importedInvoices.length > 0 && (
-                  <div>
-                    <h4 className="font-medium mb-2">Imported Files ({selectedLogDetails.importedInvoices.length})</h4>
-                    <div className="max-h-32 overflow-y-auto border rounded-lg">
-                      <table className="w-full text-sm">
-                        <thead className="bg-gray-50">
-                          <tr>
-                            <th className="px-3 py-2 text-left">File Name</th>
-                            <th className="px-3 py-2 text-left">Type</th>
-                            <th className="px-3 py-2 text-left">Size</th>
-                            <th className="px-3 py-2 text-left">Status</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-gray-200">
-                          {selectedLogDetails.importedInvoices.map((invoice: any, index: number) => (
-                            <tr key={index}>
-                              <td className="px-3 py-2 font-mono text-xs">{invoice.originalFileName}</td>
-                              <td className="px-3 py-2">
-                                <Badge variant="outline" className="text-xs">
-                                  {invoice.fileType?.toUpperCase()}
-                                </Badge>
-                              </td>
-                              <td className="px-3 py-2">{invoice.fileSize ? `${Math.round(invoice.fileSize / 1024)}KB` : 'N/A'}</td>
-                              <td className="px-3 py-2">
-                                {invoice.invoiceId ? (
-                                  <Badge className="bg-green-100 text-green-800 text-xs">Processed</Badge>
-                                ) : (
-                                  <Badge className="bg-yellow-100 text-yellow-800 text-xs">Pending</Badge>
-                                )}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
-              </div>
-            )}
-          </DialogContent>
-        </Dialog>
-
-        {/* Edit Configuration Dialog */}
-        <Dialog open={showEditDialog} onOpenChange={setShowEditDialog}>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Edit Import Configuration</DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-4">
-              {/* Configuration Name */}
-              <div>
-                <Label htmlFor="edit-name">Configuration Name</Label>
-                <Input
-                  id="edit-name"
-                  placeholder="Enter configuration name"
-                  value={newConfig.name}
-                  onChange={(e) => setNewConfig(prev => ({ ...prev, name: e.target.value }))}
-                />
-              </div>
-
-              {/* ERP Connection */}
-              <div>
-                <Label htmlFor="edit-connection">ERP Connection</Label>
-                <Select 
-                  value={newConfig.connectionId} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, connectionId: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select ERP connection" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {erpConnections.map((conn) => (
-                      <SelectItem key={conn.id} value={conn.id.toString()}>
-                        {conn.name} ({conn.baseUrl})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* File Types */}
-              <div>
-                <Label htmlFor="edit-fileTypes">File Types</Label>
-                <Select 
-                  value={newConfig.fileTypes} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, fileTypes: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="xml">XML Only</SelectItem>
-                    <SelectItem value="pdf">PDF Only</SelectItem>
-                    <SelectItem value="both">Both XML and PDF</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Schedule Type */}
-              <div>
-                <Label htmlFor="edit-schedule">Schedule Type</Label>
-                <Select 
-                  value={newConfig.scheduleType} 
-                  onValueChange={(value) => setNewConfig(prev => ({ ...prev, scheduleType: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="manual">Manual</SelectItem>
-                    <SelectItem value="daily">Daily</SelectItem>
-                    <SelectItem value="weekly">Weekly</SelectItem>
-                    <SelectItem value="hourly">Hourly</SelectItem>
-                    <SelectItem value="multiple_daily">Multiple Times Per Day</SelectItem>
-                    <SelectItem value="cron">Advanced (Cron)</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Headless Mode */}
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="edit-headless"
-                  checked={newConfig.headless}
-                  onCheckedChange={(checked) => 
-                    setNewConfig(prev => ({ ...prev, headless: checked === true }))
-                  }
-                />
-                <Label htmlFor="edit-headless">Run in headless mode (recommended for Replit)</Label>
-              </div>
-
-              {/* ZIP Download Timeout */}
-              <div>
-                <Label htmlFor="edit-zip-timeout">ZIP Download Timeout (seconds)</Label>
-                <Input
-                  ref={editZipTimeoutRef}
-                  id="edit-zip-timeout"
-                  type="number"
-                  min="10"
-                  max="300"
-                  defaultValue="60"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    
-                    // Update the config state with parsed value if valid
-                    if (value !== '') {
-                      const numValue = parseInt(value);
-                      if (!isNaN(numValue) && numValue >= 10 && numValue <= 300) {
-                        setNewConfig(prev => ({ 
-                          ...prev, 
-                          zipDownloadTimeout: numValue 
-                        }));
-                      }
-                    }
-                  }}
-                  onBlur={(e) => {
-                    const value = e.target.value;
-                    if (value === '' || isNaN(parseInt(value))) {
-                      if (editZipTimeoutRef.current) {
-                        editZipTimeoutRef.current.value = '60';
-                      }
-                      setNewConfig(prev => ({ 
-                        ...prev, 
-                        zipDownloadTimeout: 60 
-                      }));
-                    }
-                  }}
-                  placeholder="60"
-                />
-                <p className="text-xs text-gray-500 mt-1">
-                  Time to wait for ZIP files to download (10-300 seconds). Default: 60 seconds.
-                </p>
-              </div>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-4">
-              <Button variant="outline" onClick={() => setShowEditDialog(false)}>
-                Cancel
-              </Button>
-              <Button onClick={handleUpdateConfig}>
-                Update Configuration
-              </Button>
-            </div>
-          </DialogContent>
-        </Dialog>
-
-        {/* Progress Tracker Modal - Removed for in-card progress */}
-      </div>
-    </div>
-    </div>
-  );
-}
-
-// Comprehensive Schedule Overview Component
-function ScheduleOverview() {
-  const { toast } = useToast();
-
-  // Fetch scheduled configurations
-  const { data: scheduleData = [], isLoading: isLoadingSchedule, refetch: refetchSchedule } = useQuery<any[]>({
-    queryKey: ['/api/schedule-overview'],
-    refetchInterval: false, // Disable automatic refresh
-  });
-
-  // Toggle pause/resume mutation
-  const toggleScheduleMutation = useMutation({
-    mutationFn: async ({ configId, isPaused }: { configId: number; isPaused: boolean }) => {
-      const response = await fetch(`/api/schedule-overview/${configId}/toggle`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isPaused }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to toggle schedule');
-      }
-      return response.json();
-    },
-    onSuccess: (data) => {
-      toast({
-        title: "Schedule Updated",
-        description: data.message,
-      });
-      refetchSchedule();
-    },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: "Failed to update schedule",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const getStatusBadge = (status: string) => {
-    switch (status?.toLowerCase()) {
-      case 'scheduled':
-        return <Badge className="bg-green-100 text-green-800">Scheduled</Badge>;
-      case 'paused':
-        return <Badge className="bg-yellow-100 text-yellow-800">Paused</Badge>;
-      case 'running':
-        return <Badge className="bg-blue-100 text-blue-800">Running</Badge>;
-      case 'error':
-        return <Badge className="bg-red-100 text-red-800">Error</Badge>;
-      default:
-        return <Badge className="bg-gray-100 text-gray-800">Inactive</Badge>;
-    }
-  };
-
-  const getScheduleTypeIcon = (scheduleType: string) => {
-    switch (scheduleType) {
-      case 'daily':
-        return <Calendar className="w-4 h-4" />;
-      case 'weekly':
-        return <Calendar className="w-4 h-4" />;
-      case 'hourly':
-        return <Clock className="w-4 h-4" />;
-      case 'multiple_daily':
-        return <TimerIcon className="w-4 h-4" />;
-      case 'cron':
-        return <Settings className="w-4 h-4" />;
-      default:
-        return <Play className="w-4 h-4" />;
-    }
-  };
-
-  const formatDateTime = (dateString: string | null) => {
-    if (!dateString) return 'Never';
-    return new Date(dateString).toLocaleString();
-  };
-
-  const getTimeUntilNextRun = (nextRunTime: string | null) => {
-    if (!nextRunTime) return null;
-
-    const now = new Date();
-    const nextRun = new Date(nextRunTime);
-    const diff = nextRun.getTime() - now.getTime();
-
-    if (diff <= 0) return 'Overdue';
-
-    const hours = Math.floor(diff / (1000 * 60 * 60));
-    const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (hours > 24) {
-      const days = Math.floor(hours / 24);
-      return `${days} day${days > 1 ? 's' : ''}`;
-    } else if (hours > 0) {
-      return `${hours}h ${minutes}m`;
-    } else {
-      return `${minutes}m`;
-    }
-  };
-
-  const handleTogglePause = (configId: number, currentlyPaused: boolean) => {
-    toggleScheduleMutation.mutate({
-      configId,
-      isPaused: !currentlyPaused,
-    });
-  };
-
-  if (isLoadingSchedule) {
-    return (
-      <Card>
-        <CardContent className="flex items-center justify-center py-8">
-          <Loader2 className="w-6 h-6 animate-spin mr-2" />
-          <span>Loading schedule overview...</span>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  if (!scheduleData || scheduleData.length === 0) {
-    return (
-      <Card>
-        <CardContent className="text-center py-8">
-          <Calendar className="w-12 h-12 mx-auto text-gray-400 mb-4" />
-          <p className="text-gray-600 mb-2">No Scheduled Tasks</p>
-          <p className="text-sm text-gray-500">
-            Create an import configuration with a schedule to see it here.
-            Scheduled tasks will run automatically according to their configured timing.
-          </p>
-        </CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <div className="space-y-4">
-      {/* Header */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center space-x-2">
-            <Calendar className="w-5 h-5" />
-            <span>Schedule Overview</span>
-            <Badge variant="outline" className="ml-2">
-              {scheduleData?.length || 0} scheduled task{(scheduleData?.length || 0) !== 1 ? 's' : ''}
-            </Badge>
-          </CardTitle>
-        </CardHeader>
-      </Card>
-
-      {/* Schedule Cards */}
-      <div className="grid gap-4">
-        {scheduleData?.map((schedule: any) => (
-          <Card key={schedule.configurationId} className="hover:shadow-md transition-shadow">
-            <CardContent className="p-6">
-              <div className="flex items-start justify-between">
-                <div className="flex-1">
-                  {/* Configuration Name and Type */}
-                  <div className="flex items-center space-x-2 mb-2">
-                    {getScheduleTypeIcon(schedule.scheduleType)}
-                    <h3 className="font-semibold text-lg">{schedule.configurationName}</h3>
-                    <Badge variant="outline" className="text-xs">
-                      {schedule.scheduleType.replace('_', ' ').toUpperCase()}
-                    </Badge>
-                  </div>
-
-                  {/* Connection Info */}
-                  {schedule.connection && (
-                    <div className="flex items-center space-x-2 text-sm text-gray-600 mb-3">
-                      <Database className="w-4 h-4" />
-                      <span>{schedule.connection.name}</span>
-                      <span className="text-gray-400">•</span>
-                      <span className="font-mono text-xs">{schedule.connection.baseUrl}</span>
-                    </div>
-                  )}
-
-                  {/* Schedule Details */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Frequency</div>
-                      <div className="font-medium">{schedule.frequencyDetail}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Next Run</div>
-                      <div className="font-medium">
-                        {schedule.nextRunTime ? (
-                          <div>
-                            <div>{formatDateTime(schedule.nextRunTime)}</div>
-                            <div className="text-xs text-blue-600 mt-1">
-                              in {getTimeUntilNextRun(schedule.nextRunTime)}
-                            </div>
-                          </div>
-                        ) : (
-                          <span className="text-gray-400">Not calculated</span>
-                        )}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Last Run</div>
-                      <div className="font-medium">
-                        {formatDateTime(schedule.lastRunTime)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Schedule Period */}
-                  {(schedule.startDate || schedule.endDate) && (
-                    <div className="mb-4">
-                      <div className="text-xs text-gray-500 uppercase tracking-wide mb-1">Schedule Period</div>
-                      <div className="text-sm">
-                        {schedule.startDate && (
-                          <span>From {new Date(schedule.startDate).toLocaleDateString()}</span>
-                        )}
-                        {schedule.startDate && schedule.endDate && <span> </span>}
-                        {schedule.endDate && (
-                          <span>to {new Date(schedule.endDate).toLocaleDateString()}</span>
-                        )}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Timezone */}
-                  <div className="text-xs text-gray-500">
-                    Timezone: {schedule.timezone}
-                  </div>
-                </div>
-
-                {/* Status and Actions */}
-                <div className="flex flex-col items-end space-y-3">
-                  {getStatusBadge(schedule.status)}
-
-                  <div className="flex items-center space-x-2">
-                    {/* Pause/Resume Button */}
-                    <Button
-                      size="sm"
-                      variant={schedule.isPaused ? "default" : "outline"}
-                      onClick={() => handleTogglePause(schedule.configurationId, schedule.isPaused)}
-                      disabled={toggleScheduleMutation.isPending}
-                    >
-                      {toggleScheduleMutation.isPending ? (
-                        <Loader2 className="w-4 h-4 animate-spin" />
-                      ) : schedule.isPaused ? (
-                        <>
-                          <Play className="w-4 h-4 mr-1" />
-                          Resume
-                        </>
-                      ) : (
-                        <>
-                          <Pause className="w-4 h-4 mr-1" />
-                          Pause
-                        </>
-                      )}
-                    </Button>
-
-                    {/* Edit Button */}
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => {
-                        // Navigate to edit configuration
-                        toast({
-                          title: "Edit Configuration",
-                          description: "Edit functionality will be available in the Configurations tab",
-                        });
-                      }}
-                    >
-                      <Edit3 className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-        ))}
-      </div>
-
-      {/* Summary Footer */}
-      <Card>
-        <CardContent className="p-4">
-          <div className="flex items-center justify-between text-sm text-gray-600">
-            <div className="flex items-center space-x-4">
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                <span>{scheduleData.filter((s: any) => s.status === 'Scheduled').length} Active</span>
-              </div>
-              <div className="flex items-center space-x-1">
-                <div className="w-2 h-2 bg-yellow-500 rounded-full"></div>
-                <span>{scheduleData.filter((s: any) => s.isPaused).length} Paused</span>
-              </div>
-            </div>
-            <div className="text-xs text-gray-500">
-              Auto-refresh: 30 seconds
-            </div>
+            ))}
           </div>
-        </CardContent>
-      </Card>
+        )}
+      </main>
     </div>
   );
 }
