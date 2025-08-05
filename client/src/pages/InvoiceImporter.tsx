@@ -3,7 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
-import { Plus, Play, Settings2, Trash2, Edit } from 'lucide-react';
+import { Plus, Play, Settings2, Trash2, Edit, Clock, Terminal, Calendar, CheckCircle, XCircle, AlertCircle, Pause } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -12,10 +12,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '@/components/ui/form';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import Header from '@/components/Header';
-import InvoiceImporterProgress from '@/components/InvoiceImporterProgress';
 
 // Form schema for invoice importer configuration
 const importerConfigSchema = z.object({
@@ -62,6 +64,9 @@ export default function InvoiceImporter() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ImporterConfig | null>(null);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
+  const [activeTab, setActiveTab] = useState<string>('configurations');
+  const [consoleDialogOpen, setConsoleDialogOpen] = useState(false);
+  const [selectedConfigLogs, setSelectedConfigLogs] = useState<any[]>([]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -91,7 +96,7 @@ export default function InvoiceImporter() {
   });
 
   // Fetch logs for progress tracking
-  const { data: logs = [] } = useQuery({
+  const { data: logs = [] } = useQuery<any[]>({
     queryKey: ['/api/invoice-importer/logs'],
     refetchInterval: 2000, // Refresh every 2 seconds when tasks are running
     enabled: runningTasks.size > 0,
@@ -99,11 +104,14 @@ export default function InvoiceImporter() {
 
   // Create configuration mutation
   const createConfigMutation = useMutation({
-    mutationFn: (data: ImporterConfigForm) =>
-      apiRequest('/api/invoice-importer/configs', {
+    mutationFn: async (data: ImporterConfigForm) => {
+      const response = await fetch('/api/invoice-importer/configs', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      }),
+      });
+      return response.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
       setIsDialogOpen(false);
@@ -124,11 +132,14 @@ export default function InvoiceImporter() {
 
   // Update configuration mutation
   const updateConfigMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: ImporterConfigForm }) =>
-      apiRequest(`/api/invoice-importer/configs/${id}`, {
+    mutationFn: async ({ id, data }: { id: number; data: ImporterConfigForm }) => {
+      const response = await fetch(`/api/invoice-importer/configs/${id}`, {
         method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      }),
+      });
+      return response.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
       setIsDialogOpen(false);
@@ -150,10 +161,12 @@ export default function InvoiceImporter() {
 
   // Delete configuration mutation
   const deleteConfigMutation = useMutation({
-    mutationFn: (id: number) =>
-      apiRequest(`/api/invoice-importer/configs/${id}`, {
+    mutationFn: async (id: number) => {
+      const response = await fetch(`/api/invoice-importer/configs/${id}`, {
         method: 'DELETE',
-      }),
+      });
+      return response.json();
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/invoice-importer/configs'] });
       toast({
@@ -220,6 +233,73 @@ export default function InvoiceImporter() {
            latestLog.status === 'failed' ? 'failed' : 'idle';
   };
 
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'running':
+        return <Badge className="bg-blue-100 text-blue-800 border-blue-200"><Play className="w-3 h-3 mr-1" />Running</Badge>;
+      case 'completed':
+        return <Badge className="bg-green-100 text-green-800 border-green-200"><CheckCircle className="w-3 h-3 mr-1" />Completed</Badge>;
+      case 'failed':
+        return <Badge className="bg-red-100 text-red-800 border-red-200"><XCircle className="w-3 h-3 mr-1" />Failed</Badge>;
+      default:
+        return <Badge variant="secondary"><Pause className="w-3 h-3 mr-1" />Idle</Badge>;
+    }
+  };
+
+  const getProgressData = (configId: number) => {
+    const latestLog = logs.find((log: any) => log.configId === configId);
+    if (!latestLog || latestLog.status !== 'running') return null;
+    
+    return {
+      progress: Math.round((latestLog.processedInvoices / Math.max(latestLog.totalInvoices, 1)) * 100),
+      currentStep: 'Processing invoices...',
+      stats: {
+        total: latestLog.totalInvoices || 0,
+        processed: latestLog.processedInvoices || 0,
+        successful: latestLog.successfulImports || 0,
+        failed: latestLog.failedImports || 0
+      }
+    };
+  };
+
+  const handleRunNow = async (configId: number) => {
+    try {
+      setRunningTasks(prev => new Set(prev).add(configId));
+      
+      const response = await fetch(`/api/invoice-importer/start/${configId}`, {
+        method: 'POST',
+      });
+      const result = await response.json();
+
+      if (result.success) {
+        toast({
+          title: 'Import Started',
+          description: 'Invoice import process has been initiated.',
+        });
+      } else {
+        throw new Error(result.error || 'Failed to start import');
+      }
+    } catch (error) {
+      console.error('Error starting import:', error);
+      setRunningTasks(prev => {
+        const newSet = new Set(prev);
+        newSet.delete(configId);
+        return newSet;
+      });
+      toast({
+        title: 'Import Failed',
+        description: error instanceof Error ? error.message : 'Failed to start import process',
+        variant: 'destructive',
+      });
+    }
+  };
+
+  const handleViewLogs = (configId: number) => {
+    const configLogs = logs.filter((log: any) => log.configId === configId);
+    setSelectedConfigLogs(configLogs);
+    setConsoleDialogOpen(true);
+  };
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -237,14 +317,14 @@ export default function InvoiceImporter() {
           <div>
             <h1 className="text-3xl font-bold text-gray-900">Invoice Importer</h1>
             <p className="text-gray-600 mt-2">
-              Automated invoice importing from ERP systems with real-time progress tracking
+              Configure automated ERP invoice import processes
             </p>
           </div>
           <Dialog open={isDialogOpen} onOpenChange={setIsDialogOpen}>
             <DialogTrigger asChild>
-              <Button onClick={handleAddNew} className="flex items-center gap-2">
+              <Button onClick={handleAddNew} className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700">
                 <Plus size={16} />
-                Add Configuration
+                Create Import Configuration
               </Button>
             </DialogTrigger>
             <DialogContent className="sm:max-w-[600px] max-h-[80vh] overflow-y-auto">
@@ -469,68 +549,256 @@ export default function InvoiceImporter() {
           </Dialog>
         </div>
 
-        {configs.length === 0 ? (
-          <Card>
-            <CardContent className="flex flex-col items-center justify-center py-12">
-              <Settings2 className="h-16 w-16 text-gray-400 mb-4" />
-              <h3 className="text-lg font-semibold text-gray-900 mb-2">No Import Configurations</h3>
-              <p className="text-gray-600 text-center mb-4">
-                Create your first invoice importer configuration to start automating invoice processing.
-              </p>
-              <Button onClick={handleAddNew} className="flex items-center gap-2">
-                <Plus size={16} />
-                Add Configuration
-              </Button>
-            </CardContent>
-          </Card>
-        ) : (
-          <div className="grid gap-6 lg:grid-cols-2">
-            {configs.map((config) => (
-              <div key={config.id} className="space-y-4">
-                <Card>
-                  <CardHeader>
-                    <div className="flex items-center justify-between">
-                      <div>
-                        <CardTitle className="text-lg">{config.name}</CardTitle>
-                        <CardDescription>{config.taskName}</CardDescription>
-                      </div>
-                      <div className="flex gap-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleEdit(config)}
-                        >
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => handleDelete(config.id)}
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2 text-sm text-gray-600">
-                      {config.description && <p>{config.description}</p>}
-                      <p><strong>Type:</strong> {config.isManualConfig ? 'Manual Configuration' : 'ERP Connection'}</p>
-                      {config.sincoFullPath && <p><strong>Path:</strong> {config.sincoFullPath}</p>}
-                    </div>
-                  </CardContent>
-                </Card>
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+          <TabsList className="grid w-full grid-cols-3 mb-6">
+            <TabsTrigger value="configurations">Configurations</TabsTrigger>
+            <TabsTrigger value="logs">Import Logs</TabsTrigger>
+            <TabsTrigger value="schedule">Schedule Overview</TabsTrigger>
+          </TabsList>
 
-                {/* Progress Tracker Component */}
-                <InvoiceImporterProgress
-                  configId={config.id}
-                  configName={config.name}
-                  onStartImport={() => handleStartImport(config.id)}
-                />
+          <TabsContent value="configurations" className="space-y-6">
+            {configs.length === 0 ? (
+              <Card>
+                <CardContent className="flex flex-col items-center justify-center py-12">
+                  <Settings2 className="h-16 w-16 text-gray-400 mb-4" />
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No Import Configurations</h3>
+                  <p className="text-gray-600 text-center mb-4">
+                    Create your first invoice importer configuration to start automating invoice processing.
+                  </p>
+                  <Button onClick={handleAddNew} className="flex items-center gap-2">
+                    <Plus size={16} />
+                    Create Configuration
+                  </Button>
+                </CardContent>
+              </Card>
+            ) : (
+              <div className="space-y-4">
+                {configs.map((config) => {
+                  const status = getConfigStatus(config.id);
+                  const progressData = getProgressData(config.id);
+                  const connection = connections.find(c => c.id === config.connectionId);
+                  
+                  return (
+                    <Card key={config.id} className="w-full">
+                      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
+                        <div className="flex items-center space-x-3">
+                          <Clock className="h-5 w-5 text-gray-400" />
+                          <div>
+                            <CardTitle className="text-lg">{config.name}</CardTitle>
+                            <CardDescription>{config.taskName}</CardDescription>
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          {getStatusBadge(status)}
+                          <div className="flex gap-1">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleRunNow(config.id)}
+                              disabled={status === 'running'}
+                            >
+                              <Play className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(config)}
+                            >
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(config.id)}
+                              className="text-red-600 hover:text-red-700"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </div>
+                      </CardHeader>
+                      
+                      <CardContent className="space-y-4">
+                        <div className="grid grid-cols-2 gap-6">
+                          <div className="space-y-2">
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">ERP Connection:</span>
+                              <div className="text-gray-600">
+                                {config.isManualConfig ? 'Manual Configuration' : 
+                                 connection ? `${connection.name} (ID: ${connection.id})` : 'Not Found'}
+                              </div>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">Schedule:</span>
+                              <div className="text-gray-600">Manual execution</div>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">File Types:</span>
+                              <div className="text-gray-600">PDF, XML</div>
+                            </div>
+                          </div>
+                          
+                          <div className="space-y-2">
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">Last Run:</span>
+                              <div className="text-gray-600">
+                                {logs.find((log: any) => log.configId === config.id)?.completedAt 
+                                  ? new Date(logs.find((log: any) => log.configId === config.id)?.completedAt).toLocaleString()
+                                  : 'Never'
+                                }
+                              </div>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">Next Run:</span>
+                              <div className="text-gray-600">Manual</div>
+                            </div>
+                            <div className="text-sm">
+                              <span className="font-medium text-gray-700">Status:</span>
+                              <div className="text-gray-600">{config.isActive ? 'Active' : 'Inactive'}</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {status === 'running' && progressData && (
+                          <div className="border-t pt-4 space-y-3">
+                            <div className="flex items-center justify-between">
+                              <span className="text-sm font-medium">Progress: {progressData.progress}%</span>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleViewLogs(config.id)}
+                                className="text-xs"
+                              >
+                                <Terminal className="h-3 w-3 mr-1" />
+                                Console
+                              </Button>
+                            </div>
+                            <Progress value={progressData.progress} className="h-2" />
+                            <div className="text-sm text-gray-600">{progressData.currentStep}</div>
+                            
+                            <div className="grid grid-cols-4 gap-4 text-center text-sm">
+                              <div>
+                                <div className="font-medium text-gray-900">{progressData.stats.total}</div>
+                                <div className="text-gray-500">Total</div>
+                              </div>
+                              <div>
+                                <div className="font-medium text-blue-600">{progressData.stats.processed}</div>
+                                <div className="text-gray-500">Processed</div>
+                              </div>
+                              <div>
+                                <div className="font-medium text-green-600">{progressData.stats.successful}</div>
+                                <div className="text-gray-500">Success</div>
+                              </div>
+                              <div>
+                                <div className="font-medium text-red-600">{progressData.stats.failed}</div>
+                                <div className="text-gray-500">Failed</div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  );
+                })}
               </div>
-            ))}
-          </div>
-        )}
+            )}
+          </TabsContent>
+
+          <TabsContent value="logs" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle>Import Execution History</CardTitle>
+                <CardDescription>
+                  Historical logs of all invoice import executions
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {logs.length === 0 ? (
+                  <div className="text-center py-8 text-gray-500">
+                    No import logs available
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    {logs.map((log: any, index: number) => {
+                      const config = configs.find(c => c.id === log.configId);
+                      return (
+                        <div key={index} className="flex items-center justify-between p-3 border rounded-lg">
+                          <div className="flex items-center space-x-3">
+                            {getStatusBadge(log.status)}
+                            <div>
+                              <div className="font-medium">{config?.name || 'Unknown Config'}</div>
+                              <div className="text-sm text-gray-500">
+                                {log.startedAt ? new Date(log.startedAt).toLocaleString() : 'Unknown time'}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="text-right text-sm text-gray-600">
+                            <div>Processed: {log.processedInvoices || 0}/{log.totalInvoices || 0}</div>
+                            <div>Success: {log.successfulImports || 0} | Failed: {log.failedImports || 0}</div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="schedule" className="space-y-4">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Calendar className="h-5 w-5" />
+                  Schedule Overview
+                </CardTitle>
+                <CardDescription>
+                  View and manage scheduled import tasks
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="text-center py-8 text-gray-500">
+                  <Calendar className="h-16 w-16 mx-auto mb-4 text-gray-300" />
+                  <h3 className="text-lg font-medium mb-2">Schedule Management</h3>
+                  <p className="text-sm">
+                    Scheduled imports are not yet configured. All imports are currently set to manual execution.
+                  </p>
+                </div>
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
+
+        {/* Console Dialog */}
+        <Dialog open={consoleDialogOpen} onOpenChange={setConsoleDialogOpen}>
+          <DialogContent className="max-w-4xl max-h-[80vh]">
+            <DialogHeader>
+              <DialogTitle className="flex items-center gap-2">
+                <Terminal className="h-5 w-5" />
+                Import Console Logs
+              </DialogTitle>
+              <DialogDescription>
+                Real-time logs for the selected import configuration
+              </DialogDescription>
+            </DialogHeader>
+            <div className="space-y-2 max-h-96 overflow-y-auto bg-gray-900 text-gray-100 p-4 rounded-lg font-mono text-sm">
+              {selectedConfigLogs.length === 0 ? (
+                <div className="text-gray-400">No logs available for this configuration</div>
+              ) : (
+                selectedConfigLogs.map((log: any, index: number) => (
+                  <div key={index} className="space-y-1">
+                    <div className="text-gray-300 text-xs">
+                      {log.startedAt ? new Date(log.startedAt).toLocaleString() : 'Unknown time'} - {log.status}
+                    </div>
+                    <div className="text-green-400 whitespace-pre-wrap">
+                      {log.logs || 'No detailed logs available'}
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       </main>
     </div>
   );
