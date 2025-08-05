@@ -708,9 +708,9 @@ export function registerRoutes(app: Express): Server {
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
-        return res.status(503).json({ 
+        return res.status(503).json({
           success: false,
-          error: 'Progress tracking service not available' 
+          error: 'Progress tracking service not available'
         });
       }
 
@@ -718,9 +718,9 @@ export function registerRoutes(app: Express): Server {
       const progress = progressTracker.getTaskProgress(taskId);
 
       if (!progress) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          error: 'Task progress not found' 
+          error: 'Task progress not found'
         });
       }
 
@@ -731,9 +731,9 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error getting progress:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: 'Failed to get progress' 
+        error: 'Failed to get progress'
       });
     }
   });
@@ -744,9 +744,9 @@ export function registerRoutes(app: Express): Server {
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
-        return res.status(503).json({ 
+        return res.status(503).json({
           success: false,
-          error: 'Progress tracking service not available' 
+          error: 'Progress tracking service not available'
         });
       }
 
@@ -754,21 +754,21 @@ export function registerRoutes(app: Express): Server {
       const user = getUser(req);
 
       if (!user?.id) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           success: false,
-          error: 'Not authenticated' 
+          error: 'Not authenticated'
         });
       }
 
       // Find active task for this config
       const userTasks = progressTracker.getUserTasks(user.id);
-      const task = userTasks.find(t => t.configId === configId && 
+      const task = userTasks.find(t => t.configId === configId &&
         (t.status === 'running' || t.status === 'starting'));
 
       if (!task) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          error: 'No active task found for this configuration' 
+          error: 'No active task found for this configuration'
         });
       }
 
@@ -779,9 +779,9 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error getting invoice importer progress:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: 'Failed to get progress' 
+        error: 'Failed to get progress'
       });
     }
   });
@@ -792,9 +792,9 @@ export function registerRoutes(app: Express): Server {
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
-        return res.status(503).json({ 
+        return res.status(503).json({
           success: false,
-          error: 'Progress tracking service not available' 
+          error: 'Progress tracking service not available'
         });
       }
 
@@ -802,21 +802,21 @@ export function registerRoutes(app: Express): Server {
       const user = getUser(req);
 
       if (!user?.id) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           success: false,
-          error: 'Not authenticated' 
+          error: 'Not authenticated'
         });
       }
 
       // Find active task for this job
       const userTasks = progressTracker.getUserTasks(user.id);
-      const task = userTasks.find(t => t.jobId === taskId && 
+      const task = userTasks.find(t => t.jobId === taskId &&
         (t.status === 'running' || t.status === 'starting'));
 
       if (!task) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           success: false,
-          error: 'No active task found for this job' 
+          error: 'No active task found for this job'
         });
       }
 
@@ -827,9 +827,9 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error getting RPA progress:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: 'Failed to get progress' 
+        error: 'Failed to get progress'
       });
     }
   });
@@ -840,18 +840,18 @@ export function registerRoutes(app: Express): Server {
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
-        return res.status(503).json({ 
+        return res.status(503).json({
           success: false,
-          error: 'Progress tracking service not available' 
+          error: 'Progress tracking service not available'
         });
       }
 
       const { taskId, type, data } = req.body;
 
       if (!taskId) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           success: false,
-          error: 'Task ID is required' 
+          error: 'Task ID is required'
         });
       }
 
@@ -882,9 +882,9 @@ export function registerRoutes(app: Express): Server {
       res.json({ success: true });
     } catch (error) {
       console.error('Error updating progress:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: 'Failed to update progress' 
+        error: 'Failed to update progress'
       });
     }
   });
@@ -895,18 +895,18 @@ export function registerRoutes(app: Express): Server {
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
-        return res.status(503).json({ 
+        return res.status(503).json({
           success: false,
-          error: 'Progress tracking service not available' 
+          error: 'Progress tracking service not available'
         });
       }
 
       const user = getUser(req);
 
       if (!user?.id) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           success: false,
-          error: 'Not authenticated' 
+          error: 'Not authenticated'
         });
       }
 
@@ -919,9 +919,9 @@ export function registerRoutes(app: Express): Server {
       });
     } catch (error) {
       console.error('Error getting user tasks:', error);
-      res.status(500).json({ 
+      res.status(500).json({
         success: false,
-        error: 'Failed to get user tasks' 
+        error: 'Failed to get user tasks'
       });
     }
   });
@@ -944,7 +944,7 @@ export function registerRoutes(app: Express): Server {
     });
 
     if (!req.isAuthenticated() || !req.user) {
-      console.log('❌ ERP Authentication failed:', { 
+      console.log('❌ ERP Authentication failed:', {
         reason: 'isAuthenticated() returned false or no user object',
         isAuth: req.isAuthenticated(),
         hasUser: !!req.user
