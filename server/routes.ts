@@ -901,7 +901,7 @@ export function registerRoutes(app: Express): Server {
       // Update lastUsed if test was successful
       if (testResult.success) {
         await storage.updateErpConnection(connectionId, {
-          lastUsed: new Date().toISOString()
+          lastUsed: new Date()
         });
       }
 

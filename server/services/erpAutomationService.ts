@@ -735,12 +735,20 @@ class ERPAutomationService {
         throw new Error(`Server returned error status: ${status}`);
       }
 
-      // Wait for page to stabilize (reduced time)
-      await page.waitForTimeout(2000);
+      // Wait for page to stabilize and allow JavaScript to load
+      await page.waitForTimeout(3000);
 
       // Try to find common login elements to verify it's an ERP system
       const pageTitle = await page.title();
       console.log(`Page title: ${pageTitle}`);
+
+      // Take a debug screenshot to see what's on the page
+      try {
+        const screenshot = await page.screenshot({ encoding: 'base64' });
+        console.log(`📸 Debug screenshot captured (${screenshot.length} chars)`);
+      } catch (screenshotError) {
+        console.warn('Debug screenshot failed');
+      }
 
       // Enhanced login form detection for SINCO
       const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
@@ -763,8 +771,13 @@ class ERPAutomationService {
           const usernameSelector = await this.findUsernameField(page);
           const passwordSelector = await this.findPasswordField(page);
 
+          console.log(`🔍 Username selector found: ${usernameSelector}`);
+          console.log(`🔍 Password selector found: ${passwordSelector}`);
+
           if (usernameSelector && passwordSelector) {
+            console.log(`🔐 Filling username field: ${usernameSelector}`);
             await page.fill(usernameSelector, connection.username);
+            console.log(`🔐 Filling password field: ${passwordSelector}`);
             await page.fill(passwordSelector, connection.password);
 
             // Find and click login button
@@ -863,20 +876,33 @@ class ERPAutomationService {
 
   private async findUsernameField(page: any): Promise<string | null> {
     const selectors = [
-      'input[name*="usuario" i]',
-      'input[placeholder*="usuario" i]',
-      'input[id*="usuario" i]',
-      'input[name*="user" i]',
-      'input[placeholder*="user" i]',
-      'input[type="text"]:visible',
-      'input[type="email"]:visible',
-      'form input:first-of-type'
+      // Visible text inputs first (exclude hidden fields)
+      'input[type="text"]:visible:not([type="hidden"])',
+      'input[type="email"]:visible:not([type="hidden"])',
+      // SINCO-specific visible selectors
+      'input[name*="usuario" i]:visible:not([type="hidden"])',
+      'input[placeholder*="usuario" i]:visible:not([type="hidden"])',
+      'input[id*="usuario" i]:visible:not([type="hidden"])',
+      'input[name*="user" i]:visible:not([type="hidden"])',
+      'input[placeholder*="user" i]:visible:not([type="hidden"])',
+      // Generic visible form inputs
+      'form input[type="text"]:visible:not([type="hidden"]):first',
+      'form input:visible:not([type="hidden"]):not([type="password"]):not([type="submit"]):not([type="button"]):first'
     ];
 
     for (const selector of selectors) {
       try {
-        if (await page.locator(selector).count() > 0) {
-          return selector;
+        const elements = await page.locator(selector);
+        const count = await elements.count();
+        
+        if (count > 0) {
+          // Additional check to ensure the element is actually visible and editable
+          const isVisible = await elements.first().isVisible();
+          const isEnabled = await elements.first().isEnabled();
+          
+          if (isVisible && isEnabled) {
+            return selector;
+          }
         }
       } catch (error) {
         continue;
