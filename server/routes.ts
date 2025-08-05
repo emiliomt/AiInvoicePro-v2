@@ -1045,6 +1045,173 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Invoice Importer API endpoints
+  apiRouter.post('/invoice-importer/configs', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!user || !user.id) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const userId = user.id;
+      const userRecord = await storage.getUser(userId);
+
+      const configData = {
+        ...req.body,
+        userId,
+        companyId: userRecord?.companyId || null,
+        createdAt: new Date(),
+        updatedAt: new Date()
+      };
+
+      console.log('Creating invoice importer config:', { ...configData, erpPassword: '[REDACTED]' });
+
+      const config = await storage.createInvoiceImporterConfig(configData);
+      console.log('Invoice importer config created successfully:', { id: config.id, taskName: config.taskName });
+
+      res.json(config);
+    } catch (error) {
+      console.error('Error creating invoice importer config:', error);
+      res.status(500).json({ 
+        error: 'Failed to create configuration', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  apiRouter.get('/invoice-importer/configs', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!user || !user.id) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const userId = user.id;
+      console.log('Fetching invoice importer configs for user:', userId);
+
+      const configs = await storage.getInvoiceImporterConfigsByUser(userId);
+      console.log('Found invoice importer configs:', configs.length);
+
+      // Include connection details for each config
+      const configsWithConnections = await Promise.all(
+        configs.map(async (config) => {
+          if (config.connectionId) {
+            const connection = await storage.getErpConnection(config.connectionId);
+            return {
+              ...config,
+              connection: connection ? {
+                id: connection.id,
+                name: connection.name,
+                baseUrl: connection.baseUrl,
+                username: connection.username,
+                isActive: connection.isActive,
+                lastUsed: connection.lastUsed
+              } : null
+            };
+          }
+          return config;
+        })
+      );
+
+      res.json(configsWithConnections);
+    } catch (error) {
+      console.error('Error fetching invoice importer configs:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch configurations', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  apiRouter.put('/invoice-importer/configs/:id', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!user || !user.id) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const updateData = {
+        ...req.body,
+        updatedAt: new Date()
+      };
+
+      await storage.updateInvoiceImporterConfig(configId, updateData);
+      console.log('Invoice importer config updated successfully:', configId);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error updating invoice importer config:', error);
+      res.status(500).json({ 
+        error: 'Failed to update configuration', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  apiRouter.delete('/invoice-importer/configs/:id', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!user || !user.id) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const configId = parseInt(req.params.id);
+      await storage.deleteInvoiceImporterConfig(configId);
+      console.log('Invoice importer config deleted successfully:', configId);
+
+      res.json({ success: true });
+    } catch (error) {
+      console.error('Error deleting invoice importer config:', error);
+      res.status(500).json({ 
+        error: 'Failed to delete configuration', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  apiRouter.post('/invoice-importer/run/:id', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const user = getUser(req);
+      if (!user || !user.id) {
+        return res.status(401).json({ error: 'Not authenticated' });
+      }
+
+      const configId = parseInt(req.params.id);
+      console.log(`Starting invoice import task for config ${configId}`);
+
+      // Execute the import task asynchronously
+      invoiceImporterService.executeImportTask(configId).catch(error => {
+        console.error(`Import task ${configId} failed:`, error);
+      });
+
+      res.json({ 
+        success: true, 
+        message: 'Import task started successfully',
+        configId 
+      });
+    } catch (error) {
+      console.error('Error starting invoice import task:', error);
+      res.status(500).json({ 
+        error: 'Failed to start import task', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
+  apiRouter.get('/invoice-importer/logs', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const logs = await storage.getInvoiceImporterLogs();
+      res.json(logs);
+    } catch (error) {
+      console.error('Error fetching invoice importer logs:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch logs', 
+        details: error instanceof Error ? error.message : 'Unknown error' 
+      });
+    }
+  });
+
   // Authentication monitoring and testing endpoints
   app.get('/api/auth/stats', isAuthenticated, async (req: Request, res: Response) => {
     try {

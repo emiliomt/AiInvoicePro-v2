@@ -225,9 +225,11 @@ export interface IStorage {
 
   createInvoiceImporterLog(log: InsertInvoiceImporterLog): Promise<InvoiceImporterLog>;
   getInvoiceImporterLogs(): Promise<InvoiceImporterLog[]>;
+  getInvoiceImporterLogsByConfig(configId: number): Promise<InvoiceImporterLog[]>;
 
   createImportedInvoice(invoice: InsertImportedInvoice): Promise<ImportedInvoice>;
   getImportedInvoices(): Promise<ImportedInvoice[]>;
+  getImportedInvoicesByLog(logId: number): Promise<ImportedInvoice[]>;
 
   // ERP Tasks
   createErpTask(task: InsertErpTask): Promise<ErpTask>;
@@ -730,7 +732,8 @@ class PostgresStorage implements IStorage {
   }
 
   async getInvoiceImporterLogs(): Promise<InvoiceImporterLog[]> {
-    return await db.select().from(invoiceImporterLogs).orderBy(desc(invoiceImporterLogs.createdAt));
+    return await db.select().from(invoiceImporterLogs)
+      .orderBy(desc(invoiceImporterLogs.createdAt));
   }
 
   async getInvoiceImporterLogsByConfig(configId: number): Promise<InvoiceImporterLog[]> {
