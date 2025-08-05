@@ -87,6 +87,7 @@ export default function ProgressTracker({
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [isExpanded, setIsExpanded] = useState(true);
   const [autoScroll, setAutoScroll] = useState(true);
+  const [wsEnabled, setWsEnabled] = useState(useWebSocket);
 
   const wsRef = useRef<WebSocket | null>(null);
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -150,7 +151,7 @@ export default function ProgressTracker({
       console.error('Failed to create WebSocket connection:', error);
       setConnectionStatus('error');
       // Fallback to HTTP polling
-      setUseWebSocket(false);
+      setWsEnabled(false);
       startHttpPolling();
     }
   }, [taskId, isOpen]);
@@ -240,7 +241,7 @@ export default function ProgressTracker({
         }
         break;
     }
-  }, [onComplete, onError]);
+  }, [taskId, onComplete, onError]);
 
   // Connection management
   useEffect(() => {
