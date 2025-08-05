@@ -943,6 +943,13 @@ export function registerRoutes(app: Express): Server {
       bodyKeys: req.body ? Object.keys(req.body) : []
     });
 
+    // Debug user object structure
+    console.log('🔍 Full user object:', JSON.stringify(req.user, null, 2));
+    console.log('🔍 User claims:', req.user?.claims);
+    console.log('🔍 User claims.sub:', req.user?.claims?.sub);
+    console.log('🔍 User type:', typeof req.user);
+    console.log('🔍 Claims type:', typeof req.user?.claims);
+
     if (!req.isAuthenticated() || !req.user) {
       console.log('❌ ERP Authentication failed:', {
         reason: 'isAuthenticated() returned false or no user object',
@@ -970,13 +977,20 @@ export function registerRoutes(app: Express): Server {
       // Base64 encode the password for security
       const encodedPassword = Buffer.from(password, 'utf8').toString('base64');
 
-      console.log('✅ Creating ERP connection for user:', req.user.id);
+      // Extract user data using the same method as other endpoints
+      const user = getUser(req);
+      if (!user?.id) {
+        console.log('❌ Unable to extract user ID from request');
+        return res.status(401).json({ error: 'Unable to identify user' });
+      }
+
+      console.log('✅ Creating ERP connection for user:', user.id);
       const newConnection = await storage.createErpConnection({
         name,
         baseUrl,
         username,
         password: encodedPassword,
-        userId: req.user.id
+        userId: user.id
       });
 
       console.log('✅ ERP Connection created successfully:', { id: newConnection.id, name: newConnection.name });
