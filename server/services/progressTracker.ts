@@ -1,286 +1,545 @@
-import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
 
-export interface ProgressUpdate {
-  type: 'progress' | 'log' | 'error' | 'completed';
-  taskId: number;
-  step?: number;
-  totalSteps?: number;
-  status?: 'running' | 'completed' | 'failed' | 'idle';
-  message: string;
-  data?: {
-    total_invoices?: number;
-    processed_invoices?: number;
-    successful_imports?: number;
-    failed_imports?: number;
-    progress?: number;
+import { Server } from "http";
+import { WebSocketServer, WebSocket } from "ws";
+import { v4 as uuidv4 } from "uuid";
+
+export interface ProgressData {
+  taskId: string;
+  configId?: number;
+  jobId?: string;
+  userId: string;
+  type: 'invoice_import' | 'rpa_automation' | 'comprehensive_workflow';
+  status: 'starting' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout';
+  progress: {
+    current: number;
+    total: number;
+    percentage: number;
   };
-  timestamp: Date;
+  stats?: {
+    processed: number;
+    successful: number;
+    failed: number;
+    errors: number;
+  };
+  currentStep?: {
+    id: number;
+    name: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    startTime?: number;
+    endTime?: number;
+    duration?: number;
+  };
+  steps?: Array<{
+    id: number;
+    name: string;
+    status: 'pending' | 'running' | 'completed' | 'failed';
+    startTime?: number;
+    endTime?: number;
+    duration?: number;
+    details?: string;
+  }>;
+  logs?: Array<{
+    timestamp: number;
+    level: 'info' | 'warning' | 'error' | 'success' | 'debug';
+    message: string;
+    details?: any;
+  }>;
+  startTime?: number;
+  endTime?: number;
+  totalDuration?: number;
+  error?: string;
+  result?: any;
+}
+
+export interface ProgressMessage {
+  type: 'progress' | 'log' | 'step_update' | 'stats' | 'task_complete' | 'task_cancelled' | 'task_timeout' | 'connection_status';
+  taskId: string;
+  data: any;
+  timestamp: number;
 }
 
 interface UserConnection {
-  ws: WebSocket;
-  taskIds: Set<string>;
+  userId: string;
+  connectionId: string;
+  socket: WebSocket;
+  subscribedTasks: Set<string>;
+  lastActivity: number;
 }
 
-export class ProgressTracker {
-  private wss: WebSocketServer;
-  private connections = new Map<string, UserConnection[]>();
-  private taskProgress = new Map<string, ProgressUpdate>();
+class ProgressTracker {
+  private wss: WebSocketServer | null = null;
+  private connections = new Map<string, UserConnection>();
+  private userConnections = new Map<string, Set<string>>();
+  private taskProgress = new Map<string, ProgressData>();
+  private cleanupInterval: NodeJS.Timeout | null = null;
 
-  constructor(server: Server) {
+  initialize(server: Server): void {
+    console.log('Initializing Progress Tracker WebSocket server...');
+    
     this.wss = new WebSocketServer({ 
-      server, 
+      server,
       path: '/ws',
-      verifyClient: (info: any) => {
-        // Basic verification - in production, add proper auth
-        return true;
-      }
+      clientTracking: true
     });
 
-    this.wss.on('connection', this.handleConnection.bind(this));
+    this.wss.on('connection', (socket: WebSocket, request) => {
+      this.handleConnection(socket, request);
+    });
+
+    // Cleanup stale connections every 30 seconds
+    this.cleanupInterval = setInterval(() => {
+      this.cleanupStaleConnections();
+    }, 30000);
+
     console.log('Progress tracker WebSocket server initialized');
   }
 
-  private handleConnection(ws: WebSocket, request: any) {
-    console.log('New WebSocket connection established');
+  private handleConnection(socket: WebSocket, request: any): void {
+    const connectionId = uuidv4();
+    const url = new URL(request.url || '', `http://${request.headers.host}`);
+    const userId = url.searchParams.get('userId');
+
+    if (!userId) {
+      console.warn('WebSocket connection rejected: missing userId');
+      socket.close(1008, 'User ID required');
+      return;
+    }
+
+    const connection: UserConnection = {
+      userId,
+      connectionId,
+      socket,
+      subscribedTasks: new Set(),
+      lastActivity: Date.now()
+    };
+
+    this.connections.set(connectionId, connection);
     
-    ws.on('message', (data) => {
-      try {
-        const message = JSON.parse(data.toString());
-        this.handleMessage(ws, message);
-      } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
-        ws.send(JSON.stringify({
-          type: 'error',
-          message: 'Invalid message format'
-        }));
-      }
-    });
+    if (!this.userConnections.has(userId)) {
+      this.userConnections.set(userId, new Set());
+    }
+    this.userConnections.get(userId)!.add(connectionId);
 
-    ws.on('close', () => {
-      this.handleDisconnection(ws);
-    });
-
-    ws.on('error', (error) => {
-      console.error('WebSocket error:', error);
-      this.handleDisconnection(ws);
-    });
+    console.log(`WebSocket connected: user=${userId}, connection=${connectionId}`);
 
     // Send connection confirmation
-    ws.send(JSON.stringify({
-      type: 'connected',
-      message: 'WebSocket connection established',
-      timestamp: new Date().toISOString()
-    }));
-  }
+    this.sendToConnection(connectionId, {
+      type: 'connection_status',
+      taskId: 'system',
+      data: { status: 'connected', connectionId, userId },
+      timestamp: Date.now()
+    });
 
-  private handleMessage(ws: WebSocket, message: any) {
-    switch (message.type) {
-      case 'subscribe':
-        this.subscribeToTask(ws, message.taskId, message.userId);
-        break;
-      case 'unsubscribe':
-        this.unsubscribeFromTask(ws, message.taskId, message.userId);
-        break;
-      case 'ping':
-        ws.send(JSON.stringify({ type: 'pong', timestamp: new Date().toISOString() }));
-        break;
-      default:
-        console.warn('Unknown message type:', message.type);
-    }
-  }
+    socket.on('message', (data) => {
+      this.handleMessage(connectionId, data);
+    });
 
-  private subscribeToTask(ws: WebSocket, taskId: string, userId?: string) {
-    const connectionKey = userId || 'anonymous';
-    
-    if (!this.connections.has(connectionKey)) {
-      this.connections.set(connectionKey, []);
-    }
+    socket.on('close', () => {
+      this.handleDisconnection(connectionId);
+    });
 
-    const userConnections = this.connections.get(connectionKey)!;
-    let connection = userConnections.find(conn => conn.ws === ws);
-    
-    if (!connection) {
-      connection = { ws, taskIds: new Set() };
-      userConnections.push(connection);
-    }
+    socket.on('error', (error) => {
+      console.error(`WebSocket error for connection ${connectionId}:`, error);
+      this.handleDisconnection(connectionId);
+    });
 
-    connection.taskIds.add(taskId);
-
-    // Send current progress if available
-    const currentProgress = this.taskProgress.get(taskId);
-    if (currentProgress) {
-      ws.send(JSON.stringify(currentProgress));
-    }
-
-    console.log(`Subscribed to task ${taskId} for user ${connectionKey}`);
-  }
-
-  private unsubscribeFromTask(ws: WebSocket, taskId: string, userId?: string) {
-    const connectionKey = userId || 'anonymous';
-    const userConnections = this.connections.get(connectionKey);
-    
-    if (userConnections) {
-      const connection = userConnections.find(conn => conn.ws === ws);
-      if (connection) {
-        connection.taskIds.delete(taskId);
+    socket.on('pong', () => {
+      const conn = this.connections.get(connectionId);
+      if (conn) {
+        conn.lastActivity = Date.now();
       }
-    }
-
-    console.log(`Unsubscribed from task ${taskId} for user ${connectionKey}`);
+    });
   }
 
-  private handleDisconnection(ws: WebSocket) {
-    // Remove this WebSocket from all connections
-    for (const [userId, connections] of Array.from(this.connections.entries())) {
-      const index = connections.findIndex((conn: UserConnection) => conn.ws === ws);
-      if (index !== -1) {
-        connections.splice(index, 1);
-        if (connections.length === 0) {
-          this.connections.delete(userId);
-        }
-        break;
-      }
-    }
-    console.log('WebSocket connection closed and cleaned up');
-  }
-
-  public sendProgress(taskId: number | string, update: Partial<ProgressUpdate>) {
-    const taskIdStr = taskId.toString();
-    
-    const progressUpdate: ProgressUpdate = {
-      type: 'progress',
-      taskId: parseInt(taskIdStr),
-      message: 'Processing...',
-      timestamp: new Date(),
-      ...update
-    };
-
-    // Store the latest progress
-    this.taskProgress.set(taskIdStr, progressUpdate);
-
-    // Send to all subscribed connections
-    const message = JSON.stringify(progressUpdate);
-    
-    for (const userConnections of Array.from(this.connections.values())) {
-      for (const connection of userConnections) {
-        if (connection.taskIds.has(taskIdStr) && connection.ws.readyState === WebSocket.OPEN) {
-          try {
-            connection.ws.send(message);
-          } catch (error) {
-            console.error('Error sending progress update:', error);
-          }
-        }
-      }
-    }
-
-    console.log(`Progress update sent for task ${taskId}:`, update.message);
-  }
-
-  public sendLog(taskId: number | string, message: string, level: 'info' | 'warning' | 'error' = 'info') {
-    const taskIdStr = taskId.toString();
-    
-    const logUpdate = {
-      type: 'log',
-      taskId: parseInt(taskIdStr),
-      message,
-      level,
-      timestamp: new Date().toISOString()
-    };
-
-    const messageStr = JSON.stringify(logUpdate);
-    
-    for (const userConnections of Array.from(this.connections.values())) {
-      for (const connection of userConnections) {
-        if (connection.taskIds.has(taskIdStr) && connection.ws.readyState === WebSocket.OPEN) {
-          try {
-            connection.ws.send(messageStr);
-          } catch (error) {
-            console.error('Error sending log update:', error);
-          }
-        }
-      }
-    }
-  }
-
-  public getTaskProgress(taskId: string): ProgressUpdate | undefined {
-    return this.taskProgress.get(taskId);
-  }
-
-  public clearTaskProgress(taskId: string) {
-    this.taskProgress.delete(taskId);
-  }
-
-  // Parse Python stdout for progress updates
-  public parseProgressFromOutput(output: string): Partial<ProgressUpdate> | null {
+  private handleMessage(connectionId: string, data: any): void {
     try {
-      // Look for STATS: {json} format in output
-      const statsMatch = output.match(/STATS:\s*(\{[^}]+\})/);
-      if (statsMatch) {
-        const stats = JSON.parse(statsMatch[1]);
-        return {
-          data: stats,
-          message: `Processed ${stats.processed_invoices || 0} of ${stats.total_invoices || 0} invoices`
-        };
-      }
+      const connection = this.connections.get(connectionId);
+      if (!connection) return;
 
-      // Look for step indicators
-      const stepMatch = output.match(/STEP:\s*(\d+)(?:\/(\d+))?\s*-\s*(.+)/);
-      if (stepMatch) {
-        const [, step, totalSteps, message] = stepMatch;
-        return {
-          step: parseInt(step),
-          totalSteps: totalSteps ? parseInt(totalSteps) : 12,
-          message: message.trim()
-        };
-      }
+      connection.lastActivity = Date.now();
 
-      // Look for progress percentage
-      const progressMatch = output.match(/PROGRESS:\s*(\d+)%/);
-      if (progressMatch) {
-        const progress = parseInt(progressMatch[1]);
-        return {
-          data: { progress },
-          message: `${progress}% complete`
-        };
-      }
+      const message = JSON.parse(data.toString());
+      
+      switch (message.type) {
+        case 'subscribe':
+          if (message.taskId) {
+            connection.subscribedTasks.add(message.taskId);
+            console.log(`User ${connection.userId} subscribed to task ${message.taskId}`);
+            
+            // Send current progress if available
+            const currentProgress = this.taskProgress.get(message.taskId);
+            if (currentProgress) {
+              this.sendToConnection(connectionId, {
+                type: 'progress',
+                taskId: message.taskId,
+                data: currentProgress,
+                timestamp: Date.now()
+              });
+            }
+          }
+          break;
 
-      return null;
+        case 'unsubscribe':
+          if (message.taskId) {
+            connection.subscribedTasks.delete(message.taskId);
+            console.log(`User ${connection.userId} unsubscribed from task ${message.taskId}`);
+          }
+          break;
+
+        case 'ping':
+          this.sendToConnection(connectionId, {
+            type: 'connection_status',
+            taskId: 'system',
+            data: { status: 'pong' },
+            timestamp: Date.now()
+          });
+          break;
+      }
     } catch (error) {
-      console.error('Error parsing progress from output:', error);
-      return null;
+      console.error(`Error handling WebSocket message from ${connectionId}:`, error);
     }
   }
 
-  // Clean up old progress data
-  public cleanup() {
-    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-    
-    for (const [taskId, progress] of Array.from(this.taskProgress.entries())) {
-      if (progress.timestamp < oneHourAgo) {
-        this.taskProgress.delete(taskId);
+  private handleDisconnection(connectionId: string): void {
+    const connection = this.connections.get(connectionId);
+    if (!connection) return;
+
+    console.log(`WebSocket disconnected: user=${connection.userId}, connection=${connectionId}`);
+
+    // Remove from user connections
+    const userConnections = this.userConnections.get(connection.userId);
+    if (userConnections) {
+      userConnections.delete(connectionId);
+      if (userConnections.size === 0) {
+        this.userConnections.delete(connection.userId);
       }
     }
+
+    // Remove connection
+    this.connections.delete(connectionId);
+  }
+
+  private cleanupStaleConnections(): void {
+    const now = Date.now();
+    const staleTimeout = 60000; // 1 minute
+
+    for (const [connectionId, connection] of this.connections.entries()) {
+      if (now - connection.lastActivity > staleTimeout) {
+        console.log(`Cleaning up stale connection: ${connectionId}`);
+        connection.socket.terminate();
+        this.handleDisconnection(connectionId);
+      } else {
+        // Send ping to check if connection is alive
+        if (connection.socket.readyState === WebSocket.OPEN) {
+          connection.socket.ping();
+        }
+      }
+    }
+  }
+
+  private sendToConnection(connectionId: string, message: ProgressMessage): void {
+    const connection = this.connections.get(connectionId);
+    if (connection && connection.socket.readyState === WebSocket.OPEN) {
+      try {
+        connection.socket.send(JSON.stringify(message));
+      } catch (error) {
+        console.error(`Error sending message to connection ${connectionId}:`, error);
+        this.handleDisconnection(connectionId);
+      }
+    }
+  }
+
+  private sendToUserConnections(userId: string, message: ProgressMessage): void {
+    const userConnections = this.userConnections.get(userId);
+    if (!userConnections) return;
+
+    for (const connectionId of userConnections) {
+      const connection = this.connections.get(connectionId);
+      if (connection && connection.subscribedTasks.has(message.taskId)) {
+        this.sendToConnection(connectionId, message);
+      }
+    }
+  }
+
+  // Public API methods
+  startTask(taskData: Partial<ProgressData>): string {
+    const taskId = taskData.taskId || uuidv4();
+    const now = Date.now();
+
+    const progress: ProgressData = {
+      taskId,
+      userId: taskData.userId || 'unknown',
+      type: taskData.type || 'invoice_import',
+      status: 'starting',
+      progress: { current: 0, total: 100, percentage: 0 },
+      stats: { processed: 0, successful: 0, failed: 0, errors: 0 },
+      steps: taskData.steps || [],
+      logs: [],
+      startTime: now,
+      ...taskData
+    };
+
+    this.taskProgress.set(taskId, progress);
+
+    this.sendToUserConnections(progress.userId, {
+      type: 'progress',
+      taskId,
+      data: progress,
+      timestamp: now
+    });
+
+    console.log(`Task started: ${taskId} for user ${progress.userId}`);
+    return taskId;
+  }
+
+  updateProgress(taskId: string, updates: Partial<ProgressData>): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) {
+      console.warn(`Task ${taskId} not found for progress update`);
+      return;
+    }
+
+    const updatedProgress: ProgressData = {
+      ...currentProgress,
+      ...updates,
+      taskId // Ensure taskId is preserved
+    };
+
+    // Calculate percentage if current/total provided
+    if (updates.progress) {
+      updatedProgress.progress = {
+        ...currentProgress.progress,
+        ...updates.progress
+      };
+      updatedProgress.progress.percentage = updatedProgress.progress.total > 0 
+        ? Math.round((updatedProgress.progress.current / updatedProgress.progress.total) * 100)
+        : 0;
+    }
+
+    // Merge logs
+    if (updates.logs) {
+      updatedProgress.logs = [...(currentProgress.logs || []), ...updates.logs];
+    }
+
+    // Merge steps
+    if (updates.steps) {
+      updatedProgress.steps = updates.steps;
+    }
+
+    this.taskProgress.set(taskId, updatedProgress);
+
+    this.sendToUserConnections(updatedProgress.userId, {
+      type: 'progress',
+      taskId,
+      data: updatedProgress,
+      timestamp: Date.now()
+    });
+  }
+
+  addLog(taskId: string, level: 'info' | 'warning' | 'error' | 'success' | 'debug', message: string, details?: any): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) return;
+
+    const logEntry = {
+      timestamp: Date.now(),
+      level,
+      message,
+      details
+    };
+
+    const updatedLogs = [...(currentProgress.logs || []), logEntry];
+    
+    this.updateProgress(taskId, { logs: updatedLogs });
+
+    // Send separate log message for real-time log streaming
+    this.sendToUserConnections(currentProgress.userId, {
+      type: 'log',
+      taskId,
+      data: logEntry,
+      timestamp: Date.now()
+    });
+  }
+
+  updateStep(taskId: string, stepId: number, updates: Partial<ProgressData['currentStep']>): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) return;
+
+    let updatedSteps = [...(currentProgress.steps || [])];
+    const stepIndex = updatedSteps.findIndex(s => s.id === stepId);
+    
+    if (stepIndex >= 0) {
+      updatedSteps[stepIndex] = {
+        ...updatedSteps[stepIndex],
+        ...updates
+      };
+
+      if (updates.status === 'completed' && !updatedSteps[stepIndex].endTime) {
+        updatedSteps[stepIndex].endTime = Date.now();
+        if (updatedSteps[stepIndex].startTime) {
+          updatedSteps[stepIndex].duration = updatedSteps[stepIndex].endTime! - updatedSteps[stepIndex].startTime!;
+        }
+      }
+    }
+
+    const currentStep = updatedSteps.find(s => s.id === stepId);
+
+    this.updateProgress(taskId, { 
+      steps: updatedSteps,
+      currentStep: currentStep ? { ...currentStep } : undefined
+    });
+
+    // Send separate step update message
+    this.sendToUserConnections(currentProgress.userId, {
+      type: 'step_update',
+      taskId,
+      data: currentStep,
+      timestamp: Date.now()
+    });
+  }
+
+  updateStats(taskId: string, stats: Partial<ProgressData['stats']>): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) return;
+
+    const updatedStats = {
+      ...currentProgress.stats,
+      ...stats
+    };
+
+    this.updateProgress(taskId, { stats: updatedStats });
+
+    // Send separate stats message
+    this.sendToUserConnections(currentProgress.userId, {
+      type: 'stats',
+      taskId,
+      data: updatedStats,
+      timestamp: Date.now()
+    });
+  }
+
+  completeTask(taskId: string, result?: any, error?: string): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) return;
+
+    const now = Date.now();
+    const finalProgress: ProgressData = {
+      ...currentProgress,
+      status: error ? 'failed' : 'completed',
+      endTime: now,
+      totalDuration: currentProgress.startTime ? now - currentProgress.startTime : undefined,
+      result,
+      error,
+      progress: {
+        ...currentProgress.progress,
+        current: currentProgress.progress.total,
+        percentage: 100
+      }
+    };
+
+    this.taskProgress.set(taskId, finalProgress);
+
+    this.sendToUserConnections(finalProgress.userId, {
+      type: 'task_complete',
+      taskId,
+      data: finalProgress,
+      timestamp: now
+    });
+
+    // Log completion
+    this.addLog(taskId, error ? 'error' : 'success', 
+      error ? `Task failed: ${error}` : 'Task completed successfully', 
+      result
+    );
+
+    console.log(`Task ${error ? 'failed' : 'completed'}: ${taskId}`);
+  }
+
+  cancelTask(taskId: string, reason?: string): void {
+    const currentProgress = this.taskProgress.get(taskId);
+    if (!currentProgress) return;
+
+    const now = Date.now();
+    const cancelledProgress: ProgressData = {
+      ...currentProgress,
+      status: 'cancelled',
+      endTime: now,
+      totalDuration: currentProgress.startTime ? now - currentProgress.startTime : undefined,
+      error: reason || 'Task cancelled'
+    };
+
+    this.taskProgress.set(taskId, cancelledProgress);
+
+    this.sendToUserConnections(cancelledProgress.userId, {
+      type: 'task_cancelled',
+      taskId,
+      data: cancelledProgress,
+      timestamp: now
+    });
+
+    this.addLog(taskId, 'warning', `Task cancelled: ${reason || 'User request'}`);
+    console.log(`Task cancelled: ${taskId} - ${reason || 'No reason provided'}`);
+  }
+
+  getTaskProgress(taskId: string): ProgressData | null {
+    return this.taskProgress.get(taskId) || null;
+  }
+
+  getUserTasks(userId: string): ProgressData[] {
+    const tasks: ProgressData[] = [];
+    for (const [taskId, progress] of this.taskProgress.entries()) {
+      if (progress.userId === userId) {
+        tasks.push(progress);
+      }
+    }
+    return tasks.sort((a, b) => (b.startTime || 0) - (a.startTime || 0));
+  }
+
+  getActiveConnections(): number {
+    return this.connections.size;
+  }
+
+  sendProgress(taskId: string, data: any): void {
+    const progress = this.taskProgress.get(taskId);
+    if (!progress) return;
+
+    this.sendToUserConnections(progress.userId, {
+      type: 'progress',
+      taskId,
+      data,
+      timestamp: Date.now()
+    });
+  }
+
+  cleanup(): void {
+    if (this.cleanupInterval) {
+      clearInterval(this.cleanupInterval);
+    }
+    
+    for (const [connectionId] of this.connections.entries()) {
+      this.handleDisconnection(connectionId);
+    }
+    
+    if (this.wss) {
+      this.wss.close();
+    }
+    
+    console.log('Progress tracker cleanup completed');
   }
 }
 
-// Global instance
-let progressTracker: ProgressTracker | null = null;
+// Singleton instance
+let progressTrackerInstance: ProgressTracker | null = null;
 
 export function initializeProgressTracker(server: Server): ProgressTracker {
-  if (!progressTracker) {
-    progressTracker = new ProgressTracker(server);
-    
-    // Set up cleanup interval
-    setInterval(() => {
-      progressTracker?.cleanup();
-    }, 10 * 60 * 1000); // Clean up every 10 minutes
+  if (!progressTrackerInstance) {
+    progressTrackerInstance = new ProgressTracker();
+    progressTrackerInstance.initialize(server);
   }
-  
-  return progressTracker;
+  return progressTrackerInstance;
 }
 
 export function getProgressTracker(): ProgressTracker | null {
-  return progressTracker;
+  return progressTrackerInstance;
 }
+
+export default ProgressTracker;

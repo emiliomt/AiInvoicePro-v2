@@ -1325,13 +1325,14 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Progress tracking API routes
-  apiRouter.get("/rpa/progress/:taskId", async (req: Request, res: Response) => {
+  apiRouter.get("/progress/:taskId", isAuthenticated, async (req: Request, res: Response) => {
     try {
       const { getProgressTracker } = await import('./services/progressTracker');
       const progressTracker = getProgressTracker();
 
       if (!progressTracker) {
         return res.status(503).json({ 
+          success: false,
           error: 'Progress tracking service not available' 
         });
       }
@@ -1341,14 +1342,116 @@ export function registerRoutes(app: Express): Server {
 
       if (!progress) {
         return res.status(404).json({ 
+          success: false,
           error: 'Task progress not found' 
         });
       }
 
-      res.json(progress);
+      res.json({
+        success: true,
+        progress,
+        timestamp: Date.now()
+      });
     } catch (error) {
       console.error('Error getting progress:', error);
       res.status(500).json({ 
+        success: false,
+        error: 'Failed to get progress' 
+      });
+    }
+  });
+
+  apiRouter.get("/invoice-importer/progress/:configId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { getProgressTracker } = await import('./services/progressTracker');
+      const progressTracker = getProgressTracker();
+
+      if (!progressTracker) {
+        return res.status(503).json({ 
+          success: false,
+          error: 'Progress tracking service not available' 
+        });
+      }
+
+      const configId = parseInt(req.params.configId);
+      const user = getUser(req);
+      
+      if (!user?.id) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Not authenticated' 
+        });
+      }
+
+      // Find active task for this config
+      const userTasks = progressTracker.getUserTasks(user.id);
+      const task = userTasks.find(t => t.configId === configId && 
+        (t.status === 'running' || t.status === 'starting'));
+
+      if (!task) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'No active task found for this configuration' 
+        });
+      }
+
+      res.json({
+        success: true,
+        progress: task,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('Error getting invoice importer progress:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to get progress' 
+      });
+    }
+  });
+
+  apiRouter.get("/rpa/progress/:jobId", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { getProgressTracker } = await import('./services/progressTracker');
+      const progressTracker = getProgressTracker();
+
+      if (!progressTracker) {
+        return res.status(503).json({ 
+          success: false,
+          error: 'Progress tracking service not available' 
+        });
+      }
+
+      const jobId = req.params.jobId;
+      const user = getUser(req);
+      
+      if (!user?.id) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Not authenticated' 
+        });
+      }
+
+      // Find active task for this job
+      const userTasks = progressTracker.getUserTasks(user.id);
+      const task = userTasks.find(t => t.jobId === jobId && 
+        (t.status === 'running' || t.status === 'starting'));
+
+      if (!task) {
+        return res.status(404).json({ 
+          success: false,
+          error: 'No active task found for this job' 
+        });
+      }
+
+      res.json({
+        success: true,
+        progress: task,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('Error getting RPA progress:', error);
+      res.status(500).json({ 
+        success: false,
         error: 'Failed to get progress' 
       });
     }
@@ -1361,24 +1464,87 @@ export function registerRoutes(app: Express): Server {
 
       if (!progressTracker) {
         return res.status(503).json({ 
+          success: false,
           error: 'Progress tracking service not available' 
         });
       }
 
-      const { taskId, ...updateData } = req.body;
+      const { taskId, type, data } = req.body;
 
       if (!taskId) {
         return res.status(400).json({ 
+          success: false,
           error: 'Task ID is required' 
         });
       }
 
-      progressTracker.sendProgress(taskId, updateData);
+      // Handle different types of updates
+      switch (type) {
+        case 'progress':
+          progressTracker.updateProgress(taskId, data);
+          break;
+        case 'log':
+          progressTracker.addLog(taskId, data.level || 'info', data.message, data.details);
+          break;
+        case 'step':
+          progressTracker.updateStep(taskId, data.stepId, data.updates);
+          break;
+        case 'stats':
+          progressTracker.updateStats(taskId, data);
+          break;
+        case 'complete':
+          progressTracker.completeTask(taskId, data.result, data.error);
+          break;
+        case 'cancel':
+          progressTracker.cancelTask(taskId, data.reason);
+          break;
+        default:
+          progressTracker.sendProgress(taskId, data);
+      }
+
       res.json({ success: true });
     } catch (error) {
       console.error('Error updating progress:', error);
       res.status(500).json({ 
+        success: false,
         error: 'Failed to update progress' 
+      });
+    }
+  });
+
+  apiRouter.get("/user-tasks", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      const { getProgressTracker } = await import('./services/progressTracker');
+      const progressTracker = getProgressTracker();
+
+      if (!progressTracker) {
+        return res.status(503).json({ 
+          success: false,
+          error: 'Progress tracking service not available' 
+        });
+      }
+
+      const user = getUser(req);
+      
+      if (!user?.id) {
+        return res.status(401).json({ 
+          success: false,
+          error: 'Not authenticated' 
+        });
+      }
+
+      const tasks = progressTracker.getUserTasks(user.id);
+
+      res.json({
+        success: true,
+        tasks,
+        timestamp: Date.now()
+      });
+    } catch (error) {
+      console.error('Error getting user tasks:', error);
+      res.status(500).json({ 
+        success: false,
+        error: 'Failed to get user tasks' 
       });
     }
   });

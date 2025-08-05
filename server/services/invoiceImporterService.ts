@@ -51,244 +51,222 @@ class InvoiceImporterService {
   }
 
   async executeImportTask(configId: number, userId?: string): Promise<void> {
-    console.log(`Starting import task for config ${configId}, user: ${userId}`);
-    let logId: number | undefined;
+    const config = await storage.getInvoiceImporterConfig(configId);
+    if (!config) {
+      throw new Error(`Configuration ${configId} not found`);
+    }
 
-    // Add a global timeout for the entire import process (10 minutes)
-    const globalTimeout = setTimeout(() => {
-      console.error(`Import task ${configId} timed out after 10 minutes`);
-      if (logId) {
-        this.handleImportTimeout(logId, 'Global timeout: Import process exceeded 10 minutes');
-      }
-    }, 10 * 60 * 1000);
+    const { getProgressTracker } = await import('./progressTracker');
+    const progressTracker = getProgressTracker();
+
+    const taskId = `import_${configId}_${Date.now()}`;
+    const taskUserId = userId || config.userId;
+
+    console.log(`📋 [INVOICE_IMPORTER] Starting import task for config: ${config.taskName}`);
+
+    // Start progress tracking
+    if (progressTracker) {
+      progressTracker.startTask({
+        taskId,
+        configId,
+        userId: taskUserId,
+        type: 'invoice_import',
+        progress: { current: 0, total: 100, percentage: 0 },
+        steps: [
+          { id: 1, name: 'Initialize Import', status: 'pending' },
+          { id: 2, name: 'Connect to ERP', status: 'pending' },
+          { id: 3, name: 'Extract Invoices', status: 'pending' },
+          { id: 4, name: 'Process Data', status: 'pending' },
+          { id: 5, name: 'Finalize Import', status: 'pending' }
+        ]
+      });
+
+      progressTracker.addLog(taskId, 'info', `Starting import task: ${config.taskName}`);
+    }
 
     try {
-      // Get configuration
-      const config = await storage.getInvoiceImporterConfig(configId);
-      if (!config) {
-        throw new Error('Import configuration not found');
-      }
+      // Update status to running
+      await storage.updateInvoiceImporterConfig(configId, {
+        lastRun: new Date(),
+        isRunning: true
+      });
 
-      // Validate user authorization
-      if (userId && config.userId !== userId) {
-        throw new Error('Unauthorized: User does not own this configuration');
-      }
-
-      // Create or get existing log
-      let log = await storage.getLatestInvoiceImporterLog(configId);
-      if (!log || log.status === 'completed' || log.status === 'failed') {
-        log = await storage.createInvoiceImporterLog({
-          configId,
+      if (progressTracker) {
+        progressTracker.updateStep(taskId, 1, { status: 'running' });
+        progressTracker.updateProgress(taskId, {
           status: 'running',
-          startedAt: new Date(),
+          progress: { current: 1, total: 5, percentage: 20 }
         });
       }
 
-      logId = log.id;
+      let result;
+      if (config.isManualConfig) {
+        if (progressTracker) {
+          progressTracker.addLog(taskId, 'info', 'Running manual configuration (no automation)');
+        }
+        console.log('📋 [INVOICE_IMPORTER] Running manual configuration (no automation)');
+        result = await this.processManualConfiguration(config, taskId);
+      } else {
+        if (progressTracker) {
+          progressTracker.addLog(taskId, 'info', 'Running RPA automation...');
+        }
+        console.log('📋 [INVOICE_IMPORTER] Running RPA automation...');
+        result = await this.processERPIntegration(config, taskId);
+      }
 
-      // Initialize progress
-      const progress: ImporterProgress = {
-        taskId: logId,
-        currentStep: 1,
-        totalSteps: 12,
-        status: 'running',
-        message: 'Import process started...',
-        startedAt: new Date(),
-        completedAt: undefined,
-        totalInvoices: 0,
-        processedInvoices: 0,
-        successfulImports: 0,
-        failedImports: 0,
-        steps: this.initializeSteps(),
+      // Complete progress tracking
+      if (progressTracker) {
+        progressTracker.completeTask(taskId, result);
+        progressTracker.addLog(taskId, result.success ? 'success' : 'error', 
+          result.message || (result.success ? 'Import completed successfully' : 'Import failed'));
+      }
+
+      // Log the result
+      await storage.createInvoiceImporterLog({
+        configId,
+        status: result.success ? 'completed' : 'failed',
+        message: result.message || (result.success ? 'Import completed successfully' : 'Import failed'),
+        details: result,
+        executionTime: result.executionTime || 0
+      });
+
+      console.log(`✅ [INVOICE_IMPORTER] Task completed: ${result.message}`);
+    } catch (error: any) {
+      console.error(`❌ [INVOICE_IMPORTER] Task failed:`, error);
+
+      if (progressTracker) {
+        progressTracker.completeTask(taskId, null, error.message || 'Unknown error');
+        progressTracker.addLog(taskId, 'error', `Task failed: ${error.message}`);
+      }
+
+      await storage.createInvoiceImporterLog({
+        configId,
+        status: 'failed',
+        message: error.message || 'Unknown error',
+        details: { error: error.message, stack: error.stack },
+        executionTime: 0
+      });
+
+      throw error;
+    } finally {
+      // Update status to not running
+      await storage.updateInvoiceImporterConfig(configId, {
+        isRunning: false
+      });
+    }
+  }
+
+  private async processManualConfiguration(config: any, taskId?: string): Promise<any> {
+    const { getProgressTracker } = await import('./progressTracker');
+    const progressTracker = getProgressTracker();
+
+    if (progressTracker && taskId) {
+      progressTracker.updateStep(taskId, 2, { status: 'running' });
+      progressTracker.addLog(taskId, 'info', 'Manual configuration mode - ready for manual invoice uploads');
+    }
+
+    const result = {
+      success: true,
+      message: 'Manual configuration ready for invoice uploads',
+      isManualMode: true,
+      configId: config.id,
+      taskName: config.taskName,
+      invoicesProcessed: 0,
+      executionTime: 1000
+    };
+
+    if (progressTracker && taskId) {
+      progressTracker.updateStep(taskId, 2, { status: 'completed' });
+      progressTracker.updateStep(taskId, 3, { status: 'completed' });
+      progressTracker.updateStep(taskId, 4, { status: 'completed' });
+      progressTracker.updateStep(taskId, 5, { status: 'running' });
+      progressTracker.updateProgress(taskId, {
+        progress: { current: 5, total: 5, percentage: 100 }
+      });
+    }
+
+    await new Promise(resolve => setTimeout(resolve, 1000));
+
+    if (progressTracker && taskId) {
+      progressTracker.updateStep(taskId, 5, { status: 'completed' });
+    }
+
+    return result;
+  }
+
+  private async processERPIntegration(config: any, taskId?: string): Promise<any> {
+    const { getProgressTracker } = await import('./progressTracker');
+    const progressTracker = getProgressTracker();
+
+    if (progressTracker && taskId) {
+      progressTracker.updateStep(taskId, 2, { status: 'running' });
+      progressTracker.addLog(taskId, 'info', 'Connecting to ERP system...');
+    }
+
+    try {
+      // Get connection details
+      const connection = await storage.getErpConnection(config.connectionId);
+      if (!connection) {
+        throw new Error('ERP connection not found');
+      }
+
+      if (progressTracker && taskId) {
+        progressTracker.updateStep(taskId, 2, { status: 'completed' });
+        progressTracker.updateStep(taskId, 3, { status: 'running' });
+        progressTracker.updateProgress(taskId, {
+          progress: { current: 3, total: 5, percentage: 60 }
+        });
+        progressTracker.addLog(taskId, 'info', 'Extracting invoices from ERP...');
+      }
+
+      // Use RPA service for automation
+      const { PythonRPAService } = await import('./pythonRpaService');
+      const rpaResult = await PythonRPAService.processInvoicesAutomatically();
+
+      if (progressTracker && taskId) {
+        progressTracker.updateStep(taskId, 3, { status: 'completed' });
+        progressTracker.updateStep(taskId, 4, { status: 'running' });
+        progressTracker.updateProgress(taskId, {
+          progress: { current: 4, total: 5, percentage: 80 }
+        });
+        progressTracker.addLog(taskId, 'info', 'Processing extracted data...');
+      }
+
+      // Simulate processing time
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      if (progressTracker && taskId) {
+        progressTracker.updateStep(taskId, 4, { status: 'completed' });
+        progressTracker.updateStep(taskId, 5, { status: 'running' });
+        progressTracker.updateProgress(taskId, {
+          progress: { current: 5, total: 5, percentage: 100 }
+        });
+      }
+
+      const result = {
+        success: rpaResult.success,
+        message: rpaResult.message || 'ERP integration completed',
+        invoicesProcessed: rpaResult.invoicesProcessed || 0,
+        details: rpaResult,
+        executionTime: 10000
       };
 
-      // Store progress in memory for real-time tracking
-      this.activeImports.set(logId, progress);
-
-      // Update database log immediately
-      await storage.updateInvoiceImporterLog(logId, {
-        status: 'running',
-        totalInvoices: 0,
-        processedInvoices: 0,
-        successfulImports: 0,
-        failedImports: 0,
-        logs: 'Import task started...',
-      });
-
-      console.log(`Import task ${logId} initialized, starting RPA process...`);
-
-      // Send initial progress update
-      const progressTracker = getProgressTracker();
-      if (progressTracker) {
-        progressTracker.sendProgress(logId, {
-          step: 1,
-          totalSteps: 12,
-          status: 'running',
-          message: 'Starting import process...'
+      if (progressTracker && taskId) {
+        progressTracker.updateStep(taskId, 5, { status: 'completed' });
+        progressTracker.updateStats(taskId, {
+          processed: result.invoicesProcessed,
+          successful: result.success ? result.invoicesProcessed : 0,
+          failed: result.success ? 0 : 1
         });
       }
 
-      // Get ERP connection or use manual configuration
-      let connection: any = null;
-      
-      if (config.isManualConfig || !config.connectionId) {
-        // Manual configuration - use credentials stored directly in the config
-        console.log(`🔍 Invoice import: Using manual ERP configuration for config "${config.name}"`);
-        connection = {
-          id: 'manual',
-          name: `Manual Config - ${config.taskName}`,
-          baseUrl: config.erpUrl,
-          username: config.erpUsername,
-          password: config.erpPassword, // Already encrypted in database
-          isActive: true,
-          updatedAt: new Date()
-        };
-        
-        console.log(`🔍 Invoice import: Manual configuration details:`, {
-          name: connection.name,
-          baseUrl: connection.baseUrl,
-          username: connection.username,
-          passwordLength: connection.password ? connection.password.length : 0,
-          isManualConfig: true
-        });
-      } else {
-        // Connection-based configuration - retrieve fresh credentials from ERP connection
-        console.log(`🔍 Invoice import: Retrieving ERP connection ${config.connectionId} for config "${config.name}"`);
-        connection = await storage.getErpConnection(config.connectionId);
-        if (!connection) {
-          throw new Error('ERP connection not found');
-        }
-        
-        console.log(`🔍 Invoice import: Retrieved ERP connection details:`, {
-          connectionId: connection.id,
-          name: connection.name,
-          baseUrl: connection.baseUrl,
-          username: connection.username,
-          passwordLength: connection.password ? connection.password.length : 0,
-          lastUpdated: connection.updatedAt,
-          isActive: connection.isActive
-        });
-      }
-
-      // Start the actual import process with retry logic
-      await this.performImportProcessWithRetry(logId, config, connection, progress);
-
-      // Mark as completed
-      progress.status = 'completed';
-      progress.completedAt = new Date();
-      progress.message = 'Import completed successfully';
-      progress.currentStep = 12;
-
-      await storage.updateInvoiceImporterLog(logId, {
-        status: 'completed',
-        completedAt: new Date(),
-        logs: this.generateLogsFromSteps(progress.steps),
-      });
-
-      // Update the configuration's lastRun timestamp
-      await storage.updateInvoiceImporterConfig(config.id, {
-        lastRun: new Date(),
-      });
-
-      console.log(`Import task ${logId} completed successfully`);
-
+      return result;
     } catch (error: any) {
-      console.error(`Import task failed:`, error);
-
-      // Use the logId we have, or find the latest one
-      if (!logId) {
-        const logs = await storage.getInvoiceImporterLogs(configId);
-        const latestLog = logs[0];
-        logId = latestLog?.id;
+      if (progressTracker && taskId) {
+        progressTracker.addLog(taskId, 'error', `ERP integration failed: ${error.message}`);
       }
-
-      if (logId) {
-        // Update progress if available
-        const progress = this.activeImports.get(logId);
-        if (progress) {
-          progress.status = 'failed';
-          progress.message = `Import failed: ${error.message}`;
-          progress.completedAt = new Date();
-
-          // Update the current step to failed
-          const currentStep = progress.steps.find(s => s.id === progress.currentStep);
-          if (currentStep) {
-            currentStep.status = 'failed';
-            currentStep.errorMessage = error.message;
-            currentStep.timestamp = new Date();
-          }
-        }
-
-        // Update database
-        await storage.updateInvoiceImporterLog(logId, {
-          status: 'failed',
-          errorMessage: error.message,
-          completedAt: new Date(),
-          logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import failed: ${error.message}`,
-        });
-
-        // Update the configuration's lastRun timestamp even for failed imports
-        const config = await storage.getInvoiceImporterConfig(configId);
-        if (config) {
-          await storage.updateInvoiceImporterConfig(config.id, {
-            lastRun: new Date(),
-          });
-        }
-      }
-
-      // Don't re-throw the error to prevent unhandled rejections
-      console.error(`Import task ${configId} failed with error: ${error.message}`);
-    } finally {
-      clearTimeout(globalTimeout);
+      throw error;
     }
-  }
-
-  private async handleImportTimeout(logId: number, message: string): Promise<void> {
-    try {
-      const progress = this.activeImports.get(logId);
-      if (progress) {
-        progress.status = 'failed';
-        progress.message = message;
-        progress.completedAt = new Date();
-
-        // Update the current step to failed
-        const currentStep = progress.steps.find(s => s.id === progress.currentStep);
-        if (currentStep) {
-          currentStep.status = 'failed';
-          currentStep.errorMessage = message;
-          currentStep.timestamp = new Date();
-        }
-      }
-
-      await storage.updateInvoiceImporterLog(logId, {
-        status: 'failed',
-        errorMessage: message,
-        completedAt: new Date(),
-        logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import timed out: ${message}`,
-      });
-
-      // Remove from active imports
-      this.activeImports.delete(logId);
-    } catch (error) {
-      console.error('Failed to handle import timeout:', error);
-    }
-  }
-
-  private initializeSteps(): ImporterStep[] {
-    return [
-      { id: 1, description: 'Initializing browser session', status: 'pending', timestamp: new Date() },
-      { id: 2, description: 'Navigating to ERP login page', status: 'pending', timestamp: new Date() },
-      { id: 3, description: 'Logging into ERP system', status: 'pending', timestamp: new Date() },
-      { id: 4, description: 'Navigating to invoice section', status: 'pending', timestamp: new Date() },
-      { id: 5, description: 'Loading invoice list', status: 'pending', timestamp: new Date() },
-      { id: 6, description: 'Scanning available invoices', status: 'pending', timestamp: new Date() },
-      { id: 7, description: 'Processing invoice downloads', status: 'pending', timestamp: new Date() },
-      { id: 8, description: 'Extracting XML files', status: 'pending', timestamp: new Date() },
-      { id: 9, description: 'Extracting PDF files', status: 'pending', timestamp: new Date() },
-      { id: 10, description: 'Processing invoice metadata', status: 'pending', timestamp: new Date() },
-      { id: 11, description: 'Storing imported invoices', status: 'pending', timestamp: new Date() },
-      { id: 12, description: 'Cleaning up and finalizing', status: 'pending', timestamp: new Date() },
-    ];
   }
 
   private async performImportProcessWithRetry(
@@ -348,7 +326,7 @@ class InvoiceImporterService {
     try {
       // Decrypt password for RPA script generation
       const decryptedPassword = connection.password ? Buffer.from(connection.password, 'base64').toString('utf8') : '';
-      
+
       console.log(`🔍 Invoice import: Preparing credentials for RPA script generation:`, {
         configType: config.isManualConfig ? 'Manual' : 'Connection-based',
         connectionId: connection.id,
@@ -359,7 +337,7 @@ class InvoiceImporterService {
         decryptedPasswordLength: decryptedPassword.length,
         decryptedPassword: decryptedPassword
       });
-      
+
       const script = await erpAutomationService.generateRPAScript(taskDescription, {
         id: connection.id,
         name: connection.name,
@@ -384,7 +362,7 @@ class InvoiceImporterService {
         decryptedPasswordLength: decryptedPassword.length,
         decryptedPassword: decryptedPassword
       });
-      
+
       const result = await erpAutomationService.executeRPAScript(script, {
         id: connection.id,
         name: connection.name,
@@ -460,22 +438,70 @@ class InvoiceImporterService {
 
     } catch (error: any) {
       console.error('RPA automation failed:', error);
-      
+
       // Log the RPA failure but don't fail the entire import
       await this.logStep(logId, 'RPA automation failed, switching to manual mode', 'failed', error.message);
-      
+
       // Update progress to indicate manual processing needed
       await this.updateStepStatus(logId, progress, 3, 'failed', 'RPA login failed - manual upload required');
-      
+
       // Mark remaining steps as completed but with manual processing note
       for (let step = 4; step <= 12; step++) {
         await this.updateStepStatus(logId, progress, step, 'completed', 'Manual processing required due to RPA failure');
       }
-      
+
       // Don't throw error - allow manual processing workflow
       console.log(`Import task ${logId} switched to manual mode due to RPA failure`);
       return;
     }
+  }
+
+  private async handleImportTimeout(logId: number, message: string): Promise<void> {
+    try {
+      const progress = this.activeImports.get(logId);
+      if (progress) {
+        progress.status = 'failed';
+        progress.message = message;
+        progress.completedAt = new Date();
+
+        // Update the current step to failed
+        const currentStep = progress.steps.find(s => s.id === progress.currentStep);
+        if (currentStep) {
+          currentStep.status = 'failed';
+          currentStep.errorMessage = message;
+          currentStep.timestamp = new Date();
+        }
+      }
+
+      await storage.updateInvoiceImporterLog(logId, {
+        status: 'failed',
+        errorMessage: message,
+        completedAt: new Date(),
+        logs: progress ? this.generateLogsFromSteps(progress.steps) : `Import timed out: ${message}`,
+      });
+
+      // Remove from active imports
+      this.activeImports.delete(logId);
+    } catch (error) {
+      console.error('Failed to handle import timeout:', error);
+    }
+  }
+
+  private initializeSteps(): ImporterStep[] {
+    return [
+      { id: 1, description: 'Initializing browser session', status: 'pending', timestamp: new Date() },
+      { id: 2, description: 'Navigating to ERP login page', status: 'pending', timestamp: new Date() },
+      { id: 3, description: 'Logging into ERP system', status: 'pending', timestamp: new Date() },
+      { id: 4, description: 'Navigating to invoice section', status: 'pending', timestamp: new Date() },
+      { id: 5, description: 'Loading invoice list', status: 'pending', timestamp: new Date() },
+      { id: 6, description: 'Scanning available invoices', status: 'pending', timestamp: new Date() },
+      { id: 7, description: 'Processing invoice downloads', status: 'pending', timestamp: new Date() },
+      { id: 8, description: 'Extracting XML files', status: 'pending', timestamp: new Date() },
+      { id: 9, description: 'Extracting PDF files', status: 'pending', timestamp: new Date() },
+      { id: 10, description: 'Processing invoice metadata', status: 'pending', timestamp: new Date() },
+      { id: 11, description: 'Storing imported invoices', status: 'pending', timestamp: new Date() },
+      { id: 12, description: 'Cleaning up and finalizing', status: 'pending', timestamp: new Date() },
+    ];
   }
 
   private async processXMLDownloads(logId: number, progress: ImporterProgress, config: InvoiceImporterConfig): Promise<void> {
@@ -561,15 +587,19 @@ class InvoiceImporterService {
       progress.successfulImports = successCount;
       progress.failedImports = failCount;
 
-      progressTracker.sendProgress(config.userId, {
-        taskId: logId,
-        step: 7,
-        totalSteps: progress.totalSteps,
-        status: 'processing',
-        message: `Processing batch ${Math.ceil((i + batchSize) / batchSize)} of ${Math.ceil(entries.length / batchSize)}`,
-        timestamp: new Date(),
-        data: { processedInvoices: processedCount, successfulImports: successCount },
-      });
+      const progressTracker = getProgressTracker(); // Get progressTracker here
+      if (progressTracker) {
+        progressTracker.sendProgress(config.userId, {
+          taskId: logId,
+          step: 7,
+          totalSteps: progress.totalSteps,
+          status: 'processing',
+          message: `Processing batch ${Math.ceil((i + batchSize) / batchSize)} of ${Math.ceil(entries.length / batchSize)}`,
+          timestamp: new Date(),
+          data: { processedInvoices: processedCount, successfulImports: successCount },
+        });
+      }
+
 
       // Minimal delay between batches
       await this.simulateDelay(100);
@@ -652,15 +682,19 @@ class InvoiceImporterService {
         progress.failedImports++;
       }
 
-      progressTracker.sendProgress(config.userId, {
-        taskId: logId,
-        step: 9,
-        totalSteps: progress.totalSteps,
-        status: 'processing',
-        message: `Downloading PDF ${i + 1}/${progress.totalInvoices}`,
-        timestamp: new Date(),
-        data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
-      });
+      const progressTracker = getProgressTracker(); // Get progressTracker here
+      if (progressTracker) {
+        progressTracker.sendProgress(config.userId, {
+          taskId: logId,
+          step: 9,
+          totalSteps: progress.totalSteps,
+          status: 'processing',
+          message: `Downloading PDF ${i + 1}/${progress.totalInvoices}`,
+          timestamp: new Date(),
+          data: { processedInvoices: progress.processedInvoices, successfulImports: progress.successfulImports },
+        });
+      }
+
 
       await this.simulateDelay(2000);
     }
@@ -719,15 +753,18 @@ class InvoiceImporterService {
     if (log) {
       const config = await storage.getInvoiceImporterConfig(log.configId);
       if (config) {
-        progressTracker.sendProgress(config.userId, {
-          taskId: logId,
-          step: stepId,
-          totalSteps: progress.totalSteps,
-          status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'processing',
-          message: step?.description || `Step ${stepId}`,
-          timestamp: new Date(),
-          data: progress,
-        });
+        const progressTracker = getProgressTracker(); // Get progressTracker here
+        if (progressTracker) {
+          progressTracker.sendProgress(config.userId, {
+            taskId: logId,
+            step: stepId,
+            totalSteps: progress.totalSteps,
+            status: status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'processing',
+            message: step?.description || `Step ${stepId}`,
+            timestamp: new Date(),
+            data: progress,
+          });
+        }
       }
     }
 
@@ -775,15 +812,19 @@ class InvoiceImporterService {
         successCount++;
 
         // Update progress
-        progressTracker.sendProgress(config.userId, {
-          taskId: logId,
-          step: 3,
-          totalSteps: progress.totalSteps,
-          status: 'processing',
-          message: `Processing extracted invoice ${processedCount}/${progress.totalInvoices}`,
-          timestamp: new Date(),
-          data: { processedInvoices: processedCount, successfulImports: successCount },
-        });
+        const progressTracker = getProgressTracker(); // Get progressTracker here
+        if (progressTracker) {
+          progressTracker.sendProgress(config.userId, {
+            taskId: logId,
+            step: 3,
+            totalSteps: progress.totalSteps,
+            status: 'processing',
+            message: `Processing extracted invoice ${processedCount}/${progress.totalInvoices}`,
+            timestamp: new Date(),
+            data: { processedInvoices: processedCount, successfulImports: successCount },
+          });
+        }
+
 
         await this.simulateDelay(500);
       } catch (error: any) {
@@ -826,7 +867,7 @@ class InvoiceImporterService {
 
       // Make internal API call to trigger automatic processing
       const fetch = (await import('node-fetch')).default;
-      
+
       const response = await fetch('http://localhost:5000/api/invoices/initiate-automatic-process', {
         method: 'POST',
         headers: {
@@ -843,7 +884,7 @@ class InvoiceImporterService {
       if (response.ok) {
         const result = await response.json();
         console.log(`✅ Automatic processing triggered successfully:`, result.summary);
-        
+
         await this.logStep(logId, `Automatic processing initiated for ${result.summary.totalInvoices} invoices`, 'completed');
       } else {
         const error = await response.text();

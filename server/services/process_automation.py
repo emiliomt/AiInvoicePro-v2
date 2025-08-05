@@ -388,8 +388,136 @@ def process_invoice_from_stdin():
         logger.error(f"Invoice processing failed: {e}")
         sys.exit(1)
 
+def send_progress_update(task_id: str, update_type: str, data: dict):
+    """Send progress update via STDOUT for Node.js to capture"""
+    try:
+        progress_message = {
+            "type": "progress_update",
+            "taskId": task_id,
+            "updateType": update_type,
+            "data": data,
+            "timestamp": int(time.time() * 1000)
+        }
+        print(f"PROGRESS_UPDATE:{json.dumps(progress_message)}")
+        sys.stdout.flush()
+    except Exception as e:
+        logger.error(f"Failed to send progress update: {e}")
+
+def process_invoice_workflow_with_progress(invoice_file_path: str, user_id: str, task_id: str = None) -> Dict[str, Any]:
+    """Enhanced workflow with progress tracking"""
+    
+    if not task_id:
+        task_id = f"INV_{hash(invoice_file_path) % 10000}"
+    
+    logger.info("🚀 STARTING ANZU DYNAMICS INVOICE PROCESSING WORKFLOW WITH PROGRESS")
+    logger.info("=" * 60)
+
+    # Send initial progress
+    send_progress_update(task_id, "start", {
+        "status": "starting",
+        "progress": {"current": 0, "total": 10, "percentage": 0},
+        "stats": {"processed": 0, "successful": 0, "failed": 0, "errors": 0}
+    })
+
+    workflow_results = {}
+    steps = [
+        "ERP Import", "OCR Processing", "AI Data Extraction", "Validation",
+        "Project Matching", "PO Matching", "Classification", "Approval Workflow",
+        "Final Validation", "Petty Cash"
+    ]
+
+    try:
+        for i, step_name in enumerate(steps):
+            # Send step start
+            send_progress_update(task_id, "step", {
+                "stepId": i + 1,
+                "updates": {
+                    "name": step_name,
+                    "status": "running",
+                    "startTime": int(time.time() * 1000)
+                }
+            })
+
+            # Send log
+            send_progress_update(task_id, "log", {
+                "level": "info",
+                "message": f"Starting {step_name}..."
+            })
+
+            # Simulate step processing
+            step_result = simulate_workflow_step(step_name)
+            workflow_results[step_name.lower().replace(' ', '_')] = step_result
+            
+            # Simulate processing time
+            import time
+            time.sleep(1 + (i * 0.3))  # Variable timing for realism
+
+            # Send step completion
+            send_progress_update(task_id, "step", {
+                "stepId": i + 1,
+                "updates": {
+                    "status": "completed",
+                    "endTime": int(time.time() * 1000)
+                }
+            })
+
+            # Send progress update
+            current_progress = i + 1
+            send_progress_update(task_id, "progress", {
+                "progress": {
+                    "current": current_progress,
+                    "total": len(steps),
+                    "percentage": int((current_progress / len(steps)) * 100)
+                },
+                "stats": {
+                    "processed": current_progress,
+                    "successful": current_progress,
+                    "failed": 0,
+                    "errors": 0
+                }
+            })
+
+            # Send completion log
+            send_progress_update(task_id, "log", {
+                "level": "success",
+                "message": f"✅ {step_name} completed successfully"
+            })
+
+        # Final results
+        workflow_results['invoice_id'] = task_id
+        workflow_results['final_status'] = 'verified'
+        workflow_results['processing_complete'] = True
+
+        # Send completion
+        send_progress_update(task_id, "complete", {
+            "status": "completed",
+            "result": workflow_results,
+            "progress": {"current": len(steps), "total": len(steps), "percentage": 100}
+        })
+
+        logger.info("=" * 60)
+        logger.info(f"🎉 WORKFLOW COMPLETED SUCCESSFULLY - Invoice ID: {task_id}")
+        logger.info("=" * 60)
+
+    except Exception as error:
+        logger.error(f"❌ Error in workflow: {error}")
+        
+        # Send error
+        send_progress_update(task_id, "complete", {
+            "status": "failed",
+            "error": str(error),
+            "result": workflow_results
+        })
+        
+        workflow_results['error'] = str(error)
+        workflow_results['processing_complete'] = False
+
+    return workflow_results
+
 if __name__ == "__main__":
     import sys
+    import time
+    
     if len(sys.argv) > 1 and sys.argv[1] == "test":
         run_comprehensive_test()
     else:

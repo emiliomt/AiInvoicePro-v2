@@ -1,337 +1,590 @@
-import React, { useState, useEffect } from 'react';
-import { Progress } from '@/components/ui/progress';
-import { Badge } from '@/components/ui/badge';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
-import { Button } from '@/components/ui/button';
-import { Loader2, CheckCircle, XCircle, Clock, Terminal, WifiOff, Wifi } from 'lucide-react';
-import { ScrollArea } from '@/components/ui/scroll-area';
 
-interface ProgressStats {
-  total_invoices: number;
-  processed_invoices: number;
-  successful_imports: number;
-  failed_imports: number;
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Progress } from "@/components/ui/progress";
+import { Badge } from "@/components/ui/badge";
+import { ScrollArea } from "@/components/ui/scroll-area";
+import { Separator } from "@/components/ui/separator";
+import { 
+  CheckCircle, 
+  XCircle, 
+  Clock, 
+  AlertCircle, 
+  Loader2, 
+  Wifi, 
+  WifiOff,
+  Maximize2,
+  Minimize2,
+  Trash2,
+  RotateCcw
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+
+export interface ProgressStep {
+  id: number;
+  name: string;
+  status: 'pending' | 'running' | 'completed' | 'failed';
+  startTime?: number;
+  endTime?: number;
+  duration?: number;
+  details?: string;
 }
 
-interface ProgressUpdate {
-  type: 'progress';
-  taskId: number;
-  step: number;
-  totalSteps: number;
-  status: 'running' | 'completed' | 'failed' | 'idle';
+export interface ProgressStats {
+  processed: number;
+  successful: number;
+  failed: number;
+  errors: number;
+}
+
+export interface ProgressLog {
+  timestamp: number;
+  level: 'info' | 'warning' | 'error' | 'success' | 'debug';
   message: string;
-  data?: ProgressStats;
-  timestamp?: string;
+  details?: any;
+}
+
+export interface ProgressData {
+  taskId: string;
+  configId?: number;
+  jobId?: string;
+  userId: string;
+  type: 'invoice_import' | 'rpa_automation' | 'comprehensive_workflow';
+  status: 'starting' | 'running' | 'completed' | 'failed' | 'cancelled' | 'timeout';
+  progress: {
+    current: number;
+    total: number;
+    percentage: number;
+  };
+  stats?: ProgressStats;
+  currentStep?: ProgressStep;
+  steps?: ProgressStep[];
+  logs?: ProgressLog[];
+  startTime?: number;
+  endTime?: number;
+  totalDuration?: number;
+  error?: string;
+  result?: any;
 }
 
 interface ProgressTrackerProps {
-  taskId: number;
-  status: 'running' | 'completed' | 'failed' | 'idle';
-  progress?: number;
-  currentStep?: string;
-  stats?: ProgressStats;
-  onProgressUpdate?: (update: ProgressUpdate) => void;
+  isOpen: boolean;
+  onClose: () => void;
+  taskId?: string;
+  configId?: number;
+  jobId?: string;
+  userId: string;
+  title?: string;
+  onComplete?: (result: any) => void;
+  onError?: (error: string) => void;
 }
 
-const WORKFLOW_STEPS = [
-  { id: 1, description: "Initializing browser session", progressRange: [0, 5] },
-  { id: 2, description: "Navigating to ERP login page", progressRange: [5, 15] },
-  { id: 3, description: "Logging into ERP system", progressRange: [15, 25] },
-  { id: 4, description: "Navigating to invoice section", progressRange: [25, 35] },
-  { id: 5, description: "Loading invoice list", progressRange: [35, 45] },
-  { id: 6, description: "Scanning available invoices", progressRange: [45, 55] },
-  { id: 7, description: "Processing invoice downloads", progressRange: [55, 70] },
-  { id: 8, description: "Extracting XML files", progressRange: [70, 80] },
-  { id: 9, description: "Extracting PDF files", progressRange: [80, 90] },
-  { id: 10, description: "Processing invoice metadata", progressRange: [90, 95] },
-  { id: 11, description: "Storing imported invoices", progressRange: [95, 98] },
-  { id: 12, description: "Cleaning up and finalizing", progressRange: [98, 100] }
-];
-
-export function ProgressTracker({ 
-  taskId, 
-  status, 
-  progress = 0, 
-  currentStep = 'Initializing...', 
-  stats,
-  onProgressUpdate 
+export default function ProgressTracker({
+  isOpen,
+  onClose,
+  taskId,
+  configId,
+  jobId,
+  userId,
+  title = "Processing Progress",
+  onComplete,
+  onError
 }: ProgressTrackerProps) {
-  const [wsConnected, setWsConnected] = useState(false);
-  const [logs, setLogs] = useState<string[]>([]);
+  const [progressData, setProgressData] = useState<ProgressData | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
+  const [isExpanded, setIsExpanded] = useState(false);
   const [autoScroll, setAutoScroll] = useState(true);
-  const [showConsole, setShowConsole] = useState(false);
+  const [useWebSocket, setUseWebSocket] = useState(true);
 
-  // WebSocket connection for real-time updates
+  const wsRef = useRef<WebSocket | null>(null);
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const logsContainerRef = useRef<HTMLDivElement | null>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const reconnectAttemptsRef = useRef(0);
+  const maxReconnectAttempts = 5;
+
+  // Auto-scroll logs to bottom
   useEffect(() => {
-    let ws: WebSocket | null = null;
-    let reconnectAttempts = 0;
-    const maxReconnectAttempts = 5;
+    if (autoScroll && logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
+  }, [progressData?.logs, autoScroll]);
 
-    const connectWebSocket = () => {
-      try {
-        const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-        const wsUrl = `${protocol}//${window.location.host}/ws`;
-        ws = new WebSocket(wsUrl);
+  // WebSocket connection
+  const connectWebSocket = useCallback(() => {
+    if (!isOpen || !userId || !useWebSocket) return;
 
-        ws.onopen = () => {
-          console.log('WebSocket connected');
-          setWsConnected(true);
-          reconnectAttempts = 0;
-          
-          // Subscribe to progress updates for this task
-          ws?.send(JSON.stringify({
+    try {
+      setConnectionStatus('connecting');
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws?userId=${encodeURIComponent(userId)}`;
+      
+      console.log('Connecting to WebSocket:', wsUrl);
+      wsRef.current = new WebSocket(wsUrl);
+
+      wsRef.current.onopen = () => {
+        console.log('WebSocket connected');
+        setConnectionStatus('connected');
+        reconnectAttemptsRef.current = 0;
+
+        // Subscribe to task updates
+        if (taskId) {
+          wsRef.current?.send(JSON.stringify({
             type: 'subscribe',
-            taskId: taskId.toString()
+            taskId: taskId
           }));
-        };
+        }
+      };
 
-        ws.onmessage = (event) => {
-          try {
-            const data = JSON.parse(event.data);
-            
-            if (data.type === 'progress' && data.taskId === taskId) {
-              onProgressUpdate?.(data);
-            }
-            
-            if (data.type === 'log' && data.taskId === taskId) {
-              setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${data.message}`]);
-            }
-          } catch (error) {
-            console.error('Error parsing WebSocket message:', error);
-          }
-        };
+      wsRef.current.onmessage = (event) => {
+        try {
+          const message = JSON.parse(event.data);
+          handleWebSocketMessage(message);
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
 
-        ws.onclose = () => {
-          console.log('WebSocket disconnected');
-          setWsConnected(false);
+      wsRef.current.onclose = (event) => {
+        console.log('WebSocket disconnected:', event.code, event.reason);
+        setConnectionStatus('disconnected');
+        
+        // Attempt reconnection if needed
+        if (isOpen && reconnectAttemptsRef.current < maxReconnectAttempts) {
+          reconnectAttemptsRef.current++;
+          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 10000);
+          console.log(`Attempting WebSocket reconnection in ${delay}ms (attempt ${reconnectAttemptsRef.current})`);
           
-          // Attempt to reconnect with exponential backoff
-          if (reconnectAttempts < maxReconnectAttempts) {
-            const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), 30000);
-            setTimeout(() => {
-              reconnectAttempts++;
-              connectWebSocket();
-            }, delay);
+          reconnectTimeoutRef.current = setTimeout(() => {
+            connectWebSocket();
+          }, delay);
+        } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
+          console.log('Max WebSocket reconnection attempts reached, falling back to HTTP polling');
+          setUseWebSocket(false);
+          startHttpPolling();
+        }
+      };
+
+      wsRef.current.onerror = (error) => {
+        console.error('WebSocket error:', error);
+        setConnectionStatus('error');
+      };
+
+    } catch (error) {
+      console.error('Failed to create WebSocket connection:', error);
+      setConnectionStatus('error');
+      setUseWebSocket(false);
+      startHttpPolling();
+    }
+  }, [isOpen, userId, taskId, useWebSocket]);
+
+  // HTTP polling fallback
+  const startHttpPolling = useCallback(() => {
+    if (!isOpen || useWebSocket) return;
+
+    console.log('Starting HTTP polling for progress updates');
+    setConnectionStatus('connected');
+
+    const poll = async () => {
+      try {
+        let url = '';
+        if (configId) {
+          url = `/api/invoice-importer/progress/${configId}`;
+        } else if (jobId) {
+          url = `/api/rpa/progress/${jobId}`;
+        } else if (taskId) {
+          url = `/api/progress/${taskId}`;
+        } else {
+          return;
+        }
+
+        const response = await fetch(url);
+        if (response.ok) {
+          const data = await response.json();
+          if (data.success && data.progress) {
+            setProgressData(data.progress);
+            
+            // Check if task is complete
+            if (data.progress.status === 'completed' || data.progress.status === 'failed') {
+              stopPolling();
+              if (data.progress.status === 'completed' && onComplete) {
+                onComplete(data.progress.result);
+              } else if (data.progress.status === 'failed' && onError) {
+                onError(data.progress.error || 'Task failed');
+              }
+            }
           }
-        };
-
-        ws.onerror = (error) => {
-          console.error('WebSocket error:', error);
-          setWsConnected(false);
-        };
-
+        }
       } catch (error) {
-        console.error('Failed to create WebSocket connection:', error);
-        setWsConnected(false);
+        console.error('HTTP polling error:', error);
+        setConnectionStatus('error');
       }
     };
 
-    if (status === 'running') {
-      connectWebSocket();
+    // Poll every 2 seconds
+    pollingIntervalRef.current = setInterval(poll, 2000);
+    
+    // Initial poll
+    poll();
+  }, [isOpen, useWebSocket, configId, jobId, taskId, onComplete, onError]);
+
+  const stopPolling = useCallback(() => {
+    if (pollingIntervalRef.current) {
+      clearInterval(pollingIntervalRef.current);
+      pollingIntervalRef.current = null;
+    }
+  }, []);
+
+  // Handle WebSocket messages
+  const handleWebSocketMessage = useCallback((message: any) => {
+    switch (message.type) {
+      case 'connection_status':
+        if (message.data.status === 'connected') {
+          setConnectionStatus('connected');
+        }
+        break;
+
+      case 'progress':
+        setProgressData(message.data);
+        break;
+
+      case 'log':
+        setProgressData(prev => {
+          if (!prev) return prev;
+          const newLogs = [...(prev.logs || []), message.data];
+          return { ...prev, logs: newLogs };
+        });
+        break;
+
+      case 'step_update':
+        setProgressData(prev => {
+          if (!prev) return prev;
+          const updatedSteps = prev.steps?.map(step => 
+            step.id === message.data.id ? { ...step, ...message.data } : step
+          ) || [];
+          return { ...prev, steps: updatedSteps, currentStep: message.data };
+        });
+        break;
+
+      case 'stats':
+        setProgressData(prev => {
+          if (!prev) return prev;
+          return { ...prev, stats: message.data };
+        });
+        break;
+
+      case 'task_complete':
+        setProgressData(message.data);
+        if (message.data.status === 'completed' && onComplete) {
+          onComplete(message.data.result);
+        } else if (message.data.status === 'failed' && onError) {
+          onError(message.data.error || 'Task failed');
+        }
+        break;
+
+      case 'task_cancelled':
+      case 'task_timeout':
+        setProgressData(message.data);
+        if (onError) {
+          onError(message.data.error || 'Task was cancelled');
+        }
+        break;
+    }
+  }, [onComplete, onError]);
+
+  // Connection management
+  useEffect(() => {
+    if (isOpen) {
+      if (useWebSocket) {
+        connectWebSocket();
+      } else {
+        startHttpPolling();
+      }
     }
 
     return () => {
-      if (ws) {
-        ws.close();
+      // Cleanup on unmount or when modal closes
+      if (wsRef.current) {
+        wsRef.current.close();
+        wsRef.current = null;
       }
+      stopPolling();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      setConnectionStatus('disconnected');
     };
-  }, [taskId, status, onProgressUpdate]);
+  }, [isOpen, connectWebSocket, startHttpPolling, stopPolling, useWebSocket]);
 
-  // Fallback polling when WebSocket is not available
-  useEffect(() => {
-    if (!wsConnected && status === 'running') {
-      const pollInterval = setInterval(async () => {
-        try {
-          const response = await fetch(`/api/rpa/progress/${taskId}`);
-          if (response.ok) {
-            const data = await response.json();
-            onProgressUpdate?.(data);
-          }
-        } catch (error) {
-          console.error('Error polling for progress:', error);
-        }
-      }, 1500);
-
-      return () => clearInterval(pollInterval);
-    }
-  }, [wsConnected, status, taskId, onProgressUpdate]);
-
-  const getStatusIcon = () => {
-    switch (status) {
-      case 'running':
-        return <Loader2 className="h-4 w-4 animate-spin" />;
-      case 'completed':
-        return <CheckCircle className="h-4 w-4" />;
-      case 'failed':
-        return <XCircle className="h-4 w-4" />;
-      default:
-        return <Clock className="h-4 w-4" />;
-    }
+  // Retry connection
+  const retryConnection = () => {
+    setUseWebSocket(true);
+    reconnectAttemptsRef.current = 0;
+    connectWebSocket();
   };
 
-  const getStatusVariant = () => {
-    switch (status) {
-      case 'running':
-        return 'secondary' as const;
-      case 'completed':
-        return 'default' as const;
-      case 'failed':
-        return 'destructive' as const;
-      default:
-        return 'outline' as const;
-    }
-  };
-
-  const getCurrentStepInfo = () => {
-    const currentStepIndex = Math.floor((progress / 100) * WORKFLOW_STEPS.length);
-    return WORKFLOW_STEPS[Math.min(currentStepIndex, WORKFLOW_STEPS.length - 1)];
-  };
-
+  // Clear logs
   const clearLogs = () => {
-    setLogs([]);
+    setProgressData(prev => prev ? { ...prev, logs: [] } : null);
   };
+
+  // Format duration
+  const formatDuration = (ms: number): string => {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const hours = Math.floor(minutes / 60);
+
+    if (hours > 0) {
+      return `${hours}h ${minutes % 60}m ${seconds % 60}s`;
+    } else if (minutes > 0) {
+      return `${minutes}m ${seconds % 60}s`;
+    } else {
+      return `${seconds}s`;
+    }
+  };
+
+  // Get status icon
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="w-4 h-4 text-green-500" />;
+      case 'failed':
+        return <XCircle className="w-4 h-4 text-red-500" />;
+      case 'running':
+        return <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />;
+      case 'pending':
+        return <Clock className="w-4 h-4 text-gray-400" />;
+      default:
+        return <AlertCircle className="w-4 h-4 text-yellow-500" />;
+    }
+  };
+
+  // Get log level color
+  const getLogLevelColor = (level: string) => {
+    switch (level) {
+      case 'error':
+        return 'text-red-500';
+      case 'warning':
+        return 'text-yellow-500';
+      case 'success':
+        return 'text-green-500';
+      case 'info':
+        return 'text-blue-500';
+      case 'debug':
+        return 'text-gray-500';
+      default:
+        return 'text-gray-700';
+    }
+  };
+
+  if (!isOpen) return null;
 
   return (
-    <div className="space-y-3">
-      {/* Connection Status */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Badge variant={getStatusVariant()} className="flex items-center gap-1">
-            {getStatusIcon()}
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-          </Badge>
-          
-          {status === 'running' && (
-            <div className="flex items-center gap-1 text-xs text-muted-foreground">
-              {wsConnected ? (
-                <>
-                  <Wifi className="h-3 w-3 text-green-500" />
-                  <span>Live</span>
-                </>
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className={cn(
+        "max-w-4xl max-h-[90vh] overflow-hidden",
+        isExpanded ? "w-[95vw] h-[90vh]" : "w-auto h-auto"
+      )}>
+        <DialogHeader className="flex flex-row items-center justify-between">
+          <DialogTitle className="flex items-center gap-2">
+            {title}
+            <div className="flex items-center gap-2 ml-4">
+              {connectionStatus === 'connected' ? (
+                <Wifi className="w-4 h-4 text-green-500" />
+              ) : connectionStatus === 'connecting' ? (
+                <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
               ) : (
-                <>
-                  <WifiOff className="h-3 w-3 text-yellow-500" />
-                  <span>Polling</span>
-                </>
+                <WifiOff className="w-4 h-4 text-red-500" />
               )}
+              <Badge variant={connectionStatus === 'connected' ? 'default' : 'destructive'}>
+                {connectionStatus}
+              </Badge>
+            </div>
+          </DialogTitle>
+          <div className="flex items-center gap-2">
+            {connectionStatus !== 'connected' && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={retryConnection}
+                className="flex items-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Retry
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setIsExpanded(!isExpanded)}
+            >
+              {isExpanded ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+            </Button>
+          </div>
+        </DialogHeader>
+
+        <div className="space-y-4">
+          {/* Overall Progress */}
+          {progressData && (
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-medium">
+                  Overall Progress ({progressData.progress.current}/{progressData.progress.total})
+                </span>
+                <span className="text-sm text-gray-500">
+                  {progressData.progress.percentage}%
+                </span>
+              </div>
+              <Progress value={progressData.progress.percentage} className="w-full" />
+              
+              {/* Status and Stats */}
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  {getStatusIcon(progressData.status)}
+                  <Badge variant={progressData.status === 'completed' ? 'default' : 
+                                progressData.status === 'failed' ? 'destructive' : 'secondary'}>
+                    {progressData.status}
+                  </Badge>
+                  {progressData.totalDuration && (
+                    <span className="text-xs text-gray-500">
+                      {formatDuration(progressData.totalDuration)}
+                    </span>
+                  )}
+                </div>
+                
+                {progressData.stats && (
+                  <div className="flex items-center gap-4 text-xs">
+                    <span className="text-green-600">
+                      ✓ {progressData.stats.successful}
+                    </span>
+                    <span className="text-red-600">
+                      ✗ {progressData.stats.failed}
+                    </span>
+                    <span className="text-gray-600">
+                      📊 {progressData.stats.processed}
+                    </span>
+                  </div>
+                )}
+              </div>
             </div>
           )}
-        </div>
 
-        {/* Console Toggle */}
-        <Dialog open={showConsole} onOpenChange={setShowConsole}>
-          <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="flex items-center gap-1">
-              <Terminal className="h-3 w-3" />
-              Console
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-4xl max-h-[80vh]">
-            <DialogHeader>
-              <div className="flex items-center justify-between">
-                <DialogTitle>Processing Console - Task {taskId}</DialogTitle>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => setAutoScroll(!autoScroll)}
-                  >
-                    Auto-scroll: {autoScroll ? 'On' : 'Off'}
-                  </Button>
-                  <Button variant="outline" size="sm" onClick={clearLogs}>
-                    Clear
-                  </Button>
-                </div>
+          {/* Steps Progress */}
+          {progressData?.steps && progressData.steps.length > 0 && (
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium">Steps</h4>
+              <div className="space-y-1 max-h-32 overflow-y-auto">
+                {progressData.steps.map((step) => (
+                  <div key={step.id} className="flex items-center gap-2 p-2 bg-gray-50 rounded text-xs">
+                    {getStatusIcon(step.status)}
+                    <span className={cn(
+                      "flex-1",
+                      step.status === 'completed' ? 'line-through text-gray-500' : ''
+                    )}>
+                      {step.name}
+                    </span>
+                    {step.duration && (
+                      <span className="text-gray-500">
+                        {formatDuration(step.duration)}
+                      </span>
+                    )}
+                  </div>
+                ))}
               </div>
-            </DialogHeader>
-            <ScrollArea className="h-[60vh] w-full border rounded-md p-4">
-              <div className="space-y-1 font-mono text-sm">
-                {logs.length === 0 ? (
-                  <div className="text-muted-foreground">No logs yet...</div>
-                ) : (
-                  logs.map((log, index) => (
-                    <div
-                      key={index}
-                      className={`
-                        ${log.includes('ERROR') ? 'text-red-500' : ''}
-                        ${log.includes('WARNING') ? 'text-yellow-500' : ''}
-                        ${log.includes('SUCCESS') || log.includes('COMPLETED') ? 'text-green-500' : ''}
-                      `}
-                    >
-                      {log}
+            </div>
+          )}
+
+          <Separator />
+
+          {/* Logs Section */}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-medium">Logs</h4>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1 text-xs">
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                    className="rounded"
+                  />
+                  Auto-scroll
+                </label>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={clearLogs}
+                  className="flex items-center gap-1"
+                >
+                  <Trash2 className="w-3 h-3" />
+                  Clear
+                </Button>
+              </div>
+            </div>
+            
+            <ScrollArea className={cn(
+              "border rounded p-2 bg-black text-green-400 font-mono text-xs",
+              isExpanded ? "h-96" : "h-48"
+            )}>
+              <div ref={logsContainerRef} className="space-y-1">
+                {progressData?.logs && progressData.logs.length > 0 ? (
+                  progressData.logs.map((log, index) => (
+                    <div key={index} className="flex gap-2">
+                      <span className="text-gray-500 shrink-0">
+                        {new Date(log.timestamp).toLocaleTimeString()}
+                      </span>
+                      <span className={cn(
+                        "uppercase text-xs font-bold w-8 shrink-0",
+                        getLogLevelColor(log.level)
+                      )}>
+                        {log.level}
+                      </span>
+                      <span className="flex-1 break-words">
+                        {log.message}
+                      </span>
                     </div>
                   ))
+                ) : (
+                  <div className="text-gray-500 text-center py-4">
+                    {connectionStatus === 'connected' ? 'Waiting for logs...' : 'No connection to receive logs'}
+                  </div>
                 )}
               </div>
             </ScrollArea>
-          </DialogContent>
-        </Dialog>
-      </div>
-
-      {/* Progress Section */}
-      {status === 'running' && (
-        <div className="space-y-2">
-          <div className="flex justify-between items-center">
-            <p className="text-sm text-muted-foreground">
-              {currentStep || getCurrentStepInfo()?.description || 'Processing...'}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {Math.round(progress)}%
-            </p>
           </div>
-          
-          <Progress value={progress} className="w-full" />
-          
-          {/* Step Indicator */}
-          <div className="flex justify-between text-xs text-muted-foreground">
-            <span>Step {Math.min(Math.floor((progress / 100) * 12) + 1, 12)} of 12</span>
-            <span>{progress >= 100 ? 'Complete' : 'In Progress'}</span>
+
+          {/* Error Display */}
+          {progressData?.error && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded">
+              <h4 className="text-sm font-medium text-red-800 mb-1">Error</h4>
+              <p className="text-sm text-red-700">{progressData.error}</p>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex justify-end gap-2 pt-2">
+            {progressData?.status === 'running' && (
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  if (wsRef.current) {
+                    wsRef.current.send(JSON.stringify({
+                      type: 'cancel_task',
+                      taskId: progressData.taskId
+                    }));
+                  }
+                }}
+              >
+                Cancel
+              </Button>
+            )}
+            <Button onClick={onClose}>
+              {progressData?.status === 'running' ? 'Minimize' : 'Close'}
+            </Button>
           </div>
         </div>
-      )}
-
-      {/* Statistics Grid */}
-      {stats && (
-        <div className="grid grid-cols-4 gap-2 text-xs">
-          <div className="text-center p-2 bg-muted rounded">
-            <div className="font-semibold">{stats.total_invoices || 0}</div>
-            <div className="text-muted-foreground">Total</div>
-          </div>
-          <div className="text-center p-2 bg-muted rounded">
-            <div className="font-semibold">{stats.processed_invoices || 0}</div>
-            <div className="text-muted-foreground">Processed</div>
-          </div>
-          <div className="text-center p-2 bg-green-50 rounded">
-            <div className="font-semibold text-green-700">{stats.successful_imports || 0}</div>
-            <div className="text-green-600">Success</div>
-          </div>
-          <div className="text-center p-2 bg-red-50 rounded">
-            <div className="font-semibold text-red-700">{stats.failed_imports || 0}</div>
-            <div className="text-red-600">Failed</div>
-          </div>
-        </div>
-      )}
-
-      {/* Error Display */}
-      {status === 'failed' && (
-        <div className="p-3 bg-red-50 border border-red-200 rounded-md">
-          <p className="text-sm text-red-800">
-            Processing failed. Check the console for detailed error information.
-          </p>
-        </div>
-      )}
-
-      {/* Success Display */}
-      {status === 'completed' && (
-        <div className="p-3 bg-green-50 border border-green-200 rounded-md">
-          <p className="text-sm text-green-800">
-            Processing completed successfully!
-            {stats && ` Processed ${stats.processed_invoices} invoices with ${stats.successful_imports} successful imports.`}
-          </p>
-        </div>
-      )}
-    </div>
+      </DialogContent>
+    </Dialog>
   );
 }
-
-export default ProgressTracker;

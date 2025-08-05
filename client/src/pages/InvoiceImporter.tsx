@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -18,6 +18,9 @@ import { Progress } from '@/components/ui/progress';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
 import Header from '@/components/Header';
+import ProgressTracker from "@/components/ProgressTracker";
+import { useAuth } from "@/hooks/useAuth";
+
 
 // Form schema for invoice importer configuration
 const importerConfigSchema = z.object({
@@ -61,14 +64,21 @@ interface ERPConnection {
 }
 
 export default function InvoiceImporter() {
+  const { toast } = useToast();
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingConfig, setEditingConfig] = useState<ImporterConfig | null>(null);
   const [runningTasks, setRunningTasks] = useState<Set<number>>(new Set());
   const [activeTab, setActiveTab] = useState<string>('configurations');
   const [consoleDialogOpen, setConsoleDialogOpen] = useState(false);
   const [selectedConfigLogs, setSelectedConfigLogs] = useState<any[]>([]);
-  const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [progressTracker, setProgressTracker] = useState({
+    isOpen: false,
+    configId: null as number | null,
+    taskId: null as string | null
+  });
 
   const form = useForm<ImporterConfigForm>({
     resolver: zodResolver(importerConfigSchema),
@@ -239,6 +249,46 @@ export default function InvoiceImporter() {
         title: 'Error',
         description: error.message || 'Failed to delete configuration',
         variant: 'destructive',
+      });
+    },
+  });
+
+  // Start import task mutation with progress tracking
+  const startImportMutation = useMutation({
+    mutationFn: async (configId: number) => {
+      const response = await fetch(`/api/invoice-importer/start/${configId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.message || 'Failed to start import');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data, configId) => {
+      toast({
+        title: "Import Started",
+        description: data.message || "Import task started successfully",
+      });
+
+      // Open progress tracker
+      setProgressTracker({
+        isOpen: true,
+        configId: configId,
+        taskId: null
+      });
+
+      // Refresh configurations to update running status
+      queryClient.invalidateQueries({ queryKey: ["/api/invoice-importer/configs"] });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Failed to Start Import",
+        description: error.message || "An error occurred while starting the import",
+        variant: "destructive",
       });
     },
   });
@@ -699,7 +749,7 @@ export default function InvoiceImporter() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleRunNow(config.id)}
+                              onClick={() => startImportMutation.mutate(config.id)} // Use the mutation here
                               disabled={status === 'running'}
                             >
                               <Play className="h-4 w-4" />
@@ -905,6 +955,32 @@ export default function InvoiceImporter() {
             </div>
           </DialogContent>
         </Dialog>
+
+        {/* Progress Tracker Modal */}
+        <ProgressTracker
+          isOpen={progressTracker.isOpen}
+          onClose={() => setProgressTracker({ isOpen: false, configId: null, taskId: null })}
+          configId={progressTracker.configId || undefined}
+          taskId={progressTracker.taskId || undefined}
+          userId={user?.id || ''}
+          title="Invoice Import Progress"
+          onComplete={(result) => {
+            toast({
+              title: "Import Completed",
+              description: `Successfully processed ${result?.invoicesProcessed || 0} invoices`,
+            });
+            setProgressTracker({ isOpen: false, configId: null, taskId: null });
+            queryClient.invalidateQueries({ queryKey: ["/api/invoice-importer/configs"] });
+            queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+          }}
+          onError={(error) => {
+            toast({
+              title: "Import Failed",
+              description: error,
+              variant: "destructive",
+            });
+          }}
+        />
       </main>
     </div>
   );
