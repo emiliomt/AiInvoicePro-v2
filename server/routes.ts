@@ -984,7 +984,7 @@ export function registerRoutes(app: Express): Server {
       
       // Update last_used timestamp
       await storage.updateErpConnection(connectionId, { 
-        lastUsed: new Date().toISOString() 
+        lastUsed: new Date() 
       });
 
       res.json({
