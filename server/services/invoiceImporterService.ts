@@ -50,8 +50,8 @@ class InvoiceImporterService {
     }
   }
 
-  async executeImportTask(configId: number): Promise<void> {
-    console.log(`Starting import task for config ${configId}`);
+  async executeImportTask(configId: number, userId?: string): Promise<void> {
+    console.log(`Starting import task for config ${configId}, user: ${userId}`);
     let logId: number | undefined;
 
     // Add a global timeout for the entire import process (10 minutes)
@@ -67,6 +67,11 @@ class InvoiceImporterService {
       const config = await storage.getInvoiceImporterConfig(configId);
       if (!config) {
         throw new Error('Import configuration not found');
+      }
+
+      // Validate user authorization
+      if (userId && config.userId !== userId) {
+        throw new Error('Unauthorized: User does not own this configuration');
       }
 
       // Create or get existing log

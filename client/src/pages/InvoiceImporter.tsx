@@ -340,27 +340,34 @@ export default function InvoiceImporter() {
         url: response.url 
       });
 
-      if (!response.ok) {
-        // Check if we got HTML instead of JSON
-        const contentType = response.headers.get('content-type');
-        if (contentType && contentType.includes('text/html')) {
-          console.error('❌ Authentication failed - got HTML login page');
-          const htmlText = await response.text();
-          console.error('HTML Response:', htmlText.substring(0, 300));
-          throw new Error('Authentication failed: Session expired or invalid. Please refresh the page.');
-        }
-        throw new Error(`Failed to start import (${response.status})`);
+      // Handle different response types
+      const contentType = response.headers.get('content-type') || '';
+      let result;
+
+      if (contentType.includes('application/json')) {
+        result = await response.json();
+      } else if (contentType.includes('text/html')) {
+        // Got HTML instead of JSON - likely authentication failure
+        console.error('❌ Authentication failed - got HTML login page');
+        throw new Error('Session expired. Please refresh the page and log in again.');
+      } else {
+        // Unknown content type
+        const text = await response.text();
+        console.error('❌ Unexpected response format:', text.substring(0, 300));
+        throw new Error('Unexpected server response format');
       }
-      
-      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result?.message || result?.error || `Server error (${response.status})`);
+      }
 
       if (result.success) {
         toast({
           title: 'Import Started',
-          description: 'Invoice import process has been initiated.',
+          description: `Import process "${result.taskName || 'Unknown'}" has been initiated.`,
         });
       } else {
-        throw new Error(result.error || 'Failed to start import');
+        throw new Error(result.error || result.message || 'Failed to start import');
       }
     } catch (error) {
       console.error('Error starting import:', error);
@@ -369,11 +376,26 @@ export default function InvoiceImporter() {
         newSet.delete(configId);
         return newSet;
       });
-      toast({
-        title: 'Import Failed',
-        description: error instanceof Error ? error.message : 'Failed to start import process',
-        variant: 'destructive',
-      });
+
+      let errorMessage = 'Failed to start import process';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      }
+
+      // Handle specific error types
+      if (errorMessage.includes('Session expired') || errorMessage.includes('Authentication failed')) {
+        toast({
+          title: 'Authentication Required',
+          description: 'Your session has expired. Please refresh the page and log in again.',
+          variant: 'destructive',
+        });
+      } else {
+        toast({
+          title: 'Import Failed',
+          description: errorMessage,
+          variant: 'destructive',
+        });
+      }
     }
   };
 

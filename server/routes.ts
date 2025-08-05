@@ -1170,7 +1170,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  apiRouter.post('/invoice-importer/run/:id', isAuthenticated, async (req: any, res: Response) => {
+  apiRouter.post('/invoice-importer/start/:id', isAuthenticated, async (req: any, res: Response) => {
     console.log('🔍 Invoice Import Start API:', { 
       authenticated: req.isAuthenticated(), 
       user: req.user?.claims?.sub, 
@@ -1180,26 +1180,72 @@ export function registerRoutes(app: Express): Server {
     });
 
     try {
+      // Ensure we always return JSON
+      res.setHeader('Content-Type', 'application/json');
+
+      const user = getUser(req);
+      if (!user || !user.id) {
+        console.error('❌ No authenticated user found for import start');
+        return res.status(401).json({ 
+          success: false,
+          error: 'Authentication required',
+          message: 'Please log in to start import tasks'
+        });
+      }
+
       const configId = parseInt(req.params.id);
-      const userId = req.user?.claims?.sub;
+      const userId = user.id;
+
+      if (!configId || isNaN(configId)) {
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid configuration ID',
+          message: 'Configuration ID must be a valid number'
+        });
+      }
+
       console.log(`Starting invoice import task for config ${configId} by user ${userId}`);
+
+      // Verify the user owns this configuration
+      const config = await storage.getInvoiceImporterConfig(configId);
+      if (!config) {
+        return res.status(404).json({
+          success: false,
+          error: 'Configuration not found',
+          message: 'The specified import configuration does not exist'
+        });
+      }
+
+      if (config.userId !== userId) {
+        return res.status(403).json({
+          success: false,
+          error: 'Access denied',
+          message: 'You do not have permission to run this configuration'
+        });
+      }
 
       // Execute the import task asynchronously
       invoiceImporterService.executeImportTask(configId, userId).catch(error => {
         console.error(`Import task ${configId} by user ${userId} failed:`, error);
       });
 
-      res.json({ 
+      res.status(200).json({ 
         success: true, 
         message: 'Import task started successfully',
-        configId 
+        configId,
+        taskName: config.taskName
       });
     } catch (error) {
       console.error('Error starting invoice import task:', error);
-      res.status(500).json({ 
-        error: 'Failed to start import task', 
-        details: error instanceof Error ? error.message : 'Unknown error' 
-      });
+      
+      // Ensure we return JSON even on error
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          success: false,
+          error: 'Failed to start import task', 
+          message: error instanceof Error ? error.message : 'Unknown error occurred'
+        });
+      }
     }
   });
 
