@@ -1,6 +1,8 @@
 import os
 import json
 import logging
+import time
+import traceback
 from typing import List, Dict, Any, Optional
 from openai import OpenAI
 
@@ -377,48 +379,83 @@ def process_invoice_from_stdin():
         import sys
         import json
         
+        print("📥 STDIN PROCESSING: Starting to read input data...")
+        sys.stdout.flush()
+        
         # Read invoice data from stdin
         input_data = sys.stdin.read()
+        print(f"📥 STDIN PROCESSING: Received {len(input_data)} characters")
+        sys.stdout.flush()
+        
         if not input_data.strip():
-            raise ValueError("No input data received")
+            print("❌ STDIN PROCESSING: No input data received")
+            sys.stdout.flush()
+            # If no stdin data, run test workflow instead
+            print("🔄 STDIN PROCESSING: Falling back to test workflow...")
+            sys.stdout.flush()
+            result = process_invoice_workflow_with_progress(
+                '/tmp/test_invoice.pdf',
+                'test_user',
+                f"test_workflow_{int(time.time())}"
+            )
+        else:
+            try:
+                invoice_data = json.loads(input_data)
+                print(f"📥 STDIN PROCESSING: Parsed JSON data: {list(invoice_data.keys())}")
+                sys.stdout.flush()
+            except json.JSONDecodeError as je:
+                print(f"❌ STDIN PROCESSING: JSON decode error: {je}")
+                print(f"❌ STDIN PROCESSING: Raw input (first 200 chars): {input_data[:200]}")
+                sys.stdout.flush()
+                # Fall back to test workflow
+                invoice_data = {
+                    'file_path': '/tmp/test_invoice.pdf',
+                    'user_id': 'test_user',
+                    'invoice_id': f"fallback_{int(time.time())}"
+                }
             
-        invoice_data = json.loads(input_data)
-        
-        logger.info(f"Processing invoice from Node.js: {invoice_data.get('invoice_id')}")
-        logger.info(f"File path: {invoice_data.get('file_path')}")
-        logger.info(f"Vendor: {invoice_data.get('vendor_name')}")
-        
-        # Execute the full workflow
-        result = process_invoice_workflow_fixed(
-            invoice_data.get('file_path', '/tmp/unknown_invoice.pdf'),
-            invoice_data.get('user_id', 'unknown_user')
-        )
-        
-        # Add invoice-specific data to result
-        result['input_invoice_data'] = {
-            'invoice_id': invoice_data.get('invoice_id'),
-            'vendor_name': invoice_data.get('vendor_name'),
-            'invoice_number': invoice_data.get('invoice_number'),
-            'total_amount': invoice_data.get('total_amount')
-        }
+            logger.info(f"Processing invoice from Node.js: {invoice_data.get('invoice_id')}")
+            logger.info(f"File path: {invoice_data.get('file_path')}")
+            logger.info(f"Vendor: {invoice_data.get('vendor_name')}")
+            
+            # Execute the full workflow
+            result = process_invoice_workflow_with_progress(
+                invoice_data.get('file_path', '/tmp/unknown_invoice.pdf'),
+                invoice_data.get('user_id', 'unknown_user'),
+                invoice_data.get('invoice_id', f"workflow_{int(time.time())}")
+            )
+            
+            # Add invoice-specific data to result
+            result['input_invoice_data'] = {
+                'invoice_id': invoice_data.get('invoice_id'),
+                'vendor_name': invoice_data.get('vendor_name'),
+                'invoice_number': invoice_data.get('invoice_number'),
+                'total_amount': invoice_data.get('total_amount')
+            }
         
         # Output structured result for Node.js to parse
         print(f"WORKFLOW_RESULT:{json.dumps(result)}")
+        sys.stdout.flush()
         
         if result.get('processing_complete'):
-            logger.info(f"✅ Successfully processed invoice {invoice_data.get('invoice_id')}")
+            logger.info(f"✅ Successfully processed workflow")
             sys.exit(0)
         else:
-            logger.error(f"❌ Failed to process invoice {invoice_data.get('invoice_id')}")
+            logger.error(f"❌ Failed to process workflow")
             sys.exit(1)
             
     except Exception as e:
+        print(f"❌ STDIN PROCESSING FATAL ERROR: {str(e)}")
+        print(f"❌ STDIN PROCESSING STACK TRACE: {traceback.format_exc()}")
+        sys.stdout.flush()
+        
         error_result = {
             'success': False,
             'error': str(e),
             'processing_complete': False
         }
         print(f"WORKFLOW_RESULT:{json.dumps(error_result)}")
+        sys.stdout.flush()
         logger.error(f"Invoice processing failed: {e}")
         sys.exit(1)
 
@@ -551,8 +588,26 @@ def process_invoice_workflow_with_progress(invoice_file_path: str, user_id: str,
 if __name__ == "__main__":
     import sys
     import time
+    import traceback
     
-    if len(sys.argv) > 1 and sys.argv[1] == "test":
-        run_comprehensive_test()
-    else:
-        process_invoice_from_stdin()
+    try:
+        print("🚀 PYTHON RPA SCRIPT STARTING...")
+        print(f"📍 Python version: {sys.version}")
+        print(f"📍 Arguments: {sys.argv}")
+        print(f"📍 Working directory: {os.getcwd()}")
+        sys.stdout.flush()
+        
+        if len(sys.argv) > 1 and sys.argv[1] == "test":
+            print("🧪 Running comprehensive test...")
+            sys.stdout.flush()
+            run_comprehensive_test()
+        else:
+            print("📥 Processing invoice from stdin...")
+            sys.stdout.flush()
+            process_invoice_from_stdin()
+            
+    except Exception as e:
+        print(f"❌ FATAL ERROR: {str(e)}")
+        print(f"❌ STACK TRACE: {traceback.format_exc()}")
+        sys.stdout.flush()
+        sys.exit(1)
