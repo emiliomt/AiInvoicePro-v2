@@ -1,8 +1,8 @@
-import { 
-  invoices, 
-  lineItems, 
-  approvals, 
-  companies, 
+import {
+  invoices,
+  lineItems,
+  approvals,
+  companies,
   users,
   projects,
   purchaseOrders,
@@ -151,7 +151,7 @@ export interface IStorage {
   getImportLogsWithDetails(): Promise<any[]>;
   getUsersByCompany(companyId: number): Promise<User[]>;
 
-  // Users  
+  // Users
   upsertUser(user: UpsertUser): Promise<User>;
   getUser(id: string): Promise<User | null>;
   getUsers(): Promise<User[]>;
@@ -205,7 +205,7 @@ export interface IStorage {
   // ERP Connections
   createErpConnection(connection: InsertErpConnection): Promise<ErpConnection>;
   getErpConnection(id: number): Promise<ErpConnection | null>;
-  getErpConnections(): Promise<ErpConnection[]>;
+  getErpConnections(userId?: string): Promise<ErpConnection[]>;
   updateErpConnection(id: number, updates: Partial<InsertErpConnection>): Promise<void>;
   deleteErpConnection(id: number): Promise<void>;
   syncErpCredentialsToImportConfigs(connectionId: number, credentials: {
@@ -343,8 +343,8 @@ class PostgresStorage implements IStorage {
 
       // First, get the linked files so we can delete the physical files
       const linkedFilesQuery = `
-        SELECT file_path, original_file_name 
-        FROM imported_invoices 
+        SELECT file_path, original_file_name
+        FROM imported_invoices
         WHERE linked_invoice_id = $1
       `;
       const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
@@ -965,8 +965,8 @@ class PostgresStorage implements IStorage {
 
           // Get linked files that will be deleted so we can remove physical files
           const linkedFilesQuery = `
-            SELECT file_path, original_file_name 
-            FROM imported_invoices 
+            SELECT file_path, original_file_name
+            FROM imported_invoices
             WHERE linked_invoice_id = ANY($1)
           `;
           const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
@@ -1119,8 +1119,8 @@ class PostgresStorage implements IStorage {
         // Return default settings if not found
         const defaultSettings: Record<string, any> = {
           petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
-          user_preferences: { 
-            key, 
+          user_preferences: {
+            key,
             value: JSON.stringify({
               fullName: '',
               department: '',
@@ -1185,10 +1185,10 @@ class PostgresStorage implements IStorage {
         .values(setting)
         .onConflictDoUpdate({
           target: settings.key,
-          set: { 
-            value: setting.value, 
+          set: {
+            value: setting.value,
             description: setting.description,
-            updatedAt: new Date() 
+            updatedAt: new Date()
           }
         })
         .returning();
@@ -1504,10 +1504,10 @@ class PostgresStorage implements IStorage {
         startTime: invoiceImporterLogs.startedAt,
         endTime: invoiceImporterLogs.completedAt,
         duration: sql<number>`
-          CASE 
-            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL 
+          CASE
+            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL
             THEN EXTRACT(EPOCH FROM (${invoiceImporterLogs.completedAt} - ${invoiceImporterLogs.startedAt}))
-            ELSE NULL 
+            ELSE NULL
           END
         `,
         status: invoiceImporterLogs.status,
@@ -1521,7 +1521,7 @@ class PostgresStorage implements IStorage {
         errorMessage: invoiceImporterLogs.errorMessage,
         createdAt: invoiceImporterLogs.createdAt,
         triggeredBy: sql<string>`
-          CASE 
+          CASE
             WHEN ${invoiceImporterConfigs.scheduleType} = 'once' THEN 'Manual'
             ELSE 'Scheduled'
           END

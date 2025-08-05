@@ -864,6 +864,69 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Test ERP connection endpoint
+  apiRouter.post('/erp/connections/:id/test', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const connectionId = parseInt(req.params.id);
+
+      if (!connectionId || isNaN(connectionId)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: 'Valid connection ID is required' 
+        });
+      }
+
+      const connection = await storage.getErpConnection(connectionId);
+      if (!connection) {
+        return res.status(404).json({ 
+          success: false, 
+          error: 'ERP connection not found' 
+        });
+      }
+
+      console.log('🔍 [ERP_TEST] Testing ERP connection:', connection.name);
+
+      // Import the ERP automation service
+      const { erpAutomationService } = await import('./services/erpAutomationService');
+
+      // Decrypt password for testing
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+      const testConnection = {
+        ...connection,
+        password: decryptedPassword
+      };
+
+      const testResult = await erpAutomationService.testConnection(testConnection);
+
+      // Update lastUsed if test was successful
+      if (testResult.success) {
+        await storage.updateErpConnection(connectionId, {
+          lastUsed: new Date().toISOString()
+        });
+      }
+
+      res.json({
+        success: testResult.success,
+        message: testResult.message,
+        details: testResult.details,
+        connectionInfo: {
+          id: connection.id,
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username
+        }
+      });
+
+    } catch (error) {
+      console.error('ERP connection test failed:', error);
+      res.status(500).json({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        message: 'Failed to test ERP connection'
+      });
+    }
+  });
+
   // Debug endpoint to test ERP connection
   app.post('/api/debug/test-erp-connection', isAuthenticated, async (req: any, res: Response) => {
     try {
