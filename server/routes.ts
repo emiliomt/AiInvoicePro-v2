@@ -10,6 +10,7 @@ import { authTestService } from './services/authTestService.js';
 import { schedulerService } from "./services/schedulerService";
 import { PythonRPAService } from "./services/pythonRpaService";
 import { xmlProcessingService } from "./services/xmlProcessingService";
+import { getUser } from "./replitAuth";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -906,20 +907,28 @@ export function registerRoutes(app: Express): Server {
   });
 
   // ERP Connections endpoints
-  app.post('/api/erp/connections', async (req, res) => {
+  apiRouter.post('/erp/connections', isAuthenticated, async (req: any, res: Response) => {
     try {
-      const userId = req.session?.user?.id;
-      if (!userId) {
+      console.log('🔍 ERP Create:', { 
+        authenticated: req.isAuthenticated(), 
+        userClaims: req.user?.claims?.sub, 
+        sessionID: req.sessionID 
+      });
+
+      const user = getUser(req);
+      if (!user || !user.id) {
         return res.status(401).json({ error: 'Not authenticated' });
       }
 
+      const userId = user.id;
+
       // Get user's company
-      const user = await storage.getUser(userId);
+      const userRecord = await storage.getUser(userId);
 
       const connectionData = {
         ...req.body,
         userId,
-        companyId: user?.companyId || null,
+        companyId: userRecord?.companyId || null,
         password: Buffer.from(req.body.password).toString('base64'), // Encrypt password
         isActive: true,
         createdAt: new Date(),
@@ -935,16 +944,24 @@ export function registerRoutes(app: Express): Server {
       res.json(connection);
     } catch (error) {
       console.error('Error creating ERP connection:', error);
-      res.status(500).json({ error: 'Failed to create connection', details: error.message });
+      res.status(500).json({ error: 'Failed to create connection', details: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 
-  app.get('/api/erp/connections', async (req, res) => {
+  apiRouter.get('/erp/connections', isAuthenticated, async (req: any, res: Response) => {
     try {
-      const userId = req.session?.user?.id;
-      if (!userId) {
+      console.log('🔍 ERP Fetch:', { 
+        authenticated: req.isAuthenticated(), 
+        userClaims: req.user?.claims?.sub, 
+        sessionID: req.sessionID 
+      });
+
+      const user = getUser(req);
+      if (!user || !user.id) {
         return res.status(401).json({ error: 'Not authenticated' });
       }
+
+      const userId = user.id;
 
       console.log('Fetching ERP connections for user:', userId);
 
@@ -961,7 +978,7 @@ export function registerRoutes(app: Express): Server {
       res.json(safeConnections);
     } catch (error) {
       console.error('Error fetching ERP connections:', error);
-      res.status(500).json({ error: 'Failed to fetch connections', details: error.message });
+      res.status(500).json({ error: 'Failed to fetch connections', details: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 

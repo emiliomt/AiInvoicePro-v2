@@ -23,7 +23,14 @@ export const apiRequest = async (method: string, url: string, data?: any): Promi
   }
 
   try {
-    const response = await fetch(url, config);
+    const response = await fetch(url, {
+      ...config,
+      credentials: 'include', // Ensure cookies are sent with requests
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token && { Authorization: `Bearer ${token}` }),
+      },
+    });
 
     // Handle authentication errors
     if (response.status === 401) {

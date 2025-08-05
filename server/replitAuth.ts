@@ -191,11 +191,12 @@ export const isAuthenticated: RequestHandler = async (req, res, next) => {
   try {
     const user = req.user as any;
 
-    console.log('🔐 Auth check:', {
+    console.log('🔐 Auth check for:', req.path, {
       isAuthenticated: req.isAuthenticated(),
       hasUser: !!user,
       userExpiresAt: user?.expires_at,
-      currentTime: Math.floor(Date.now() / 1000)
+      currentTime: Math.floor(Date.now() / 1000),
+      sessionID: req.sessionID
     });
 
     if (!req.isAuthenticated() || !user?.expires_at) {
