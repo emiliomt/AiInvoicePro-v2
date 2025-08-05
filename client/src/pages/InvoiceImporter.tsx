@@ -88,11 +88,31 @@ export default function InvoiceImporter() {
   const { data: configs = [], isLoading } = useQuery<ImporterConfig[]>({
     queryKey: ['/api/invoice-importer/configs'],
     refetchInterval: 5000, // Refresh every 5 seconds to get latest status
+    queryFn: async () => {
+      const response = await fetch('/api/invoice-importer/configs', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        console.error('🔍 Failed to fetch configs:', response.status);
+        throw new Error('Failed to fetch configs');
+      }
+      return response.json();
+    },
   });
 
   // Fetch ERP connections for dropdown
   const { data: connections = [] } = useQuery<ERPConnection[]>({
     queryKey: ['/api/erp/connections'],
+    queryFn: async () => {
+      const response = await fetch('/api/erp/connections', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        console.error('🔍 Failed to fetch ERP connections:', response.status);
+        throw new Error('Failed to fetch ERP connections');
+      }
+      return response.json();
+    },
   });
 
   // Fetch logs for progress tracking
@@ -100,6 +120,16 @@ export default function InvoiceImporter() {
     queryKey: ['/api/invoice-importer/logs'],
     refetchInterval: 2000, // Refresh every 2 seconds when tasks are running
     enabled: runningTasks.size > 0,
+    queryFn: async () => {
+      const response = await fetch('/api/invoice-importer/logs', {
+        credentials: 'include',
+      });
+      if (!response.ok) {
+        console.error('🔍 Failed to fetch logs:', response.status);
+        throw new Error('Failed to fetch logs');
+      }
+      return response.json();
+    },
   });
 
   // Create configuration mutation
@@ -107,9 +137,19 @@ export default function InvoiceImporter() {
     mutationFn: async (data: ImporterConfigForm) => {
       const response = await fetch('/api/invoice-importer/configs', {
         method: 'POST',
+        credentials: 'include', // Ensure session cookies are sent
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          const htmlText = await response.text();
+          console.error('HTML Response:', htmlText.substring(0, 300));
+          throw new Error('Authentication failed: Session expired or invalid. Please refresh the page.');
+        }
+        throw new Error(`Failed to create configuration (${response.status})`);
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -135,9 +175,19 @@ export default function InvoiceImporter() {
     mutationFn: async ({ id, data }: { id: number; data: ImporterConfigForm }) => {
       const response = await fetch(`/api/invoice-importer/configs/${id}`, {
         method: 'PUT',
+        credentials: 'include', // Ensure session cookies are sent
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          const htmlText = await response.text();
+          console.error('HTML Response:', htmlText.substring(0, 300));
+          throw new Error('Authentication failed: Session expired or invalid. Please refresh the page.');
+        }
+        throw new Error(`Failed to update configuration (${response.status})`);
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -164,7 +214,17 @@ export default function InvoiceImporter() {
     mutationFn: async (id: number) => {
       const response = await fetch(`/api/invoice-importer/configs/${id}`, {
         method: 'DELETE',
+        credentials: 'include', // Ensure session cookies are sent
       });
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          const htmlText = await response.text();
+          console.error('HTML Response:', htmlText.substring(0, 300));
+          throw new Error('Authentication failed: Session expired or invalid. Please refresh the page.');
+        }
+        throw new Error(`Failed to delete configuration (${response.status})`);
+      }
       return response.json();
     },
     onSuccess: () => {
@@ -249,7 +309,7 @@ export default function InvoiceImporter() {
   const getProgressData = (configId: number) => {
     const latestLog = logs.find((log: any) => log.configId === configId);
     if (!latestLog || latestLog.status !== 'running') return null;
-    
+
     return {
       progress: Math.round((latestLog.processedInvoices / Math.max(latestLog.totalInvoices, 1)) * 100),
       currentStep: 'Processing invoices...',
@@ -265,10 +325,33 @@ export default function InvoiceImporter() {
   const handleRunNow = async (configId: number) => {
     try {
       setRunningTasks(prev => new Set(prev).add(configId));
-      
+
       const response = await fetch(`/api/invoice-importer/start/${configId}`, {
         method: 'POST',
+        credentials: 'include', // Ensure session cookies are sent
+        headers: {
+          'Content-Type': 'application/json',
+        },
       });
+
+      console.log('🔍 Start Import Response:', { 
+        status: response.status, 
+        contentType: response.headers.get('content-type'),
+        url: response.url 
+      });
+
+      if (!response.ok) {
+        // Check if we got HTML instead of JSON
+        const contentType = response.headers.get('content-type');
+        if (contentType && contentType.includes('text/html')) {
+          console.error('❌ Authentication failed - got HTML login page');
+          const htmlText = await response.text();
+          console.error('HTML Response:', htmlText.substring(0, 300));
+          throw new Error('Authentication failed: Session expired or invalid. Please refresh the page.');
+        }
+        throw new Error(`Failed to start import (${response.status})`);
+      }
+      
       const result = await response.json();
 
       if (result.success) {
@@ -351,7 +434,7 @@ export default function InvoiceImporter() {
                       </FormItem>
                     )}
                   />
-                  
+
                   <FormField
                     control={form.control}
                     name="taskName"
@@ -577,7 +660,7 @@ export default function InvoiceImporter() {
                   const status = getConfigStatus(config.id);
                   const progressData = getProgressData(config.id);
                   const connection = connections.find(c => c.id === config.connectionId);
-                  
+
                   return (
                     <Card key={config.id} className="w-full">
                       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
@@ -617,7 +700,7 @@ export default function InvoiceImporter() {
                           </div>
                         </div>
                       </CardHeader>
-                      
+
                       <CardContent className="space-y-4">
                         <div className="grid grid-cols-2 gap-6">
                           <div className="space-y-2">
@@ -637,13 +720,14 @@ export default function InvoiceImporter() {
                               <div className="text-gray-600">PDF, XML</div>
                             </div>
                           </div>
-                          
+
                           <div className="space-y-2">
                             <div className="text-sm">
                               <span className="font-medium text-gray-700">Last Run:</span>
                               <div className="text-gray-600">
-                                {logs.find((log: any) => log.configId === config.id)?.completedAt 
-                                  ? new Date(logs.find((log: any) => log.configId === config.id)?.completedAt).toLocaleString()
+                                {logs.find((log: any) => log.configId === config.id)
+                                  ?.startedAt
+                                  ? new Date(logs.find((log: any) => log.configId === config.id)?.startedAt).toLocaleString()
                                   : 'Never'
                                 }
                               </div>
@@ -675,7 +759,7 @@ export default function InvoiceImporter() {
                             </div>
                             <Progress value={progressData.progress} className="h-2" />
                             <div className="text-sm text-gray-600">{progressData.currentStep}</div>
-                            
+
                             <div className="grid grid-cols-4 gap-4 text-center text-sm">
                               <div>
                                 <div className="font-medium text-gray-900">{progressData.stats.total}</div>

@@ -45,6 +45,15 @@ export const apiRequest = async (method: string, url: string, data?: any): Promi
       throw new Error(`Server error (${response.status}): Please try again later`);
     }
 
+    // Additional check for HTML responses even with 200 status
+    const contentType = response.headers.get('content-type');
+    if (contentType && contentType.includes('text/html')) {
+      console.error('❌ Received HTML with 200 status - authentication redirect');
+      const htmlText = await response.text();
+      console.error('HTML Response preview:', htmlText.substring(0, 200));
+      throw new Error('Authentication failed: Received HTML page instead of JSON data');
+    }
+
     return response;
   } catch (error) {
     // Handle network errors
@@ -69,6 +78,15 @@ export const getQueryFn: <T>(options: {
 
     if (unauthorizedBehavior === "returnNull" && res.status === 401) {
       return null;
+    }
+
+    // Check if we got HTML instead of JSON (authentication redirect)
+    const contentType = res.headers.get('content-type');
+    if (contentType && contentType.includes('text/html')) {
+      console.error('❌ Received HTML instead of JSON - likely authentication failure');
+      const htmlText = await res.text();
+      console.error('HTML Response preview:', htmlText.substring(0, 200));
+      throw new Error(`Authentication failed: Received HTML login page instead of JSON (status: ${res.status})`);
     }
 
     await throwIfResNotOk(res);

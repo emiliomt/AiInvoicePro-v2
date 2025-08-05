@@ -1171,18 +1171,22 @@ export function registerRoutes(app: Express): Server {
   });
 
   apiRouter.post('/invoice-importer/run/:id', isAuthenticated, async (req: any, res: Response) => {
-    try {
-      const user = getUser(req);
-      if (!user || !user.id) {
-        return res.status(401).json({ error: 'Not authenticated' });
-      }
+    console.log('🔍 Invoice Import Start API:', { 
+      authenticated: req.isAuthenticated(), 
+      user: req.user?.claims?.sub, 
+      configId: req.params.id,
+      sessionID: req.sessionID,
+      path: req.path 
+    });
 
+    try {
       const configId = parseInt(req.params.id);
-      console.log(`Starting invoice import task for config ${configId}`);
+      const userId = req.user?.claims?.sub;
+      console.log(`Starting invoice import task for config ${configId} by user ${userId}`);
 
       // Execute the import task asynchronously
-      invoiceImporterService.executeImportTask(configId).catch(error => {
-        console.error(`Import task ${configId} failed:`, error);
+      invoiceImporterService.executeImportTask(configId, userId).catch(error => {
+        console.error(`Import task ${configId} by user ${userId} failed:`, error);
       });
 
       res.json({ 
@@ -1279,7 +1283,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const { getProgressTracker } = await import('./services/progressTracker');
       const progressTracker = getProgressTracker();
-      
+
       if (!progressTracker) {
         return res.status(503).json({ 
           error: 'Progress tracking service not available' 
@@ -1288,7 +1292,7 @@ export function registerRoutes(app: Express): Server {
 
       const taskId = req.params.taskId;
       const progress = progressTracker.getTaskProgress(taskId);
-      
+
       if (!progress) {
         return res.status(404).json({ 
           error: 'Task progress not found' 
@@ -1308,7 +1312,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const { getProgressTracker } = await import('./services/progressTracker');
       const progressTracker = getProgressTracker();
-      
+
       if (!progressTracker) {
         return res.status(503).json({ 
           error: 'Progress tracking service not available' 
@@ -1316,7 +1320,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       const { taskId, ...updateData } = req.body;
-      
+
       if (!taskId) {
         return res.status(400).json({ 
           error: 'Task ID is required' 

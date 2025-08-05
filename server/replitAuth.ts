@@ -6,6 +6,8 @@ import type { Express, RequestHandler } from "express";
 import memoize from "memoizee";
 import connectPg from "connect-pg-simple";
 import { storage } from "./storage";
+import { Request, Response, NextFunction } from "express";
+
 
 if (!process.env.REPLIT_DOMAINS) {
   throw new Error("Environment variable REPLIT_DOMAINS not provided");
@@ -174,7 +176,7 @@ export function getUser(req: any) {
 
   // Handle both cases where claims are nested or directly on user object
   const claims = req.user.claims || req.user;
-  
+
   // Extract user data from claims
 
   return {
@@ -187,44 +189,27 @@ export function getUser(req: any) {
   };
 }
 
-export const isAuthenticated: RequestHandler = async (req, res, next) => {
-  try {
-    const user = req.user as any;
+export const isAuthenticated: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+  console.log('🔍 Auth middleware for:', req.path, {
+    isAuth: req.isAuthenticated ? req.isAuthenticated() : false,
+    hasUser: !!req.user,
+    sessionID: req.sessionID,
+    cookies: Object.keys(req.cookies || {}),
+    headers: {
+      cookie: req.headers.cookie ? 'present' : 'missing',
+      userAgent: req.headers['user-agent']?.substring(0, 50)
+    }
+  });
 
-    console.log('🔐 Auth check for:', req.path, {
-      isAuthenticated: req.isAuthenticated(),
-      hasUser: !!user,
-      userExpiresAt: user?.expires_at,
-      currentTime: Math.floor(Date.now() / 1000),
-      sessionID: req.sessionID
+  if (req.isAuthenticated && req.isAuthenticated() && req.user) {
+    console.log('✅ Authentication successful for:', req.path);
+    next();
+  } else {
+    console.log('❌ Authentication failed for:', req.path, {
+      reason: !req.isAuthenticated ? 'no isAuthenticated method' :
+             !req.isAuthenticated() ? 'isAuthenticated() returned false' :
+             'no user object'
     });
-
-    if (!req.isAuthenticated() || !user?.expires_at) {
-      console.log('❌ Auth failed: Not authenticated or no expiry');
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    const now = Math.floor(Date.now() / 1000);
-    if (now <= user.expires_at) {
-      return next();
-    }
-
-    const refreshToken = user.refresh_token;
-    if (!refreshToken) {
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-
-    try {
-      const config = await getOidcConfig();
-      const tokenResponse = await client.refreshTokenGrant(config, refreshToken);
-      updateUserSession(user, tokenResponse);
-      return next();
-    } catch (refreshError) {
-      console.error('Token refresh failed:', refreshError);
-      return res.status(401).json({ message: "Unauthorized" });
-    }
-  } catch (error) {
-    console.error('Authentication middleware error:', error);
-    return res.status(500).json({ message: "Authentication error" });
+    res.status(401).json({ message: 'Unauthorized' });
   }
 };
