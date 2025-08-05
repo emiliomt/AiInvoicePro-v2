@@ -200,7 +200,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Create validation rule
-  app.post("/api/validation-rules", isAuthenticated, async (req: any, res: Response) => {
+  apiRouter.post("/validation-rules", isAuthenticated, async (req: any, res: Response) => {
     try {
       console.log("📝 API: POST /api/validation-rules - Starting request");
       console.log("📝 API: Request headers:", JSON.stringify(req.headers, null, 2));
@@ -262,7 +262,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Debug endpoint for validation rules troubleshooting
-  app.get('/api/validation-rules/debug', isAuthenticated, async (req: any, res: Response) => {
+  apiRouter.get('/validation-rules/debug', isAuthenticated, async (req: any, res: Response) => {
     try {
       console.log("🐛 Debug: Checking validation rules table structure and data");
 
@@ -341,7 +341,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Initiate automatic processing
-  app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
+  apiRouter.post('/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
     let processingTimeout: NodeJS.Timeout;
 
@@ -503,7 +503,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Test Python RPA environment endpoint
-  app.get('/api/rpa/test-environment', isAuthenticated, async (req, res) => {
+  apiRouter.get('/rpa/test-environment', isAuthenticated, async (req, res) => {
     try {
       console.log('🧪 [RPA_TEST] Testing Python RPA environment...');
 
@@ -530,7 +530,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Direct Python RPA processing endpoint (with extended timeout)
-  app.post('/api/invoices/python-rpa-process', isAuthenticated, async (req, res) => {
+  apiRouter.post('/invoices/python-rpa-process', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
     let processingTimeout: NodeJS.Timeout;
 
@@ -595,7 +595,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // XML invoice processing endpoint
-  app.post('/api/rpa/process-xml', isAuthenticated, async (req, res) => {
+  apiRouter.post('/rpa/process-xml', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
 
     try {
@@ -651,7 +651,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Batch XML processing endpoint
-  app.post('/api/rpa/process-xml-batch', isAuthenticated, async (req, res) => {
+  apiRouter.post('/rpa/process-xml-batch', isAuthenticated, async (req, res) => {
     const startTime = Date.now();
 
     try {
@@ -927,7 +927,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get ERP connections
-  app.get('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+  apiRouter.get("/erp/connections", isAuthenticated, async (req: any, res) => {
     try {
       const user = getUser(req);
       if (!user?.id) {
@@ -951,7 +951,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Test ERP connection
-  app.post('/api/erp/connections/:id/test', isAuthenticated, async (req: any, res) => {
+  apiRouter.post("/erp/connections/:id/test", isAuthenticated, async (req: any, res) => {
     try {
       const connectionId = parseInt(req.params.id);
       const user = getUser(req);
@@ -1031,7 +1031,7 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Add the ERP connection creation endpoint
-  app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+  apiRouter.post("/erp/connections", isAuthenticated, async (req: any, res) => {
     console.log('🔍 ERP Create Connection API:', {
       authenticated: req.isAuthenticated(),
       userExists: !!req.user,
