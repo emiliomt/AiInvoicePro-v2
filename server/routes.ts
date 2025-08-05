@@ -971,7 +971,7 @@ export function registerRoutes(app: Express): Server {
       const encodedPassword = Buffer.from(password, 'utf8').toString('base64');
 
       console.log('✅ Creating ERP connection for user:', req.user.id);
-      const newConnection = await storage.createERPConnection({
+      const newConnection = await storage.createErpConnection({
         name,
         baseUrl,
         username,
