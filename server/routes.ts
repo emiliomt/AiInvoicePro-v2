@@ -9,6 +9,7 @@ import { authMonitoring, monitorProtectedRoute, monitorApiResponse } from './ser
 import { authTestService } from './services/authTestService.js';
 import { schedulerService } from "./services/schedulerService";
 import { PythonRPAService } from "./services/pythonRpaService";
+import { xmlProcessingService } from "./services/xmlProcessingService";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -589,6 +590,142 @@ export function registerRoutes(app: Express): Server {
           timestamp: new Date().toISOString()
         });
       }
+    }
+  });
+
+  // XML invoice processing endpoint
+  app.post('/api/rpa/process-xml', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      console.log('📄 [XML_PROCESSING] Starting XML invoice processing...');
+      
+      const { xmlContent, fileName, taskId } = req.body;
+      const userId = (req.user as any)?.claims?.sub || 'unknown';
+      
+      if (!xmlContent) {
+        return res.status(400).json({
+          success: false,
+          error: 'XML content is required',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const result = await xmlProcessingService.processXmlInvoice({
+        xmlContent,
+        userId,
+        fileName,
+        taskId
+      });
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [XML_PROCESSING] Processing completed in ${processingTime}ms`);
+      
+      res.status(result.success ? 200 : 400).json({
+        success: result.success,
+        message: result.success ? 'XML processing completed successfully' : 'XML processing failed',
+        data: result.success ? {
+          invoiceId: result.invoiceId,
+          extractedData: result.data
+        } : null,
+        error: result.error,
+        processingMetadata: result.processingMetadata,
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const processingTime = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [XML_PROCESSING] Processing failed:', errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: 'XML processing failed',
+        message: errorMessage,
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Batch XML processing endpoint
+  app.post('/api/rpa/process-xml-batch', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    
+    try {
+      console.log('📄 [XML_BATCH] Starting batch XML processing...');
+      
+      const { files, taskId } = req.body;
+      const userId = (req.user as any)?.claims?.sub || 'unknown';
+      
+      if (!files || !Array.isArray(files) || files.length === 0) {
+        return res.status(400).json({
+          success: false,
+          error: 'Files array is required',
+          timestamp: new Date().toISOString()
+        });
+      }
+      
+      const result = await xmlProcessingService.batchProcessXmlFiles(files, userId, taskId || `batch_${Date.now()}`);
+      
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [XML_BATCH] Batch processing completed in ${processingTime}ms`);
+      
+      res.status(200).json({
+        success: true,
+        message: `Batch processing completed: ${result.processed}/${files.length} successful`,
+        data: {
+          processed: result.processed,
+          failed: result.failed,
+          total: files.length,
+          results: result.results
+        },
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const processingTime = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [XML_BATCH] Batch processing failed:', errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: 'Batch XML processing failed',
+        message: errorMessage,
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Get RPA processing progress endpoint
+  app.get('/api/rpa/progress/:taskId', isAuthenticated, async (req, res) => {
+    try {
+      const { taskId } = req.params;
+      const userId = (req.user as any)?.claims?.sub || 'unknown';
+      
+      // Note: This would need to be implemented in progressTracker service
+      // For now, return a simple response
+      res.json({
+        success: true,
+        taskId,
+        status: 'running',
+        message: 'Check WebSocket connection for real-time updates',
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [RPA_PROGRESS] Failed to get progress:', errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: 'Failed to get progress',
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      });
     }
   });
 
