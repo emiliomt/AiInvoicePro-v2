@@ -926,6 +926,30 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Get ERP connections
+  app.get('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = getUser(req);
+      if (!user?.id) {
+        console.log('❌ Unable to extract user ID for ERP connections retrieval');
+        return res.status(401).json({ error: 'Unable to identify user' });
+      }
+
+      console.log('🔍 Fetching ERP connections for user:', user.id);
+      const connections = await storage.getErpConnections(user.id);
+      
+      console.log('✅ Retrieved ERP connections:', {
+        count: connections.length,
+        connectionIds: connections.map(c => c.id)
+      });
+      
+      res.json(connections);
+    } catch (error) {
+      console.error('❌ Error fetching ERP connections:', error);
+      res.status(500).json({ error: 'Failed to fetch ERP connections', details: error.message });
+    }
+  });
+
   // Add the ERP connection creation endpoint
   app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
     console.log('🔍 ERP Create Connection API:', {
