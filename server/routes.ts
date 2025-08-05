@@ -926,5 +926,66 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Add the ERP connection creation endpoint
+  app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    console.log('🔍 ERP Create Connection API:', {
+      authenticated: req.isAuthenticated(),
+      userExists: !!req.user,
+      userClaims: req.user?.claims?.sub,
+      sessionID: req.sessionID,
+      cookies: Object.keys(req.cookies || {}),
+      headers: {
+        cookie: req.headers.cookie ? 'present' : 'missing',
+        contentType: req.headers['content-type'],
+        userAgent: req.headers['user-agent']?.substring(0, 50) + '...'
+      },
+      bodyPresent: !!req.body,
+      bodyKeys: req.body ? Object.keys(req.body) : []
+    });
+
+    if (!req.isAuthenticated() || !req.user) {
+      console.log('❌ ERP Authentication failed:', { 
+        reason: 'isAuthenticated() returned false or no user object',
+        isAuth: req.isAuthenticated(),
+        hasUser: !!req.user
+      });
+      return res.status(401).json({ message: "Unauthorized", error: "Authentication required for ERP connection creation" });
+    }
+
+    try {
+      const { name, baseUrl, username, password } = req.body;
+
+      console.log('🔍 ERP Connection data received:', {
+        name: name ? 'present' : 'missing',
+        baseUrl: baseUrl ? 'present' : 'missing',
+        username: username ? 'present' : 'missing',
+        password: password ? 'present' : 'missing'
+      });
+
+      if (!name || !baseUrl || !username || !password) {
+        console.log('❌ ERP Connection validation failed: Missing required fields');
+        return res.status(400).json({ error: 'All fields are required' });
+      }
+
+      // Base64 encode the password for security
+      const encodedPassword = Buffer.from(password, 'utf8').toString('base64');
+
+      console.log('✅ Creating ERP connection for user:', req.user.id);
+      const newConnection = await storage.createERPConnection({
+        name,
+        baseUrl,
+        username,
+        password: encodedPassword,
+        userId: req.user.id
+      });
+
+      console.log('✅ ERP Connection created successfully:', { id: newConnection.id, name: newConnection.name });
+      res.json(newConnection);
+    } catch (error) {
+      console.error('❌ Error creating ERP connection:', error);
+      res.status(500).json({ error: 'Failed to create ERP connection', details: error.message });
+    }
+  });
+
   return httpServer;
 }

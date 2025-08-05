@@ -75,18 +75,30 @@ export default function ERPConnect() {
 
   // Create connection mutation
   const createConnectionMutation = useMutation({
-    mutationFn: (data: ERPConnectionForm) => 
-      apiRequest('POST', '/api/erp/connections', data),
+    mutationFn: async (data: ERPConnectionForm) => {
+      console.log('🔍 Creating ERP connection:', {
+        name: data.name,
+        baseUrl: data.baseUrl,
+        username: data.username,
+        hasPassword: !!data.password
+      });
+
+      const result = await apiRequest('POST', '/api/erp/connections', data);
+      console.log('✅ ERP connection created:', result);
+      return result;
+    },
     onSuccess: () => {
+      console.log('✅ ERP connection creation successful');
+      toast({
+        title: 'Success',
+        description: 'ERP connection created successfully.',
+      });
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
       setIsDialogOpen(false);
       form.reset();
-      toast({
-        title: 'Connection Created',
-        description: 'ERP connection has been created successfully.',
-      });
     },
     onError: (error: any) => {
+      console.error('❌ ERP connection creation failed:', error);
       toast({
         title: 'Error',
         description: error.message || 'Failed to create connection',
@@ -144,12 +156,12 @@ export default function ERPConnect() {
       try {
         const response = await apiRequest('POST', `/api/erp/connections/${id}/test`);
         const contentType = response.headers.get('content-type');
-        
+
         if (!response.ok) {
           const errorText = await response.text();
           throw new Error(`HTTP ${response.status}: ${errorText}`);
         }
-        
+
         if (contentType && contentType.includes('application/json')) {
           return await response.json();
         } else {
@@ -167,8 +179,8 @@ export default function ERPConnect() {
       queryClient.invalidateQueries({ queryKey: ['/api/erp/connections'] });
 
       const title = data.success ? 'Connection Test Successful' : 'Connection Test Failed';
-      const description = data.message || (data.success 
-        ? 'Successfully connected to the ERP system - Connection verified!' 
+      const description = data.message || (data.success
+        ? 'Successfully connected to the ERP system - Connection verified!'
         : 'Unable to connect to the ERP system');
 
       toast({
@@ -185,7 +197,7 @@ export default function ERPConnect() {
     onError: (error: any) => {
       setTestingConnection(null);
       console.error('Connection test failed:', error);
-      
+
       let errorMessage = 'Failed to test connection';
       if (error.message) {
         if (error.message.includes('<!DOCTYPE')) {
@@ -198,7 +210,7 @@ export default function ERPConnect() {
           errorMessage = error.message;
         }
       }
-      
+
       toast({
         title: 'Test Failed',
         description: errorMessage,
@@ -346,10 +358,10 @@ export default function ERPConnect() {
                     <FormItem>
                       <FormLabel>Description (Optional)</FormLabel>
                       <FormControl>
-                        <Textarea 
-                          placeholder="Brief description of this connection..." 
+                        <Textarea
+                          placeholder="Brief description of this connection..."
                           className="resize-none"
-                          {...field} 
+                          {...field}
                         />
                       </FormControl>
                       <FormMessage />
@@ -357,14 +369,14 @@ export default function ERPConnect() {
                   )}
                 />
                 <div className="flex justify-end space-x-3">
-                  <Button 
-                    type="button" 
-                    variant="outline" 
+                  <Button
+                    type="button"
+                    variant="outline"
                     onClick={() => setIsDialogOpen(false)}
                   >
                     Cancel
                   </Button>
-                  <Button 
+                  <Button
                     type="submit"
                     disabled={createConnectionMutation.isPending || updateConnectionMutation.isPending}
                   >

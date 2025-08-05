@@ -189,27 +189,41 @@ export function getUser(req: any) {
   };
 }
 
-export const isAuthenticated: RequestHandler = (req: Request, res: Response, next: NextFunction) => {
+export const isAuthenticated: RequestHandler = async (req, res, next) => {
   console.log('🔍 Auth middleware for:', req.path, {
-    isAuth: req.isAuthenticated ? req.isAuthenticated() : false,
+    method: req.method,
+    isAuth: req.isAuthenticated(),
     hasUser: !!req.user,
     sessionID: req.sessionID,
     cookies: Object.keys(req.cookies || {}),
     headers: {
       cookie: req.headers.cookie ? 'present' : 'missing',
+      contentType: req.headers['content-type'],
       userAgent: req.headers['user-agent']?.substring(0, 50)
     }
   });
 
-  if (req.isAuthenticated && req.isAuthenticated() && req.user) {
-    console.log('✅ Authentication successful for:', req.path);
-    next();
-  } else {
-    console.log('❌ Authentication failed for:', req.path, {
-      reason: !req.isAuthenticated ? 'no isAuthenticated method' :
-             !req.isAuthenticated() ? 'isAuthenticated() returned false' :
-             'no user object'
+  if (!req.isAuthenticated() || !req.user) {
+    console.log('❌ Authentication failed for:', req.path, { 
+      reason: 'isAuthenticated() returned false or no user object',
+      isAuth: req.isAuthenticated(),
+      hasUser: !!req.user,
+      method: req.method
     });
-    res.status(401).json({ message: 'Unauthorized' });
+
+    // Ensure we return JSON for API calls, not HTML
+    if (req.path.startsWith('/api/')) {
+      return res.status(401).json({ 
+        message: "Unauthorized", 
+        error: "Authentication required",
+        path: req.path,
+        method: req.method
+      });
+    } else {
+      return res.redirect('/login');
+    }
   }
+
+  console.log('✅ Authentication successful for:', req.path);
+  next();
 };
