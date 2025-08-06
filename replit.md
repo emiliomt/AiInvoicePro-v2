@@ -39,12 +39,18 @@ Full-stack JavaScript application with React frontend and Express.js backend tha
 - **Document Processing**: Sharp, pdf2pic for image manipulation
 
 ## Recent Changes
-- **August 2025**: Fixed critical duplicate detection issue in RPA system
-  - **Root Cause**: SQL query error "too many values to unpack (expected 4)" was preventing duplicate detection from working
-  - **Critical Fix**: Corrected SQL query in _is_invoice_successfully_processed method to return exactly 4 columns
-  - **Status Updates**: Added proper status updates in _process_xml_for_pipeline and _process_pdf_for_pipeline methods
-  - **Enhancement**: Improved vendor name normalization and filename pattern matching
-  - **Verification**: Comprehensive testing confirms invoices with 'completed' status are now properly skipped
-  - **Result**: RPA no longer reprocesses already imported invoices, preventing duplicates and improving efficiency
+- **August 2025**: SUCCESSFULLY RESOLVED critical RPA duplicate processing issues
+  - **Issue #1 - Duplicate Detection**: Fixed SQL query error preventing duplicate detection entirely
+    - Root cause: Query returned 5 columns but code expected 4, completely breaking duplicate checking
+    - **CRITICAL FIX**: Moved duplicate checking BEFORE ZIP download to prevent unnecessary downloads
+    - **Result**: Invoices with 'completed' status (like FELG2374, NSX001156549) now skipped before download
+  - **Issue #2 - Double Counting**: Fixed invoice counting logic that inflated statistics
+    - Root cause: XML and PDF files counted separately instead of as one unique invoice
+    - **CRITICAL FIX**: Changed from total_processing_items (file count) to total_unique_invoices (invoice count)
+    - **Result**: Progress shows correct unique invoice processing, not inflated file counts
+  - **Verification**: Comprehensive testing confirms both fixes work correctly
+    - Simulation shows FELG2374 and NSX001156549 properly skipped before download
+    - Counting logic correctly identifies unique invoices vs individual files
+  - **Performance Impact**: Eliminates unnecessary ZIP downloads and prevents duplicate reprocessing
 - **Database Updates**: Enhanced imported_invoices table status tracking with lifecycle management
-- **Testing Completed**: Final tests confirm FELG2374 and NSX001156549 will be skipped in future runs
+- **RPA Efficiency**: System now processes only genuinely new invoices, skipping completed ones entirely

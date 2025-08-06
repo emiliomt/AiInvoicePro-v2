@@ -103,6 +103,7 @@ class InvoiceRPAService:
             'processed_invoices': 0,
             'successful_imports': 0,
             'failed_imports': 0,
+            'skipped_imports': 0,
             'current_step': 'Initializing',
             'progress': 0
         }
@@ -807,17 +808,24 @@ class InvoiceRPAService:
                         valor_total = columns[8].text.strip().replace(
                             ",", "").replace(".", "").split(" ")[0]
 
-                        # Check if already successfully processed (only skip if successfully imported to main invoices table)
+                        # Count total invoices first
+                        self.stats['total_invoices'] += 1
+                        
+                        # Check if already successfully processed BEFORE downloading
                         if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
                             self.log(
                                 f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor}"
                             )
+                            # Count as processed but skipped
+                            self.stats['processed_invoices'] += 1
+                            self.stats['skipped_imports'] = self.stats.get('skipped_imports', 0) + 1
+                            # Output progress with skip status
+                            self._output_download_progress(i + 1, len(rows), f"Skipped {numero_documento}")
                             continue
 
                         self.log(
                             f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
                         )
-                        self.stats['total_invoices'] += 1
 
                         # Output progress stats before download attempt
                         self._output_download_progress(i + 1, len(rows), numero_documento)
@@ -1665,16 +1673,19 @@ class InvoiceRPAService:
                             self.log(f"🔗 Matched by token: XML '{xml_files[xml_base]}' <-> PDF '{pdf_files[pdf_base]}'")
                             break
 
-            # Build final processing list
+            # Build final processing list - count unique invoices, not individual files
             all_base_names = set(matched_pairs.keys()) | unmatched_xmls | unmatched_pdfs
-            total_processing_items = len(all_base_names)
+            total_unique_invoices = len(all_base_names)  # This represents unique invoices, not file count
             
-            self.log(f"📊 Starting to process {total_processing_items} invoice files...")
+            self.log(f"📊 Starting to process {total_unique_invoices} unique invoices...")
+            self.log(f"   - Matched pairs (XML+PDF): {len(matched_pairs)}")
+            self.log(f"   - XML-only invoices: {len(unmatched_xmls)}")
+            self.log(f"   - PDF-only invoices: {len(unmatched_pdfs)}")
             
             for index, base_name in enumerate(all_base_names):
-                # Update progress with current file being processed
-                progress_percent = 90 + int((index / total_processing_items) * 8)  # 90-98% range
-                self.update_progress(f"Processing file {index + 1}/{total_processing_items}: {base_name}", progress_percent)
+                # Update progress with current unique invoice being processed
+                progress_percent = 90 + int((index / total_unique_invoices) * 8)  # 90-98% range
+                self.update_progress(f"Processing invoice {index + 1}/{total_unique_invoices}: {base_name}", progress_percent)
                 
                 if base_name in matched_pairs:
                     # ✅ MATCHED PAIR: Both XML and PDF present - ONLY process XML for data extraction
@@ -1696,10 +1707,10 @@ class InvoiceRPAService:
                         self.log(f"✅ XML processed for extraction: {xml_filename}")
                         
                         # Send real-time progress update for this successful processing
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     else:
                         failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     
                     # Store PDF as reference ONLY - NO extraction pipeline
                     pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
@@ -1723,10 +1734,10 @@ class InvoiceRPAService:
                         self.log(f"✅ XML processed successfully: {xml_filename}")
                         
                         # Send real-time progress update
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     else:
                         failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                         
                 elif base_name in unmatched_pdfs:
                     # Case: Only PDF file present - process for OCR extraction (no XML available)
@@ -1741,10 +1752,10 @@ class InvoiceRPAService:
                         self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
                         
                         # Send real-time progress update
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     else:
                         failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_processing_items)
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
 
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
