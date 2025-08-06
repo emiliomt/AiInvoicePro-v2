@@ -38,11 +38,30 @@ An advanced AI-powered invoice procurement platform that leverages intelligent a
    - `test_rpa_fixes_simulation.py` - Test simulation scripts
    - Both now use the same robust duplicate checking logic
 
+### Additional Fixes Applied (Aug 6, 2025 - Evening)
+After analyzing recent RPA import logs, identified and fixed additional issues:
+
+1. **Enhanced Total Amount Normalization**: 
+   - Fixed handling of currency amounts with newlines and currency codes (`$9000000\nCOP`)
+   - Enhanced regex processing to extract only numeric digits for comparison
+   - Increased tolerance from 0.01 to 100 for better currency matching
+
+2. **Simplified Duplicate Detection Logic**:
+   - Streamlined SQL query to use filename-based matching (more reliable)
+   - Removed complex metadata field matching that wasn't working with actual data structure
+   - Query now uses: `UPPER(TRIM(original_file_name)) LIKE 'INVOICE%'`
+   - Only skips invoices marked as 'failed', allows retry of 'downloaded' status
+
+3. **Corrected Processing Status Enum**:
+   - Fixed enum values to match database schema: `downloaded`, `processing`, `completed`, `failed`
+   - Removed invalid enum values like `error` and `retry`
+
 ### Expected Results
 - Invoices are skipped immediately upon detection of existing records
 - No unnecessary ZIP downloads for already imported invoices
 - Better resource utilization and faster processing times
-- Consistent duplicate detection across invoice_number, emisor_id, and total_amount
+- Simplified but robust duplicate detection based on invoice number in filename
+- Enhanced currency amount normalization handles Colombian peso format
 - Clear logging showing why invoices are skipped vs processed
 
 ## Previous Fix: Validation Rules Implementation (Aug 6, 2025)

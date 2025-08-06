@@ -136,47 +136,42 @@ class InvoiceRPAService:
             normalized_invoice_number = invoice_number.strip().upper()
             normalized_emisor_id = emisor_id.strip()
             
-            # Build the base SQL query with normalized invoice_number and emisor_id
+            # Build the base SQL query using actual data structure (simpler and more reliable)
+            # Skip invoices unless they are marked as 'failed' or need retry
             base_query = """
                 SELECT 1 FROM imported_invoices 
                 WHERE 
-                    (
-                        UPPER(TRIM(metadata->>'invoiceNumber')) = %s OR
-                        UPPER(TRIM(original_file_name)) LIKE %s
-                    )
-                    AND (
-                        TRIM(metadata->>'emisorId') = %s OR
-                        UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                            COALESCE(metadata->>'vendorName', metadata->>'emisorName', ''), 
-                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'
-                        )) = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s, 
-                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'))
-                    )
+                    UPPER(TRIM(original_file_name)) LIKE %s
+                    AND processing_status NOT IN ('failed')
             """
             
             params = [
-                normalized_invoice_number,
-                f"{normalized_invoice_number}%",  # filename pattern match
-                normalized_emisor_id,
-                normalized_emisor_id
+                f"{normalized_invoice_number}%"  # filename pattern match
             ]
             
             # Add total_amount validation if provided
             if total_amount and total_amount.strip() and total_amount != 'N/A':
                 try:
-                    normalized_total = float(str(total_amount).replace(',', '').replace('$', '').strip())
-                    base_query += """
-                        AND (
-                            metadata->>'totalAmount' IS NULL OR
-                            metadata->>'totalAmount' = '' OR
-                            metadata->>'totalAmount' = 'N/A' OR
-                            ABS(CAST(REPLACE(REPLACE(metadata->>'totalAmount', ',', ''), '$', '') AS FLOAT) - %s) <= 0.01
-                        )
-                    """
-                    params.append(normalized_total)
-                    self.log(f"🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
-                except (ValueError, TypeError):
-                    self.log(f"⚠️ Could not normalize total_amount '{total_amount}', skipping amount validation", "WARNING")
+                    # Enhanced normalization: handle newlines, currency codes, and special characters
+                    clean_amount = str(total_amount).replace('\n', '').replace('\r', '').replace('COP', '').replace('USD', '').replace('$', '').replace(',', '').replace('.', '').strip()
+                    # Only keep digits for normalization
+                    clean_amount = ''.join(filter(str.isdigit, clean_amount))
+                    if clean_amount:
+                        normalized_total = float(clean_amount)
+                        base_query += """
+                            AND (
+                                metadata->>'totalAmount' IS NULL OR
+                                metadata->>'totalAmount' = '' OR
+                                metadata->>'totalAmount' = 'N/A' OR
+                                ABS(CAST(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(metadata->>'totalAmount', '0'), '[^0-9]', '', 'g'), '^$', '0'), '^0*', '') AS NUMERIC) - %s) <= 100
+                            )
+                        """
+                        params.append(normalized_total)
+                        self.log(f"🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
+                    else:
+                        self.log(f"⚠️ Could not extract numeric value from '{total_amount}', skipping amount validation", "WARNING")
+                except (ValueError, TypeError) as e:
+                    self.log(f"⚠️ Could not normalize total_amount '{total_amount}': {e}, skipping amount validation", "WARNING")
             else:
                 self.log("🔍 Checking duplicate without total_amount validation (not provided or empty)")
             
@@ -222,6 +217,31 @@ class InvoiceRPAService:
             # First use the robust duplicate checking function
             if self.is_duplicate_invoice(pg_conn, numero_documento, emisor, valor_total):
                 self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor}")
+                pg_conn.close()
+                return True
+            
+            # Additional check for processing_status = 'completed' (legacy check for backward compatibility)
+            pg_cursor.execute("""
+                SELECT processing_status, metadata->>'processing_status' as metadata_status, id, original_file_name
+                FROM imported_invoices 
+                WHERE (
+                    original_file_name LIKE %s OR 
+                    original_file_name LIKE %s OR
+                    original_file_name LIKE %s
+                )
+                AND (processing_status = 'completed' OR metadata->>'processing_status' = 'completed')
+                ORDER BY created_at DESC
+            """, (
+                f"{numero_documento}_%",
+                f"%{numero_documento}.%", 
+                f"%{numero_documento}%"
+            ))
+            
+            completed_results = pg_cursor.fetchall()
+            if completed_results:
+                for row in completed_results:
+                    processing_status, metadata_status, imp_id, imp_filename = row[0], row[1], row[2], row[3]
+                    self.log(f"✅ Invoice {numero_documento} from {emisor} already completed (ID: {imp_id}, File: {imp_filename}, Status: {processing_status})")
                 pg_conn.close()
                 return True
             

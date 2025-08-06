@@ -36,47 +36,42 @@ class RpaFixTester:
             normalized_invoice_number = invoice_number.strip().upper()
             normalized_emisor_id = emisor_id.strip()
             
-            # Build the base SQL query with normalized invoice_number and emisor_id
+            # Build the base SQL query using actual data structure (simpler and more reliable)  
+            # Skip invoices unless they are marked as 'failed' or need retry
             base_query = """
                 SELECT 1 FROM imported_invoices 
                 WHERE 
-                    (
-                        UPPER(TRIM(metadata->>'invoiceNumber')) = %s OR
-                        UPPER(TRIM(original_file_name)) LIKE %s
-                    )
-                    AND (
-                        TRIM(metadata->>'emisorId') = %s OR
-                        UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
-                            COALESCE(metadata->>'vendorName', metadata->>'emisorName', ''), 
-                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'
-                        )) = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s, 
-                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'))
-                    )
+                    UPPER(TRIM(original_file_name)) LIKE %s
+                    AND processing_status NOT IN ('failed')
             """
             
             params = [
-                normalized_invoice_number,
-                f"{normalized_invoice_number}%",  # filename pattern match
-                normalized_emisor_id,
-                normalized_emisor_id
+                f"{normalized_invoice_number}%"  # filename pattern match
             ]
             
             # Add total_amount validation if provided
             if total_amount and total_amount.strip() and total_amount != 'N/A':
                 try:
-                    normalized_total = float(str(total_amount).replace(',', '').replace('$', '').strip())
-                    base_query += """
-                        AND (
-                            metadata->>'totalAmount' IS NULL OR
-                            metadata->>'totalAmount' = '' OR
-                            metadata->>'totalAmount' = 'N/A' OR
-                            ABS(CAST(REPLACE(REPLACE(metadata->>'totalAmount', ',', ''), '$', '') AS FLOAT) - %s) <= 0.01
-                        )
-                    """
-                    params.append(normalized_total)
-                    print(f"   🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
-                except (ValueError, TypeError):
-                    print(f"   ⚠️ Could not normalize total_amount '{total_amount}', skipping amount validation")
+                    # Enhanced normalization: handle newlines, currency codes, and special characters
+                    clean_amount = str(total_amount).replace('\n', '').replace('\r', '').replace('COP', '').replace('USD', '').replace('$', '').replace(',', '').replace('.', '').strip()
+                    # Only keep digits for normalization
+                    clean_amount = ''.join(filter(str.isdigit, clean_amount))
+                    if clean_amount:
+                        normalized_total = float(clean_amount)
+                        base_query += """
+                            AND (
+                                metadata->>'totalAmount' IS NULL OR
+                                metadata->>'totalAmount' = '' OR
+                                metadata->>'totalAmount' = 'N/A' OR
+                                ABS(CAST(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(metadata->>'totalAmount', '0'), '[^0-9]', '', 'g'), '^$', '0'), '^0*', '') AS NUMERIC) - %s) <= 100
+                            )
+                        """
+                        params.append(normalized_total)
+                        print(f"   🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
+                    else:
+                        print(f"   ⚠️ Could not extract numeric value from '{total_amount}', skipping amount validation")
+                except (ValueError, TypeError) as e:
+                    print(f"   ⚠️ Could not normalize total_amount '{total_amount}': {e}, skipping amount validation")
             else:
                 print("   🔍 Checking duplicate without total_amount validation (not provided or empty)")
             
