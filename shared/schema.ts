@@ -98,6 +98,13 @@ export const invoices = pgTable("invoices", {
   extractedData: jsonb("extracted_data"),
   projectName: varchar("project_name"),
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }),
+  // Validation fields for rule-based validation
+  validationStatus: varchar("validation_status", { length: 50 }).default("pending"),
+  validationResults: jsonb("validation_results"), // Store complete validation results
+  validationScore: decimal("validation_score", { precision: 3, scale: 2 }), // 0-1 validation score
+  isValidated: boolean("is_validated").default(false),
+  validatedAt: timestamp("validated_at"),
+  uploadedAt: timestamp("uploaded_at").defaultNow(), // Track when invoice was uploaded
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

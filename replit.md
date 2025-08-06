@@ -1,65 +1,76 @@
-# AI-Powered Invoice Procurement Platform
+# Invoice Procurement Platform - AI-Powered Automation
 
-## Overview
+## Project Overview
 An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
 
+## Recent Critical Fix: Validation Rules Implementation (Aug 6, 2025)
+
+### Issue Resolved
+- **Problem**: Validation rules were not executing during automation process due to Python simulation scripts returning mock validation results instead of using real TypeScript validation logic.
+- **Root Cause**: The system was using `server/services/process_automation.py` with `simulate_workflow_step("Validation")` that returned fake success data instead of calling the real TypeScript validation services.
+
+### Solution Implemented
+1. **Implemented Real Validation Logic**: Replaced stub `validateInvoiceData()` method in `server/storage.ts` with comprehensive validation system that:
+   - Retrieves active validation rules from database
+   - Supports multiple rule types: `required`, `enum`, `regex`, `range`, `format`
+   - Handles nested field paths (e.g., `extractedData.buyerTaxId`)
+   - Provides detailed violation reporting with severity levels
+   - Returns structured validation results with scores
+
+2. **Updated Database Schema**: Added validation fields to `invoices` table:
+   - `validation_status` VARCHAR(50) DEFAULT 'pending'
+   - `validation_results` JSONB (stores complete validation details)
+   - `validation_score` DECIMAL(3,2) (0-1 validation score)
+   - `is_validated` BOOLEAN DEFAULT false
+   - `validated_at` TIMESTAMP
+   - `uploaded_at` TIMESTAMP DEFAULT NOW()
+
+3. **Enhanced Invoice Processing**: Modified `server/routes.ts` to:
+   - Call real validation after AI extraction
+   - Store comprehensive validation results in database
+   - Automatically approve/reject based on validation results
+   - Log detailed validation violations and warnings
+
+4. **Fixed Automation Flow**: Modified Python mock scripts to delegate validation to TypeScript system instead of returning fake results.
+
+5. **Added Test Validation Rule**: Created NIT validation rule for testing:
+   - Field: `extractedData.buyerTaxId`
+   - Type: `enum`
+   - Expected Value: `860527800`
+   - Severity: `critical`
+
+### Expected Results
+- Invoice Verification dashboard now shows real validation status
+- "Needs Review" counts reflect actual rule violations
+- Validation rules like NIT checking execute automatically during processing
+- `validationResult` and `validationErrors` fields are properly populated
+- Business rules are enforced during automation workflow
+
+## Key Technologies
+- React frontend with Tanstack Query for dynamic data management
+- Express.js backend with comprehensive security protocols  
+- Advanced token-based file matching for PDF and XML invoices
+- Real-time validation system with database-driven rules
+- Multi-language invoice processing with adaptive parsing
+- Playwright-based browser automation for reliable data extraction
+
+## Architecture
+- Frontend: React with TypeScript, Tailwind CSS, shadcn/ui components
+- Backend: Express.js with TypeScript
+- Database: PostgreSQL with Drizzle ORM
+- Authentication: Replit Auth integration
+- File Processing: OCR with Tesseract.js, AI extraction with OpenAI
+- Validation: Rule-based validation engine with JSONB storage
+
 ## User Preferences
-Preferred communication style: Simple, everyday language.
+- Focus on business logic accuracy over UI polish
+- Prioritize data integrity and validation correctness
+- Use comprehensive logging for debugging validation issues
+- Maintain clear error reporting for failed validations
 
-## System Architecture
-Full-stack JavaScript application with React frontend and Express.js backend that includes:
-
-### Core Components
-- **React Frontend**: Dynamic invoice management with Tanstack Query
-- **Express.js Backend**: Comprehensive security protocols and API endpoints
-- **RPA System**: Python-based automated invoice downloading and processing
-- **OCR Processing**: Advanced PDF and XML invoice parsing with multi-language support
-- **Database**: PostgreSQL with Drizzle ORM for data persistence
-
-### Key Features
-- **Intelligent RPA Processing**: Company-based data isolation with browser automation
-- **Advanced Token-Based File Matching**: PDF and XML invoice correlation
-- **Multi-Language Support**: Adaptive parsing for various invoice formats
-- **Comprehensive Status Tracking**: Invoice lifecycle management with duplicate detection
-- **Real-Time Progress Updates**: WebSocket-based progress monitoring
-- **Secure Authentication**: Token-based security with session management
-
-### Critical System Files
-- `server/services/pythonRpaService.py`: Main RPA automation engine
-- `server/services/invoiceProcessingService.ts`: Invoice processing pipeline
-- `server/services/ocrService.ts`: OCR and document analysis
-- `shared/schema.ts`: Database models and types
-- `client/src/`: React frontend components
-
-## External Dependencies
-- **AI Services**: OpenAI API for intelligent document processing
-- **Database**: PostgreSQL for data persistence
-- **Automation**: Playwright for browser automation
-- **OCR**: Tesseract.js for text extraction
-- **Document Processing**: Sharp, pdf2pic for image manipulation
-
-## Recent Changes
-- **August 2025**: SUCCESSFULLY RESOLVED critical RPA processing issues
-  - **Issue #1 - Duplicate Detection**: Fixed SQL query error preventing duplicate detection entirely
-    - Root cause: Query returned 5 columns but code expected 4, completely breaking duplicate checking
-    - **CRITICAL FIX**: Moved duplicate checking BEFORE ZIP download to prevent unnecessary downloads
-    - **Result**: Invoices with 'completed' status (like FELG2374, NSX001156549) now skipped before download
-  - **Issue #2 - Double Counting**: Fixed invoice counting logic that inflated statistics
-    - Root cause: XML and PDF files counted separately instead of as one unique invoice
-    - **CRITICAL FIX**: Changed from total_processing_items (file count) to total_unique_invoices (invoice count)
-    - **Result**: Progress shows correct unique invoice processing, not inflated file counts
-  - **Issue #3 - XML/PDF File Pairing**: Enhanced pairing logic with multi-strategy matching
-    - Root cause: Many PDFs unmatched due to rigid filename matching algorithms
-    - **ENHANCEMENT**: Added 5-strategy matching (exact, containment, prefix, document number, base filename)
-    - **Result**: Better pairing rate for files like "FBOG16666.xml" with "FBOG16666_830505144_MEMORY_CORP_SAS.pdf"
-  - **Issue #4 - Module Import Error**: Fixed broken invoiceProcessingService.ts imports
-    - Root cause: Incorrect import path for storage.js module
-    - **CRITICAL FIX**: Corrected import path and function calls to match actual storage interface
-    - **Result**: Server starts successfully without module not found errors
-  - **Verification**: Comprehensive testing confirms all fixes work correctly
-    - Enhanced pairing logic passes 100% of test cases with real filename patterns
-    - Smart orphaned PDF detection prevents reprocessing of completed invoices
-    - All module imports resolved and server running without errors
-  - **Performance Impact**: Eliminates unnecessary downloads, prevents duplicate reprocessing, improves file pairing accuracy
-- **Database Updates**: Enhanced imported_invoices table status tracking with lifecycle management
-- **RPA Efficiency**: System now processes only genuinely new invoices with intelligent file pairing
+## Development Guidelines
+- All validation rules stored in database for easy management
+- Validation results stored as structured JSONB for detailed analysis
+- Mock data should never be used for validation - always use real rule processing
+- Validation system should be extensible for new rule types
+- Critical business rules (like NIT validation) should have `critical` severity

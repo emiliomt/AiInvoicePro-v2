@@ -137,10 +137,9 @@ def simulate_workflow_step(step_name: str, input_data: Dict = None) -> Dict[str,
         },
 
         "Validation": {
-            "is_valid": True,
-            "violations": [],
-            "flags_created": [],
-            "validation_score": 0.95
+            "status": "delegated_to_typescript",
+            "message": "Validation is handled by TypeScript validation service",
+            "note": "Real validation occurs in storage.validateInvoiceData()"
         },
 
         "Project Matching": {

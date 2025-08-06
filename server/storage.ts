@@ -1319,7 +1319,269 @@ class PostgresStorage implements IStorage {
   }
 
   async validateInvoiceData(invoiceData: any): Promise<any> {
-    return { isValid: true, violations: [] };
+    console.log('🔍 Starting invoice validation for:', {
+      vendor: invoiceData.vendorName,
+      invoiceNumber: invoiceData.invoiceNumber,
+      amount: invoiceData.totalAmount,
+      extractedData: invoiceData.extractedData?.buyerTaxId
+    });
+
+    try {
+      // Get active validation rules from database
+      const rules = await this.getValidationRules();
+      const activeRules = rules.filter(rule => rule.isActive);
+      
+      console.log(`📋 Found ${activeRules.length} active validation rules`);
+      
+      const violations: any[] = [];
+      const warnings: any[] = [];
+      let validationScore = 1.0; // Start with perfect score
+
+      // Validate each rule
+      for (const rule of activeRules) {
+        try {
+          const result = await this.validateSingleRule(invoiceData, rule);
+          
+          if (!result.isValid) {
+            const violation = {
+              ruleId: rule.id,
+              fieldName: rule.fieldName,
+              ruleType: rule.ruleType,
+              expected: rule.ruleValue,
+              actual: result.actualValue,
+              severity: rule.severity,
+              message: result.message,
+              timestamp: new Date().toISOString()
+            };
+
+            if (rule.severity === 'critical' || rule.severity === 'error') {
+              violations.push(violation);
+              validationScore -= 0.2; // Reduce score for critical/error violations
+            } else if (rule.severity === 'warning') {
+              warnings.push(violation);
+              validationScore -= 0.1; // Reduce score less for warnings
+            }
+
+            console.log(`❌ Validation failed for rule ${rule.id} (${rule.fieldName}):`, {
+              expected: rule.ruleValue,
+              actual: result.actualValue,
+              severity: rule.severity
+            });
+          } else {
+            console.log(`✅ Validation passed for rule ${rule.id} (${rule.fieldName})`);
+          }
+        } catch (ruleError) {
+          console.error(`Error validating rule ${rule.id}:`, ruleError);
+          // Continue with other rules even if one fails
+        }
+      }
+
+      // Ensure score doesn't go below 0
+      validationScore = Math.max(0, validationScore);
+      
+      const isValid = violations.length === 0;
+      const finalResult = {
+        isValid,
+        validationScore,
+        violations,
+        warnings,
+        totalRulesChecked: activeRules.length,
+        criticalViolations: violations.filter(v => v.severity === 'critical').length,
+        errorViolations: violations.filter(v => v.severity === 'error').length,
+        warningCount: warnings.length,
+        status: isValid ? 'passed' : 'failed',
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('🏁 Validation completed:', {
+        isValid,
+        validationScore: validationScore.toFixed(2),
+        violations: violations.length,
+        warnings: warnings.length
+      });
+
+      return finalResult;
+
+    } catch (error) {
+      console.error('❌ Error during invoice validation:', error);
+      return {
+        isValid: false,
+        validationScore: 0,
+        violations: [{
+          ruleId: null,
+          fieldName: 'system',
+          ruleType: 'system_error',
+          expected: 'successful_validation',
+          actual: 'validation_error',
+          severity: 'critical',
+          message: `Validation system error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+          timestamp: new Date().toISOString()
+        }],
+        warnings: [],
+        totalRulesChecked: 0,
+        criticalViolations: 1,
+        errorViolations: 0,
+        warningCount: 0,
+        status: 'system_error',
+        timestamp: new Date().toISOString()
+      };
+    }
+  }
+
+  // Helper method to validate a single rule
+  private async validateSingleRule(invoiceData: any, rule: any): Promise<{ isValid: boolean; actualValue: any; message: string }> {
+    // Get the field value using dot notation (e.g., "extractedData.buyerTaxId")
+    const fieldValue = this.getNestedFieldValue(invoiceData, rule.fieldName);
+    
+    console.log(`🔍 Validating rule ${rule.id} (${rule.ruleType}) for field ${rule.fieldName}:`, {
+      expected: rule.ruleValue,
+      actual: fieldValue
+    });
+
+    switch (rule.ruleType) {
+      case 'required':
+        const isRequired = fieldValue !== null && fieldValue !== undefined && fieldValue !== '';
+        return {
+          isValid: isRequired,
+          actualValue: fieldValue,
+          message: isRequired ? 'Field is present' : `Required field ${rule.fieldName} is missing`
+        };
+
+      case 'enum':
+        // For enum rules, check if the value matches exactly
+        const enumValid = fieldValue === rule.ruleValue;
+        return {
+          isValid: enumValid,
+          actualValue: fieldValue,
+          message: enumValid 
+            ? `Field value matches required value` 
+            : `Field ${rule.fieldName} must be "${rule.ruleValue}" but got "${fieldValue}"`
+        };
+
+      case 'regex':
+        if (!fieldValue) {
+          return {
+            isValid: false,
+            actualValue: fieldValue,
+            message: `Field ${rule.fieldName} is empty, cannot validate regex pattern`
+          };
+        }
+        try {
+          const regex = new RegExp(rule.ruleValue);
+          const regexValid = regex.test(String(fieldValue));
+          return {
+            isValid: regexValid,
+            actualValue: fieldValue,
+            message: regexValid 
+              ? 'Field matches required pattern' 
+              : `Field ${rule.fieldName} does not match required pattern: ${rule.ruleValue}`
+          };
+        } catch (regexError) {
+          return {
+            isValid: false,
+            actualValue: fieldValue,
+            message: `Invalid regex pattern in rule: ${rule.ruleValue}`
+          };
+        }
+
+      case 'range':
+        try {
+          const numValue = parseFloat(String(fieldValue));
+          const [min, max] = rule.ruleValue.split('-').map((n: string) => parseFloat(n.trim()));
+          
+          if (isNaN(numValue)) {
+            return {
+              isValid: false,
+              actualValue: fieldValue,
+              message: `Field ${rule.fieldName} is not a valid number`
+            };
+          }
+          
+          const rangeValid = numValue >= min && numValue <= max;
+          return {
+            isValid: rangeValid,
+            actualValue: fieldValue,
+            message: rangeValid 
+              ? `Value is within range ${min}-${max}` 
+              : `Field ${rule.fieldName} value ${numValue} is outside allowed range ${min}-${max}`
+          };
+        } catch (rangeError) {
+          return {
+            isValid: false,
+            actualValue: fieldValue,
+            message: `Invalid range format in rule: ${rule.ruleValue}`
+          };
+        }
+
+      case 'format':
+        // Custom format validation (e.g., email, phone, date formats)
+        return this.validateFormat(fieldValue, rule.ruleValue, rule.fieldName);
+
+      default:
+        console.warn(`Unknown rule type: ${rule.ruleType}`);
+        return {
+          isValid: true,
+          actualValue: fieldValue,
+          message: `Unknown rule type: ${rule.ruleType}, skipping validation`
+        };
+    }
+  }
+
+  // Helper method to get nested field values (e.g., "extractedData.buyerTaxId")
+  private getNestedFieldValue(obj: any, fieldPath: string): any {
+    return fieldPath.split('.').reduce((current, key) => {
+      return current && current[key] !== undefined ? current[key] : null;
+    }, obj);
+  }
+
+  // Helper method for format validation
+  private validateFormat(value: any, format: string, fieldName: string): { isValid: boolean; actualValue: any; message: string } {
+    if (!value) {
+      return {
+        isValid: false,
+        actualValue: value,
+        message: `Field ${fieldName} is empty, cannot validate format`
+      };
+    }
+
+    const stringValue = String(value);
+
+    switch (format.toLowerCase()) {
+      case 'email':
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        const emailValid = emailRegex.test(stringValue);
+        return {
+          isValid: emailValid,
+          actualValue: value,
+          message: emailValid ? 'Valid email format' : `Field ${fieldName} is not a valid email format`
+        };
+
+      case 'nit':
+      case 'colombian_nit':
+        // Colombian NIT format validation (e.g., 860527800-1 or 860527800)
+        const nitRegex = /^\d{9,10}(-\d)?$/;
+        const nitValid = nitRegex.test(stringValue);
+        return {
+          isValid: nitValid,
+          actualValue: value,
+          message: nitValid ? 'Valid Colombian NIT format' : `Field ${fieldName} is not a valid Colombian NIT format`
+        };
+
+      case 'date':
+        const dateValid = !isNaN(Date.parse(stringValue));
+        return {
+          isValid: dateValid,
+          actualValue: value,
+          message: dateValid ? 'Valid date format' : `Field ${fieldName} is not a valid date format`
+        };
+
+      default:
+        return {
+          isValid: true,
+          actualValue: value,
+          message: `Unknown format type: ${format}, skipping validation`
+        };
+    }
   }
 
   async validateAllApprovedInvoices(): Promise<any> {

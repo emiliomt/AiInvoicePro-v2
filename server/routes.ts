@@ -183,26 +183,80 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
     // Automatically validate the invoice after extraction
     try {
-      const validationResult = await storage.validateInvoiceData({
+      console.log(`🔍 Starting validation for invoice ${invoice.id}...`);
+      
+      // Prepare complete validation data including extractedData for rule processing
+      const validationData = {
         ...cleanedData,
         totalAmount: cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount.toString()) : 0,
-        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0
-      });
+        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0,
+        extractedData: extractedData // This includes buyerTaxId for NIT validation
+      };
 
-      // Update invoice with validation status
-      const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+      const validationResult = await storage.validateInvoiceData(validationData);
+
+      // Determine the status based on validation results
+      let status = 'extracted';
+      if (validationResult.isValid) {
+        status = 'approved'; // Automatically approve if validation passes
+      } else if (validationResult.criticalViolations > 0) {
+        status = 'rejected'; // Reject if critical violations
+      } else {
+        status = 'extracted'; // Keep extracted status for review if only warnings
+      }
+
+      // Store comprehensive validation results in the database
       await storage.updateInvoice(invoice.id, {
-        validationStatus,
-        isValidated: validationResult.isValid
+        status,
+        validationResults: validationResult, // Store complete validation results
+        validationStatus: validationResult.status,
+        isValidated: true, // Mark as validated regardless of pass/fail
+        validationScore: validationResult.validationScore
       });
 
-      console.log(`Invoice ${invoice.id} validation completed: ${validationStatus}`);
+      console.log(`✅ Invoice ${invoice.id} validation completed:`, {
+        status: validationResult.status,
+        score: validationResult.validationScore,
+        violations: validationResult.violations.length,
+        finalStatus: status
+      });
+
+      // Log detailed validation results for debugging
+      if (validationResult.violations.length > 0) {
+        console.log(`❌ Validation violations for invoice ${invoice.id}:`, validationResult.violations);
+      }
+      if (validationResult.warnings.length > 0) {
+        console.log(`⚠️ Validation warnings for invoice ${invoice.id}:`, validationResult.warnings);
+      }
+
     } catch (validationError) {
-      console.error(`Validation failed for invoice ${invoice.id}:`, validationError);
-      // Keep as pending if validation fails
+      console.error(`❌ Validation failed for invoice ${invoice.id}:`, validationError);
+      
+      // Store validation error in results
+      const errorResult = {
+        isValid: false,
+        validationScore: 0,
+        violations: [{
+          ruleId: null,
+          fieldName: 'system',
+          ruleType: 'validation_error',
+          expected: 'successful_validation',
+          actual: 'validation_system_error',
+          severity: 'critical',
+          message: validationError instanceof Error ? validationError.message : 'Unknown validation error',
+          timestamp: new Date().toISOString()
+        }],
+        warnings: [],
+        status: 'error',
+        timestamp: new Date().toISOString()
+      };
+
       await storage.updateInvoice(invoice.id, {
-        validationStatus: 'pending',
-        isValidated: false
+        status: 'extracted', // Keep as extracted for manual review
+        validationResults: errorResult,
+        validationStatus: 'error',
+        isValidated: false,
+        validationScore: 0
       });
     }
 
