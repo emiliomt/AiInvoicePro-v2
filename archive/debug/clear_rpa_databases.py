@@ -1,7 +1,9 @@
+
 #!/usr/bin/env python3
 """
 Clear RPA databases and reset system for debugging purposes
-Updated to match current RPA system implementation with XML processing and automation
+Updated to match current RPA system implementation with enhanced XML/PDF processing,
+manual pipeline integration, and improved duplicate detection
 """
 
 import os
@@ -41,7 +43,7 @@ def clear_sqlite_database(db_path, db_type):
         print(f"❌ Error clearing {db_type} SQLite database: {e}")
 
 def clear_postgresql_tables():
-    """Clear PostgreSQL RPA tables with proper config_id handling"""
+    """Clear PostgreSQL RPA operational tables while preserving all configurations"""
     try:
         # Try psycopg2 first, then fall back to environment check
         try:
@@ -62,16 +64,19 @@ def clear_postgresql_tables():
         conn = psycopg2.connect(database_url)
         cursor = conn.cursor()
 
-        # Clear RPA operational data tables (preserve user configurations)
-        tables_to_clear = [
-            'imported_invoices',           # Child table first (RPA downloads)
-            'invoice_importer_logs',       # Parent of imported_invoices (RPA execution logs)
-            # NOTE: invoice_importer_configs is INTENTIONALLY PRESERVED to keep ALL user RPA settings
-            # NOTE: erp_connections table is also preserved to maintain ERP connection settings
+        # Clear RPA operational data tables ONLY (preserve ALL user configurations)
+        operational_tables = [
+            'imported_invoices',           # RPA downloaded/processed files
+            'invoice_importer_logs',       # RPA execution logs
+            # NOTE: The following tables are INTENTIONALLY PRESERVED:
+            # - invoice_importer_configs: ALL RPA task configurations and settings
+            # - erp_connections: ERP connection details, credentials, URLs
+            # - validation_rules: Custom validation rules
+            # - settings: System settings and preferences
         ]
 
         cleared_count = 0
-        for table in tables_to_clear:
+        for table in operational_tables:
             try:
                 # Check if table exists first
                 cursor.execute("""
@@ -89,41 +94,42 @@ def clear_postgresql_tables():
                     cursor.execute(f"DELETE FROM {table}")
                     cursor.execute(f"SELECT COUNT(*) FROM {table}")
                     after_count = cursor.fetchone()[0]
-                    cleared_count += (before_count - after_count)
+                    records_cleared = before_count - after_count
+                    cleared_count += records_cleared
 
-                    print(f"Cleared PostgreSQL table: {table} (removed {before_count - after_count} rows, remaining: {after_count})")
+                    print(f"Cleared PostgreSQL table: {table} (removed {records_cleared} records)")
                 else:
                     print(f"⚠️  Table {table} does not exist")
             except Exception as e:
                 print(f"⚠️  Could not clear table {table}: {e}")
 
-        # Reset sequences to start from 1 (preserve configs sequence)
+        # Reset operational sequences only (preserve config sequences)
         try:
-            # NOTE: invoice_importer_configs_id_seq is preserved to maintain user settings
             cursor.execute("SELECT setval('invoice_importer_logs_id_seq', 1, false)")
             cursor.execute("SELECT setval('imported_invoices_id_seq', 1, false)")
-            print("✅ Reset PostgreSQL sequences (preserved configs)")
+            print("✅ Reset operational PostgreSQL sequences")
         except Exception as e:
             print(f"⚠️  Could not reset sequences: {e}")
 
-        # Also clear main invoices table records created by RPA system
+        # Clear RPA-generated invoices from main invoices table
         try:
             cursor.execute("SELECT COUNT(*) FROM invoices WHERE user_id = 'rpa-system'")
             rpa_invoice_count = cursor.fetchone()[0]
             if rpa_invoice_count > 0:
                 cursor.execute("DELETE FROM invoices WHERE user_id = 'rpa-system'")
                 print(f"Cleared {rpa_invoice_count} RPA-generated invoices from main invoices table")
+                cleared_count += rpa_invoice_count
         except Exception as e:
             print(f"⚠️  Could not clear RPA invoices from main table: {e}")
 
         conn.commit()
         conn.close()
-        print(f"✅ Cleared PostgreSQL RPA tables (total records removed: {cleared_count})")
+        print(f"✅ Cleared PostgreSQL operational data (total records removed: {cleared_count})")
 
     except Exception as e:
         print(f"❌ Error clearing PostgreSQL tables: {e}")
 
-def clear_files_in_directory(directory, keep_db_files=False, file_patterns=None):
+def clear_files_in_directory(directory, keep_db_files=False, file_patterns=None, description=""):
     """Clear files in a directory with optional pattern filtering"""
     if os.path.exists(directory):
         try:
@@ -154,14 +160,15 @@ def clear_files_in_directory(directory, keep_db_files=False, file_patterns=None)
                     shutil.rmtree(file_path)
                     file_count += 1
 
-            print(f"🗑️  Removed {file_count} files/folders from {directory}")
+            desc_text = f" ({description})" if description else ""
+            print(f"🗑️  Removed {file_count} files/folders from {directory}{desc_text}")
         except Exception as e:
             print(f"❌ Error clearing directory {directory}: {e}")
     else:
         print(f"ℹ️  Directory {directory} does not exist")
 
 def clear_rpa_debug_captures():
-    """Clear RPA debug captures while preserving structure"""
+    """Clear RPA debug captures while preserving directory structure"""
     debug_dir = "rpa_debug_captures"
     if os.path.exists(debug_dir):
         try:
@@ -190,17 +197,18 @@ def clear_rpa_debug_captures():
     else:
         print(f"ℹ️  RPA debug captures directory does not exist")
 
-def clear_manual_pipeline_files():
-    """Clear files processed through manual upload pipeline"""
+def clear_processed_files():
+    """Clear files processed through RPA pipeline"""
     try:
         uploads_dir = "uploads"
         if os.path.exists(uploads_dir):
-            # Remove RPA-generated files from uploads (XML files that were processed)
+            # Remove RPA-processed files from uploads (XML/PDF files processed through manual pipeline)
             rpa_files = []
             for file in os.listdir(uploads_dir):
                 if file.endswith('.xml') or file.endswith('.pdf'):
                     # Check if this looks like an RPA-generated filename pattern
-                    if '_' in file and (file.count('_') >= 1):
+                    # RPA files typically have invoice_number_vendor_id pattern
+                    if '_' in file and len(file.split('_')) >= 2:
                         rpa_files.append(file)
 
             for file in rpa_files:
@@ -218,108 +226,134 @@ def clear_manual_pipeline_files():
             print("ℹ️  Uploads directory does not exist")
 
     except Exception as e:
-        print(f"❌ Error clearing manual pipeline files: {e}")
+        print(f"❌ Error clearing processed files: {e}")
+
+def clear_temp_processing_files():
+    """Clear temporary RPA processing files with selective patterns"""
+    try:
+        # Clear RPA-specific temp files from /tmp
+        print("🧹 Clearing RPA-specific temporary files...")
+        temp_patterns = [
+            "invoice_*",        # Invoice processing temp files
+            "rpa_*",           # RPA session files
+            "sinco_*",         # ERP-specific files
+            "*.zip",           # Downloaded ZIP files
+            "*.crdownload",    # Chrome incomplete downloads
+        ]
+        
+        if os.path.exists("/tmp"):
+            total_removed = 0
+            for pattern in temp_patterns:
+                files = glob.glob(os.path.join("/tmp", pattern))
+                for file_path in files:
+                    try:
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                            total_removed += 1
+                        elif os.path.isdir(file_path):
+                            shutil.rmtree(file_path)
+                            total_removed += 1
+                    except Exception as e:
+                        print(f"⚠️  Could not remove {file_path}: {e}")
+            
+            if total_removed > 0:
+                print(f"🗑️  Removed {total_removed} RPA temp files from /tmp")
+            else:
+                print("ℹ️  No RPA temp files found in /tmp")
+
+    except Exception as e:
+        print(f"❌ Error clearing temp processing files: {e}")
+
+def clear_automation_artifacts():
+    """Clear automation artifacts and log files"""
+    try:
+        print("🧹 Cleaning up automation artifacts...")
+        cleanup_patterns = [
+            (".", "*.log"),                    # Log files in root
+            (".", "automation_*.json"),        # Automation configs
+            (".", "rpa_session_*.json"),       # RPA session files
+            (".", "debug_*.html"),             # Debug HTML files
+            (".", "screenshot_*.png"),         # Debug screenshots
+            (".", "*.crdownload"),             # Chrome incomplete downloads
+            (".", "WORKFLOW_RESULT:*"),        # Python automation results
+            (".", "STATS:*"),                  # Progress stats files
+        ]
+
+        total_pattern_files = 0
+        for base_dir, pattern in cleanup_patterns:
+            if os.path.exists(base_dir):
+                files = glob.glob(os.path.join(base_dir, pattern))
+                for file_path in files:
+                    try:
+                        if os.path.isfile(file_path):
+                            os.remove(file_path)
+                            total_pattern_files += 1
+                    except Exception as e:
+                        print(f"⚠️  Could not remove {file_path}: {e}")
+
+        if total_pattern_files > 0:
+            print(f"🗑️  Removed {total_pattern_files} automation artifact files")
+        else:
+            print("ℹ️  No automation artifacts found")
+
+    except Exception as e:
+        print(f"❌ Error clearing automation artifacts: {e}")
 
 def main():
-    """Main function to clear all RPA databases and files"""
-    print("🗑️  Clearing RPA databases and files for debugging...")
-    print("📋 This will reset the duplicate detection system and allow re-processing of invoices")
-    print("🤖 Updated for current RPA system with XML/PDF processing and manual pipeline integration")
+    """Main function to clear all RPA operational data while preserving configurations"""
+    print("🗑️  Clearing RPA operational data for fresh debugging...")
+    print("📋 This will reset duplicate detection and allow re-processing of invoices")
+    print("🤖 Updated for current RPA system with enhanced XML/PDF processing and manual pipeline")
+    print("🔒 ALL USER CONFIGURATIONS WILL BE PRESERVED")
 
-    # 1. Clear PostgreSQL tables
-    print("\n📊 Clearing PostgreSQL RPA tables...")
+    # 1. Clear PostgreSQL operational tables
+    print("\n📊 Clearing PostgreSQL operational data...")
     clear_postgresql_tables()
 
     # 2. Clear local SQLite databases used by Python RPA
     print("\n💾 Clearing local SQLite databases...")
     sqlite_databases = [
-        "/tmp/invoice_downloads/invoices.db",    # Main invoice tracking
-        "/tmp/xml_invoices/invoices_xml.db",     # XML-specific tracking
-        "rpa_automation.db",                     # Local automation tracking
+        ("/tmp/invoice_downloads/invoices.db", "Invoice tracking"),
+        ("/tmp/xml_invoices/invoices_xml.db", "XML processing"),
+        ("rpa_automation.db", "Local automation tracking"),
     ]
 
-    for db_path in sqlite_databases:
-        db_name = os.path.basename(db_path)
-        clear_sqlite_database(db_path, db_name)
+    for db_path, db_desc in sqlite_databases:
+        clear_sqlite_database(db_path, db_desc)
 
     # 3. Clear downloaded files and processing directories
     print("\n📁 Clearing downloaded files and processing data...")
-    directories_to_clear = [
-        ("/tmp/invoice_downloads", False, None),     # Python RPA downloads
-        ("/tmp/xml_invoices", False, None),          # XML processing temp files
-        ("/tmp/invoice_downloads/pdfs", False, None), # PDF files directory
-        ("/tmp", True, ["*.zip", "*.xml", "invoice_*", "rpa_*", "sinco_*"]), # Selective temp cleanup
+    processing_directories = [
+        ("/tmp/invoice_downloads", "Python RPA downloads"),
+        ("/tmp/xml_invoices", "XML processing temp files"),
+        ("/tmp/invoice_downloads/pdfs", "PDF files directory"),
     ]
 
-    for directory_info in directories_to_clear:
-        if len(directory_info) == 3:
-            directory, keep_db, patterns = directory_info
-            if directory == "/tmp" and patterns:
-                # For /tmp, only clear specific RPA-related files
-                print("🧹 Clearing RPA-specific temp files from /tmp...")
-                if os.path.exists("/tmp"):
-                    try:
-                        total_removed = 0
-                        for pattern in patterns:
-                            files = glob.glob(os.path.join("/tmp", pattern))
-                            for file_path in files:
-                                try:
-                                    if os.path.isfile(file_path):
-                                        os.remove(file_path)
-                                        total_removed += 1
-                                    elif os.path.isdir(file_path):
-                                        shutil.rmtree(file_path)
-                                        total_removed += 1
-                                except Exception as e:
-                                    print(f"⚠️  Could not remove {file_path}: {e}")
-                        print(f"🗑️  Removed {total_removed} RPA temp files from /tmp")
-                    except Exception as e:
-                        print(f"❌ Error clearing RPA temp files: {e}")
-            else:
-                clear_files_in_directory(directory, keep_db, patterns)
-        else:
-            # Legacy format
-            clear_files_in_directory(directory_info, False)
+    for directory, description in processing_directories:
+        clear_files_in_directory(directory, keep_db_files=False, description=description)
 
-    # 4. Clear manual pipeline processed files
-    print("\n📤 Clearing manual pipeline processed files...")
-    clear_manual_pipeline_files()
+    # 4. Clear processed files from manual pipeline
+    print("\n📤 Clearing processed files from manual pipeline...")
+    clear_processed_files()
 
-    # 5. Clear RPA debug captures (keep directory structure)
+    # 5. Clear RPA debug captures
     print("\n📸 Clearing RPA debug captures...")
     clear_rpa_debug_captures()
 
-    # 6. Clear specific automation file patterns
-    print("\n🧹 Cleaning up automation file patterns...")
-    cleanup_patterns = [
-        (".", "*.log"),              # Log files in root
-        (".", "automation_*.json"),  # Automation configs
-        (".", "rpa_session_*.json"), # RPA session files
-        (".", "debug_*.html"),       # Debug HTML files
-        (".", "screenshot_*.png"),   # Debug screenshots
-        (".", "*.crdownload"),       # Chrome incomplete downloads
-    ]
+    # 6. Clear temporary processing files
+    print("\n🧹 Clearing temporary processing files...")
+    clear_temp_processing_files()
 
-    total_pattern_files = 0
-    for base_dir, pattern in cleanup_patterns:
-        if os.path.exists(base_dir):
-            files = glob.glob(os.path.join(base_dir, pattern))
-            for file_path in files:
-                try:
-                    os.remove(file_path)
-                    total_pattern_files += 1
-                except Exception as e:
-                    print(f"⚠️  Could not remove {file_path}: {e}")
+    # 7. Clear automation artifacts
+    print("\n🔧 Clearing automation artifacts...")
+    clear_automation_artifacts()
 
-    if total_pattern_files > 0:
-        print(f"🗑️  Removed {total_pattern_files} automation pattern files")
-
-    # 7. Recreate necessary directories
+    # 8. Recreate necessary directories
     print("\n📂 Recreating necessary directories...")
     essential_dirs = [
         "/tmp/invoice_downloads",
-        "/tmp/xml_invoices",
-        "/tmp/invoice_downloads/pdfs", # PDF storage directory
+        "/tmp/xml_invoices", 
+        "/tmp/invoice_downloads/pdfs",
         "uploads",
         "rpa_debug_captures"
     ]
@@ -328,34 +362,50 @@ def main():
         os.makedirs(directory, exist_ok=True)
         print(f"📁 Ensured directory exists: {directory}")
 
-    # 8. Create today's debug capture directory
+    # 9. Create today's debug capture directory
     today = datetime.now().strftime("%Y-%m-%d")
     debug_today_dir = os.path.join("rpa_debug_captures", today)
     os.makedirs(debug_today_dir, exist_ok=True)
     print(f"📁 Created today's debug directory: {debug_today_dir}")
 
-    print("\n✅ RPA database and file reset complete - ready for fresh debugging!")
-    print("\n🔧 What was cleared:")
-    print("   • PostgreSQL tables: imported_invoices, invoice_importer_logs, RPA-generated invoices")
-    print("   • SQLite databases: invoice tracking and XML processing databases") 
+    print("\n" + "="*80)
+    print("✅ RPA OPERATIONAL DATA RESET COMPLETE - READY FOR FRESH DEBUGGING!")
+    print("="*80)
+    
+    print("\n🔧 OPERATIONAL DATA CLEARED:")
+    print("   • PostgreSQL tables: imported_invoices, invoice_importer_logs")
+    print("   • RPA-generated invoices: All invoices with user_id='rpa-system'")
+    print("   • SQLite databases: Invoice tracking and XML processing databases") 
     print("   • Downloaded files: ZIP, XML, and PDF files from RPA downloads")
     print("   • Processed files: Files moved through manual upload pipeline")
     print("   • Debug captures: RPA screenshots, HTML snapshots, and automation logs")
     print("   • Temporary files: All RPA processing files and automation artifacts")
-    print("   • Automation files: Session files, debug outputs, and log files")
+    print("   • Log files: RPA session logs, debug outputs, and progress stats")
     print("   • Database sequences: Reset operational sequences only")
-    print("\n✅ What was preserved:")
-    print("   • RPA configurations: invoice_importer_configs table (ALL user settings intact)")
-    print("   • ERP connections: erp_connections table and all connection settings maintained")
-    print("   • User credentials: All stored ERP usernames, passwords, and URLs preserved")
-    print("   • Task settings: All RPA task names, schedules, file types, and parameters preserved")
-    print("   • Download paths: Custom download and XML processing paths preserved") 
-    print("   • File processing: ZIP download timeouts and headless mode settings preserved")
-    print("   • System files: Core application and non-RPA temporary files")
+    
+    print("\n✅ CONFIGURATIONS PRESERVED:")
+    print("   • RPA task configurations: invoice_importer_configs table (ALL settings intact)")
+    print("   • ERP connections: erp_connections table with credentials and URLs")
+    print("   • User credentials: All stored ERP usernames and passwords")
+    print("   • Task settings: RPA schedules, file types, download paths, timeouts")
+    print("   • Processing settings: Headless mode, ZIP timeouts, file type preferences")
+    print("   • Validation rules: Custom validation rules and business logic")
+    print("   • System settings: Application preferences and configurations")
     print("   • Manual uploads: Non-RPA uploaded files remain untouched")
-    print("\n🔄 The RPA system will now re-process invoices that were previously skipped as duplicates")
-    print("🤖 XML/PDF processing pipeline and manual integration have been reset")
-    print("📊 Ready for fresh RPA automation runs with clean state")
+    
+    print("\n🔄 SYSTEM READY FOR:")
+    print("   • Fresh RPA automation runs with clean operational state")
+    print("   • Re-processing invoices that were previously marked as duplicates")
+    print("   • Testing enhanced XML/PDF processing and manual pipeline integration")
+    print("   • Debugging token-based file matching and duplicate detection")
+    print("   • Validating improved processing status lifecycle tracking")
+    
+    print("\n🤖 The RPA system will now operate with:")
+    print("   • Enhanced duplicate detection using normalized invoice tokens")
+    print("   • Improved XML/PDF file pairing with multiple matching strategies")
+    print("   • Better processing status tracking (downloaded → processing → completed)")
+    print("   • Robust error handling and retry logic for failed invoices")
+    print("   • Real-time progress reporting and statistics")
 
 if __name__ == "__main__":
     main()
