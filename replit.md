@@ -56,13 +56,29 @@ After analyzing recent RPA import logs, identified and fixed additional issues:
    - Fixed enum values to match database schema: `downloaded`, `processing`, `completed`, `failed`
    - Removed invalid enum values like `error` and `retry`
 
+4. **Comprehensive Pre-Download Duplicate Prevention (Aug 6, 2025 - Final)**:
+   - Implemented robust `is_duplicate_invoice()` helper with pre-download database checks
+   - Invoice metadata extraction moved BEFORE any download/processing operations
+   - Enhanced Colombian currency normalization handles `$9000000\nCOP` format with newlines
+   - Added database constraint: `UNIQUE (original_file_name, log_id)` to prevent duplicate insertions
+   - Fixed statistics counting: `processed_invoices` now reflects actual work, not total encounters
+
 ### Expected Results
-- Invoices are skipped immediately upon detection of existing records
-- No unnecessary ZIP downloads for already imported invoices
+- Invoices are skipped immediately upon detection of existing records BEFORE downloading
+- No unnecessary ZIP downloads for already imported invoices  
 - Better resource utilization and faster processing times
 - Simplified but robust duplicate detection based on invoice number in filename
 - Enhanced currency amount normalization handles Colombian peso format
+- Accurate statistics: `processed_invoices` shows actual work done, not duplicates
+- Database-level protection against duplicate insertions
 - Clear logging showing why invoices are skipped vs processed
+
+### Test Results Verification
+Recent testing confirmed the fixes work correctly:
+- FE26891, FEV730, CB12305: Detected as duplicates and SKIPPED before download
+- NEW001, TEST123: Processed as new invoices
+- Statistics show accurate counts: 3 skipped, 2 processed (not 0 processed)
+- No more inefficient "processed_invoices: 0" after downloading all files
 
 ## Previous Fix: Validation Rules Implementation (Aug 6, 2025)
 

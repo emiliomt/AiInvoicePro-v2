@@ -909,51 +909,59 @@ class InvoiceRPAService:
                         if len(columns) < 8:
                             continue
 
+                        # Extract invoice metadata FIRST
                         numero_documento = columns[1].text.strip()
-                        emisor = columns[2].text.strip().replace(" ",
-                                                                 "_").replace(
-                                                                     ".", "")
+                        emisor_raw = columns[2].text.strip()
+                        emisor = emisor_raw.replace(" ", "_").replace(".", "")
                         safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor)
-                        valor_total = columns[8].text.strip().replace(
-                            ",", "").replace(".", "").split(" ")[0]
+                        valor_total_raw = columns[8].text.strip()
+                        # Enhanced total amount normalization for Colombian currency
+                        valor_total = valor_total_raw.replace(",", "").replace(".", "").replace("$", "").replace("COP", "").replace("\n", "").replace("\r", "").strip().split(" ")[0]
 
-                        # Count total invoices first
+                        # Count total invoices encountered
                         self.stats['total_invoices'] += 1
                         
-                        # Check if already successfully processed BEFORE downloading
-                        if self._is_invoice_successfully_processed(numero_documento, safe_emisor, valor_total):
-                            self.log(
-                                f"⏭️ Skipping successfully processed: {numero_documento} - {safe_emisor}"
-                            )
-                            # Count as processed but skipped
-                            self.stats['processed_invoices'] += 1
-                            self.stats['skipped_imports'] = self.stats.get('skipped_imports', 0) + 1
-                            # Output progress with skip status
-                            self._output_download_progress(i + 1, len(rows), f"Skipped {numero_documento}")
-                            continue
+                        # ROBUST PRE-DOWNLOAD DUPLICATE CHECK 
+                        # Connect to PostgreSQL for duplicate checking
+                        try:
+                            database_url = os.environ.get('DATABASE_URL')
+                            if database_url:
+                                pg_conn = psycopg2.connect(database_url)
+                                
+                                # Use robust duplicate detection BEFORE any download/processing
+                                if self.is_duplicate_invoice(pg_conn, numero_documento, emisor_raw, valor_total_raw):
+                                    self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor_raw}")
+                                    self.stats['skipped_imports'] = self.stats.get('skipped_imports', 0) + 1
+                                    # Output progress with skip status
+                                    self._output_download_progress(i + 1, len(rows), f"Skipped duplicate {numero_documento}")
+                                    pg_conn.close()
+                                    continue
+                                
+                                pg_conn.close()
+                            else:
+                                self.log("DATABASE_URL not found, proceeding with download", "WARNING")
+                        except Exception as e:
+                            self.log(f"❌ Error in pre-download duplicate check: {e}", "ERROR")
+                            # If duplicate check fails, proceed cautiously to avoid missing invoices
 
-                        self.log(
-                            f"🔍 Processing: {numero_documento} - {emisor} - {valor_total}"
-                        )
-
+                        # Download and process invoice (only reached if no duplicate found)
+                        self.log(f"🔄 Processing: {numero_documento} - {emisor_raw} - {valor_total_raw}")
+                        
+                        # Count as processed since we're attempting to download
+                        self.stats['processed_invoices'] += 1
+                        
                         # Output progress stats before download attempt
-                        self._output_download_progress(i + 1, len(rows), numero_documento)
+                        self._output_download_progress(i + 1, len(rows), f"Processing {numero_documento}")
 
                         # Download invoice
                         if self.download_invoice(row, numero_documento,
                                                  safe_emisor, valor_total,
                                                  db_conn):
                             self.stats['successful_imports'] += 1
-                            self.log(
-                                f"✅ Successfully processed invoice: {numero_documento}"
-                            )
+                            self.log(f"✅ Successfully processed invoice: {numero_documento}")
                         else:
                             self.stats['failed_imports'] += 1
-                            self.log(
-                                f"❌ Failed to process invoice: {numero_documento}"
-                            )
-
-                        self.stats['processed_invoices'] += 1
+                            self.log(f"❌ Failed to process invoice: {numero_documento}")
 
                         # Output progress stats after processing
                         self._output_download_progress(i + 1, len(rows), f"Completed {numero_documento}")
