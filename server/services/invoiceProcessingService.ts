@@ -1,10 +1,12 @@
 import { eq, and } from 'drizzle-orm';
 import { db } from '../db.js';
-import { importedInvoices, invoices, invoiceImporterLogs } from '../../shared/schema.js';
-import { extractInvoiceData } from './aiService.js';
+import { importedInvoices, invoices, invoiceImporterLogs, lineItems } from '../../shared/schema.js';
+import * as aiService from './aiService.js';
+import * as storage from './storage.js';
 import { parseInvoiceXML } from './xmlParser.js';
 import * as fs from 'fs';
 import * as path from 'path';
+import { ClassificationService } from './classificationService.js';
 
 export class InvoiceProcessingService {
   /**
@@ -134,9 +136,6 @@ export class InvoiceProcessingService {
 
         // If we have line items from XML extraction, insert them and classify
         if (extractedData.lineItems && extractedData.lineItems.length > 0) {
-          const { lineItems } = await import('../../shared/schema.js');
-          const { ClassificationService } = await import('./classificationService.js');
-
           for (const item of extractedData.lineItems) {
             // Insert line item
             const [lineItem] = await db.insert(lineItems).values({
@@ -192,15 +191,10 @@ export class InvoiceProcessingService {
    * Get company ID from the importer log
    */
   private async getCompanyIdFromLog(logId: number): Promise<number | null> {
-    try {
-      // The invoice_importer_configs table doesn't have a direct company_id
-      // For RPA imports, we'll use a default company
-      console.log(`Getting company ID for log ${logId} - using default RPA company (ID: 2)`);
-      return 2; // Use the RPA Import Company we created
-    } catch (error) {
-      console.error('Failed to get company ID from log:', error);
-      return 2; // Default fallback
-    }
+    // The invoice_importer_configs table doesn't have a direct company_id
+    // For RPA imports, we'll use a default company
+    console.log(`Getting company ID for log ${logId} - using default RPA company (ID: 2)`);
+    return 2; // Use the RPA Import Company we created
   }
 
   /**
@@ -222,9 +216,6 @@ export class InvoiceProcessingService {
     if (downloadedInvoices.length === 0) {
       return { processed: 0, failed: 0, errors: [] };
     }
-
-    // Temporarily update our search to process this specific batch
-    const originalSelect = db.select;
 
     // Process the filtered invoices
     let processed = 0;
@@ -330,9 +321,6 @@ export class InvoiceProcessingService {
 
         // If we have line items from XML extraction, insert them and classify
         if (extractedData.lineItems && extractedData.lineItems.length > 0) {
-          const { lineItems } = await import('../../shared/schema.js');
-          const { ClassificationService } = await import('./classificationService.js');
-
           for (const item of extractedData.lineItems) {
             // Insert line item
             const [lineItem] = await db.insert(lineItems).values({
@@ -382,6 +370,189 @@ export class InvoiceProcessingService {
 
     console.log(`🎉 Processing complete for log ${logId}: ${processed} processed, ${failed} failed`);
     return { processed, failed, errors };
+  }
+
+  /**
+   * Process a batch of invoices automatically
+   */
+  async processMultipleInvoicesAutomatically(
+    invoiceIds: number[],
+    userId: string,
+    source: string = 'manual',
+    skipValidation: boolean = false
+  ): Promise<{
+    totalInvoices: number;
+    processedInvoices: number;
+    failedInvoices: number;
+    errors: string[];
+  }> {
+    console.log(`🔄 Processing ${invoiceIds.length} invoices automatically...`);
+    let processedCount = 0;
+    let failedCount = 0;
+    const errors: string[] = [];
+
+    for (const invoiceId of invoiceIds) {
+      try {
+        // Process each invoice
+        const result = await this.processInvoiceAutomatically(invoiceId, userId, source, skipValidation);
+        if (result) {
+          processedCount++;
+        } else {
+          failedCount++;
+          errors.push(`Failed to process invoice ID ${invoiceId} automatically`);
+        }
+      } catch (error: any) {
+        console.error(`❌ Error processing invoice ID ${invoiceId} automatically:`, error);
+        failedCount++;
+        errors.push(`Invoice ID ${invoiceId}: ${error.message}`);
+      }
+    }
+
+    console.log(`🎉 Finished automatic processing: ${processedCount} processed, ${failedCount} failed.`);
+    return {
+      totalInvoices: invoiceIds.length,
+      processedInvoices: processedCount,
+      failedInvoices: failedCount,
+      errors,
+    };
+  }
+
+  /**
+   * Process a single invoice automatically
+   */
+  async processInvoiceAutomatically(
+    invoiceId: number,
+    userId: string,
+    source: string = 'manual',
+    skipValidation: boolean = false
+  ): Promise<boolean> {
+    console.log(`🚀 Processing invoice ID ${invoiceId} automatically.`);
+
+    // Step 1: Fetch invoice data
+    let invoice = await storage.getInvoice(invoiceId);
+    if (!invoice) {
+      console.error(`❌ Invoice ${invoiceId} not found.`);
+      return false;
+    }
+
+    // Ensure initial status is set to 'processing'
+    if (invoice.status === 'pending' || invoice.status === 'extracted' || invoice.status === 'validated' || invoice.status === 'validation_failed') {
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'Invoice processing started...');
+    }
+
+    // Step 2: Extract data if not already done
+    if (!invoice.extractedData) {
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'AI extraction in progress...');
+
+      try {
+        await aiService.processInvoice(invoiceId);
+        console.log(`✅ AI extraction completed for invoice ${invoiceId}`);
+      } catch (extractionError: any) {
+        console.error(`❌ AI extraction failed for invoice ${invoiceId}:`, extractionError);
+        await this.updateInvoiceStatus(invoiceId, 'failed', `AI extraction failed: ${extractionError.message}`);
+        return false;
+      }
+
+      // Refresh invoice data after extraction
+      invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) throw new Error('Invoice not found after extraction');
+    }
+
+    // Step 2.5: Execute validation rules if not skipped
+    if (!skipValidation && invoice.extractedData) {
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'Executing validation rules...');
+
+      try {
+        console.log(`🔍 Running validation rules for invoice ${invoiceId}`);
+        const validationResult = await storage.validateInvoiceData(invoice.extractedData);
+
+        // Update invoice with validation results
+        await storage.updateInvoice(invoiceId, {
+          validationResult: validationResult,
+          validationErrors: validationResult.violations || [],
+          status: validationResult.isValid ? 'validated' : 'validation_failed'
+        });
+
+        if (!validationResult.isValid) {
+          console.log(`❌ Validation failed for invoice ${invoiceId}:`, validationResult.violations);
+          await this.updateInvoiceStatus(invoiceId, 'validation_failed', 
+            `Validation failed: ${validationResult.violations?.map(v => v.message).join(', ') || 'Unknown validation errors'}`);
+          // Continue processing even if validation fails for now
+        } else {
+          console.log(`✅ Validation passed for invoice ${invoiceId}`);
+        }
+
+        // Refresh invoice data after validation
+        invoice = await storage.getInvoice(invoiceId);
+      } catch (validationError: any) {
+        console.error(`❌ Validation execution failed for invoice ${invoiceId}:`, validationError);
+        await this.updateInvoiceStatus(invoiceId, 'processing', `Validation failed, continuing: ${validationError.message}`);
+        // Continue processing even if validation fails
+      }
+    }
+
+    // Step 3: Classify line items if not already done and validation passed or was skipped
+    // If validation failed, we should still attempt to classify line items to identify issues
+    if (invoice.extractedData && invoice.status !== 'failed') {
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'Classifying line items...');
+
+      try {
+        if (invoice.extractedData.lineItems && invoice.extractedData.lineItems.length > 0) {
+          for (const item of invoice.extractedData.lineItems) {
+            // Insert line item if it doesn't exist
+            const existingLineItem = await db.query.lineItems.findFirst({
+              where: (lt, { eq }) => eq(lt.invoiceId, invoiceId)
+            });
+
+            if (!existingLineItem) {
+              const [lineItem] = await db.insert(lineItems).values({
+                invoiceId: invoiceId,
+                description: item.description,
+                quantity: item.quantity || '1',
+                unitPrice: item.unitPrice || '0.00',
+                totalPrice: item.totalPrice || '0.00',
+              }).returning();
+
+              // Classify the line item after insertion
+              await ClassificationService.classifyAndStore(lineItem.id, userId);
+            }
+          }
+          console.log(`✅ Line items classified for invoice ${invoiceId}`);
+        } else {
+          console.log(`ℹ️ No line items found for invoice ${invoiceId} to classify.`);
+        }
+      } catch (classificationError: any) {
+        console.error(`❌ Line item classification failed for invoice ${invoiceId}:`, classificationError);
+        await this.updateInvoiceStatus(invoiceId, 'failed', `Line item classification failed: ${classificationError.message}`);
+        return false;
+      }
+    } else if (invoice.status === 'failed') {
+      console.log(`ℹ️ Skipping line item classification for invoice ${invoiceId} due to previous failure.`);
+      return false;
+    }
+
+    // Step 4: Finalize invoice status
+    // If validation failed, keep status as validation_failed. Otherwise, set to processed.
+    const finalStatus = invoice.status === 'validation_failed' ? 'validation_failed' : 'processed';
+    await this.updateInvoiceStatus(invoiceId, finalStatus, 'Invoice processing completed');
+
+    console.log(`✅ Successfully processed invoice ID ${invoiceId}`);
+    return true;
+  }
+
+  /**
+   * Update invoice status and add a log entry
+   */
+  private async updateInvoiceStatus(invoiceId: number, status: string, message: string): Promise<void> {
+    console.log(`Updating invoice ${invoiceId} status to: ${status} - ${message}`);
+    await storage.updateInvoice(invoiceId, { status });
+    await db.insert(invoiceImporterLogs).values({
+      invoiceId,
+      status,
+      message,
+      userId: 'rpa-system', // Assuming RPA system is the user
+      timestamp: new Date(),
+    });
   }
 }
 
