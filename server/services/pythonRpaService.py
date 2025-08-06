@@ -119,11 +119,94 @@ class InvoiceRPAService:
         print(f"[{timestamp}] {level}: {message}")
         sys.stdout.flush()
 
+    def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: str = None) -> bool:
+        """
+        Robust helper function to check if an invoice already exists in the database
+        Checks the imported_invoices table using normalized inputs for:
+        - invoice_number (normalized and trimmed, converted to uppercase)
+        - emisor_id (normalized and trimmed)
+        - total_amount (optional, with 0.01 threshold validation)
+        
+        Returns True if duplicate found (should skip), False if new invoice (should process)
+        """
+        try:
+            cursor = conn.cursor()
+            
+            # Normalize inputs as requested
+            normalized_invoice_number = invoice_number.strip().upper()
+            normalized_emisor_id = emisor_id.strip()
+            
+            # Build the base SQL query with normalized invoice_number and emisor_id
+            base_query = """
+                SELECT 1 FROM imported_invoices 
+                WHERE 
+                    (
+                        UPPER(TRIM(metadata->>'invoiceNumber')) = %s OR
+                        UPPER(TRIM(original_file_name)) LIKE %s
+                    )
+                    AND (
+                        TRIM(metadata->>'emisorId') = %s OR
+                        UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(
+                            COALESCE(metadata->>'vendorName', metadata->>'emisorName', ''), 
+                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'
+                        )) = UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(%s, 
+                            '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA'))
+                    )
+            """
+            
+            params = [
+                normalized_invoice_number,
+                f"{normalized_invoice_number}%",  # filename pattern match
+                normalized_emisor_id,
+                normalized_emisor_id
+            ]
+            
+            # Add total_amount validation if provided
+            if total_amount and total_amount.strip() and total_amount != 'N/A':
+                try:
+                    normalized_total = float(str(total_amount).replace(',', '').replace('$', '').strip())
+                    base_query += """
+                        AND (
+                            metadata->>'totalAmount' IS NULL OR
+                            metadata->>'totalAmount' = '' OR
+                            metadata->>'totalAmount' = 'N/A' OR
+                            ABS(CAST(REPLACE(REPLACE(metadata->>'totalAmount', ',', ''), '$', '') AS FLOAT) - %s) <= 0.01
+                        )
+                    """
+                    params.append(normalized_total)
+                    self.log(f"🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
+                except (ValueError, TypeError):
+                    self.log(f"⚠️ Could not normalize total_amount '{total_amount}', skipping amount validation", "WARNING")
+            else:
+                self.log("🔍 Checking duplicate without total_amount validation (not provided or empty)")
+            
+            base_query += " LIMIT 1;"
+            
+            # Execute the query
+            cursor.execute(base_query, params)
+            result = cursor.fetchone()
+            
+            if result:
+                amount_msg = f" with total_amount validation" if (total_amount and total_amount.strip() and total_amount != 'N/A') else ""
+                self.log(f"✅ Duplicate found: Invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
+                return True
+            else:
+                amount_msg = f" (total_amount: {total_amount})" if total_amount else ""
+                self.log(f"🆕 No duplicate found for invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ Error in is_duplicate_invoice: {e}", "ERROR")
+            # On error, return False to be safe and allow processing
+            return False
+
     def _is_invoice_successfully_processed(self, numero_documento: str, emisor: str, valor_total: str) -> bool:
         """
         Enhanced duplicate detection with processing status tracking
         Checks processing lifecycle: downloaded -> processing -> completed -> failed
         Only skips invoices that are successfully completed, allows retry of failed ones
+        
+        Now uses the robust is_duplicate_invoice helper for initial duplicate checking
         """
         try:
             # Connect to PostgreSQL to check both tables
@@ -135,6 +218,12 @@ class InvoiceRPAService:
                 
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
+            
+            # First use the robust duplicate checking function
+            if self.is_duplicate_invoice(pg_conn, numero_documento, emisor, valor_total):
+                self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor}")
+                pg_conn.close()
+                return True
             
             # Normalize emisor for consistent comparison
             safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))

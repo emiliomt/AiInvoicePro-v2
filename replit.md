@@ -3,7 +3,49 @@
 ## Project Overview
 An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
 
-## Recent Critical Fix: Validation Rules Implementation (Aug 6, 2025)
+## Recent Critical Fix: Enhanced Duplicate Invoice Detection (Aug 6, 2025)
+
+### Issue Resolved
+- **Problem**: Python RPA service was not properly skipping invoices that had already been imported in previous runs, causing duplicate processing and wasted resources.
+- **Root Cause**: The duplicate checking logic was not robust enough and didn't properly normalize invoice numbers, vendor names, and validate total amounts before processing.
+
+### Solution Implemented
+1. **Created Robust `is_duplicate_invoice()` Helper Function**:
+   - Normalizes invoice_number by trimming whitespace and converting to uppercase
+   - Normalizes emisor_id by trimming whitespace  
+   - Supports optional total_amount validation with 0.01 threshold
+   - Uses comprehensive SQL query checking both metadata JSONB and original_file_name patterns
+   - Handles vendor name normalization (S.A.S → SAS, &amp; → &, etc.)
+
+2. **Enhanced SQL Query**:
+   ```sql
+   SELECT 1 FROM imported_invoices 
+   WHERE 
+       (UPPER(TRIM(metadata->>'invoiceNumber')) = %s OR UPPER(TRIM(original_file_name)) LIKE %s)
+       AND (TRIM(metadata->>'emisorId') = %s OR UPPER(REPLACE(...vendor normalization...)) = UPPER(...))
+       AND (total_amount validation with 0.01 threshold if provided)
+   LIMIT 1;
+   ```
+
+3. **Updated Processing Logic**:
+   - `_is_invoice_successfully_processed()` now calls `is_duplicate_invoice()` first
+   - Early duplicate checking occurs BEFORE any download/processing actions
+   - Proper logging with detailed skip reasons and amount validation status
+   - Fallback error handling returns False to allow processing if duplicate check fails
+
+4. **Applied to Multiple Files**:
+   - `server/services/pythonRpaService.py` - Main RPA service
+   - `test_rpa_fixes_simulation.py` - Test simulation scripts
+   - Both now use the same robust duplicate checking logic
+
+### Expected Results
+- Invoices are skipped immediately upon detection of existing records
+- No unnecessary ZIP downloads for already imported invoices
+- Better resource utilization and faster processing times
+- Consistent duplicate detection across invoice_number, emisor_id, and total_amount
+- Clear logging showing why invoices are skipped vs processed
+
+## Previous Fix: Validation Rules Implementation (Aug 6, 2025)
 
 ### Issue Resolved
 - **Problem**: Validation rules were not executing during automation process due to Python simulation scripts returning mock validation results instead of using real TypeScript validation logic.
