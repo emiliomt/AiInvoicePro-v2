@@ -118,6 +118,49 @@ def extract_invoice_with_fallback(ocr_text: str) -> Dict[str, Any]:
                 "error": str(e2)
             }
 
+def execute_real_validation(invoice_data: Dict) -> Dict[str, Any]:
+    """Execute real validation rules via TypeScript service"""
+    try:
+        import requests
+        import json
+        
+        # Call the TypeScript validation endpoint
+        validation_payload = {
+            'invoiceData': invoice_data,
+            'source': 'python_automation'
+        }
+        
+        response = requests.post(
+            'http://localhost:5000/api/validation/execute',
+            json=validation_payload,
+            timeout=30
+        )
+        
+        if response.status_code == 200:
+            validation_result = response.json()
+            return {
+                "validation_passed": validation_result.get('isValid', False),
+                "validation_errors": validation_result.get('violations', []),
+                "validation_score": validation_result.get('score', 0),
+                "rules_checked": validation_result.get('rulesChecked', 0),
+                "critical_violations": len([v for v in validation_result.get('violations', []) if v.get('severity') == 'critical']),
+                "processing_successful": True
+            }
+        else:
+            return {
+                "validation_passed": False,
+                "validation_errors": [f"Validation service error: HTTP {response.status_code}"],
+                "processing_successful": False
+            }
+            
+    except Exception as e:
+        logger.error(f"Real validation execution failed: {e}")
+        return {
+            "validation_passed": False,
+            "validation_errors": [f"Validation execution failed: {str(e)}"],
+            "processing_successful": False
+        }
+
 def simulate_workflow_step(step_name: str, input_data: Dict = None) -> Dict[str, Any]:
     """Simulate a workflow step with realistic results"""
 
@@ -137,9 +180,9 @@ def simulate_workflow_step(step_name: str, input_data: Dict = None) -> Dict[str,
         },
 
         "Validation": {
-            "status": "delegated_to_typescript",
-            "message": "Validation is handled by TypeScript validation service",
-            "note": "Real validation occurs in storage.validateInvoiceData()"
+            "status": "executing_real_validation",
+            "message": "Executing real validation rules via TypeScript service",
+            "note": "Calling actual validation logic"
         },
 
         "Project Matching": {
@@ -221,11 +264,33 @@ def process_invoice_workflow_fixed(invoice_file_path: str, user_id: str) -> Dict
         workflow_results['extraction'] = extraction_result
         logger.info(f"✅ AI Extraction completed - Vendor: {extraction_result['vendor_name']}")
 
-        # Step 4: Validation
+        # Step 4: Validation (REAL EXECUTION)
         logger.info("STEP 4: VALIDATION & RULE PROCESSING")
-        validation_result = simulate_workflow_step("Validation")
-        workflow_results['validation'] = validation_result
-        logger.info("✅ Validation completed")
+        try:
+            # Execute real validation instead of simulation
+            real_validation_result = execute_real_validation(extraction_result)
+            workflow_results['validation'] = real_validation_result
+            
+            if not real_validation_result.get('processing_successful', False):
+                logger.warning(f"⚠️ Validation processing had issues: {real_validation_result.get('validation_errors', [])}")
+            
+            if not real_validation_result.get('validation_passed', True):
+                critical_count = real_validation_result.get('critical_violations', 0)
+                total_errors = len(real_validation_result.get('validation_errors', []))
+                logger.warning(f"⚠️ Validation failed: {total_errors} violations ({critical_count} critical)")
+            else:
+                logger.info("✅ Validation passed - all rules satisfied")
+                
+        except Exception as e:
+            logger.error(f"❌ Validation step failed: {e}")
+            # Fallback to basic validation result
+            workflow_results['validation'] = {
+                "validation_passed": False,
+                "validation_errors": [f"Validation system error: {str(e)}"],
+                "processing_successful": False
+            }
+        
+        logger.info("✅ Validation step completed")
 
         # Step 5: Project Matching
         logger.info("STEP 5: PROJECT MATCHING")
