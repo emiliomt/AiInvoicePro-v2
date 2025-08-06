@@ -40,9 +40,11 @@ Full-stack JavaScript application with React frontend and Express.js backend tha
 
 ## Recent Changes
 - **August 2025**: Fixed critical duplicate detection issue in RPA system
-  - **Root Cause**: RPA script wasn't updating processing_status to 'completed' after successful imports
-  - **Solution**: Added proper status updates in _process_xml_for_pipeline and _process_pdf_for_pipeline methods
+  - **Root Cause**: SQL query error "too many values to unpack (expected 4)" was preventing duplicate detection from working
+  - **Critical Fix**: Corrected SQL query in _is_invoice_successfully_processed method to return exactly 4 columns
+  - **Status Updates**: Added proper status updates in _process_xml_for_pipeline and _process_pdf_for_pipeline methods
   - **Enhancement**: Improved vendor name normalization and filename pattern matching
-  - **Result**: Duplicate detection now correctly skips already processed invoices
+  - **Verification**: Comprehensive testing confirms invoices with 'completed' status are now properly skipped
+  - **Result**: RPA no longer reprocesses already imported invoices, preventing duplicates and improving efficiency
 - **Database Updates**: Enhanced imported_invoices table status tracking with lifecycle management
-- **Status Validation**: Implemented comprehensive testing for duplicate detection logic
+- **Testing Completed**: Final tests confirm FELG2374 and NSX001156549 will be skipped in future runs

@@ -209,7 +209,7 @@ class InvoiceRPAService:
             # Only skip if any record has processing_status = 'completed'
             # Use more precise pattern matching for invoice numbers and vendor names
             pg_cursor.execute("""
-                SELECT metadata->>'processing_status', processing_status, id, original_file_name, log_id
+                SELECT metadata->>'processing_status', processing_status, id, original_file_name
                 FROM imported_invoices 
                 WHERE (
                     original_file_name LIKE %s OR 
@@ -225,7 +225,8 @@ class InvoiceRPAService:
             
             imported_results = pg_cursor.fetchall()
             if imported_results:
-                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
+                for row in imported_results:
+                    metadata_status, processing_status, imp_id, imp_filename = row[0], row[1], row[2], row[3]
                     # Check both metadata and processing_status columns for 'completed'
                     if metadata_status == 'completed' or processing_status == 'completed':
                         valor_msg = f" (valor_total: {valor_total if valor_total else 'None'})"
@@ -235,7 +236,8 @@ class InvoiceRPAService:
                 
                 # If we reach here, no completed records found - log details and continue processing
                 self.log(f"🔄 Invoice {numero_documento} from {emisor} found in imported_invoices but not completed - will process")
-                for metadata_status, processing_status, imp_id, imp_filename in imported_results:
+                for row in imported_results:
+                    metadata_status, processing_status, imp_id, imp_filename = row[0], row[1], row[2], row[3]
                     status_info = f"processing_status: {processing_status}, metadata_status: {metadata_status}"
                     self.log(f"   - Record ID {imp_id}: {imp_filename} ({status_info})")
             else:
