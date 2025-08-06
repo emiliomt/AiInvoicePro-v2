@@ -151,6 +151,7 @@ export default function Invoices() {
     retry: 3,
     retryDelay: 1000,
     refetchInterval: 5000,
+    staleTime: 0, // Always consider data stale to ensure fresh fetches
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -649,9 +650,16 @@ export default function Invoices() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => refetch()}
+                onClick={async () => {
+                  console.log('Manual refresh triggered');
+                  await refetch();
+                  // Also invalidate related queries
+                  queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                  queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                }}
+                disabled={isLoading}
               >
-                Refresh
+                {isLoading ? "Refreshing..." : "Refresh"}
               </Button>
               <Button
                 variant="default"
@@ -791,9 +799,14 @@ export default function Invoices() {
                       variant="outline"
                       size="sm"
                       className="mt-2"
-                      onClick={() => refetch()}
+                      onClick={async () => {
+                        console.log('Retry triggered from error state');
+                        await refetch();
+                        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                      }}
+                      disabled={isLoading}
                     >
-                      Try Again
+                      {isLoading ? "Retrying..." : "Try Again"}
                     </Button>
                   </div>
                 </div>
@@ -810,9 +823,14 @@ export default function Invoices() {
                 <Button
                   variant="outline"
                   className="mt-4"
-                  onClick={() => refetch()}
+                  onClick={async () => {
+                    console.log('Refresh triggered from empty state');
+                    await refetch();
+                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                  }}
+                  disabled={isLoading}
                 >
-                  Refresh
+                  {isLoading ? "Refreshing..." : "Refresh"}
                 </Button>
               </CardContent>
             </Card>
