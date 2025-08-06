@@ -1031,26 +1031,39 @@ class InvoiceRPAService:
         return match.group(1) if match else None
 
     def _extract_invoice_token_from_filename(self, filename: str) -> str:
-        """Extract invoice token from filename for matching purposes"""
+        """Enhanced invoice token extraction for better XML/PDF matching"""
         try:
-            # Extract the base filename parts before extensions and descriptive text
-            base = filename.split('.')[0]  # Remove extension
+            # Extract the base filename without extension
+            base = filename.split('.')[0]
             
-            # Split by underscore and take first two parts (document_number_tax_id pattern)
+            # Handle different naming patterns
             parts = base.split('_')
-            if len(parts) >= 2:
-                # Try first part (document number)
+            
+            if len(parts) == 1:
+                # Simple format like "FBOG16666" or long generated names
+                return base
+            
+            elif len(parts) >= 2:
+                # Check for document_taxid pattern (most common)
                 doc_num = parts[0]
                 tax_id = parts[1]
                 
-                # Create composite token from document number + tax ID
+                # If both parts are present and look like document/tax IDs
                 if doc_num and tax_id:
-                    return f'{doc_num}_{tax_id}'
+                    # Try multiple token formats for better matching
+                    tokens = [
+                        f"{doc_num}_{tax_id}",  # Full format
+                        doc_num,                # Just document number
+                        base                    # Full base name
+                    ]
+                    return tokens[0]  # Return primary token
             
-            return ""
+            # Fallback to full base name
+            return base
+            
         except Exception as e:
             self.log(f"Error extracting token from filename '{filename}': {e}", "ERROR")
-            return ""
+            return filename.split('.')[0] if '.' in filename else filename
 
     def _extract_invoice_token(self, filename, file_path=None, file_type='xml'):
         """Extract unique invoice token from filename with enhanced regex-based matching"""
@@ -1627,18 +1640,24 @@ class InvoiceRPAService:
             
             # Scan XML files
             if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
+                xml_count = 0
                 for filename in os.listdir(self.xml_dir):
                     if filename.lower().endswith(".xml"):
                         base_name = os.path.splitext(filename)[0]
                         xml_files[base_name] = filename
+                        xml_count += 1
+                self.log(f"📁 Found {xml_count} XML files in {self.xml_dir}")
 
             # Scan PDF files with enhanced matching logic
             pdf_dir = os.path.join(self.download_dir, 'pdfs')
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
+                pdf_count = 0
                 for filename in os.listdir(pdf_dir):
                     if filename.lower().endswith(".pdf"):
                         base_name = os.path.splitext(filename)[0]
                         pdf_files[base_name] = filename
+                        pdf_count += 1
+                self.log(f"📁 Found {pdf_count} PDF files in {pdf_dir}")
 
             # Enhanced file matching: match PDFs to XMLs by invoice token
             matched_pairs = {}
@@ -1656,21 +1675,23 @@ class InvoiceRPAService:
                     unmatched_xmls.remove(xml_base)
                     unmatched_pdfs.remove(xml_base)
             
-            # Second pass: token-based matching for filename variations
+            # Second pass: Enhanced token-based matching for filename variations
             for xml_base in list(unmatched_xmls):
                 xml_token = self._extract_invoice_token_from_filename(xml_base)
                 if xml_token:
                     for pdf_base in list(unmatched_pdfs):
                         pdf_token = self._extract_invoice_token_from_filename(pdf_base)
-                        if pdf_token and xml_token == pdf_token:
+                        
+                        # Enhanced matching logic with multiple strategies
+                        if pdf_token and self._tokens_match(xml_token, pdf_token, xml_base, pdf_base):
                             matched_pairs[xml_base] = {
                                 'xml_file': xml_files[xml_base],
                                 'pdf_file': pdf_files[pdf_base],
-                                'match_type': 'token'
+                                'match_type': 'enhanced_token'
                             }
                             unmatched_xmls.remove(xml_base)
                             unmatched_pdfs.remove(pdf_base)
-                            self.log(f"🔗 Matched by token: XML '{xml_files[xml_base]}' <-> PDF '{pdf_files[pdf_base]}'")
+                            self.log(f"🔗 Enhanced match: XML '{xml_files[xml_base]}' <-> PDF '{pdf_files[pdf_base]}'")
                             break
 
             # Build final processing list - count unique invoices, not individual files
@@ -1681,6 +1702,21 @@ class InvoiceRPAService:
             self.log(f"   - Matched pairs (XML+PDF): {len(matched_pairs)}")
             self.log(f"   - XML-only invoices: {len(unmatched_xmls)}")
             self.log(f"   - PDF-only invoices: {len(unmatched_pdfs)}")
+            
+            # Enhanced logging for debugging pairing issues
+            if len(matched_pairs) > 0:
+                self.log("✅ Successfully paired files:")
+                for base_name, pair_info in list(matched_pairs.items())[:5]:  # Show first 5
+                    self.log(f"   {pair_info['match_type']}: {pair_info['xml_file']} <-> {pair_info['pdf_file']}")
+                if len(matched_pairs) > 5:
+                    self.log(f"   ... and {len(matched_pairs) - 5} more pairs")
+            
+            if len(unmatched_pdfs) > 0:
+                self.log("⚠️ Unmatched PDF files (may be from previous processing):")
+                for pdf_base in list(unmatched_pdfs)[:3]:  # Show first 3
+                    self.log(f"   - {pdf_files[pdf_base]}")
+                if len(unmatched_pdfs) > 3:
+                    self.log(f"   ... and {len(unmatched_pdfs) - 3} more unmatched PDFs")
             
             for index, base_name in enumerate(all_base_names):
                 # Update progress with current unique invoice being processed
@@ -1740,22 +1776,30 @@ class InvoiceRPAService:
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                         
                 elif base_name in unmatched_pdfs:
-                    # Case: Only PDF file present - process for OCR extraction (no XML available)
+                    # Case: Only PDF file present - check if this PDF should be processed or archived
                     pdf_filename = pdf_files[base_name]
-                    self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
-                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
-                    if pdf_info:
-                        pdf_info['base_file_name'] = base_name
-                        processed_files.append(pdf_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
-                        
-                        # Send real-time progress update
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                    
+                    # Check if this PDF might be a leftover from previous processing
+                    should_process = self._should_process_orphaned_pdf(pdf_filename, base_name)
+                    
+                    if should_process:
+                        self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
+                        pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
+                        if pdf_info:
+                            pdf_info['base_file_name'] = base_name
+                            processed_files.append(pdf_info)
+                            processed_count += 1
+                            successful_count += 1
+                            self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
+                            
+                            # Send real-time progress update
+                            self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        else:
+                            failed_count += 1
+                            self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     else:
-                        failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        self.log(f"⏭️ Skipping orphaned PDF: {pdf_filename} (likely from previous processing)")
+                        # Don't count as processed since we're intentionally skipping
 
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
@@ -1781,6 +1825,110 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"Error processing files through manual pipeline: {e}", "ERROR")
             return False
+    
+    def _tokens_match(self, xml_token: str, pdf_token: str, xml_base: str, pdf_base: str) -> bool:
+        """Enhanced token matching with multiple strategies"""
+        try:
+            # Strategy 1: Exact token match
+            if xml_token == pdf_token:
+                return True
+            
+            # Strategy 2: Check if one token is contained in the other
+            if xml_token in pdf_token or pdf_token in xml_token:
+                return True
+            
+            # Strategy 3: Check for document number match (first part)
+            xml_parts = xml_token.split('_')
+            pdf_parts = pdf_token.split('_')
+            
+            if xml_parts[0] == pdf_parts[0] and xml_parts[0]:
+                return True
+            
+            # Strategy 4: Handle cases where PDF has extra company name
+            # Example: XML="CTG12018_900525717", PDF="CTG12018_900525717_ALMACENES_LCC_SAS"
+            if xml_base in pdf_base or pdf_base in xml_base:
+                return True
+            
+            # Strategy 5: Check for common prefixes of significant length
+            min_length = min(len(xml_token), len(pdf_token))
+            if min_length >= 8:  # Only for reasonably long tokens
+                common_length = 0
+                for i in range(min_length):
+                    if xml_token[i] == pdf_token[i]:
+                        common_length += 1
+                    else:
+                        break
+                
+                # If they share at least 70% of characters from start
+                if common_length >= min_length * 0.7:
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.log(f"Error in token matching: {e}", "ERROR")
+            return False
+    
+    def _should_process_orphaned_pdf(self, pdf_filename: str, base_name: str) -> bool:
+        """Determine if an orphaned PDF should be processed or skipped"""
+        try:
+            # Check if we already have an invoice record for this PDF in the database
+            import psycopg2
+            import os
+            
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                # If no database, process all PDFs as fallback
+                return True
+                
+            pg_conn = psycopg2.connect(database_url)
+            pg_cursor = pg_conn.cursor()
+            
+            # Extract potential invoice token from PDF name
+            pdf_token = self._extract_invoice_token_from_filename(pdf_filename)
+            
+            # Check if we already have records for this invoice
+            pg_cursor.execute("""
+                SELECT COUNT(*) 
+                FROM invoices 
+                WHERE user_id = 'rpa-system' 
+                AND (
+                    file_name LIKE %s OR
+                    file_name LIKE %s OR
+                    extracted_data->>'documentNumber' = %s
+                )
+            """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
+            
+            existing_invoice_count = pg_cursor.fetchone()[0]
+            
+            # Also check imported_invoices table
+            pg_cursor.execute("""
+                SELECT COUNT(*) 
+                FROM imported_invoices 
+                WHERE processing_status = 'completed'
+                AND (
+                    original_file_name LIKE %s OR
+                    original_file_name LIKE %s OR
+                    erp_document_id = %s
+                )
+            """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
+            
+            existing_imported_count = pg_cursor.fetchone()[0]
+            
+            pg_conn.close()
+            
+            # If we already have records for this invoice, skip the orphaned PDF
+            if existing_invoice_count > 0 or existing_imported_count > 0:
+                self.log(f"🔍 PDF {pdf_filename} has existing records (invoices: {existing_invoice_count}, imported: {existing_imported_count}) - skipping")
+                return False
+            
+            # Otherwise, process it
+            return True
+            
+        except Exception as e:
+            self.log(f"Error checking orphaned PDF status for {pdf_filename}: {e}", "ERROR")
+            # On error, default to processing to be safe
+            return True
 
     def _process_xml_for_pipeline(self, filename, uploads_dir, is_data_source=True):
         """Process XML file for manual pipeline"""
