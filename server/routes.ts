@@ -3094,6 +3094,65 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Process and validate all pending invoices
+  app.post('/api/process-and-validate-pending', isAuthenticated, async (req, res) => {
+    try {
+      // Get all pending invoices that need validation
+      const pendingInvoices = await storage.getInvoices({ 
+        status: 'extracted',
+        validationStatus: null // or 'pending'
+      });
+
+      console.log(`Found ${pendingInvoices.length} pending invoices for validation`);
+
+      let validatedCount = 0;
+      let rejectedCount = 0;
+      let errorCount = 0;
+
+      for (const invoice of pendingInvoices) {
+        try {
+          const validationResult = await storage.validateInvoiceData({
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+            taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            currency: invoice.currency || 'USD'
+          });
+
+          const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+          await storage.updateInvoice(invoice.id, {
+            validationStatus,
+            isValidated: validationResult.isValid
+          });
+
+          if (validationResult.isValid) {
+            validatedCount++;
+          } else {
+            rejectedCount++;
+          }
+        } catch (error) {
+          console.error(`Validation failed for invoice ${invoice.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      res.json({
+        message: `Validation completed for ${pendingInvoices.length} pending invoices`,
+        results: {
+          total: pendingInvoices.length,
+          validated: validatedCount,
+          rejected: rejectedCount,
+          errors: errorCount
+        }
+      });
+    } catch (error) {
+      console.error("Error processing and validating pending invoices:", error);
+      res.status(500).json({ message: "Failed to process and validate pending invoices" });
+    }
+  });
+
   // Process approved invoices and automatically move validated ones to verified status
   app.post('/api/process-approved-validations', isAuthenticated, async (req, res) => {
     try {
@@ -5654,10 +5713,42 @@ app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req
         // Update status to processing
         await storage.updateInvoice(invoiceId, { status: 'processing' });
 
-        // Process the invoice asynchronously
-        processInvoiceAsync(invoice, Buffer.from(invoice.fileData || '', 'base64')).catch(error => {
-          console.error(`Async processing failed for invoice ${invoiceId}:`, error);
-        });
+        // Process the invoice asynchronously with validation
+        processInvoiceAsync(invoice, Buffer.from(invoice.fileData || '', 'base64'))
+          .then(async () => {
+            // After successful processing, run validation
+            try {
+              console.log(`Running validation for invoice ${invoiceId}`);
+              const validationResult = await storage.validateInvoiceData({
+                vendorName: invoice.vendorName,
+                invoiceNumber: invoice.invoiceNumber,
+                totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+                taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+                invoiceDate: invoice.invoiceDate,
+                dueDate: invoice.dueDate,
+                currency: invoice.currency || 'USD'
+              });
+
+              const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+              await storage.updateInvoice(invoiceId, {
+                validationStatus,
+                isValidated: validationResult.isValid,
+                status: validationResult.isValid ? 'extracted' : 'rejected'
+              });
+
+              console.log(`Validation completed for invoice ${invoiceId}: ${validationStatus}`);
+            } catch (validationError) {
+              console.error(`Validation failed for invoice ${invoiceId}:`, validationError);
+              // Don't fail the entire process if validation fails
+              await storage.updateInvoice(invoiceId, { 
+                validationStatus: 'pending',
+                status: 'extracted'
+              });
+            }
+          })
+          .catch(error => {
+            console.error(`Async processing failed for invoice ${invoiceId}:`, error);
+          });
 
         successful++;
       } catch (error) {

@@ -6,7 +6,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
-import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw, FileCheck } from "lucide-react";
+import { Search, CheckCircle, XCircle, AlertTriangle, Clock, Eye, Download, RefreshCw, FileCheck, Database } from "lucide-react";
 import Header from "@/components/Header";
 import { CardDescription } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
@@ -67,6 +67,32 @@ export default function InvoiceVerification() {
   const [selectedInvoiceForValidation, setSelectedInvoiceForValidation] = useState<any>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
+
+  const processValidationsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch('/api/process-validations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      });
+      if (!response.ok) throw new Error('Failed to process validations');
+      return response.json();
+    },
+    onSuccess: (data) => {
+      toast({
+        title: "Processing Complete",
+        description: `${data.results.validated} invoices validated, ${data.results.rejected} rejected`,
+      });
+      queryClient.invalidateQueries({ queryKey: ["/api/approved-invoice-projects"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/validation-rules/validate-all"] });
+    },
+    onError: () => {
+      toast({
+        title: "Processing Failed",
+        description: "Failed to process validations",
+        variant: "destructive",
+      });
+    },
+  });
 
   const { data: approvedAssignments = [], isLoading } = useQuery<ApprovedInvoiceProject[]>({
     queryKey: ["/api/approved-invoice-projects"],
@@ -210,14 +236,58 @@ export default function InvoiceVerification() {
     >
       <Header />
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight">Invoice Verification Status</h1>
-            <p className="text-muted-foreground">
-              Monitor and verify invoice authenticity and compliance across all submissions
-            </p>
+        <div className="flex justify-between items-center mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Invoice Verification</h1>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">Monitor and verify invoice authenticity and compliance across all submissions</p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                onClick={async () => {
+                  try {
+                    const response = await fetch('/api/process-and-validate-pending', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    });
+
+                    if (!response.ok) throw new Error('Failed to process pending invoices');
+
+                    const result = await response.json();
+                    toast({
+                      title: "Processing Complete",
+                      description: `${result.results.validated} invoices validated, ${result.results.rejected} rejected`,
+                    });
+
+                    queryClient.invalidateQueries({ queryKey: ["/api/approved-invoice-projects"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/validation-rules/validate-all"] });
+                  } catch (error) {
+                    toast({
+                      title: "Processing Failed",
+                      description: "Failed to process pending invoices",
+                      variant: "destructive",
+                    });
+                  }
+                }}
+                variant="outline"
+                className="flex items-center gap-2"
+              >
+                <Database className="w-4 h-4" />
+                Process Pending
+              </Button>
+              <Button
+                onClick={() => processValidationsMutation.mutate()}
+                disabled={processValidationsMutation.isPending}
+                className="flex items-center gap-2"
+              >
+                {processValidationsMutation.isPending ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <CheckCircle className="w-4 h-4" />
+                )}
+                Process Validations
+              </Button>
+            </div>
           </div>
-        </div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
