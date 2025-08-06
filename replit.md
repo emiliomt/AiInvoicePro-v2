@@ -1,47 +1,48 @@
-# Invoice Line Item Classifier - AI-Powered Classification System
+# AI-Powered Invoice Procurement Platform
 
 ## Overview
-The Invoice Line Item Classifier is a Python application that uses OpenAI's GPT-4 API to automatically categorize invoice descriptions into predefined business expense categories. This tool helps organizations classify expenses with confidence scores and detailed reasoning, supporting both single-item and batch processing capabilities. The system provides comprehensive error handling, CSV export functionality, and detailed reporting features.
+An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
 
 ## User Preferences
 Preferred communication style: Simple, everyday language.
 
 ## System Architecture
-The Invoice Line Item Classifier is a standalone Python application that leverages OpenAI's GPT-4 API for intelligent expense categorization. The system includes:
+Full-stack JavaScript application with React frontend and Express.js backend that includes:
 
 ### Core Components
-- **InvoiceLineItemClassifier**: Main classification engine using OpenAI GPT-4
-- **Classification Categories**: 12 predefined business expense categories (LABOR, MATERIALS, EQUIPMENT, etc.)
-- **Batch Processing**: Handle multiple invoice items simultaneously
-- **Export System**: CSV export functionality with comprehensive data formatting
-- **Error Handling**: Robust fallback mechanisms for API failures
+- **React Frontend**: Dynamic invoice management with Tanstack Query
+- **Express.js Backend**: Comprehensive security protocols and API endpoints
+- **RPA System**: Python-based automated invoice downloading and processing
+- **OCR Processing**: Advanced PDF and XML invoice parsing with multi-language support
+- **Database**: PostgreSQL with Drizzle ORM for data persistence
 
 ### Key Features
-- **AI-Powered Classification**: Uses OpenAI GPT-4 for intelligent categorization
-- **Confidence Scoring**: Returns confidence levels (0.0-1.0) for each classification
-- **Detailed Results**: Includes reasoning and keywords for each classification
-- **Summary Reports**: Generate classification statistics and distribution reports
-- **Environment Configuration**: Support for .env files and environment variables
+- **Intelligent RPA Processing**: Company-based data isolation with browser automation
+- **Advanced Token-Based File Matching**: PDF and XML invoice correlation
+- **Multi-Language Support**: Adaptive parsing for various invoice formats
+- **Comprehensive Status Tracking**: Invoice lifecycle management with duplicate detection
+- **Real-Time Progress Updates**: WebSocket-based progress monitoring
+- **Secure Authentication**: Token-based security with session management
 
-### Files Structure
-- `invoice_classifier.py`: Main classifier implementation
-- `example_usage.py`: Comprehensive usage examples
-- `test_classifier.py`: Test suite with mocked API responses
-- `sample_invoice_data.json`: Sample data for testing
-- `.env.example`: Environment configuration template
-- `README.md`: Comprehensive documentation
+### Critical System Files
+- `server/services/pythonRpaService.py`: Main RPA automation engine
+- `server/services/invoiceProcessingService.ts`: Invoice processing pipeline
+- `server/services/ocrService.ts`: OCR and document analysis
+- `shared/schema.ts`: Database models and types
+- `client/src/`: React frontend components
 
 ## External Dependencies
-*   **AI Services**: OpenAI API (GPT-4 for classification)
-*   **Python Libraries**: 
-    - openai>=1.98.0 (OpenAI API client)
-    - pandas>=2.3.1 (Data processing and CSV export)
-    - python-dotenv>=1.0.0 (Environment variable management)
-    - typing-extensions>=4.0.0 (Type annotations support)
+- **AI Services**: OpenAI API for intelligent document processing
+- **Database**: PostgreSQL for data persistence
+- **Automation**: Playwright for browser automation
+- **OCR**: Tesseract.js for text extraction
+- **Document Processing**: Sharp, pdf2pic for image manipulation
 
 ## Recent Changes
-- **January 2025**: Created standalone Python invoice classification application
-- **Core Features**: Implemented AI-powered classification with 12 expense categories
-- **Testing**: Added comprehensive test suite with mocked API responses
-- **Documentation**: Created detailed README and usage examples
-- **Sample Data**: Provided sample invoice data for testing and demonstration
+- **August 2025**: Fixed critical duplicate detection issue in RPA system
+  - **Root Cause**: RPA script wasn't updating processing_status to 'completed' after successful imports
+  - **Solution**: Added proper status updates in _process_xml_for_pipeline and _process_pdf_for_pipeline methods
+  - **Enhancement**: Improved vendor name normalization and filename pattern matching
+  - **Result**: Duplicate detection now correctly skips already processed invoices
+- **Database Updates**: Enhanced imported_invoices table status tracking with lifecycle management
+- **Status Validation**: Implemented comprehensive testing for duplicate detection logic

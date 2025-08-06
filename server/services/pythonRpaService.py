@@ -140,6 +140,21 @@ class InvoiceRPAService:
             # Enhanced normalization to handle HTML entities and variations
             normalized_emisor = emisor.replace("_", " ").replace(".", "").replace("&AMP;", "&").replace("&amp;", "&").upper().strip()
             
+            # Additional normalization patterns for better matching
+            def normalize_vendor_name(name):
+                """Normalize vendor name for consistent comparison"""
+                if not name:
+                    return ""
+                # Convert to uppercase and strip
+                normalized = str(name).upper().strip()
+                # Replace multiple patterns
+                normalized = normalized.replace("_", " ").replace(".", "")
+                normalized = normalized.replace("&AMP;", "&").replace("&amp;", "&")
+                normalized = normalized.replace("S.A.S", "SAS").replace("S A S", "SAS")
+                normalized = normalized.replace("S.A.", "SA").replace("S A ", "SA ")
+                normalized = re.sub(r'\s+', ' ', normalized)  # Multiple spaces to single
+                return normalized.strip()
+            
             # Helper function to validate valor_total when available
             def validate_total_amount(db_total: str) -> bool:
                 """Validate valor_total with 0.01 threshold if both values are available"""
@@ -156,21 +171,25 @@ class InvoiceRPAService:
                 except (ValueError, AttributeError):
                     return True  # If we can't parse either total, skip anyway
             
+            # Use improved normalization
+            normalized_emisor = normalize_vendor_name(emisor)
+            
             # Check 1: Main invoices table (fully processed and completed invoices)
             pg_cursor.execute("""
                 SELECT id, file_name, extracted_data->>'totalAmount' as total_amount 
                 FROM invoices 
                 WHERE user_id = 'rpa-system'
                 AND company_id = (SELECT company_id FROM invoice_importer_configs WHERE id = %s LIMIT 1)
-                AND extracted_data->>'invoiceNumber' = %s
+                AND (extracted_data->>'invoiceNumber' = %s OR invoice_number = %s)
                 AND (
-                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(vendor_name, '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s OR
-                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&')) = %s
+                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(vendor_name, '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA')) = %s OR
+                    UPPER(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(REPLACE(extracted_data->>'vendorName', '_', ' '), '.', ''), '&amp;', '&'), '&AMP;', '&'), 'S.A.S', 'SAS'), 'S.A.', 'SA')) = %s
                 )
                 LIMIT 1
             """, (
                 self.config_id,
                 numero_documento, 
+                numero_documento,
                 normalized_emisor,
                 normalized_emisor
             ))
@@ -188,12 +207,21 @@ class InvoiceRPAService:
             
             # Check 2: imported_invoices table - check for completed status in metadata or processing_status
             # Only skip if any record has processing_status = 'completed'
+            # Use more precise pattern matching for invoice numbers and vendor names
             pg_cursor.execute("""
-                SELECT metadata->>'processing_status', processing_status, id, original_file_name
+                SELECT metadata->>'processing_status', processing_status, id, original_file_name, log_id
                 FROM imported_invoices 
-                WHERE original_file_name LIKE %s
+                WHERE (
+                    original_file_name LIKE %s OR 
+                    original_file_name LIKE %s OR
+                    original_file_name LIKE %s
+                )
                 ORDER BY created_at DESC
-            """, (f"%{numero_documento}%",))
+            """, (
+                f"{numero_documento}_%",  # exact invoice number prefix
+                f"%{numero_documento}.%", # invoice number with extension
+                f"%{numero_documento}%"   # broader match as fallback
+            ))
             
             imported_results = pg_cursor.fetchall()
             if imported_results:
@@ -244,35 +272,54 @@ class InvoiceRPAService:
             
             filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', '')))
             
-            # Update status in imported_invoices table
-            if status == 'completed':
-                pg_cursor.execute("""
-                    UPDATE imported_invoices 
-                    SET processing_status = %s, processed_at = NOW()
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, filename, self.log_id))
-            elif status == 'failed':
-                pg_cursor.execute("""
-                    UPDATE imported_invoices 
-                    SET processing_status = %s, processed_at = NOW(), 
-                        metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, json.dumps({'error_message': error_message}), filename, self.log_id))
-            elif status == 'processing':
-                pg_cursor.execute("""
-                    UPDATE imported_invoices 
-                    SET processing_status = %s
-                    WHERE original_file_name = %s AND log_id = %s
-                """, (status, filename, self.log_id))
+            # Try multiple patterns to find the record - be more flexible with filename matching
+            patterns = [
+                filename,  # exact match
+                filename.replace('.xml', '').replace('.pdf', ''),  # without extension
+                f"{filename.split('_')[0]}_{filename.split('_')[1]}" if '_' in filename else filename  # base pattern
+            ]
             
-            rows_affected = pg_cursor.rowcount
+            updated = False
+            for pattern in patterns:
+                if updated:
+                    break
+                    
+                # Update status in imported_invoices table with pattern matching
+                if status == 'completed':
+                    pg_cursor.execute("""
+                        UPDATE imported_invoices 
+                        SET processing_status = %s, processed_at = NOW()
+                        WHERE (original_file_name = %s OR original_file_name LIKE %s) AND log_id = %s
+                    """, (status, pattern, f"{pattern}%", self.log_id))
+                elif status == 'failed':
+                    pg_cursor.execute("""
+                        UPDATE imported_invoices 
+                        SET processing_status = %s, processed_at = NOW(), 
+                            metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
+                        WHERE (original_file_name = %s OR original_file_name LIKE %s) AND log_id = %s
+                    """, (status, json.dumps({'error_message': error_message}), pattern, f"{pattern}%", self.log_id))
+                elif status == 'processing':
+                    pg_cursor.execute("""
+                        UPDATE imported_invoices 
+                        SET processing_status = %s
+                        WHERE (original_file_name = %s OR original_file_name LIKE %s) AND log_id = %s
+                    """, (status, pattern, f"{pattern}%", self.log_id))
+                
+                rows_affected = pg_cursor.rowcount
+                if rows_affected > 0:
+                    updated = True
+                    self.log(f"📊 Updated {rows_affected} record(s) for {pattern} status: {status}" + (f" ({error_message})" if error_message else ""))
+                    break
+                    
+            if not updated:
+                self.log(f"⚠️ No records updated for {filename} status: {status} (tried patterns: {patterns})", "WARNING")
+                # Log available records for debugging
+                pg_cursor.execute("SELECT original_file_name FROM imported_invoices WHERE log_id = %s", (self.log_id,))
+                available_files = [row[0] for row in pg_cursor.fetchall()]
+                self.log(f"🔍 Available files in log_id {self.log_id}: {available_files}")
+            
             pg_conn.commit()
             pg_conn.close()
-            
-            if rows_affected > 0:
-                self.log(f"📊 Updated {filename} status: {status}" + (f" ({error_message})" if error_message else ""))
-            else:
-                self.log(f"⚠️ No records updated for {filename} status: {status}", "WARNING")
                 
         except Exception as e:
             self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
@@ -1757,7 +1804,11 @@ class InvoiceRPAService:
             
             if not success:
                 self.log(f"Failed to process XML {upload_filename} through manual pipeline", "ERROR")
+                self._update_imported_invoice_status({'upload_filename': upload_filename}, 'failed', 'Manual processing failed')
                 return None
+
+            # Update status to completed after successful processing
+            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'completed')
 
             # Clean up temp XML file
             os.remove(xml_file_path)
@@ -1809,7 +1860,11 @@ class InvoiceRPAService:
             
             if not success:
                 self.log(f"Failed to process PDF {upload_filename} through manual pipeline", "ERROR")
+                self._update_imported_invoice_status({'upload_filename': upload_filename}, 'failed', 'Manual processing failed')
                 return None
+
+            # Update status to completed after successful processing
+            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'completed')
 
             self.log(f"Processed PDF through manual pipeline: {upload_filename}")
             
