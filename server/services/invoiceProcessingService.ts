@@ -2,7 +2,7 @@ import { eq, and } from 'drizzle-orm';
 import { db } from '../db.js';
 import { importedInvoices, invoices, invoiceImporterLogs, lineItems } from '../../shared/schema.js';
 import * as aiService from './aiService.js';
-import * as storage from './storage.js';
+import { storage } from '../storage.js';
 import { parseInvoiceXML } from './xmlParser.js';
 import * as fs from 'fs';
 import * as path from 'path';
@@ -436,7 +436,7 @@ export class InvoiceProcessingService {
     }
 
     // Ensure initial status is set to 'processing'
-    if (invoice.status === 'pending' || invoice.status === 'extracted' || invoice.status === 'validated' || invoice.status === 'validation_failed') {
+    if (invoice.status === 'pending' || invoice.status === 'extracted') {
       await this.updateInvoiceStatus(invoiceId, 'processing', 'Invoice processing started...');
     }
 
@@ -445,11 +445,19 @@ export class InvoiceProcessingService {
       await this.updateInvoiceStatus(invoiceId, 'processing', 'AI extraction in progress...');
 
       try {
-        await aiService.processInvoice(invoiceId);
+        // Extract data using AI service
+        const extractedData = await aiService.extractInvoiceData(invoice.ocrText || '', true);
+        
+        // Update invoice with extracted data
+        await storage.updateInvoice(invoiceId, {
+          extractedData: extractedData,
+          status: 'extracted'
+        });
+        
         console.log(`✅ AI extraction completed for invoice ${invoiceId}`);
       } catch (extractionError: any) {
         console.error(`❌ AI extraction failed for invoice ${invoiceId}:`, extractionError);
-        await this.updateInvoiceStatus(invoiceId, 'failed', `AI extraction failed: ${extractionError.message}`);
+        await this.updateInvoiceStatus(invoiceId, 'rejected', `AI extraction failed: ${extractionError.message}`);
         return false;
       }
 
@@ -470,13 +478,13 @@ export class InvoiceProcessingService {
         await storage.updateInvoice(invoiceId, {
           validationResult: validationResult,
           validationErrors: validationResult.violations || [],
-          status: validationResult.isValid ? 'validated' : 'validation_failed'
+          status: validationResult.isValid ? 'extracted' : 'rejected'
         });
 
         if (!validationResult.isValid) {
           console.log(`❌ Validation failed for invoice ${invoiceId}:`, validationResult.violations);
-          await this.updateInvoiceStatus(invoiceId, 'validation_failed', 
-            `Validation failed: ${validationResult.violations?.map(v => v.message).join(', ') || 'Unknown validation errors'}`);
+          await this.updateInvoiceStatus(invoiceId, 'rejected', 
+            `Validation failed: ${validationResult.violations?.map((v: any) => v.message).join(', ') || 'Unknown validation errors'}`);
           // Continue processing even if validation fails for now
         } else {
           console.log(`✅ Validation passed for invoice ${invoiceId}`);
@@ -493,12 +501,12 @@ export class InvoiceProcessingService {
 
     // Step 3: Classify line items if not already done and validation passed or was skipped
     // If validation failed, we should still attempt to classify line items to identify issues
-    if (invoice.extractedData && invoice.status !== 'failed') {
+    if (invoice && invoice.extractedData && invoice.status !== 'rejected') {
       await this.updateInvoiceStatus(invoiceId, 'processing', 'Classifying line items...');
 
       try {
-        if (invoice.extractedData.lineItems && invoice.extractedData.lineItems.length > 0) {
-          for (const item of invoice.extractedData.lineItems) {
+        if ((invoice.extractedData as any).lineItems && (invoice.extractedData as any).lineItems.length > 0) {
+          for (const item of (invoice.extractedData as any).lineItems) {
             // Insert line item if it doesn't exist
             const existingLineItem = await db.query.lineItems.findFirst({
               where: (lt, { eq }) => eq(lt.invoiceId, invoiceId)
@@ -523,18 +531,17 @@ export class InvoiceProcessingService {
         }
       } catch (classificationError: any) {
         console.error(`❌ Line item classification failed for invoice ${invoiceId}:`, classificationError);
-        await this.updateInvoiceStatus(invoiceId, 'failed', `Line item classification failed: ${classificationError.message}`);
+        await this.updateInvoiceStatus(invoiceId, 'rejected', `Line item classification failed: ${classificationError.message}`);
         return false;
       }
-    } else if (invoice.status === 'failed') {
+    } else if (invoice && invoice.status === 'rejected') {
       console.log(`ℹ️ Skipping line item classification for invoice ${invoiceId} due to previous failure.`);
       return false;
     }
 
     // Step 4: Finalize invoice status
-    // If validation failed, keep status as validation_failed. Otherwise, set to processed.
-    const finalStatus = invoice.status === 'validation_failed' ? 'validation_failed' : 'processed';
-    await this.updateInvoiceStatus(invoiceId, finalStatus, 'Invoice processing completed');
+    // Set to approved if everything went well
+    await this.updateInvoiceStatus(invoiceId, 'approved', 'Invoice processing completed');
 
     console.log(`✅ Successfully processed invoice ID ${invoiceId}`);
     return true;
@@ -543,14 +550,14 @@ export class InvoiceProcessingService {
   /**
    * Update invoice status and add a log entry
    */
-  private async updateInvoiceStatus(invoiceId: number, status: string, message: string): Promise<void> {
+  private async updateInvoiceStatus(invoiceId: number, status: 'pending' | 'processing' | 'extracted' | 'approved' | 'rejected' | 'paid' | 'matched', message: string): Promise<void> {
     console.log(`Updating invoice ${invoiceId} status to: ${status} - ${message}`);
     await storage.updateInvoice(invoiceId, { status });
     await db.insert(invoiceImporterLogs).values({
-      invoiceId,
-      status,
+      configId: 1, // Default config ID for RPA system
+      status: 'running',
       message,
-      userId: 'rpa-system', // Assuming RPA system is the user
+      userId: 'rpa-system',
       timestamp: new Date(),
     });
   }
