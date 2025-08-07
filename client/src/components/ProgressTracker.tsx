@@ -215,6 +215,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
           stage: data.stage,
           progressPercent: data.progressPercent,
           total: data.total,
+          skipped: data.skipped,
           processed: data.processed,
           success: data.success,
           failed: data.failed
