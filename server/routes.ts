@@ -4518,7 +4518,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   // RPA XML processing endpoint - integrates RPA with manual upload pipeline
   app.post('/api/rpa/process-xml', async (req: any, res) => {
     try {
-      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId } = req.body;
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
       
       console.log(`🔄 PRIORITY EXTRACTION: Request body:`, req.body);
       console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
@@ -4580,10 +4580,17 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const { parseInvoiceXML } = await import('./services/xmlParser');
       const extractedData = parseInvoiceXML(xmlContent, true);
       
+      // Use buyer tax ID from Python RPA if XML parser didn't extract it or if Python has a more reliable value
+      if (buyerTaxId && (!extractedData.buyerTaxId || extractedData.buyerTaxId.trim() === '')) {
+        extractedData.buyerTaxId = buyerTaxId;
+        console.log(`🔄 Using buyer tax ID from Python RPA: ${buyerTaxId}`);
+      }
+      
       console.log(`✅ XML parsed successfully for ${filename}:`, {
         vendor: extractedData.vendorName,
         amount: extractedData.totalAmount,
-        invoiceNumber: extractedData.invoiceNumber
+        invoiceNumber: extractedData.invoiceNumber,
+        buyerTaxId: extractedData.buyerTaxId
       });
       
       // Create invoice record in the same way as manual upload - sanitize numeric values

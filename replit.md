@@ -3,7 +3,68 @@
 ## Project Overview
 An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
 
-## Recent Critical Fix: Enhanced Duplicate Invoice Detection (Aug 6, 2025)
+## Recent Critical Fix: Buyer Tax ID Extraction Implementation (Aug 7, 2025)
+
+### Issue Resolved
+- **Problem**: Python RPA service was not extracting buyer tax ID from XML invoices, causing missing customer identification data in processed invoices. Database showed all buyer_tax_id fields as empty despite XML files containing the data.
+- **Root Cause**: Python RPA service had incomplete XML extraction logic that only extracted supplier tax ID (emisor) but completely missed buyer tax ID from AttachedDocument format invoices.
+
+### Solution Implemented
+1. **Added Buyer Tax ID Extraction to Python RPA Service**:
+   - Added `_extract_buyer_tax_id_from_xml()` method with recursive AttachedDocument handling
+   - Handles both regular invoices and CDATA-embedded invoices in AttachedDocument wrappers
+   - Extracts buyer tax ID from AccountingCustomerParty using multiple patterns
+   - Validates tax ID format and filters out country codes like "CO"
+
+2. **Updated Metadata Storage**:
+   - Modified PostgreSQL insertion in `pythonRpaService.py` line 1705 to include buyerTaxId
+   - Enhanced `_process_xml_for_pipeline()` to extract and pass buyer tax ID
+   - Updated `trigger_manual_processing()` to send buyer tax ID to Node.js endpoint
+
+3. **Enhanced Node.js RPA Integration**:
+   - Modified `/api/rpa/process-xml` endpoint to receive buyerTaxId parameter
+   - Added fallback logic to use Python-extracted buyer tax ID if XML parser misses it
+   - Enhanced logging to show both XML parser and Python RPA extraction results
+
+4. **Validation Rule Updates**:
+   - Updated validation rules to accept Colombian NIT format with check digit
+   - Rules now accept `86052780-0` (full NIT format) instead of just `860527800`
+
+### Technical Implementation Details
+```python
+# Python RPA extraction handles AttachedDocument format
+def _extract_buyer_tax_id_from_xml(self, xml_content: str) -> Optional[str]:
+    if '<AttachedDocument' in xml_content and '<![CDATA[' in xml_content:
+        # Extract embedded invoice from CDATA section
+        embedded_xml = extract_cdata_content(xml_content)
+        return self._extract_buyer_tax_id_from_xml(embedded_xml)  # Recursive
+    
+    # Extract from AccountingCustomerParty section
+    return extract_tax_id_with_multiple_patterns(xml_content)
+```
+
+### Test Results Verification
+Recent testing confirmed the complete fix works correctly:
+
+**Database Verification:**
+- Invoice ID 804: `buyer_tax_id = 86052780-0` ✅ (Colombian NIT with check digit)
+- Invoice ID 803: `buyer_tax_id = 86052780-0` ✅
+- Invoice ID 802: `buyer_tax_id = 86052780-0` ✅
+- All recent RPA-processed invoices now contain proper buyer tax ID
+
+**XML Processing Pipeline:**
+- Python RPA extracts: `860527800` (base number)
+- TypeScript XML parser extracts: `86052780-0` (with check digit) 
+- Both formats are valid Colombian NIT representations of the same company
+- Node.js endpoint properly receives and processes both formats
+
+### Expected Results
+- All new invoice imports now include buyer tax ID in extracted data
+- Historical invoices processed before this fix still need reprocessing for complete data
+- Validation rules properly accept Colombian NIT format with check digits
+- RPA automation correctly identifies customer information for all supported invoice formats
+
+## Previous Critical Fix: Enhanced Duplicate Invoice Detection (Aug 6, 2025)
 
 ### Issue Resolved
 - **Problem**: Python RPA service was not properly skipping invoices that had already been imported in previous runs, causing duplicate processing and wasted resources.

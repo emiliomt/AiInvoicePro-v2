@@ -368,10 +368,12 @@ function extractPartyInfo(xmlContent: string, partyType: 'supplier' | 'customer'
   const partyMatch = partyPattern.exec(xmlContent);
 
   if (!partyMatch) {
+    console.log(`WARNING: No ${partyTag} section found in XML content`);
     return { name: null, taxId: null, address: null };
   }
 
   const partyContent = partyMatch[1];
+  console.log(`DEBUG: Found ${partyTag} section with ${partyContent.length} characters`);
 
   // Extract company name with multiple patterns
   const name = extractTextFromXMLTag(partyContent, 'RegistrationName') || 
@@ -383,6 +385,14 @@ function extractPartyInfo(xmlContent: string, partyType: 'supplier' | 'customer'
               extractTextFromXMLTag(partyContent, 'ID') ||
               extractTextFromXMLTag(partyContent, 'IdentificationCode') ||
               extractTextFromXMLTag(partyContent, 'TaxSchemeID');
+
+  console.log(`DEBUG: Tax ID extraction for ${partyType}:`, {
+    CompanyID: extractTextFromXMLTag(partyContent, 'CompanyID'),
+    ID: extractTextFromXMLTag(partyContent, 'ID'),
+    IdentificationCode: extractTextFromXMLTag(partyContent, 'IdentificationCode'),
+    TaxSchemeID: extractTextFromXMLTag(partyContent, 'TaxSchemeID'),
+    finalTaxId: taxId
+  });
 
   // Validate and format Colombian NIT
   if (taxId) {
@@ -561,6 +571,11 @@ export function parseInvoiceXML(xmlContent: string, enableDebug: boolean = false
 
     // Extract customer info
     const customerInfo = extractPartyInfo(cleanedXmlContent, 'customer');
+    
+    // DEBUG: Log customer info extraction
+    if (enableDebug) {
+      console.log('DEBUG: Customer info extracted:', customerInfo);
+    }
 
     // Enhanced invoice number extraction with priority for readable formats
     let invoiceNumber = null;

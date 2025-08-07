@@ -14,6 +14,7 @@ import sys
 import json
 import base64
 import psycopg2
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -1697,7 +1698,8 @@ class InvoiceRPAService:
                                 'emisor': emisor,
                                 'valor_total': valor_total,
                                 'source': 'python_rpa',
-                                'processing_status': 'ready_for_upload_pipeline'
+                                'processing_status': 'ready_for_upload_pipeline',
+                                'buyerTaxId': self._extract_buyer_tax_id_from_xml(xml_content)
                             })
                         ))
 
@@ -1725,6 +1727,52 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"Error transferring to PostgreSQL: {e}", "ERROR")
             return False
+
+    def _extract_buyer_tax_id_from_xml(self, xml_content: str) -> Optional[str]:
+        """Extract buyer tax ID from XML content, handling AttachedDocument wrappers"""
+        try:
+            # Check if this is an AttachedDocument wrapper with embedded CDATA content
+            if '<AttachedDocument' in xml_content and '<![CDATA[' in xml_content:
+                # Extract the CDATA content from Description tag
+                cdata_pattern = r'<cbc:Description><!\[CDATA\[(.*?)\]\]></cbc:Description>'
+                cdata_match = re.search(cdata_pattern, xml_content, re.DOTALL)
+                
+                if cdata_match and cdata_match.group(1):
+                    embedded_xml = cdata_match.group(1).strip()
+                    self.log(f"Found embedded XML in CDATA, length: {len(embedded_xml)}")
+                    return self._extract_buyer_tax_id_from_xml(embedded_xml)  # Recursive call
+            
+            # Extract buyer tax ID from AccountingCustomerParty
+            customer_pattern = r'<cac:AccountingCustomerParty[^>]*>(.*?)</cac:AccountingCustomerParty>'
+            customer_match = re.search(customer_pattern, xml_content, re.DOTALL | re.IGNORECASE)
+            
+            if customer_match:
+                customer_content = customer_match.group(1)
+                
+                # Try different patterns for tax ID extraction
+                tax_id_patterns = [
+                    r'<cbc:CompanyID[^>]*>([^<]+)</cbc:CompanyID>',
+                    r'<cbc:ID[^>]*>([^<]+)</cbc:ID>',
+                    r'<cbc:IdentificationCode[^>]*>([^<]+)</cbc:IdentificationCode>',
+                    r'<cbc:TaxSchemeID[^>]*>([^<]+)</cbc:TaxSchemeID>'
+                ]
+                
+                for pattern in tax_id_patterns:
+                    match = re.search(pattern, customer_content, re.IGNORECASE)
+                    if match and match.group(1).strip():
+                        tax_id = match.group(1).strip()
+                        # Skip country codes like "CO"
+                        if tax_id and tax_id.upper() != 'CO' and len(tax_id) >= 6:
+                            self.log(f"Found buyer tax ID: {tax_id}")
+                            return tax_id
+            
+            # If no buyer found, return None
+            self.log("No buyer tax ID found in XML content")
+            return None
+            
+        except Exception as e:
+            self.log(f"Error extracting buyer tax ID from XML: {e}", "ERROR")
+            return None
 
     def cleanup(self):
         """Cleanup resources"""
@@ -2068,18 +2116,21 @@ class InvoiceRPAService:
             upload_filename = f"{numero}_{safe_emisor}.xml"
             upload_path = os.path.join(uploads_dir, upload_filename)
 
-            # Copy XML file to uploads directory
+            # Copy XML file to uploads directory and extract buyer tax ID
             with open(xml_file_path, 'r', encoding='utf-8') as src:
                 xml_content = src.read()
 
             with open(upload_path, 'w', encoding='utf-8') as dst:
                 dst.write(xml_content)
+                
+            # Extract buyer tax ID from XML content
+            buyer_tax_id = self._extract_buyer_tax_id_from_xml(xml_content)
 
             # Mark as processing before triggering manual pipeline
             self._update_imported_invoice_status({'upload_filename': upload_filename}, 'processing')
             
             # Call Node.js endpoint to process the file through manual pipeline
-            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml')
+            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml', buyer_tax_id)
             
             if not success:
                 self.log(f"Failed to process XML {upload_filename} through manual pipeline", "ERROR")
@@ -2101,7 +2152,8 @@ class InvoiceRPAService:
                 'numero': numero,
                 'emisor': emisor,
                 'valor': valor,
-                'is_data_source': is_data_source
+                'is_data_source': is_data_source,
+                'buyer_tax_id': buyer_tax_id
             }
 
         except Exception as e:
@@ -2599,7 +2651,7 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
-    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml'):
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: str = None):
         """Trigger the manual upload processing pipeline via HTTP request"""
         try:
             import requests
@@ -2617,7 +2669,8 @@ class InvoiceRPAService:
                 'totalValue': valor,
                 'fileType': file_type,
                 'source': 'python_rpa',
-                'configId': self.config_id  # Add config ID for company association
+                'configId': self.config_id,  # Add config ID for company association
+                'buyerTaxId': buyer_tax_id  # Pass the extracted buyer tax ID
             }
 
             # Make request to Node.js server to process through manual pipeline
