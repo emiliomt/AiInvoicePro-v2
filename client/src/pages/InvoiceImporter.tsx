@@ -1183,10 +1183,12 @@ export default function InvoiceImporter() {
                           </div>
                           <Progress value={config.progress || 0} className="w-full" />
                           {config.stats && (
-                            <div className="grid grid-cols-3 gap-2 text-xs text-gray-500">
-                              <span>Total: {(config.stats.successful_imports || 0) + (config.stats.failed_imports || 0)}</span>
-                              <span>Processed: {config.stats.processed_invoices}</span>
-                              <span>Success: {config.stats.successful_imports}</span>
+                            <div className="grid grid-cols-5 gap-2 text-xs text-gray-500">
+                              <span>Total: {config.stats.total_invoices || 0}</span>
+                              <span>Skipped: {config.stats.skipped_invoices || 0}</span>
+                              <span>Processed: {config.stats.processed_invoices || 0}</span>
+                              <span>Success: {config.stats.successful_imports || 0}</span>
+                              <span>Failed: {config.stats.failed_imports || 0}</span>
                             </div>
                           )}
                         </div>
