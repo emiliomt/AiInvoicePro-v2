@@ -18,6 +18,7 @@ interface ImportProgress {
   configId: number;
   logId: number;
   totalInvoices: number;
+  skippedInvoices?: number;
   processedInvoices: number;
   successfulImports: number;
   failedImports: number;
@@ -33,6 +34,7 @@ interface PythonRPAResult {
   error?: string;
   stats: {
     total_invoices: number;
+    skipped_invoices?: number;
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;
@@ -536,6 +538,7 @@ class PythonInvoiceImporter {
             const statsUpdate = this.extractStatsFromOutput(trimmedLine);
             if (statsUpdate) {
               progress.totalInvoices = statsUpdate.total_invoices || progress.totalInvoices;
+              progress.skippedInvoices = statsUpdate.skipped_invoices || progress.skippedInvoices || 0;
               progress.processedInvoices = statsUpdate.processed_invoices || progress.processedInvoices;
               progress.successfulImports = statsUpdate.successful_imports || progress.successfulImports;
               progress.failedImports = statsUpdate.failed_imports || progress.failedImports;
@@ -602,6 +605,7 @@ class PythonInvoiceImporter {
               currentStep: progress.currentStep,
               processedInvoices: progress.processedInvoices,
               totalInvoices: progress.totalInvoices,
+              skippedInvoices: progress.skippedInvoices || 0,
               successfulImports: progress.successfulImports,
               failedImports: progress.failedImports,
             }).catch(console.error);
@@ -648,8 +652,9 @@ class PythonInvoiceImporter {
         console.log(`Python RPA process exited with code ${code}`);
 
         if (code === 0 && result) {
-          // Update progress with final stats
+          // Update progress with final stats including skipped invoices
           progress.totalInvoices = result.stats.total_invoices;
+          progress.skippedInvoices = result.stats.skipped_invoices || 0;
           progress.processedInvoices = result.stats.processed_invoices;
           progress.successfulImports = result.stats.successful_imports;
           progress.failedImports = result.stats.failed_imports;
@@ -661,6 +666,7 @@ class PythonInvoiceImporter {
           storage.updateInvoiceImporterLog(progress.logId, {
             status: 'completed',
             totalInvoices: progress.totalInvoices,
+            skippedInvoices: progress.skippedInvoices,
             processedInvoices: progress.processedInvoices,
             successfulImports: progress.successfulImports,  
             failedImports: progress.failedImports,
@@ -690,6 +696,7 @@ class PythonInvoiceImporter {
             error,
             stats: {
               total_invoices: 0,
+              skipped_invoices: 0,
               processed_invoices: 0,
               successful_imports: 0,
               failed_imports: 0,
@@ -708,6 +715,7 @@ class PythonInvoiceImporter {
           error: `Process error: ${error.message}`,
           stats: {
             total_invoices: 0,
+            skipped_invoices: 0,
             processed_invoices: 0,
             successful_imports: 0,
             failed_imports: 0,
@@ -726,6 +734,7 @@ class PythonInvoiceImporter {
             error: 'Process timeout after 30 minutes',
             stats: {
               total_invoices: 0,
+              skipped_invoices: 0,
               processed_invoices: 0,
               successful_imports: 0,
               failed_imports: 0,
@@ -743,6 +752,29 @@ class PythonInvoiceImporter {
    */
   getProgress(configId: number): ImportProgress | undefined {
     return this.activeImports.get(configId);
+  }
+
+  /**
+   * Extract stats from output line (similar to pythonRpaService)
+   */
+  private extractStatsFromOutput(line: string): any {
+    try {
+      // Look for STATS: lines with JSON data
+      const statsMatch = line.match(/STATS:\s*({.+})/i);
+      if (statsMatch) {
+        return JSON.parse(statsMatch[1]);
+      }
+      
+      // Legacy PROGRESS: lines
+      const progressMatch = line.match(/PROGRESS:\s*({.+})/i);
+      if (progressMatch) {
+        return JSON.parse(progressMatch[1]);
+      }
+      
+      return null;
+    } catch (e) {
+      return null;
+    }
   }
 
   /**
@@ -766,6 +798,7 @@ class PythonInvoiceImporter {
               currentStep: progress.currentStep,
               progress: progress.progress,
               totalInvoices: progress.totalInvoices,
+              skippedInvoices: progress.skippedInvoices || 0,
               processedInvoices: progress.processedInvoices,
               successfulImports: progress.successfulImports,
               failedImports: progress.failedImports,
@@ -788,6 +821,7 @@ class PythonInvoiceImporter {
    */
   private extractStatsFromOutput(output: string): Partial<{
     total_invoices: number;
+    skipped_invoices: number;
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;

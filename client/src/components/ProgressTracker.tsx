@@ -20,6 +20,7 @@ interface ImportProgress {
   configId: number;
   status: 'pending' | 'running' | 'completed' | 'failed';
   totalInvoices: number;
+  skippedInvoices?: number;
   processedInvoices: number;
   successfulImports: number;
   failedImports: number;
@@ -397,22 +398,48 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
                   </div>
                 </CardHeader>
                 <CardContent className="space-y-4">
-                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {/* Enhanced metrics grid with all 5 counters */}
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-blue-600">{progress.totalInvoices}</div>
+                      <div className="text-2xl font-bold text-blue-600">{progress.totalInvoices || 0}</div>
                       <div className="text-sm text-gray-500">Total Invoices</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-yellow-600">{progress.processedInvoices}</div>
+                      <div className="text-2xl font-bold text-gray-600">{progress.skippedInvoices || 0}</div>
+                      <div className="text-sm text-gray-500">Skipped</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="text-2xl font-bold text-yellow-600">{progress.processedInvoices || 0}</div>
                       <div className="text-sm text-gray-500">Processed</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-green-600">{progress.successfulImports}</div>
+                      <div className="text-2xl font-bold text-green-600">{progress.successfulImports || 0}</div>
                       <div className="text-sm text-gray-500">Successful</div>
                     </div>
                     <div className="text-center">
-                      <div className="text-2xl font-bold text-red-600">{progress.failedImports}</div>
+                      <div className="text-2xl font-bold text-red-600">{progress.failedImports || 0}</div>
                       <div className="text-sm text-gray-500">Failed</div>
+                    </div>
+                  </div>
+
+                  {/* Relationship constraint validation indicators */}
+                  <div className="space-y-2 text-xs text-gray-600 bg-gray-50 p-3 rounded">
+                    <div className="font-medium">Metrics Validation:</div>
+                    <div className="flex items-center gap-2">
+                      {(progress.totalInvoices === (progress.skippedInvoices || 0) + (progress.processedInvoices || 0)) ? (
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-red-500" />
+                      )}
+                      <span>Total ({progress.totalInvoices || 0}) = Skipped ({progress.skippedInvoices || 0}) + Processed ({progress.processedInvoices || 0})</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {(progress.processedInvoices === (progress.successfulImports || 0) + (progress.failedImports || 0)) ? (
+                        <CheckCircle className="w-3 h-3 text-green-500" />
+                      ) : (
+                        <AlertCircle className="w-3 h-3 text-red-500" />
+                      )}
+                      <span>Processed ({progress.processedInvoices || 0}) = Successful ({progress.successfulImports || 0}) + Failed ({progress.failedImports || 0})</span>
                     </div>
                   </div>
 

@@ -1296,15 +1296,19 @@ export default function InvoiceImporter() {
                               </td>
                               <td className="px-6 py-4 whitespace-nowrap">
                                 <div className="text-sm text-gray-900">
-                                  <div className="flex items-center space-x-2">
-                                    <span className="text-blue-600 font-medium">{(log.successfulImports || 0) + (log.failedImports || 0)}</span>
+                                  <div className="flex items-center space-x-1 text-xs">
+                                    <span className="text-blue-600 font-medium">{log.totalInvoices || 0}</span>
+                                    <span className="text-gray-500">/</span>
+                                    <span className="text-gray-600 font-medium">{log.skippedInvoices || 0}</span>
+                                    <span className="text-gray-500">/</span>
+                                    <span className="text-yellow-600 font-medium">{log.processedInvoices || 0}</span>
                                     <span className="text-gray-500">/</span>
                                     <span className="text-green-600 font-medium">{log.successfulImports || 0}</span>
                                     <span className="text-gray-500">/</span>
                                     <span className="text-red-600 font-medium">{log.failedImports || 0}</span>
                                   </div>
                                   <div className="text-xs text-gray-500">
-                                    Total / Success / Failed
+                                    Total / Skipped / Processed / Success / Failed
                                   </div>
                                 </div>
                               </td>

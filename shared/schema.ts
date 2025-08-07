@@ -503,6 +503,7 @@ export const invoiceImporterLogs = pgTable("invoice_importer_logs", {
   configId: integer("config_id").references(() => invoiceImporterConfigs.id).notNull(),
   status: importerStatusEnum("status").default("pending"),
   totalInvoices: integer("total_invoices").default(0),
+  skippedInvoices: integer("skipped_invoices").default(0),
   processedInvoices: integer("processed_invoices").default(0),
   successfulImports: integer("successful_imports").default(0),
   failedImports: integer("failed_imports").default(0),
