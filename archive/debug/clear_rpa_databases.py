@@ -161,7 +161,10 @@ def clear_files_in_directory(directory, keep_db_files=False, file_patterns=None,
                     file_count += 1
 
             desc_text = f" ({description})" if description else ""
-            print(f"🗑️  Removed {file_count} files/folders from {directory}{desc_text}")
+            if file_count > 0:
+                print(f"🗑️  Removed {file_count} files/folders from {directory}{desc_text}")
+            else:
+                print(f"ℹ️  No files to remove from {directory}{desc_text}")
         except Exception as e:
             print(f"❌ Error clearing directory {directory}: {e}")
     else:
@@ -188,9 +191,13 @@ def clear_rpa_debug_captures():
                     if os.path.isfile(file_path):
                         os.remove(file_path)
 
-                print(f"🗑️  Cleared {file_count} debug files from {subdir_path}")
+                if file_count > 0:
+                    print(f"🗑️  Cleared {file_count} debug files from {subdir_path}")
 
-            print(f"✅ Cleared {total_files} total RPA debug capture files")
+            if total_files > 0:
+                print(f"✅ Cleared {total_files} total RPA debug capture files")
+            else:
+                print("ℹ️  No debug capture files to clear")
 
         except Exception as e:
             print(f"❌ Error clearing RPA debug captures: {e}")
@@ -198,7 +205,7 @@ def clear_rpa_debug_captures():
         print(f"ℹ️  RPA debug captures directory does not exist")
 
 def clear_processed_files():
-    """Clear files processed through RPA pipeline"""
+    """Clear files processed through RPA pipeline from uploads directory"""
     try:
         uploads_dir = "uploads"
         if os.path.exists(uploads_dir):
@@ -229,16 +236,19 @@ def clear_processed_files():
         print(f"❌ Error clearing processed files: {e}")
 
 def clear_temp_processing_files():
-    """Clear temporary RPA processing files with selective patterns"""
+    """Clear temporary RPA processing files with comprehensive patterns"""
     try:
-        # Clear RPA-specific temp files from /tmp
         print("🧹 Clearing RPA-specific temporary files...")
+        
+        # Clear /tmp directory patterns
         temp_patterns = [
             "invoice_*",        # Invoice processing temp files
             "rpa_*",           # RPA session files
             "sinco_*",         # ERP-specific files
             "*.zip",           # Downloaded ZIP files
             "*.crdownload",    # Chrome incomplete downloads
+            "WORKFLOW_RESULT*", # Python automation results
+            "STATS*",          # Progress stats files
         ]
         
         if os.path.exists("/tmp"):
@@ -261,11 +271,21 @@ def clear_temp_processing_files():
             else:
                 print("ℹ️  No RPA temp files found in /tmp")
 
+        # Clear specific temp directories used by RPA
+        temp_directories = [
+            "/tmp/invoice_downloads",
+            "/tmp/xml_invoices",
+            "/tmp/invoice_downloads/pdfs",
+        ]
+
+        for temp_dir in temp_directories:
+            clear_files_in_directory(temp_dir, description=f"temp processing files")
+
     except Exception as e:
         print(f"❌ Error clearing temp processing files: {e}")
 
 def clear_automation_artifacts():
-    """Clear automation artifacts and log files"""
+    """Clear automation artifacts and log files from current workflow"""
     try:
         print("🧹 Cleaning up automation artifacts...")
         cleanup_patterns = [
@@ -277,6 +297,8 @@ def clear_automation_artifacts():
             (".", "*.crdownload"),             # Chrome incomplete downloads
             (".", "WORKFLOW_RESULT:*"),        # Python automation results
             (".", "STATS:*"),                  # Progress stats files
+            (".", "geckodriver.log"),          # Firefox driver logs
+            (".", "chromedriver.log"),         # Chrome driver logs
         ]
 
         total_pattern_files = 0
@@ -299,11 +321,41 @@ def clear_automation_artifacts():
     except Exception as e:
         print(f"❌ Error clearing automation artifacts: {e}")
 
+def clear_workflow_logs():
+    """Clear workflow execution logs but preserve configuration files"""
+    try:
+        print("🗂️  Clearing workflow execution logs...")
+        
+        # Clear browser automation logs
+        browser_log_patterns = [
+            "geckodriver*.log",
+            "chromedriver*.log", 
+            "selenium*.log",
+        ]
+        
+        log_count = 0
+        for pattern in browser_log_patterns:
+            files = glob.glob(pattern)
+            for file_path in files:
+                try:
+                    os.remove(file_path)
+                    log_count += 1
+                except Exception as e:
+                    print(f"⚠️  Could not remove {file_path}: {e}")
+        
+        if log_count > 0:
+            print(f"🗑️  Removed {log_count} workflow log files")
+        else:
+            print("ℹ️  No workflow log files to clear")
+            
+    except Exception as e:
+        print(f"❌ Error clearing workflow logs: {e}")
+
 def main():
     """Main function to clear all RPA operational data while preserving configurations"""
     print("🗑️  Clearing RPA operational data for fresh debugging...")
     print("📋 This will reset duplicate detection and allow re-processing of invoices")
-    print("🤖 Updated for current RPA system with enhanced XML/PDF processing and manual pipeline")
+    print("🤖 Updated for current RPA workflow with enhanced processing and real-time progress")
     print("🔒 ALL USER CONFIGURATIONS WILL BE PRESERVED")
 
     # 1. Clear PostgreSQL operational tables
@@ -336,7 +388,7 @@ def main():
     print("\n📤 Clearing processed files from manual pipeline...")
     clear_processed_files()
 
-    # 5. Clear RPA debug captures
+    # 5. Clear RPA debug captures (screenshots, HTML, debug info)
     print("\n📸 Clearing RPA debug captures...")
     clear_rpa_debug_captures()
 
@@ -348,7 +400,11 @@ def main():
     print("\n🔧 Clearing automation artifacts...")
     clear_automation_artifacts()
 
-    # 8. Recreate necessary directories
+    # 8. Clear workflow execution logs
+    print("\n📋 Clearing workflow execution logs...")
+    clear_workflow_logs()
+
+    # 9. Recreate necessary directories
     print("\n📂 Recreating necessary directories...")
     essential_dirs = [
         "/tmp/invoice_downloads",
@@ -362,7 +418,7 @@ def main():
         os.makedirs(directory, exist_ok=True)
         print(f"📁 Ensured directory exists: {directory}")
 
-    # 9. Create today's debug capture directory
+    # 10. Create today's debug capture directory
     today = datetime.now().strftime("%Y-%m-%d")
     debug_today_dir = os.path.join("rpa_debug_captures", today)
     os.makedirs(debug_today_dir, exist_ok=True)
@@ -380,7 +436,8 @@ def main():
     print("   • Processed files: Files moved through manual upload pipeline")
     print("   • Debug captures: RPA screenshots, HTML snapshots, and automation logs")
     print("   • Temporary files: All RPA processing files and automation artifacts")
-    print("   • Log files: RPA session logs, debug outputs, and progress stats")
+    print("   • Workflow logs: Browser automation logs and execution traces")
+    print("   • Progress files: Real-time progress tracking and stats files")
     print("   • Database sequences: Reset operational sequences only")
     
     print("\n✅ CONFIGURATIONS PRESERVED:")
@@ -399,13 +456,15 @@ def main():
     print("   • Testing enhanced XML/PDF processing and manual pipeline integration")
     print("   • Debugging token-based file matching and duplicate detection")
     print("   • Validating improved processing status lifecycle tracking")
+    print("   • Real-time progress monitoring with WebSocket connections")
     
     print("\n🤖 The RPA system will now operate with:")
     print("   • Enhanced duplicate detection using normalized invoice tokens")
     print("   • Improved XML/PDF file pairing with multiple matching strategies")
     print("   • Better processing status tracking (downloaded → processing → completed)")
     print("   • Robust error handling and retry logic for failed invoices")
-    print("   • Real-time progress reporting and statistics")
+    print("   • Real-time progress reporting with live statistics updates")
+    print("   • Comprehensive debug capture system for troubleshooting")
 
 if __name__ == "__main__":
     main()
