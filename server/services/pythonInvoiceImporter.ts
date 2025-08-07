@@ -70,7 +70,7 @@ class PythonInvoiceImporter {
    */
   getImportProgressByLogId(logId: number): ImportProgress | null {
     const configId = this.logIdToConfigId.get(logId);
-    return configId ? this.activeImports.get(configId) : null;
+    return configId ? this.activeImports.get(configId) || null : null;
   }
 
   /**
@@ -759,28 +759,7 @@ class PythonInvoiceImporter {
     return this.activeImports.get(configId);
   }
 
-  /**
-   * Extract stats from output line (similar to pythonRpaService)
-   */
-  private extractStatsFromOutput(line: string): any {
-    try {
-      // Look for STATS: lines with JSON data
-      const statsMatch = line.match(/STATS:\s*({.+})/i);
-      if (statsMatch) {
-        return JSON.parse(statsMatch[1]);
-      }
-      
-      // Legacy PROGRESS: lines
-      const progressMatch = line.match(/PROGRESS:\s*({.+})/i);
-      if (progressMatch) {
-        return JSON.parse(progressMatch[1]);
-      }
-      
-      return null;
-    } catch (e) {
-      return null;
-    }
-  }
+
 
   /**
    * Send real-time individual log line via WebSocket
@@ -833,24 +812,21 @@ class PythonInvoiceImporter {
     progress: number;
   }> | null {
     try {
-      // Look for STATS: or PROGRESS: tags in output
-      if (output.includes('STATS:')) {
-        const statsLine = output.split('STATS:')[1]?.split('\n')[0];
-        if (statsLine) {
-          return JSON.parse(statsLine.trim());
-        }
+      // Look for STATS: lines with JSON data
+      const statsMatch = output.match(/STATS:\s*({.+})/i);
+      if (statsMatch) {
+        return JSON.parse(statsMatch[1]);
       }
-
-      if (output.includes('PROGRESS:')) {
-        const progressLine = output.split('PROGRESS:')[1]?.split('\n')[0];
-        if (progressLine) {
-          const progressData = JSON.parse(progressLine.trim());
-          return {
-            progress: progressData.progress || 0,
-            processed_invoices: progressData.processed || 0,
-            total_invoices: progressData.total || 0
-          };
-        }
+      
+      // Legacy PROGRESS: lines
+      const progressMatch = output.match(/PROGRESS:\s*({.+})/i);
+      if (progressMatch) {
+        const progressData = JSON.parse(progressMatch[1]);
+        return {
+          progress: progressData.progress || 0,
+          processed_invoices: progressData.processed || 0,
+          total_invoices: progressData.total || 0
+        };
       }
 
       // Look for step indicators in output
