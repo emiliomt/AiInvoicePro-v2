@@ -301,7 +301,16 @@ export default function InvoiceImporter() {
         status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
         currentStep: currentStep || prev.currentStep,
         progress: progress,
-        stats: { ...prev.stats, ...data.data }
+        stats: {
+          ...prev.stats,
+          ...data.data,
+          // Ensure proper field mapping for enhanced metrics
+          total_invoices: data.data?.total_invoices || data.data?.total || prev.stats?.total_invoices || 0,
+          skipped_invoices: data.data?.skipped_invoices || data.data?.skipped || prev.stats?.skipped_invoices || 0,
+          processed_invoices: data.data?.processed_invoices || data.data?.processed || prev.stats?.processed_invoices || 0,
+          successful_imports: data.data?.successful_imports || data.data?.success || prev.stats?.successful_imports || 0,
+          failed_imports: data.data?.failed_imports || data.data?.failed || prev.stats?.failed_imports || 0
+        }
       } : null);
 
       // Handle real-time log streaming
@@ -617,7 +626,7 @@ export default function InvoiceImporter() {
                   status: 'running', 
                   progress: 0, 
                   currentStep: 'Initializing import process...',
-                  stats: { total_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, current_step: 'Initializing import process...', progress: 0 }
+                  stats: { total_invoices: 0, skipped_invoices: 0, processed_invoices: 0, successful_imports: 0, failed_imports: 0, current_step: 'Initializing import process...', progress: 0 }
                 }
               : config
           )
@@ -673,6 +682,7 @@ export default function InvoiceImporter() {
                     currentStep: data.stage || 'Processing...',
                     stats: {
                       total_invoices: data.total || 0,
+                      skipped_invoices: data.skipped || 0,
                       processed_invoices: data.processed || 0,
                       successful_imports: data.success || 0,
                       failed_imports: data.failed || 0,
