@@ -308,6 +308,169 @@ class FallbackStorage implements IStorage {
   // Add remaining stub implementations for all IStorage methods...
   // (This is a simplified fallback - full implementation would include all methods)
 
+  // Critical missing methods that are causing errors
+  async getImportLogsWithDetails(): Promise<any[]> {
+    return this.data.invoiceImporterLogs.map(log => ({
+      ...log,
+      duration: null,
+      startTime: log.createdAt.toISOString(),
+      endTime: null,
+      fileType: 'both',
+      triggeredBy: 'Manual'
+    }));
+  }
+
+  async getErpConnections(userId?: string): Promise<any[]> {
+    return this.data.erpConnections;
+  }
+
+  async getInvoiceImporterLogs(configId?: number): Promise<any[]> {
+    if (configId) {
+      return this.data.invoiceImporterLogs.filter(log => log.configId === configId);
+    }
+    return this.data.invoiceImporterLogs;
+  }
+
+  async getInvoiceImporterConfigsByUser(userId: string): Promise<any[]> {
+    return this.data.invoiceImporterConfigs.filter(config => config.userId === userId);
+  }
+
+  async getLatestInvoiceImporterLog(configId: number): Promise<any> {
+    const logs = this.data.invoiceImporterLogs
+      .filter(log => log.configId === configId)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    return logs[0] || null;
+  }
+
+  async getInvoiceImporterLog(id: number): Promise<any> {
+    return this.data.invoiceImporterLogs.find(log => log.id === id) || null;
+  }
+
+  async getImportedInvoicesByLog(logId: number): Promise<any[]> {
+    return this.data.importedInvoices.filter(invoice => invoice.logId === logId);
+  }
+
+  async updateImportedInvoice(id: number, updates: any): Promise<void> {
+    const index = this.data.importedInvoices.findIndex(invoice => invoice.id === id);
+    if (index >= 0) {
+      this.data.importedInvoices[index] = { ...this.data.importedInvoices[index], ...updates };
+    }
+  }
+
+  async getUsersByCompany(companyId: number): Promise<any[]> {
+    return this.data.users.filter(user => user.companyId === companyId);
+  }
+
+  async getValidationRule(id: number): Promise<any> {
+    const rules = await this.getValidationRules();
+    return rules.find(rule => rule.id === id) || null;
+  }
+
+  async createValidationRule(rule: any): Promise<any> {
+    const newRule = { ...rule, id: this.nextId++, createdAt: new Date(), updatedAt: new Date() };
+    this.data.validationRules.push(newRule);
+    return newRule;
+  }
+
+  async updateValidationRule(id: number, updates: any): Promise<any> {
+    const index = this.data.validationRules.findIndex(rule => rule.id === id);
+    if (index >= 0) {
+      this.data.validationRules[index] = { ...this.data.validationRules[index], ...updates, updatedAt: new Date() };
+      return this.data.validationRules[index];
+    }
+    throw new Error(`Validation rule ${id} not found`);
+  }
+
+  async deleteValidationRule(id: number): Promise<void> {
+    this.data.validationRules = this.data.validationRules.filter(rule => rule.id !== id);
+  }
+
+  async validateAllApprovedInvoices(): Promise<any> {
+    return { validated: 0, errors: [] };
+  }
+
+  // Settings methods
+  async getSetting(key: string): Promise<any> {
+    const setting = this.data.settings.find(s => s.key === key);
+    return setting ? setting.value : null;
+  }
+
+  async updateSetting(key: string, value: string): Promise<any> {
+    const index = this.data.settings.findIndex(s => s.key === key);
+    if (index >= 0) {
+      this.data.settings[index].value = value;
+      return this.data.settings[index];
+    }
+    return null;
+  }
+
+  async setSetting(setting: { key: string; value: string; description: string }): Promise<any> {
+    const existing = this.data.settings.findIndex(s => s.key === setting.key);
+    if (existing >= 0) {
+      this.data.settings[existing] = { ...this.data.settings[existing], ...setting };
+      return this.data.settings[existing];
+    } else {
+      const newSetting = { id: this.nextId++, ...setting };
+      this.data.settings.push(newSetting);
+      return newSetting;
+    }
+  }
+
+  // Petty Cash methods
+  async createPettyCashLog(log: any): Promise<any> {
+    const newLog = { ...log, id: this.nextId++ };
+    this.data.pettyCashLogs.push(newLog);
+    return newLog;
+  }
+
+  async updatePettyCashLog(id: number, updates: any): Promise<any> {
+    const index = this.data.pettyCashLogs.findIndex(log => log.id === id);
+    if (index >= 0) {
+      this.data.pettyCashLogs[index] = { ...this.data.pettyCashLogs[index], ...updates };
+      return this.data.pettyCashLogs[index];
+    }
+    return null;
+  }
+
+  async getPettyCashLogs(status?: string): Promise<any[]> {
+    if (status) {
+      return this.data.pettyCashLogs.filter(log => log.status === status);
+    }
+    return this.data.pettyCashLogs;
+  }
+
+  async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
+    return this.data.pettyCashLogs.find(log => log.invoiceId === invoiceId) || null;
+  }
+
+  // Learning and feedback methods
+  async getTotalFeedbackCount(): Promise<number> {
+    return this.data.feedbackLogs.length;
+  }
+
+  async getLearningInsights(type?: string): Promise<any[]> {
+    return [];
+  }
+
+  async storeLearningInsight(insight: any): Promise<void> {
+    // Store learning insight
+  }
+
+  async createFeedbackLog(log: any): Promise<any> {
+    const newLog = { ...log, id: this.nextId++ };
+    this.data.feedbackLogs.push(newLog);
+    return newLog;
+  }
+
+  async getFeedbackLogs(limit?: number): Promise<any[]> {
+    const logs = this.data.feedbackLogs;
+    return limit ? logs.slice(0, limit) : logs;
+  }
+
+  async getFeedbackLog(id: number): Promise<any> {
+    return this.data.feedbackLogs.find(log => log.id === id) || null;
+  }
+
   // For now, implement minimal stubs for critical methods
   [key: string]: any;
 
@@ -320,19 +483,29 @@ class FallbackStorage implements IStorage {
       'getPurchaseOrdersByCompanyId', 'updatePurchaseOrder', 'deletePurchaseOrder',
       'upsertPurchaseOrderByPoId', 'createInvoicePoMatch', 'getInvoicePoMatchesByInvoiceId',
       'createInvoiceProjectMatch', 'getInvoiceProjectMatchesByInvoiceId',
-      'createErpConnection', 'getErpConnection', 'getErpConnections',
+      'createErpConnection', 'getErpConnection', 
       'updateErpConnection', 'deleteErpConnection', 'syncErpCredentialsToImportConfigs',
-      'createInvoiceImporterConfig', 'getInvoiceImporterConfigsByUser',
+      'createInvoiceImporterConfig', 
       'updateInvoiceImporterConfig', 'deleteInvoiceImporterConfig',
       'deleteInvoiceImporterConfigCascade', 'cleanupInactiveConfigurations',
-      'getInvoiceImporterLogs', 'getInvoiceImporterLogsByConfig',
-      'getLatestInvoiceImporterLog', 'deleteInvoiceImporterLog',
+      'getInvoiceImporterLogsByConfig',
+      'deleteInvoiceImporterLog',
       'createImportedInvoice', 'getImportedInvoices',
       'createErpTask', 'getErpTask', 'getErpTasks', 'updateErpTask', 'deleteErpTask',
       'createSavedWorkflow', 'getSavedWorkflow', 'getSavedWorkflows',
       'updateSavedWorkflow', 'deleteSavedWorkflow',
       'createScheduledTask', 'getScheduledTask', 'getScheduledTasks',
-      'updateScheduledTask', 'deleteScheduledTask'
+      'updateScheduledTask', 'deleteScheduledTask',
+      'getInvoicesWithProjectMatches', 'getCompanyInvoicesWithProjectMatches',
+      'deleteAllProjects', 'getPurchaseOrderByPoId', 'getAllPurchaseOrders',
+      'getInvoicePoMatches', 'assignProjectToInvoice', 'updateInvoicePoMatch',
+      'getUnresolvedMatches', 'getInvoiceProjectMatches', 'findPotentialProjectMatches',
+      'updateInvoiceProjectMatch', 'setActiveProjectMatch', 'getUnresolvedProjectMatches',
+      'getInvoiceFlags', 'resolveInvoiceFlag', 'getPredictiveAlerts',
+      'getClassificationKeywords', 'addClassificationKeyword', 'removeClassificationKeyword',
+      'getLineItemClassifications', 'updateLineItemClassification',
+      'createApprovedInvoiceProject', 'getApprovedInvoiceProjects', 'getVerifiedInvoiceProjects',
+      'getInvoicePoMatchesWithDetails', 'moveApprovedToVerified'
     ];
 
     stubMethods.forEach(method => {

@@ -386,6 +386,7 @@ export default function InvoiceImporter() {
             progress: 100,
             stats: data.data ? {
               total_invoices: data.data.totalInvoices || 0,
+              skipped_invoices: data.data.skippedInvoices || 0,
               processed_invoices: data.data.totalInvoices || 0,
               successful_imports: data.data.successfulImports || 0,
               failed_imports: data.data.failedImports || 0,
@@ -406,6 +407,7 @@ export default function InvoiceImporter() {
         progress: 100,
         stats: data.data ? {
           total_invoices: data.data.totalInvoices || 0,
+          skipped_invoices: data.data.skippedInvoices || 0,
           processed_invoices: data.data.totalInvoices || 0,
           successful_imports: data.data.successfulImports || 0,
           failed_imports: data.data.failedImports || 0,
