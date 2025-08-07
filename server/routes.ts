@@ -4686,6 +4686,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           stage: activeProgress.currentStep,
           progressPercent: Math.round(activeProgress.progress),
           total: activeProgress.totalInvoices,
+          skipped: activeProgress.skippedInvoices || 0,
           processed: activeProgress.processedInvoices,
           success: activeProgress.successfulImports,
           failed: activeProgress.failedImports,
@@ -4719,6 +4720,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           progressPercent: log.status === 'completed' ? 100 : 
                           log.status === 'failed' ? 0 : 50,
           total: log.totalInvoices || 0,
+          skipped: log.skippedInvoices || 0,
           processed: log.processedInvoices || 0,
           success: log.successfulImports || 0,
           failed: log.failedImports || 0,

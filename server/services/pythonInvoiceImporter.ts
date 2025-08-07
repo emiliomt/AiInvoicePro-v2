@@ -91,6 +91,7 @@ class PythonInvoiceImporter {
         configId,
         logId,
         totalInvoices: 0,
+        skippedInvoices: 0,
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
@@ -167,6 +168,7 @@ class PythonInvoiceImporter {
         configId,
         logId: log.id,
         totalInvoices: 0,
+        skippedInvoices: 0,
         processedInvoices: 0,
         successfulImports: 0,
         failedImports: 0,
@@ -299,6 +301,7 @@ class PythonInvoiceImporter {
         status: 'completed',
         completedAt: new Date(),
         totalInvoices: result.stats.total_invoices,
+        skippedInvoices: result.stats.skipped_invoices || 0,
         processedInvoices: result.stats.processed_invoices,
         successfulImports: result.stats.successful_imports,
         failedImports: result.stats.failed_imports,
@@ -316,6 +319,8 @@ class PythonInvoiceImporter {
       progressTracker.sendTaskComplete(config.userId, progress.logId, true, 
         'Import completed successfully', {
           totalInvoices: progress.totalInvoices,
+          skippedInvoices: progress.skippedInvoices,
+          processedInvoices: progress.processedInvoices,
           successfulImports: progress.successfulImports,
           failedImports: progress.failedImports
         });
