@@ -33,6 +33,7 @@ interface ImportConfig {
   zipDownloadTimeout?: number;
   stats?: {
     total_invoices: number;
+    skipped_invoices: number;
     processed_invoices: number;
     successful_imports: number;
     failed_imports: number;
@@ -269,12 +270,24 @@ export default function InvoiceImporter() {
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
         if (config.id === configId) {
+          // Enhanced stats update with proper field mapping
+          const updatedStats = {
+            ...config.stats,
+            ...data.data,
+            // Ensure proper field mapping for enhanced metrics
+            total_invoices: data.data?.total_invoices || data.data?.total || config.stats?.total_invoices || 0,
+            skipped_invoices: data.data?.skipped_invoices || data.data?.skipped || config.stats?.skipped_invoices || 0,
+            processed_invoices: data.data?.processed_invoices || data.data?.processed || config.stats?.processed_invoices || 0,
+            successful_imports: data.data?.successful_imports || data.data?.success || config.stats?.successful_imports || 0,
+            failed_imports: data.data?.failed_imports || data.data?.failed || config.stats?.failed_imports || 0
+          };
+
           return {
             ...config,
             status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
             currentStep: currentStep || config.currentStep,
             progress: progress,
-            stats: { ...config.stats, ...data.data }
+            stats: updatedStats
           };
         }
         return config;
@@ -1183,12 +1196,32 @@ export default function InvoiceImporter() {
                           </div>
                           <Progress value={config.progress || 0} className="w-full" />
                           {config.stats && (
-                            <div className="grid grid-cols-5 gap-2 text-xs text-gray-500">
-                              <span>Total: {config.stats.total_invoices || 0}</span>
-                              <span>Skipped: {config.stats.skipped_invoices || 0}</span>
-                              <span>Processed: {config.stats.processed_invoices || 0}</span>
-                              <span>Success: {config.stats.successful_imports || 0}</span>
-                              <span>Failed: {config.stats.failed_imports || 0}</span>
+                            <div className="grid grid-cols-5 gap-2 text-xs">
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-blue-500"></div>
+                                <span className="text-blue-600 font-medium">{config.stats.total_invoices || 0}</span>
+                                <span className="text-gray-500">Total</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-gray-400"></div>
+                                <span className="text-gray-600 font-medium">{config.stats.skipped_invoices || 0}</span>
+                                <span className="text-gray-500">Skipped</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-yellow-500"></div>
+                                <span className="text-yellow-600 font-medium">{config.stats.processed_invoices || 0}</span>
+                                <span className="text-gray-500">Processed</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-green-500"></div>
+                                <span className="text-green-600 font-medium">{config.stats.successful_imports || 0}</span>
+                                <span className="text-gray-500">Success</span>
+                              </div>
+                              <div className="flex items-center gap-1">
+                                <div className="w-2 h-2 rounded-full bg-red-500"></div>
+                                <span className="text-red-600 font-medium">{config.stats.failed_imports || 0}</span>
+                                <span className="text-gray-500">Failed</span>
+                              </div>
                             </div>
                           )}
                         </div>
