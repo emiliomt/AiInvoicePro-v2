@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { sql, eq, desc, gte } from 'drizzle-orm';
+import { sql, eq, desc, gte, and, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
 import { 
   invoices, 
   lineItems, 
@@ -59,14 +59,38 @@ import {
   type ScheduledTask,
   type InsertScheduledTask
 } from "@shared/schema";
-import { eq, desc, sql, and, or, ilike, isNull, inArray, getTableColumns } from "drizzle-orm";
 
-if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL environment variable is required");
+import FallbackStorage from "./fallback-storage";
+
+let db: any;
+let isDbConnected = false;
+let fallbackStorage: FallbackStorage | null = null;
+
+// Initialize database with connection retry logic
+async function initializeDb() {
+  try {
+    if (!process.env.DATABASE_URL) {
+      throw new Error("DATABASE_URL environment variable is required");
+    }
+    
+    const client = neon(process.env.DATABASE_URL);
+    db = drizzle(client);
+    
+    // Test connection
+    await db.select({ count: sql`1` }).limit(1);
+    isDbConnected = true;
+    console.log("Database connected successfully");
+    fallbackStorage = null; // Clear fallback if DB works
+  } catch (error) {
+    console.error("Database connection failed, using fallback storage:", error);
+    isDbConnected = false;
+    db = null;
+    fallbackStorage = new FallbackStorage();
+  }
 }
 
-const client = neon(process.env.DATABASE_URL);
-const db = drizzle(client);
+// Initialize on startup
+initializeDb();
 
 export interface IStorage {
   // Companies
@@ -1786,7 +1810,20 @@ class PostgresStorage implements IStorage {
   }
 }
 
-export const storage: IStorage = new PostgresStorage();
+// Storage factory that returns appropriate storage based on connection status
+function createStorage(): IStorage {
+  if (isDbConnected && db) {
+    return new PostgresStorage();
+  } else if (fallbackStorage) {
+    console.log("Using fallback storage due to database connection issues");
+    return fallbackStorage;
+  } else {
+    // Create fallback as last resort
+    return new FallbackStorage();
+  }
+}
+
+export const storage: IStorage = createStorage();
 
 // Helper function to get total invoice count
 export async function getInvoiceCount(): Promise<number> {
