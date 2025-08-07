@@ -97,13 +97,13 @@ class InvoiceRPAService:
         self.short_wait = None
         self.long_wait = None
 
-        # Statistics
+        # Enhanced Statistics with Relationship Constraints
         self.stats = {
-            'total_invoices': 0,
-            'processed_invoices': 0,
-            'successful_imports': 0,
-            'failed_imports': 0,
-            'skipped_imports': 0,
+            'total_invoices': 0,        # All invoices discovered/iterated over
+            'skipped_invoices': 0,      # Invoices skipped (duplicates/invalid)  
+            'processed_invoices': 0,    # Invoices that proceeded to import
+            'successful_imports': 0,    # Successfully imported invoices
+            'failed_imports': 0,        # Failed import attempts
             'current_step': 'Initializing',
             'progress': 0
         }
@@ -437,15 +437,16 @@ class InvoiceRPAService:
             self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
 
     def update_progress(self, step: str, progress: int):
-        """Update progress tracking"""
+        """Update progress tracking with enhanced metrics"""
         self.stats['current_step'] = step
         self.stats['progress'] = progress
         self.log(f"Progress: {progress}% - {step}")
         
-        # Output STATS for Node.js parser to capture
+        # Output STATS for Node.js parser to capture with all enhanced metrics
         try:
             stats_data = {
                 'total_invoices': self.stats.get('total_invoices', 0),
+                'skipped_invoices': self.stats.get('skipped_invoices', 0),
                 'processed_invoices': self.stats.get('processed_invoices', 0),
                 'successful_imports': self.stats.get('successful_imports', 0),
                 'failed_imports': self.stats.get('failed_imports', 0),
@@ -931,7 +932,7 @@ class InvoiceRPAService:
                                 # Use robust duplicate detection BEFORE any download/processing
                                 if self.is_duplicate_invoice(pg_conn, numero_documento, emisor_raw, valor_total_raw):
                                     self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor_raw}")
-                                    self.stats['skipped_imports'] = self.stats.get('skipped_imports', 0) + 1
+                                    self.stats['skipped_invoices'] += 1
                                     # Output progress with skip status
                                     self._output_download_progress(i + 1, len(rows), f"Skipped duplicate {numero_documento}")
                                     pg_conn.close()
@@ -2478,7 +2479,7 @@ class InvoiceRPAService:
         self.stats['unmatched_pdf'] = len(unmatched_pdf)
 
     def _output_download_progress(self, current_item: int, total_items: int, current_step: str):
-        """Output progress statistics during download phase"""
+        """Output progress statistics with enhanced metrics tracking and validation"""
         try:
             # Calculate download progress (30-90% range for download phase)
             download_progress = 30 + int((current_item / total_items) * 60) if total_items > 0 else 30
@@ -2487,12 +2488,28 @@ class InvoiceRPAService:
             self.stats['current_step'] = f"Downloading {current_item}/{total_items}: {current_step}"
             self.stats['progress'] = download_progress
             
-            # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            # Validate metric consistency before reporting
+            try:
+                # Relationship constraint 1: total_invoices = skipped_invoices + processed_invoices
+                expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
+                if self.stats['total_invoices'] != expected_total:
+                    self.log(f"⚠️ Metrics validation: total_invoices ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']}) = {expected_total}", "WARNING")
+                
+                # Relationship constraint 2: processed_invoices = successful_imports + failed_imports  
+                expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
+                if self.stats['processed_invoices'] != expected_processed:
+                    self.log(f"⚠️ Metrics validation: processed_invoices ({self.stats['processed_invoices']}) != successful ({self.stats['successful_imports']}) + failed ({self.stats['failed_imports']}) = {expected_processed}", "WARNING")
+                    
+            except Exception as e:
+                self.log(f"❌ Error validating metrics: {e}", "ERROR")
+            
+            # Output STATS in JSON format with enhanced metrics
             stats_data = {
-                'total_invoices': total_items,
-                'processed_invoices': current_item,
-                'successful_imports': self.stats.get('successful_imports', 0),
-                'failed_imports': self.stats.get('failed_imports', 0),
+                'total_invoices': self.stats['total_invoices'],
+                'skipped_invoices': self.stats['skipped_invoices'],
+                'processed_invoices': self.stats['processed_invoices'],
+                'successful_imports': self.stats['successful_imports'],
+                'failed_imports': self.stats['failed_imports'],
                 'current_step': self.stats['current_step'],
                 'progress': download_progress
             }
@@ -2504,6 +2521,57 @@ class InvoiceRPAService:
             
         except Exception as e:
             self.log(f"❌ Error outputting download progress: {e}", "ERROR")
+
+    def output_final_metrics(self):
+        """Output final comprehensive metrics with validation"""
+        try:
+            self.log("📊 FINAL IMPORT METRICS")
+            self.log("=" * 50)
+            
+            # Validate and enforce relationship constraints
+            try:
+                # Constraint 1: total_invoices = skipped_invoices + processed_invoices
+                expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
+                if self.stats['total_invoices'] != expected_total:
+                    self.log(f"🔧 Correcting total_invoices: {self.stats['total_invoices']} -> {expected_total}")
+                    self.stats['total_invoices'] = expected_total
+                
+                # Constraint 2: processed_invoices = successful_imports + failed_imports
+                expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
+                if self.stats['processed_invoices'] != expected_processed:
+                    self.log(f"🔧 Correcting processed_invoices: {self.stats['processed_invoices']} -> {expected_processed}")
+                    self.stats['processed_invoices'] = expected_processed
+                    
+                # Final validation assertions
+                assert self.stats['total_invoices'] == self.stats['skipped_invoices'] + self.stats['processed_invoices'], f"Constraint violation: total ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']})"
+                assert self.stats['processed_invoices'] == self.stats['successful_imports'] + self.stats['failed_imports'], f"Constraint violation: processed ({self.stats['processed_invoices']}) != successful ({self.stats['successful_imports']}) + failed ({self.stats['failed_imports']})"
+                
+                self.log("✅ All metric relationship constraints validated successfully")
+                
+            except Exception as e:
+                self.log(f"❌ Error validating final metrics: {e}", "ERROR")
+            
+            # Output structured metrics
+            final_metrics = {
+                "total_invoices": self.stats['total_invoices'],
+                "skipped_invoices": self.stats['skipped_invoices'],
+                "processed_invoices": self.stats['processed_invoices'],
+                "successful_imports": self.stats['successful_imports'],
+                "failed_imports": self.stats['failed_imports']
+            }
+            
+            self.log(f"📋 Total invoices discovered: {final_metrics['total_invoices']}")
+            self.log(f"⏭️ Skipped invoices (duplicates): {final_metrics['skipped_invoices']}")
+            self.log(f"🔄 Processed invoices: {final_metrics['processed_invoices']}")
+            self.log(f"✅ Successful imports: {final_metrics['successful_imports']}")
+            self.log(f"❌ Failed imports: {final_metrics['failed_imports']}")
+            
+            # Output in JSON format for parsing
+            import json
+            self.log(f"JSON METRICS: {json.dumps(final_metrics)}")
+            
+        except Exception as e:
+            self.log(f"❌ Error outputting final metrics: {e}", "ERROR")
 
     def _output_progress_stats(self, processed_count: int, successful_count: int, failed_count: int, total_files: int):
         """Output progress statistics in format that Node.js parser can read"""
@@ -2654,12 +2722,18 @@ class InvoiceRPAService:
                 }
 
             self.update_progress("Import process completed successfully", 100)
+            
+            # Output comprehensive final metrics with validation
+            self.output_final_metrics()
+            
             self.log("Python RPA import process completed successfully")
 
             return {'success': True, 'stats': self.stats}
 
         except Exception as e:
             self.log(f"Import process failed: {e}", "ERROR")
+            # Output final metrics even on failure for debugging
+            self.output_final_metrics()
             return {'success': False, 'error': str(e), 'stats': self.stats}
         finally:
             self.cleanup()

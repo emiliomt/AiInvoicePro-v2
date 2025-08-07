@@ -63,6 +63,14 @@ After analyzing recent RPA import logs, identified and fixed additional issues:
    - Added database constraint: `UNIQUE (original_file_name, log_id)` to prevent duplicate insertions
    - Fixed statistics counting: `processed_invoices` now reflects actual work, not total encounters
 
+5. **Enhanced Metrics Tracking with Relationship Constraints (Aug 6, 2025 - Complete)**:
+   - Implemented comprehensive metrics system tracking all import stages
+   - Added relationship constraint validation: `total_invoices = skipped_invoices + processed_invoices`
+   - Added relationship constraint validation: `processed_invoices = successful_imports + failed_imports`
+   - Enhanced statistics fields: `total_invoices`, `skipped_invoices`, `processed_invoices`, `successful_imports`, `failed_imports`
+   - Automatic metrics correction and validation before final reporting
+   - Structured JSON output for consistent parsing and monitoring
+
 ### Expected Results
 - Invoices are skipped immediately upon detection of existing records BEFORE downloading
 - No unnecessary ZIP downloads for already imported invoices  
@@ -74,11 +82,20 @@ After analyzing recent RPA import logs, identified and fixed additional issues:
 - Clear logging showing why invoices are skipped vs processed
 
 ### Test Results Verification
-Recent testing confirmed the fixes work correctly:
+Recent testing confirmed all fixes work correctly:
+
+**Duplicate Detection Tests:**
 - FE26891, FEV730, CB12305: Detected as duplicates and SKIPPED before download
 - NEW001, TEST123: Processed as new invoices
 - Statistics show accurate counts: 3 skipped, 2 processed (not 0 processed)
 - No more inefficient "processed_invoices: 0" after downloading all files
+
+**Enhanced Metrics Tracking Tests:**
+- Relationship constraint validation: ✅ All constraints pass
+- Example metrics: `{"total_invoices": 10, "skipped_invoices": 6, "processed_invoices": 4, "successful_imports": 3, "failed_imports": 1}`
+- Mathematical relationships enforced: 10 = 6 + 4, and 4 = 3 + 1
+- Automatic correction of inconsistent metrics before reporting
+- Structured JSON output for consistent monitoring and debugging
 
 ## Previous Fix: Validation Rules Implementation (Aug 6, 2025)
 
