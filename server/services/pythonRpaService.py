@@ -1882,18 +1882,57 @@ class InvoiceRPAService:
         try:
             self.log("🧹 Clearing download directories to ensure clean session isolation...")
             
-            # Clear PDF directory (download_dir is already 'uploads/pdfs')
+            # Clear PDF directory - BUT PRESERVE files that are linked to existing invoices
             pdf_dir = self.download_dir
             if os.path.exists(pdf_dir):
                 pdf_files_cleared = 0
+                pdf_files_preserved = 0
+                
                 for filename in os.listdir(pdf_dir):
+                    # Skip database files and processed folder
+                    if filename.endswith('.db') or filename == 'processed':
+                        continue
+                        
                     file_path = os.path.join(pdf_dir, filename)
+                    
+                    # Check if this PDF is referenced by any existing invoice
                     try:
-                        os.remove(file_path)
-                        pdf_files_cleared += 1
+                        import os
+                        database_url = os.environ.get('DATABASE_URL')
+                        if not database_url:
+                            self.log("⚠️ DATABASE_URL not found, preserving all PDFs", "WARNING")
+                            pdf_files_preserved += 1
+                            continue
+                            
+                        import psycopg2
+                        conn = psycopg2.connect(database_url)
+                        cursor = conn.cursor()
+                        
+                        # Check if any invoice references this PDF filename
+                        cursor.execute(
+                            "SELECT COUNT(*) FROM invoices WHERE file_name = %s OR file_url LIKE %s",
+                            (filename, f"%{filename}%")
+                        )
+                        count = cursor.fetchone()[0]
+                        
+                        cursor.close()
+                        conn.close()
+                        
+                        if count > 0:
+                            # File is referenced by existing invoice - preserve it
+                            pdf_files_preserved += 1
+                            self.log(f"📎 Preserving linked PDF: {filename} (referenced by {count} invoice(s))")
+                        else:
+                            # File is not referenced - safe to remove
+                            os.remove(file_path)
+                            pdf_files_cleared += 1
+                            
                     except Exception as e:
-                        self.log(f"⚠️ Could not remove PDF file {filename}: {e}", "WARNING")
-                self.log(f"✅ Cleared {pdf_files_cleared} orphaned PDF files from {pdf_dir}")
+                        # If database check fails, err on side of caution and preserve file
+                        self.log(f"⚠️ Could not check PDF link status for {filename}: {e}, preserving file", "WARNING")
+                        pdf_files_preserved += 1
+                        
+                self.log(f"✅ Cleared {pdf_files_cleared} orphaned PDF files, preserved {pdf_files_preserved} linked PDFs")
             
             # Clear XML directory
             if os.path.exists(self.xml_dir):

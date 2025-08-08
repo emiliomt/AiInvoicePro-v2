@@ -37,22 +37,24 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **React:** Frontend library.
 - **Playwright:** For browser automation.
 
-## Current Issue: PDF File Path Directory Structure Fixed (Aug 8, 2025)
+## Current Issue: PDF Data Loss Prevention Fixed (Aug 8, 2025)
 
-### Problem Identified ✅ RESOLVED
-After fixing download issues, PDFs were being saved in wrong directory structure (`uploads/pdfs/pdfs/` instead of `uploads/pdfs/`), causing UI display failures despite correct database linking.
+### Critical Issue Identified & Fixed ✅ RESOLVED
+After RPA runs, previously linked PDF files were being deleted, causing complete data loss when skipped invoices lose their PDF references.
 
-### Root Cause Analysis & Fix
-1. **Issue**: PDF directory path construction in Python RPA service was incorrectly nested
-2. **Problem**: Four instances of `os.path.join(self.download_dir, 'pdfs')` where `download_dir` was already `uploads/pdfs`
-3. **Result**: Created `uploads/pdfs/pdfs/` instead of `uploads/pdfs/`
+### Root Cause Analysis
+1. **Critical Bug**: `clear_download_directories()` function was clearing ALL PDF files at start of each RPA run
+2. **Data Loss Impact**: Previously processed and linked PDFs were being deleted, breaking database references
+3. **User Impact**: Skipped invoices lost their PDF links permanently after subsequent RPA runs
 
 ### Solution Implemented ✅
-1. **Fixed Path Construction**: Corrected all 4 instances in `pythonRpaService.py` to use `self.download_dir` directly
-2. **File Migration**: Moved existing PDF from `uploads/pdfs/pdfs/` to `uploads/pdfs/`
-3. **Database Linking Verified**: Confirmed PDF linking logic works correctly (invoice 951 properly linked to its PDF)
+1. **Smart PDF Preservation**: Modified `clear_download_directories()` to check database before deleting PDFs
+2. **Database Link Verification**: PDFs referenced by existing invoices are now preserved during cleanup
+3. **Selective Cleanup**: Only orphaned PDFs (not linked to any invoice) are removed
+4. **Safety Logic**: If database check fails, PDFs are preserved (fail-safe approach)
 
-### Previous Fixes Successfully Completed
-1. **Session Isolation Fix Working**: RPA correctly reports session-specific file counts
-2. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
-3. **Database Linking Operational**: PDFs properly linked to invoices with `linked_invoice_id`
+### Previous Issues Successfully Resolved
+1. **PDF Directory Structure Fixed**: Corrected nested path construction (`uploads/pdfs/pdfs/` → `uploads/pdfs/`)
+2. **Session Isolation Working**: RPA correctly reports session-specific file counts  
+3. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
+4. **Database Linking Operational**: PDFs properly linked to invoices with correct metadata
