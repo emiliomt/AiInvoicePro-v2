@@ -201,10 +201,10 @@ class PythonInvoiceImporter {
         headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
         fileTypes: config.fileTypes || 'both', // Support XML, PDF, or both
         // Proxy configuration from environment variables or config
-        proxyHost: config.proxyHost || process.env.PROXY_HOST,
-        proxyPort: config.proxyPort || process.env.PROXY_PORT,
-        proxyUser: config.proxyUser || process.env.PROXY_USER,
-        proxyPass: config.proxyPass || process.env.PROXY_PASS,
+        proxyHost: process.env.PROXY_HOST,
+        proxyPort: process.env.PROXY_PORT,
+        proxyUser: process.env.PROXY_USER,
+        proxyPass: process.env.PROXY_PASS,
       };
 
       // Validate required fields
@@ -279,7 +279,7 @@ class PythonInvoiceImporter {
     };
     
     try {
-      const userSettings = await storage.getUserSetting(config.userId, 'user_preferences');
+      const userSettings = await storage.getSetting('user_preferences');
       if (userSettings) {
         const preferences = JSON.parse(userSettings.value || '{}');
         userProxySettings = {
@@ -290,7 +290,7 @@ class PythonInvoiceImporter {
         };
       }
     } catch (error) {
-      console.log('Could not fetch user proxy settings, using defaults:', error.message);
+      console.log('Could not fetch user proxy settings, using defaults:', error instanceof Error ? error.message : String(error));
     }
     
     // Prepare Python RPA configuration
@@ -304,10 +304,10 @@ class PythonInvoiceImporter {
       fileTypes: config.fileTypes || 'both',
       zipDownloadTimeout: config.zipDownloadTimeout || 60,
       // Legacy proxy configuration from environment variables or config (for backward compatibility)
-      proxyHost: config.proxyHost || process.env.PROXY_HOST,
-      proxyPort: config.proxyPort || process.env.PROXY_PORT,
-      proxyUser: config.proxyUser || process.env.PROXY_USER,
-      proxyPass: config.proxyPass || process.env.PROXY_PASS,
+      proxyHost: process.env.PROXY_HOST,
+      proxyPort: process.env.PROXY_PORT,
+      proxyUser: process.env.PROXY_USER,
+      proxyPass: process.env.PROXY_PASS,
       // New proxy rotation configuration
       proxyRotationEnabled: userProxySettings.proxyRotationEnabled,
       proxyRotationInterval: userProxySettings.proxyRotationInterval,
@@ -702,8 +702,27 @@ class PythonInvoiceImporter {
       // Handle process completion
       pythonProcess.on('close', (code) => {
         console.log(`Python RPA process exited with code ${code}`);
+        console.log('Final stdout:', stdout);
+        console.log('Final stderr:', stderr);
 
-        if (code === 0 && result) {
+        // Parse result from stdout if not already parsed
+        if (!result && stdout) {
+          try {
+            // Look for RESULT: line in output
+            const lines = stdout.split('\n');
+            let resultLine = lines.find(line => line.startsWith('RESULT:'));
+            
+            if (resultLine) {
+              const resultJson = resultLine.replace('RESULT:', '').trim();
+              result = JSON.parse(resultJson);
+              console.log('✅ Parsed Python RPA result from close handler:', result);
+            }
+          } catch (parseError) {
+            console.error('Failed to parse Python result in close handler:', parseError);
+          }
+        }
+
+        if (result && (code === 0 || result.success)) {
           // Update progress with final stats including skipped invoices
           progress.totalInvoices = result.stats.total_invoices;
           progress.skippedInvoices = result.stats.skipped_invoices || 0;

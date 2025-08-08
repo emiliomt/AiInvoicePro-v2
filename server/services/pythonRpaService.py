@@ -2219,10 +2219,9 @@ class InvoiceRPAService:
                 return False
 
             # Step 6: Process files through manual upload pipeline
-            if not self.process_files_through_manual_pipeline():
-                self.log("❌ Manual pipeline processing failed", "ERROR")
-                self.cleanup()
-                return False
+            # NOTE: For now, this step is simulated since manual pipeline is handled by Node.js
+            self.log("✅ Manual pipeline processing (simulated for Node.js integration)")
+            self.update_progress("Processing completed", 95)
 
             # Cleanup WebDriver after successful processing
             self.cleanup()
@@ -2248,33 +2247,183 @@ class InvoiceRPAService:
             self.cleanup()
             return False
 
+    def run_import_process(self) -> dict:
+        """
+        Enhanced run method that returns structured results for Node.js integration.
+        """
+        try:
+            self.log("🚀 Starting Invoice RPA Import Process")
+            self.log(f"🏢 Company/Config ID: {self.config_id}")
+            self.log(f"📁 Download directory: {self.download_dir}")
+            self.log(f"📄 File types: {self.config.get('fileTypes', 'both')}")
+            
+            # Initialize stats properly
+            self.stats = {
+                'total_invoices': 0,        # Unique invoices found in file processing
+                'skipped_invoices': 0,      # Duplicates skipped during web scraping  
+                'processed_invoices': 0,    # Invoices that proceeded through file extraction
+                'successful_imports': 0,    # Successfully downloaded from web
+                'failed_imports': 0,        # Failed downloads
+                'current_step': 'Initializing',
+                'progress': 0
+            }
 
-# Main execution for testing
-if __name__ == "__main__":
+            # Step 1: Setup WebDriver
+            if not self.setup_driver():
+                self.log("❌ Failed to initialize WebDriver", "ERROR")
+                return {
+                    'success': False,
+                    'error': 'Failed to initialize WebDriver',
+                    'stats': self.stats
+                }
+
+            # Step 2: Login to ERP system
+            if not self.login_to_erp():
+                self.log("❌ ERP login failed", "ERROR")
+                self.cleanup()
+                return {
+                    'success': False,
+                    'error': 'ERP login failed',
+                    'stats': self.stats
+                }
+
+            # Step 3: Navigate to invoices section
+            if not self.navigate_to_invoices():
+                self.log("❌ Navigation to invoices failed", "ERROR")
+                self.cleanup()
+                return {
+                    'success': False,
+                    'error': 'Navigation to invoices failed',
+                    'stats': self.stats
+                }
+
+            # Step 4: Process invoice rows (download phase)
+            if not self.process_invoice_rows():
+                self.log("❌ Invoice processing failed", "ERROR")
+                self.cleanup()
+                return {
+                    'success': False,
+                    'error': 'Invoice processing failed',
+                    'stats': self.stats
+                }
+
+            # Step 5: Extract files from ZIP archives (file processing phase)
+            if not self.extract_invoices_from_zip():
+                self.log("❌ File extraction failed", "ERROR")
+                self.cleanup()
+                return {
+                    'success': False,
+                    'error': 'File extraction failed',
+                    'stats': self.stats
+                }
+
+            # Step 6: Process files through manual upload pipeline
+            # NOTE: For now, this step is simulated since manual pipeline is handled by Node.js
+            self.log("✅ Manual pipeline processing (simulated for Node.js integration)")
+            self.update_progress("Processing completed", 95)
+
+            # Cleanup WebDriver after successful processing
+            self.cleanup()
+
+            # Final summary with business-accurate statistics
+            self.log("=" * 60)
+            self.log("🎉 INVOICE IMPORT PROCESS COMPLETED SUCCESSFULLY")
+            self.log("=" * 60)
+            self.log(f"📊 Final Statistics:")
+            self.log(f"   • Total unique invoices found: {self.stats['total_invoices']}")
+            self.log(f"   • Invoices skipped (duplicates): {self.stats['skipped_invoices']}")
+            self.log(f"   • Invoices processed: {self.stats['processed_invoices']}")
+            self.log(f"   • Successful downloads: {self.stats['successful_imports']}")
+            self.log(f"   • Failed downloads: {self.stats['failed_imports']}")
+            
+            # Final progress update
+            self.update_progress("Import process completed", 100)
+            
+            return {
+                'success': True,
+                'stats': self.stats
+            }
+
+        except Exception as e:
+            self.log(f"❌ Critical error in RPA process: {e}", "ERROR")
+            self.cleanup()
+            return {
+                'success': False,
+                'error': str(e),
+                'stats': self.stats
+            }
+
+
+def main():
+    """Main execution method for the RPA service when called from Node.js"""
     import sys
     import json
     
-    # Example configuration for testing
-    test_config = {
-        'erpUrl': 'https://example-erp.com/login',
-        'erpUsername': 'test_user',
-        'erpPassword': 'encoded_password_here',
-        'downloadPath': 'uploads/pdfs',
-        'xmlPath': 'uploads/xmls',
-        'fileTypes': 'both',
-        'headless': True,
-        'zipDownloadTimeout': 60,
-        'logId': 'test-log-123',
-        'configId': 'test-config-456'
+    # Default error result structure
+    error_result = {
+        'success': False,
+        'error': 'Unknown error occurred',
+        'stats': {
+            'total_invoices': 0,
+            'processed_invoices': 0,
+            'successful_imports': 0,
+            'failed_imports': 0,
+            'current_step': 'Failed',
+            'progress': 0
+        }
     }
     
-    service = InvoiceRPAService(test_config)
-    success = service.run()
-    
-    if success:
-        print("✅ RPA service completed successfully")
-        sys.exit(0)
-    else:
-        print("❌ RPA service failed")
+    # Check for configuration argument
+    if len(sys.argv) < 2:
+        error_result['error'] = 'No configuration provided'
+        print(f"RESULT:{json.dumps(error_result)}")
         sys.exit(1)
+
+    try:
+        config = json.loads(sys.argv[1])
+
+        # Create and run the RPA service
+        rpa_service = InvoiceRPAService(config)
+        result = rpa_service.run_import_process()
+
+        # Always output valid JSON
+        print(f"RESULT:{json.dumps(result)}")
+
+        if not result['success']:
+            sys.exit(1)
+
+    except json.JSONDecodeError as e:
+        error_result = {
+            'success': False,
+            'error': f'Invalid JSON configuration: {str(e)}',
+            'stats': {
+                'total_invoices': 0,
+                'processed_invoices': 0,
+                'successful_imports': 0,
+                'failed_imports': 0,
+                'current_step': 'Failed',
+                'progress': 0
+            }
+        }
+        print(f"RESULT:{json.dumps(error_result)}")
+        sys.exit(1)
+    except Exception as e:
+        error_result = {
+            'success': False,
+            'error': str(e),
+            'stats': {
+                'total_invoices': 0,
+                'processed_invoices': 0,
+                'successful_imports': 0,
+                'failed_imports': 0,
+                'current_step': 'Failed',
+                'progress': 0
+            }
+        }
+        print(f"RESULT:{json.dumps(error_result)}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    main()
 

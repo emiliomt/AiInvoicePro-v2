@@ -1,0 +1,7 @@
+Debug Capture: 01_login_page_loaded
+Timestamp: 20250808T201135
+Current URL: https://example.com/
+Page Title: Example Domain
+Window Size: {'width': 1920, 'height': 1080}
+Page Load State: complete
+No error messages found
