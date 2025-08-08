@@ -1053,8 +1053,8 @@ class InvoiceRPAService:
                         # Enhanced total amount normalization for Colombian currency
                         valor_total = valor_total_raw.replace(",", "").replace(".", "").replace("$", "").replace("COP", "").replace("\n", "").replace("\r", "").strip().split(" ")[0]
 
-                        # Count total invoices encountered
-                        self.stats['total_invoices'] += 1
+                        # Note: Do NOT count total_invoices here - this is web table rows, not unique invoices
+                        # total_invoices will be set correctly during file processing phase
                         
                         # ROBUST PRE-DOWNLOAD DUPLICATE CHECK 
                         # Connect to PostgreSQL for duplicate checking
@@ -1082,8 +1082,8 @@ class InvoiceRPAService:
                         # Download and process invoice (only reached if no duplicate found)
                         self.log(f"🔄 Processing: {numero_documento} - {emisor_raw} - {valor_total_raw}")
                         
-                        # Count as processed since we're attempting to download
-                        self.stats['processed_invoices'] += 1
+                        # Note: Do NOT count processed_invoices here - this is web scraping phase
+                        # processed_invoices will be counted correctly during file processing phase
                         
                         # Output progress stats before download attempt
                         self._output_download_progress(i + 1, len(rows), f"Processing {numero_documento}")
@@ -1117,7 +1117,7 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    break  # Exit loop after processing one page for now
+                    # Continue processing additional pages to ensure complete invoice discovery
                 except:
                     self.log("✅ Finished processing all pages")
                     break
@@ -2015,6 +2015,15 @@ class InvoiceRPAService:
             # Build final processing list - count unique invoices, not individual files
             all_base_names = set(matched_pairs.keys()) | unmatched_xmls | unmatched_pdfs
             total_unique_invoices = len(all_base_names)  # This represents unique invoices, not file count
+            
+            # CRITICAL FIX: Set correct total_invoices count based on actual unique invoices found
+            self.stats['total_invoices'] = total_unique_invoices
+            # Reset processing counters to be set correctly during file processing
+            self.stats['processed_invoices'] = 0
+            self.stats['successful_imports'] = 0
+            self.stats['failed_imports'] = 0
+            self.log(f"📊 CORRECTED: Setting total_invoices = {total_unique_invoices} (unique invoices from files)")
+            self.log(f"🔄 Reset processing counters to track actual file processing (not web scraping)")
             
             self.log(f"📊 Starting to process {total_unique_invoices} unique invoices...")
             self.log(f"   - Matched pairs (XML+PDF): {len(matched_pairs)}")
