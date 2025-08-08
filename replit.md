@@ -36,3 +36,37 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **Express.js:** Backend framework.
 - **React:** Frontend library.
 - **Playwright:** For browser automation.
+
+## Current Issue: Invoice Download Failures (Aug 8, 2025)
+
+### Problem Identified
+After fixing the file counting issue, a new problem emerged: **invoices are failing to download**. The RPA system finds invoices to process but encounters timeout errors during the actual file download process.
+
+### Download Failure Investigation
+1. **Session Isolation Fix Working**: The RPA correctly reports "0 files from current session processed" instead of false counts
+2. **Download Process Failing**: System found 10 invoices but failed to download any ZIP files
+3. **Timeout Issues**: Download operations are timing out, suggesting browser automation or network issues
+
+### Download Debugging Enhancements Implemented
+1. **Enhanced Browser Configuration**:
+   - Improved Chrome download preferences with absolute paths
+   - Added download-specific Chrome flags (`--allow-downloads`, `--disable-popup-blocking`)
+   - Enhanced permission validation for download directory
+
+2. **Detailed Download Logging**:
+   - Added step-by-step download process logging
+   - Enhanced `wait_for_new_zip` with polling details every 10 seconds
+   - Better timeout error reporting with final state information
+   - Debug capture on download failures
+
+3. **Improved Error Handling**:
+   - Try-catch blocks around download button interactions
+   - Separate timeout handling from other download errors
+   - Debug screenshots captured on download failures
+   - Better validation of download directory permissions
+
+### Expected Results
+- Detailed logging will show exactly where download process fails
+- Enhanced error messages will provide specific failure context
+- Debug screenshots will be captured for visual troubleshooting
+- Better browser configuration should improve download success rate

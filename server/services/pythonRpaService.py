@@ -470,6 +470,19 @@ class InvoiceRPAService:
         self.log("Setting up Chrome WebDriver...")
 
         try:
+            # Ensure download directory exists and has proper permissions
+            os.makedirs(self.download_dir, exist_ok=True)
+            
+            # Test write permissions
+            test_file = os.path.join(self.download_dir, "test_write_permission.tmp")
+            try:
+                with open(test_file, 'w') as f:
+                    f.write("test")
+                os.remove(test_file)
+                self.log(f"✅ Download directory verified: {self.download_dir}")
+            except Exception as e:
+                raise Exception(f"Download directory not writable: {self.download_dir} - {e}")
+
             # Check if Chrome/Chromium is available
             import shutil
             chrome_path = shutil.which('google-chrome') or shutil.which(
@@ -487,13 +500,18 @@ class InvoiceRPAService:
             if 'chromium' in chrome_path:
                 chrome_options.binary_location = chrome_path
 
+            # Ensure we use absolute path for download directory
+            abs_download_dir = os.path.abspath(self.download_dir)
+            self.log(f"📁 Setting download directory to: {abs_download_dir}")
+            
             prefs = {
-                "download.default_directory": self.download_dir,
+                "download.default_directory": abs_download_dir,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "safebrowsing.enabled": False,
                 "safebrowsing.disable_download_protection": True,
-                "profile.default_content_settings.popups": 0
+                "profile.default_content_settings.popups": 0,
+                "profile.content_settings.exceptions.automatic_downloads.*.setting": 1
             }
             chrome_options.add_experimental_option("prefs", prefs)
             chrome_options.add_argument("--no-sandbox")
@@ -517,6 +535,11 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--disable-features=TranslateUI")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
+            # Additional download-specific flags
+            chrome_options.add_argument("--allow-downloads")
+            chrome_options.add_argument("--disable-popup-blocking")
+            chrome_options.add_argument("--disable-features=VizDisplayCompositor")
+            chrome_options.add_argument("--remote-debugging-port=0")
 
             self.log(
                 "Initializing ChromeDriver in headless mode with debug capture..."
@@ -593,24 +616,64 @@ class InvoiceRPAService:
                 if f.lower().endswith(".zip")
             }
 
+        self.log(f"⏳ Waiting for new ZIP download (timeout: {timeout}s)")
+        self.log(f"📁 Download directory: {self.download_dir}")
+        self.log(f"📦 Files before download: {len(before_files)}")
+        
+        poll_count = 0
         while time.time() < deadline:
-            # Check for Chrome download files
-            crdownloads = [
-                f for f in os.listdir(self.download_dir)
-                if f.endswith(".crdownload")
-            ]
-            current_files = {
+            poll_count += 1
+            try:
+                # Check for Chrome download files
+                crdownloads = [
+                    f for f in os.listdir(self.download_dir)
+                    if f.endswith(".crdownload")
+                ]
+                current_files = {
+                    os.path.join(self.download_dir, f)
+                    for f in os.listdir(self.download_dir)
+                    if f.lower().endswith(".zip")
+                }
+                new_files = list(current_files - before_files)
+                
+                # Log every 10 seconds for debugging
+                if poll_count % 10 == 0:
+                    remaining_time = int(deadline - time.time())
+                    self.log(f"🔍 Poll #{poll_count}: {len(crdownloads)} .crdownload files, {len(current_files)} total ZIP files, {len(new_files)} new files (remaining: {remaining_time}s)")
+                
+                if crdownloads:
+                    self.log(f"⏳ Download in progress: {crdownloads}")
+                    
+                if new_files and not crdownloads:
+                    newest_file = max(new_files, key=os.path.getctime)
+                    self.log(f"✅ New ZIP file downloaded: {os.path.basename(newest_file)}")
+                    return newest_file
+                    
+            except Exception as e:
+                self.log(f"⚠️ Error checking for downloads: {e}", "WARNING")
+                
+            time.sleep(1)
+
+        # Timeout reached - provide detailed debug info
+        final_files = set()
+        final_crdownloads = []
+        try:
+            final_crdownloads = [f for f in os.listdir(self.download_dir) if f.endswith(".crdownload")]
+            final_files = {
                 os.path.join(self.download_dir, f)
                 for f in os.listdir(self.download_dir)
                 if f.lower().endswith(".zip")
             }
-            new_files = list(current_files - before_files)
-            if new_files and not crdownloads:
-                return max(new_files, key=os.path.getctime)
-            time.sleep(1)
+        except Exception as e:
+            self.log(f"Error reading final directory state: {e}", "ERROR")
 
-        raise TimeoutError(
-            f"No new .zip file downloaded within {timeout} seconds.")
+        error_msg = f"No new .zip file downloaded within {timeout} seconds. "
+        error_msg += f"Final state: {len(final_files)} ZIP files, {len(final_crdownloads)} .crdownload files"
+        if final_crdownloads:
+            error_msg += f". Incomplete downloads: {final_crdownloads}"
+            
+        self.log(f"❌ Download timeout details: {error_msg}", "ERROR")
+        raise TimeoutError(error_msg)
 
     def safe_rename(self, src: str, dest: str) -> str:
         """Safely rename file with conflict resolution"""
@@ -1026,22 +1089,46 @@ class InvoiceRPAService:
             }
 
             # Click download action button
-            ActionChains(self.driver).move_to_element(
-                buttons[3]).click().perform()
+            try:
+                self.log(f"🔄 Clicking download action button for {numero_documento}")
+                ActionChains(self.driver).move_to_element(
+                    buttons[3]).click().perform()
+                time.sleep(1)  # Wait for dialog to appear
+                self.log(f"✅ Download dialog should now be open for {numero_documento}")
+            except Exception as e:
+                self.log(f"❌ Could not click download action button: {e}", "ERROR")
+                return False
 
             # Click actual download button
             if not self.short_wait:
                 self.log("Short wait object not initialized", "ERROR")
                 return False
-            download_button = self.short_wait.until(
-                EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
-            ActionChains(self.driver).move_to_element(
-                download_button).click().perform()
+            try:
+                download_button = self.short_wait.until(
+                    EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
+                self.log(f"🔽 Found download button for {numero_documento}")
+                ActionChains(self.driver).move_to_element(
+                    download_button).click().perform()
+                self.log(f"✅ Clicked download button for {numero_documento}")
+                time.sleep(2)  # Give the download a moment to start
+            except Exception as e:
+                self.log(f"❌ Could not find or click download button: {e}", "ERROR")
+                self.debug_capture(f"download_button_error_{numero_documento}")
+                return False
 
             # Wait for download to complete with configurable timeout
-            downloaded_zip = self.wait_for_new_zip(timeout=self.zip_download_timeout,
-                                                   before_files=existing_zips)
-            self.log(f"Downloaded: {downloaded_zip}")
+            try:
+                downloaded_zip = self.wait_for_new_zip(timeout=self.zip_download_timeout,
+                                                       before_files=existing_zips)
+                self.log(f"Downloaded: {downloaded_zip}")
+            except TimeoutError as e:
+                self.log(f"❌ Download timeout after {self.zip_download_timeout}s: {e}", "ERROR")
+                # Debug capture on timeout
+                self.debug_capture(f"download_timeout_{numero_documento}")
+                return False
+            except Exception as e:
+                self.log(f"❌ Download error: {e}", "ERROR")
+                return False
 
             # Rename file
             new_name = os.path.join(self.download_dir,
