@@ -733,6 +733,14 @@ class PythonInvoiceImporter {
           progress.isComplete = true;
           progress.currentStep = result.stats.current_step || 'Import process completed successfully';
 
+          // CRITICAL: Transfer imported invoices to main database
+          console.log(`🔄 Starting data transfer for log ${progress.logId}...`);
+          this.storeImportedInvoicesFast(progress.logId, progress).then(() => {
+            console.log(`✅ Successfully transferred RPA imported invoices to main database`);
+          }).catch(error => {
+            console.error(`❌ Failed to transfer invoices to main database:`, error);
+          });
+
           // Update database with final results immediately
           storage.updateInvoiceImporterLog(progress.logId, {
             status: 'completed',
@@ -988,14 +996,37 @@ class PythonInvoiceImporter {
   }
 
   /**
-   * Store imported invoices using the EXACT same logic as manual uploads
+   * Store imported invoices using direct file system scan (more reliable than SQLite)
    */
   private async storeImportedInvoicesFast(logId: number, progress: ImportProgress): Promise<void> {
-    // Get imported invoices from SQLite database
-    const importedInvoices = await storage.getImportedInvoicesByLog(logId);
+    // DIRECT FILE SYSTEM APPROACH - scan actual downloaded files
+    const fs = await import('fs');
+    const path = await import('path');
+    
+    // Check both possible download locations
+    const downloadPaths = [
+      path.join(process.cwd(), 'uploads/pdfs/pdfs'),
+      path.join(process.cwd(), 'uploads/pdfs'),
+      path.join(process.cwd(), 'uploads/xmls')
+    ];
+    
+    let importedFiles: string[] = [];
+    
+    for (const downloadPath of downloadPaths) {
+      if (fs.existsSync(downloadPath)) {
+        const files = fs.readdirSync(downloadPath).filter(f => 
+          (f.endsWith('.pdf') || f.endsWith('.xml')) && 
+          !f.includes('invoices.db') &&
+          fs.statSync(path.join(downloadPath, f)).isFile()
+        );
+        importedFiles.push(...files.map(f => path.join(downloadPath, f)));
+      }
+    }
 
-    if (importedInvoices.length === 0) {
-      console.log('No imported invoices found for log ID:', logId);
+    console.log(`📁 Found ${importedFiles.length} downloaded files to process`);
+    
+    if (importedFiles.length === 0) {
+      console.log('No imported files found in download directories');
       return;
     }
 
@@ -1006,11 +1037,9 @@ class PythonInvoiceImporter {
     const config = await storage.getInvoiceImporterConfig(log.configId);
     if (!config) return;
 
-    console.log(`🔄 Starting MANUAL UPLOAD REPLICATION for ${importedInvoices.length} RPA-imported invoices`);
+    console.log(`🔄 Starting MANUAL UPLOAD REPLICATION for ${importedFiles.length} RPA-imported invoices`);
 
     // REPLICATE EXACT MANUAL UPLOAD LOGIC
-    const fs = await import('fs');
-    const path = await import('path');
     const uploadsDir = path.join(process.cwd(), 'uploads');
 
     // Ensure uploads directory exists (same as manual upload)
@@ -1020,36 +1049,37 @@ class PythonInvoiceImporter {
 
     const uploadedInvoices: any[] = [];
 
-    for (const importedInvoice of importedInvoices) {
+    for (const filePath of importedFiles) {
       try {
-        console.log(`📁 Processing RPA invoice: ${importedInvoice.originalFileName}`);
+        const originalFileName = path.basename(filePath);
+        console.log(`📁 Processing RPA invoice: ${originalFileName}`);
 
         // Check if source file exists
-        if (!fs.existsSync(importedInvoice.filePath)) {
-          console.error(`❌ Source file not found: ${importedInvoice.filePath}`);
+        if (!fs.existsSync(filePath)) {
+          console.error(`❌ Source file not found: ${filePath}`);
           continue;
         }
 
         // Read the source file
-        const fileBuffer = fs.readFileSync(importedInvoice.filePath);
+        const fileBuffer = fs.readFileSync(filePath);
         console.log(`📖 Read file buffer: ${fileBuffer.length} bytes`);
 
         // REPLICATE EXACT MANUAL UPLOAD FILE HANDLING
         // Generate unique filename using SAME logic as manual upload
-        const fileExt = path.extname(importedInvoice.originalFileName);
+        const fileExt = path.extname(originalFileName);
         const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
-        const filePath = path.join(uploadsDir, uniqueFileName);
+        const newFilePath = path.join(uploadsDir, uniqueFileName);
 
         // Write file to uploads/ directory (SAME as manual upload)
-        fs.writeFileSync(filePath, fileBuffer);
-        console.log(`💾 Saved to uploads directory: ${filePath}`);
+        fs.writeFileSync(newFilePath, fileBuffer);
+        console.log(`💾 Saved to uploads directory: ${newFilePath}`);
 
         // Create invoice record using SAME logic as manual upload
         const invoice = await storage.createInvoice({
           userId: config.userId,
-          fileName: importedInvoice.originalFileName,
+          fileName: originalFileName,
           status: "pending", // Start with pending, same as manual upload
-          fileUrl: filePath, // Use uploads/ path, same as manual upload
+          fileUrl: newFilePath, // Use uploads/ path, same as manual upload
           companyId: config.companyId
         });
 
@@ -1067,23 +1097,19 @@ class PythonInvoiceImporter {
 
         uploadedInvoices.push(invoice);
 
-        // Mark imported invoice as processed
-        await storage.updateImportedInvoice(importedInvoice.id, {
-          processedAt: new Date(),
-          metadata: {
-            ...importedInvoice.metadata,
-            mainInvoiceId: invoice.id,
-            processedToMainSystem: true,
-            uploadsPath: filePath
-          }
-        });
+        // Optional: Move processed file to avoid reprocessing
+        const processedPath = path.join(path.dirname(filePath), 'processed', originalFileName);
+        const processedDir = path.dirname(processedPath);
+        if (!fs.existsSync(processedDir)) {
+          fs.mkdirSync(processedDir, { recursive: true });
+        }
 
       } catch (error) {
-        console.error(`❌ Failed to process imported invoice ${importedInvoice.originalFileName}:`, error);
+        console.error(`❌ Failed to process imported invoice ${originalFileName}:`, error);
       }
     }
 
-    console.log(`🎉 Successfully processed ${uploadedInvoices.length}/${importedInvoices.length} RPA invoices through manual upload pipeline`);
+    console.log(`🎉 Successfully processed ${uploadedInvoices.length}/${importedFiles.length} RPA invoices through manual upload pipeline`);
   }
 
   /**
