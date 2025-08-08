@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { getStorage, getDb } from "../storage";
 import { invoices, invoiceFlags, purchaseOrders, invoicePoMatches, validationRules } from "@shared/schema";
 import { eq, and, ne, desc } from "drizzle-orm";
 import type { Invoice, LineItem, InsertInvoiceFlag } from "@shared/schema";
@@ -16,6 +16,7 @@ export async function checkInvoiceDiscrepancies(
 
   // 1. Check for duplicate invoice numbers
   if (invoice.invoiceNumber) {
+    const db = await getDb();
     const duplicates = await db
       .select()
       .from(invoices)

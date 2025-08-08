@@ -1,5 +1,5 @@
 
-import { db } from "../db";
+import { getStorage, getDb } from "../storage";
 import { classificationKeywords, lineItemClassifications, lineItems } from "@shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "@shared/schema";
@@ -49,6 +49,7 @@ export class ClassificationService {
   static async initializeDefaultKeywords(): Promise<void> {
     try {
       // Check if defaults already exist
+      const db = await getDb();
       const existingDefaults = await db
         .select()
         .from(classificationKeywords)

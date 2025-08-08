@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { getStorage, getDb } from "../storage";
 import { predictiveAlerts, invoices } from "@shared/schema";
 import { eq } from "drizzle-orm";
 import type { Invoice, LineItem, InsertPredictiveAlert } from "@shared/schema";
@@ -21,6 +21,7 @@ export async function predictInvoiceIssues(
   
   // Duplicate vendor prediction
   if (invoice.vendorName) {
+    const db = await getDb();
     const vendorHistory = await db
       .select()
       .from(invoices)

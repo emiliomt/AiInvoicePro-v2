@@ -65,32 +65,51 @@ import FallbackStorage from "./fallback-storage";
 let db: any;
 let isDbConnected = false;
 let fallbackStorage: FallbackStorage | null = null;
+let initPromise: Promise<void> | null = null;
 
 // Initialize database with connection retry logic
-async function initializeDb() {
+async function initializeDb(): Promise<void> {
   try {
     if (!process.env.DATABASE_URL) {
       throw new Error("DATABASE_URL environment variable is required");
     }
     
+    console.log("🔄 Initializing database connection...");
     const client = neon(process.env.DATABASE_URL);
     db = drizzle(client);
     
     // Test connection
-    await db.select({ count: sql`1` }).limit(1);
+    await db.select({ count: sql`1` });
     isDbConnected = true;
-    console.log("Database connected successfully");
+    console.log("✅ Database connected successfully");
     fallbackStorage = null; // Clear fallback if DB works
   } catch (error) {
-    console.error("Database connection failed, using fallback storage:", error);
+    console.error("❌ Database connection failed, using fallback storage:", error);
     isDbConnected = false;
     db = null;
     fallbackStorage = new FallbackStorage();
   }
 }
 
-// Initialize on startup
-initializeDb();
+// Initialize on startup and cache the promise
+initPromise = initializeDb();
+
+// Helper function to ensure database is initialized
+export async function ensureDbConnected(): Promise<void> {
+  if (initPromise) {
+    await initPromise;
+    initPromise = null;
+  }
+}
+
+// Export database instance for services that need direct access
+export async function getDb() {
+  await ensureDbConnected();
+  if (!isDbConnected || !db) {
+    throw new Error("Database not connected. Using fallback storage instead.");
+  }
+  return db;
+}
 
 export interface IStorage {
   // Companies
@@ -1813,16 +1832,24 @@ class PostgresStorage implements IStorage {
 // Storage factory that returns appropriate storage based on connection status
 function createStorage(): IStorage {
   if (isDbConnected && db) {
+    console.log("✅ Using PostgreSQL database storage");
     return new PostgresStorage();
   } else if (fallbackStorage) {
-    console.log("Using fallback storage due to database connection issues");
+    console.log("⚠️ Using fallback storage due to database connection issues");
     return fallbackStorage;
   } else {
-    // Create fallback as last resort
+    console.log("⚠️ Creating new fallback storage as last resort");
     return new FallbackStorage();
   }
 }
 
+// Async storage factory that waits for database initialization
+export async function getStorage(): Promise<IStorage> {
+  await ensureDbConnected();
+  return createStorage();
+}
+
+// Legacy synchronous export for backward compatibility
 export const storage: IStorage = createStorage();
 
 // Helper function to get total invoice count

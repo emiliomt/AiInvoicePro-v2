@@ -1,4 +1,4 @@
-import { db } from "../db";
+import { getStorage, getDb } from "../storage";
 import { classificationKeywords, lineItemClassifications, lineItems } from "@shared/schema";
 import { eq, and } from "drizzle-orm";
 import type { InsertLineItemClassification, LineItem, LineItemClassification } from "@shared/schema";
@@ -351,11 +351,13 @@ export class AILineItemClassifier {
       classifiedBy
     };
 
+    const db = await getDb();
     await db.insert(lineItemClassifications).values(classificationData);
   }
 
   // Get stored classification for a line item
   public async getStoredClassification(lineItemId: number): Promise<LineItemClassification | null> {
+    const db = await getDb();
     const result = await db
       .select()
       .from(lineItemClassifications)

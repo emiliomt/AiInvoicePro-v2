@@ -1,5 +1,5 @@
 import { eq, and } from 'drizzle-orm';
-import { db } from '../db.js';
+import { getStorage, getDb } from '../storage.js';
 import { importedInvoices, invoices, invoiceImporterLogs, lineItems } from '../../shared/schema.js';
 import * as aiService from './aiService.js';
 import { storage } from '../storage.js';
@@ -16,6 +16,7 @@ export class InvoiceProcessingService {
     console.log('🔄 Starting processing of downloaded imported invoices...');
 
     // Find all downloaded but unprocessed imported invoices
+    const db = await getDb();
     const downloadedInvoices = await db
       .select()
       .from(importedInvoices)
