@@ -200,6 +200,11 @@ class PythonInvoiceImporter {
         xmlPath: config.xmlPath || '/tmp/xml_invoices',
         headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
         fileTypes: config.fileTypes || 'both', // Support XML, PDF, or both
+        // Proxy configuration from environment variables or config
+        proxyHost: config.proxyHost || process.env.PROXY_HOST,
+        proxyPort: config.proxyPort || process.env.PROXY_PORT,
+        proxyUser: config.proxyUser || process.env.PROXY_USER,
+        proxyPass: config.proxyPass || process.env.PROXY_PASS,
       };
 
       // Validate required fields
@@ -275,6 +280,11 @@ class PythonInvoiceImporter {
       headless: config.headless !== undefined ? config.headless : true,
       fileTypes: config.fileTypes || 'both',
       zipDownloadTimeout: config.zipDownloadTimeout || 60,
+      // Proxy configuration from environment variables or config
+      proxyHost: config.proxyHost || process.env.PROXY_HOST,
+      proxyPort: config.proxyPort || process.env.PROXY_PORT,
+      proxyUser: config.proxyUser || process.env.PROXY_USER,
+      proxyPass: config.proxyPass || process.env.PROXY_PASS,
     };
 
     // Validate required fields
@@ -290,6 +300,9 @@ class PythonInvoiceImporter {
       zipDownloadTimeout: pythonConfig.zipDownloadTimeout,
       headless: pythonConfig.headless,
       fileTypes: pythonConfig.fileTypes,
+      proxyHost: pythonConfig.proxyHost ? 'configured' : 'not set',
+      proxyPort: pythonConfig.proxyPort || 'not set',
+      proxyAuth: pythonConfig.proxyUser ? 'enabled' : 'disabled',
     });
 
     // Execute Python RPA process

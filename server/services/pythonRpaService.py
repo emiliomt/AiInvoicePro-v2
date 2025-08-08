@@ -15,6 +15,8 @@ import json
 import base64
 import psycopg2
 import xml.etree.ElementTree as ET
+import requests
+import tempfile
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -92,6 +94,12 @@ class InvoiceRPAService:
         self.log(f"Download directory: {self.download_dir}")
         self.log(f"XML directory: {self.xml_dir}")
 
+        # Proxy configuration from environment variables
+        self.proxy_host = config.get('proxyHost') or os.getenv('PROXY_HOST')
+        self.proxy_port = config.get('proxyPort') or os.getenv('PROXY_PORT')
+        self.proxy_user = config.get('proxyUser') or os.getenv('PROXY_USER')
+        self.proxy_pass = config.get('proxyPass') or os.getenv('PROXY_PASS')
+        
         # Initialize driver
         self.driver = None
         self.wait = None
@@ -119,6 +127,125 @@ class InvoiceRPAService:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{timestamp}] {level}: {message}")
         sys.stdout.flush()
+    
+    def check_current_ip(self):
+        """Check current public IP address"""
+        try:
+            response = requests.get('https://api.ipify.org', timeout=10)
+            current_ip = response.text.strip()
+            self.log(f"🌐 Current public IP address: {current_ip}")
+            return current_ip
+        except Exception as e:
+            self.log(f"⚠️ Could not check IP address: {e}", "WARNING")
+            return None
+    
+    def create_proxy_extension(self, proxy_host: str, proxy_port: str, proxy_user: str, proxy_pass: str) -> str:
+        """Create Chrome extension for authenticated proxy support"""
+        try:
+            # Create a temporary directory for the extension
+            extension_dir = tempfile.mkdtemp(prefix='proxy_auth_')
+            
+            # Manifest for Chrome extension
+            manifest = {
+                "version": "1.0.0",
+                "manifest_version": 2,
+                "name": "Proxy Authentication",
+                "permissions": [
+                    "proxy",
+                    "tabs",
+                    "unlimitedStorage",
+                    "storage",
+                    "<all_urls>",
+                    "webRequest",
+                    "webRequestBlocking"
+                ],
+                "background": {
+                    "scripts": ["background.js"]
+                },
+                "minimum_chrome_version": "22.0.0"
+            }
+            
+            # Background script for proxy authentication
+            background_js = f"""
+var config = {{
+    mode: "fixed_servers",
+    rules: {{
+        singleProxy: {{
+            scheme: "http",
+            host: "{proxy_host}",
+            port: parseInt("{proxy_port}")
+        }},
+        bypassList: ["localhost"]
+    }}
+}};
+
+chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
+
+function callbackFn(details) {{
+    return {{
+        authCredentials: {{
+            username: "{proxy_user}",
+            password: "{proxy_pass}"
+        }}
+    }};
+}}
+
+chrome.webRequest.onAuthRequired.addListener(
+    callbackFn,
+    {{urls: ["<all_urls>"]}},
+    ['blocking']
+);
+"""
+            
+            # Write manifest.json
+            with open(os.path.join(extension_dir, 'manifest.json'), 'w') as f:
+                json.dump(manifest, f)
+            
+            # Write background.js
+            with open(os.path.join(extension_dir, 'background.js'), 'w') as f:
+                f.write(background_js)
+            
+            self.log(f"📁 Created proxy authentication extension at: {extension_dir}")
+            return extension_dir
+            
+        except Exception as e:
+            self.log(f"❌ Error creating proxy extension: {e}", "ERROR")
+            return None
+    
+    def setup_proxy_configuration(self, chrome_options):
+        """Configure proxy settings for Chrome WebDriver"""
+        if not self.proxy_host or not self.proxy_port:
+            self.log("🔄 No proxy configuration found, using direct connection")
+            return chrome_options
+        
+        self.log(f"🔧 Configuring proxy: {self.proxy_host}:{self.proxy_port}")
+        
+        # Check if proxy requires authentication
+        if self.proxy_user and self.proxy_pass:
+            self.log("🔐 Proxy authentication detected, setting up Chrome extension")
+            
+            # Create proxy authentication extension
+            extension_dir = self.create_proxy_extension(
+                self.proxy_host, self.proxy_port, self.proxy_user, self.proxy_pass
+            )
+            
+            if extension_dir:
+                # Load the extension
+                chrome_options.add_argument(f"--load-extension={extension_dir}")
+                # Disable extension loading security checks
+                chrome_options.add_argument("--disable-extensions-file-access-check")
+                chrome_options.add_argument("--disable-extensions-http-throttling")
+                self.log("✅ Proxy authentication extension loaded")
+            else:
+                self.log("❌ Failed to create proxy extension, falling back to direct connection", "ERROR")
+                return chrome_options
+        else:
+            # Simple proxy without authentication
+            proxy_url = f"http://{self.proxy_host}:{self.proxy_port}"
+            chrome_options.add_argument(f"--proxy-server={proxy_url}")
+            self.log(f"✅ Proxy configured: {proxy_url}")
+        
+        return chrome_options
 
     def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: str = None) -> bool:
         """
@@ -462,8 +589,12 @@ class InvoiceRPAService:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
     def setup_driver(self):
-        """Initialize Chrome WebDriver with download preferences"""
+        """Initialize Chrome WebDriver with download preferences and proxy support"""
         self.log("Setting up Chrome WebDriver...")
+        
+        # Check current IP before proxy setup
+        self.log("🔍 Checking IP address before proxy setup...")
+        initial_ip = self.check_current_ip()
 
         try:
             # Check if Chrome/Chromium is available
@@ -496,9 +627,14 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
 
+            # Configure proxy settings before other options
+            chrome_options = self.setup_proxy_configuration(chrome_options)
+
             # Force headless mode for Replit environment with enhanced flags
             chrome_options.add_argument("--headless=new")
-            chrome_options.add_argument("--disable-extensions")
+            # Only disable extensions if not using proxy authentication extension
+            if not (self.proxy_host and self.proxy_user and self.proxy_pass):
+                chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--allow-running-insecure-content")
@@ -528,6 +664,22 @@ class InvoiceRPAService:
             self.long_wait = WebDriverWait(self.driver, 60)
 
             self.log("Chrome WebDriver initialized successfully")
+            
+            # Verify proxy is working by checking IP after driver initialization
+            if self.proxy_host:
+                self.log("🔍 Verifying proxy configuration...")
+                try:
+                    # Navigate to IP check service to verify proxy
+                    self.driver.get("https://api.ipify.org")
+                    time.sleep(2)
+                    proxy_ip = self.driver.find_element("tag name", "body").text.strip()
+                    if proxy_ip and proxy_ip != initial_ip:
+                        self.log(f"✅ Proxy is working! New IP: {proxy_ip} (was: {initial_ip})")
+                    else:
+                        self.log(f"⚠️ Proxy may not be working. Current IP: {proxy_ip}", "WARNING")
+                except Exception as e:
+                    self.log(f"⚠️ Could not verify proxy IP: {e}", "WARNING")
+            
             return True
 
         except ImportError as e:
@@ -542,6 +694,7 @@ class InvoiceRPAService:
                 "ERROR")
             self.log("2. Install Selenium: pip3 install selenium", "ERROR")
             self.log("3. Check if ports are blocked by firewall", "ERROR")
+            self.log("4. Verify proxy configuration if using proxy", "ERROR")
             return False
 
     def init_database(self,
@@ -889,8 +1042,8 @@ class InvoiceRPAService:
             # Initialize database
             db_conn = self.init_database(self.db_path, 'downloads')
             page_count = 0
-            #time.sleep(6)
-            #self.debug_capture("16_invoice_rows_found")
+            time.sleep(60)
+            self.debug_capture("16_invoice_rows_found")
             while True:
                 rows = self.driver.find_elements(By.CSS_SELECTOR,
                                                  "div.rt-tr-group")
