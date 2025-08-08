@@ -883,45 +883,89 @@ class PostgresStorage implements IStorage {
   // Dashboard and utility methods
   async getDashboardStats(userId?: string): Promise<any> {
     try {
-      // Get basic counts
+      console.log(`📊 Getting dashboard stats for user: ${userId}`);
+      
+      // Get user information to find company for accessing RPA invoices
+      let whereCondition = sql`true`;
+      if (userId) {
+        const user = await this.getUser(userId);
+        if (user && user.companyId) {
+          console.log(`👤 User ${userId} belongs to company ${user.companyId}`);
+          // Include both user-owned invoices AND RPA invoices from the same company
+          whereCondition = or(
+            eq(invoices.userId, userId),
+            and(
+              eq(invoices.userId, 'rpa-system'),
+              eq(invoices.companyId, user.companyId)
+            )
+          );
+        } else {
+          console.log(`👤 User ${userId} found, using user-only filter`);
+          whereCondition = eq(invoices.userId, userId);
+        }
+      }
+
+      // Get basic counts with company-aware filtering
       const totalInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
-        .where(userId ? eq(invoices.userId, userId) : sql`true`);
+        .where(whereCondition || sql`true`);
 
       const pendingInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
         .where(and(
           eq(invoices.status, 'pending'),
-          userId ? eq(invoices.userId, userId) : sql`true`
+          whereCondition || sql`true`
         ));
 
       const approvedInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
         .where(and(
           eq(invoices.status, 'approved'),
-          userId ? eq(invoices.userId, userId) : sql`true`
+          whereCondition || sql`true`
+        ));
+
+      // Also get extracted, rejected status counts for completeness
+      const extractedInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
+        .where(and(
+          eq(invoices.status, 'extracted'),
+          whereCondition || sql`true`
+        ));
+
+      const rejectedInvoicesPromise = db.select({ count: sql<number>`count(*)` }).from(invoices)
+        .where(and(
+          eq(invoices.status, 'rejected'),
+          whereCondition || sql`true`
         ));
 
       const totalProjectsPromise = db.select({ count: sql<number>`count(*)` }).from(projects);
 
-      const [totalInvoices, pendingInvoices, approvedInvoices, totalProjects] = await Promise.all([
+      const [totalInvoices, pendingInvoices, approvedInvoices, extractedInvoices, rejectedInvoices, totalProjects] = await Promise.all([
         totalInvoicesPromise,
         pendingInvoicesPromise,
         approvedInvoicesPromise,
+        extractedInvoicesPromise,
+        rejectedInvoicesPromise,
         totalProjectsPromise
       ]);
 
-      return {
+      const stats = {
         totalInvoices: totalInvoices[0]?.count || 0,
         pendingInvoices: pendingInvoices[0]?.count || 0,
         approvedInvoices: approvedInvoices[0]?.count || 0,
+        extractedInvoices: extractedInvoices[0]?.count || 0,
+        rejectedInvoices: rejectedInvoices[0]?.count || 0,
         totalProjects: totalProjects[0]?.count || 0,
         recentInvoices: 0,
         processingTime: 0
       };
+
+      console.log(`📊 Dashboard stats result:`, stats);
+      return stats;
     } catch (error) {
       console.error('Error in getDashboardStats:', error);
       return {
         totalInvoices: 0,
         pendingInvoices: 0,
         approvedInvoices: 0,
+        extractedInvoices: 0,
+        rejectedInvoices: 0,
         totalProjects: 0,
         recentInvoices: 0,
         processingTime: 0
