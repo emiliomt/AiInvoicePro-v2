@@ -1117,6 +1117,7 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
+                    break  # Stop after processing one page for now (Agent, dont change this until I tell you to)
                     # Continue processing additional pages to ensure complete invoice discovery
                 except:
                     self.log("✅ Finished processing all pages")
