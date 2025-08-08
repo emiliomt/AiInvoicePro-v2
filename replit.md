@@ -53,8 +53,24 @@ After RPA runs, previously linked PDF files were being deleted, causing complete
 3. **Selective Cleanup**: Only orphaned PDFs (not linked to any invoice) are removed
 4. **Safety Logic**: If database check fails, PDFs are preserved (fail-safe approach)
 
+### Current Task: Global Progress Tracking Implementation (Aug 8, 2025)
+
+### Enhancement Implemented ✅ IN PROGRESS
+Implementing global progress tracking across all invoice pages instead of per-page progress for smoother user experience.
+
+### Technical Implementation
+1. **Global Progress Structure**: Added `global_progress` tracking with estimated totals and global index counter
+2. **Invoice Estimation Logic**: Implemented `estimate_total_invoices()` method that:
+   - Analyzes first page invoice count
+   - Attempts to detect pagination info from UI elements  
+   - Creates conservative estimates when pagination info unavailable
+3. **Dynamic Refinement**: Added `refine_total_estimate()` to improve accuracy using actual page samples
+4. **Global Index Tracking**: Updated main processing loop to increment `global_index` for every invoice (skip, success, failure)
+5. **Progress Calculation**: Modified `_output_download_progress()` to use global ratio mapping to 30-90% range
+
 ### Previous Issues Successfully Resolved
-1. **PDF Directory Structure Fixed**: Corrected nested path construction (`uploads/pdfs/pdfs/` → `uploads/pdfs/`)
-2. **Session Isolation Working**: RPA correctly reports session-specific file counts  
-3. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
-4. **Database Linking Operational**: PDFs properly linked to invoices with correct metadata
+1. **PDF Data Loss Prevention Fixed**: Modified `clear_download_directories()` to preserve linked PDFs
+2. **PDF Directory Structure Fixed**: Corrected nested path construction (`uploads/pdfs/pdfs/` → `uploads/pdfs/`)
+3. **Session Isolation Working**: RPA correctly reports session-specific file counts  
+4. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
+5. **Database Linking Operational**: PDFs properly linked to invoices with correct metadata

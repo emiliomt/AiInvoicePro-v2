@@ -108,6 +108,15 @@ class InvoiceRPAService:
             'current_step': 'Initializing',
             'progress': 0
         }
+        
+        # Global Progress Tracking for Multi-Page Processing
+        self.global_progress = {
+            'estimated_total_invoices': 0,     # Total estimated invoices across all pages
+            'global_index': 0,                 # Current invoice index across all pages
+            'invoices_per_page_samples': [],   # Sample counts to refine estimates
+            'pages_processed': 0,              # Number of pages processed so far
+            'initial_estimate_method': None    # Track how we made the initial estimate
+        }
 
         # Track files downloaded in current session (for accurate counting)
         self.session_downloaded_files = set()  # Files downloaded in this session
@@ -931,6 +940,9 @@ class InvoiceRPAService:
 
             # Debug capture after iframe switch
             self.debug_capture("15_after_iframe_switch")
+            
+            # Estimate total invoices across all pages for global progress tracking
+            self.estimate_total_invoices()
 
             # Wait for rows to load
             self.log("⏳ Waiting for invoice rows to populate...")
@@ -987,8 +999,9 @@ class InvoiceRPAService:
                         # Enhanced total amount normalization for Colombian currency
                         valor_total = valor_total_raw.replace(",", "").replace(".", "").replace("$", "").replace("COP", "").replace("\n", "").replace("\r", "").strip().split(" ")[0]
 
-                        # Count total invoices encountered
+                        # Count total invoices encountered and update global index
                         self.stats['total_invoices'] += 1
+                        self.global_progress['global_index'] += 1
                         
                         # ROBUST PRE-DOWNLOAD DUPLICATE CHECK 
                         # Connect to PostgreSQL for duplicate checking
@@ -1001,7 +1014,7 @@ class InvoiceRPAService:
                                 if self.is_duplicate_invoice(pg_conn, numero_documento, emisor_raw, valor_total_raw):
                                     self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor_raw}")
                                     self.stats['skipped_invoices'] += 1
-                                    # Output progress with skip status
+                                    # Output progress with skip status - global progress updated above
                                     self._output_download_progress(i + 1, len(rows), f"Skipped duplicate {numero_documento}")
                                     pg_conn.close()
                                     continue
@@ -1040,6 +1053,12 @@ class InvoiceRPAService:
                         self.stats['failed_imports'] += 1
                         continue
 
+                # Update page processing count and refine total invoice estimate
+                self.global_progress['pages_processed'] = page_count + 1
+                if len(data_rows) > 0:
+                    self.global_progress['invoices_per_page_samples'].append(len(data_rows))
+                    self.refine_total_estimate()
+                
                 # Try to go to next page
                 try:
                     next_btn = self.driver.find_element(
@@ -1051,7 +1070,7 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    break  # Exit loop after processing one page for now
+                    #break  # Exit loop after processing one page for now
                 except:
                     self.log("✅ Finished processing all pages")
                     break
@@ -1876,6 +1895,97 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"Error extracting buyer tax ID from XML: {e}", "ERROR")
             return None
+
+    def estimate_total_invoices(self):
+        """Estimate total invoices across all pages for global progress tracking"""
+        try:
+            self.log("🔍 Estimating total invoices across all pages...")
+            
+            # Get initial page row count
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
+            data_rows = [r for r in rows if r.text.strip()]
+            first_page_count = len(data_rows)
+            
+            if first_page_count == 0:
+                self.log("⚠️ No data rows found on first page, using fallback estimate")
+                self.global_progress['estimated_total_invoices'] = 50  # Conservative fallback
+                self.global_progress['initial_estimate_method'] = 'fallback'
+                return
+            
+            # Try to find pagination info to get total pages
+            try:
+                # Look for pagination indicators (common patterns)
+                pagination_elements = self.driver.find_elements(By.CSS_SELECTOR, 
+                    "span[class*='page'], div[class*='page'], button[class*='page']")
+                
+                total_pages = None
+                for elem in pagination_elements:
+                    text = elem.text.strip()
+                    # Look for patterns like "Page 1 of 5" or "1 / 5"
+                    if 'of' in text.lower():
+                        try:
+                            total_pages = int(text.split('of')[-1].strip())
+                            break
+                        except ValueError:
+                            continue
+                    elif '/' in text:
+                        try:
+                            total_pages = int(text.split('/')[-1].strip())
+                            break
+                        except ValueError:
+                            continue
+                
+                if total_pages and total_pages > 0:
+                    estimated_total = first_page_count * total_pages
+                    self.global_progress['estimated_total_invoices'] = estimated_total
+                    self.global_progress['initial_estimate_method'] = f'pagination_info_{total_pages}_pages'
+                    self.log(f"📊 Estimated {estimated_total} total invoices ({first_page_count} per page × {total_pages} pages)")
+                    return
+                    
+            except Exception as e:
+                self.log(f"⚠️ Could not find pagination info: {e}")
+            
+            # Fallback: Estimate based on first page and assume reasonable page count
+            estimated_pages = 3  # Conservative estimate
+            estimated_total = first_page_count * estimated_pages
+            self.global_progress['estimated_total_invoices'] = estimated_total
+            self.global_progress['initial_estimate_method'] = f'conservative_estimate_{estimated_pages}_pages'
+            self.log(f"📊 Conservative estimate: {estimated_total} total invoices ({first_page_count} per page × {estimated_pages} estimated pages)")
+            
+        except Exception as e:
+            self.log(f"❌ Error estimating total invoices: {e}", "ERROR")
+            # Ultra-conservative fallback
+            self.global_progress['estimated_total_invoices'] = 30
+            self.global_progress['initial_estimate_method'] = 'error_fallback'
+    
+    def refine_total_estimate(self):
+        """Refine total invoice estimate based on actual page data"""
+        try:
+            if len(self.global_progress['invoices_per_page_samples']) < 2:
+                return  # Need at least 2 samples to refine
+                
+            # Calculate average invoices per page from samples
+            samples = self.global_progress['invoices_per_page_samples']
+            avg_per_page = sum(samples) / len(samples)
+            pages_processed = self.global_progress['pages_processed']
+            
+            # If we've processed several pages, update estimate based on actual data
+            if pages_processed >= 2:
+                # Extrapolate based on current progress vs. initial estimate
+                current_processed = self.global_progress['global_index']
+                if current_processed > 0:
+                    # Estimate remaining pages based on current pattern
+                    estimated_remaining_pages = max(1, int(avg_per_page * 1.2))  # Add 20% buffer
+                    refined_total = current_processed + (estimated_remaining_pages * avg_per_page)
+                    
+                    # Only update if the refined estimate is significantly different
+                    current_estimate = self.global_progress['estimated_total_invoices']
+                    if abs(refined_total - current_estimate) > current_estimate * 0.2:  # 20% difference threshold
+                        self.global_progress['estimated_total_invoices'] = int(refined_total)
+                        self.log(f"📈 Refined total estimate to {int(refined_total)} invoices (avg {avg_per_page:.1f} per page)")
+                        
+        except Exception as e:
+            self.log(f"⚠️ Error refining estimate: {e}", "WARNING")
 
     def clear_download_directories(self):
         """Clear download directories to prevent processing orphaned files from previous runs"""
@@ -2735,11 +2845,20 @@ class InvoiceRPAService:
     def _output_download_progress(self, current_item: int, total_items: int, current_step: str):
         """Output progress statistics with enhanced metrics tracking and validation"""
         try:
-            # Calculate download progress (30-90% range for download phase)
-            download_progress = 30 + int((current_item / total_items) * 60) if total_items > 0 else 30
+            # Use global progress tracking across all pages
+            if self.global_progress['estimated_total_invoices'] > 0:
+                # Calculate global progress (30-90% range for download phase)
+                global_progress_ratio = self.global_progress['global_index'] / self.global_progress['estimated_total_invoices']
+                download_progress = 30 + int(global_progress_ratio * 60)
+                download_progress = min(download_progress, 90)  # Cap at 90% for download phase
+                
+                # Update step description with global context
+                self.stats['current_step'] = f"Processing invoice {self.global_progress['global_index']}/{self.global_progress['estimated_total_invoices']}: {current_step}"
+            else:
+                # Fallback to page-based progress if global estimation isn't available
+                download_progress = 30 + int((current_item / total_items) * 60) if total_items > 0 else 30
+                self.stats['current_step'] = f"Page {self.global_progress['pages_processed'] + 1}, item {current_item}/{total_items}: {current_step}"
             
-            # Update internal stats
-            self.stats['current_step'] = f"Downloading {current_item}/{total_items}: {current_step}"
             self.stats['progress'] = download_progress
             
             # Validate metric consistency before reporting
