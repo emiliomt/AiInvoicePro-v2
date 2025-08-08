@@ -29,7 +29,9 @@ import {
   Database,
   Settings as SettingsIcon,
   Zap,
-  RefreshCw
+  RefreshCw,
+  Network,
+  RotateCw
 } from "lucide-react";
 import Header from "@/components/Header";
 import { useAuth } from "@/hooks/useAuth";
@@ -46,6 +48,11 @@ interface UserSettings {
   aiCacheEnabled?: boolean;
   aiCacheExpiry?: string;
   aiAutoInvalidation?: string;
+  // RPA Proxy Settings
+  rpaProxyRotationEnabled?: boolean;
+  rpaProxyRotationInterval?: number;
+  rpaProxyList?: string[];
+  rpaCurrentProxyIndex?: number;
 }
 
 
@@ -128,7 +135,12 @@ export default function Settings() {
           aiProcessingMode: 'automatic',
           aiCacheEnabled: true,
           aiCacheExpiry: '24h',
-          aiAutoInvalidation: 'on_update'
+          aiAutoInvalidation: 'on_update',
+          // RPA Proxy defaults
+          rpaProxyRotationEnabled: false,
+          rpaProxyRotationInterval: 100,
+          rpaProxyList: [],
+          rpaCurrentProxyIndex: 0
         };
       }
       const data = await response.json();
@@ -434,6 +446,104 @@ export default function Settings() {
                       <SelectItem value="America/Bogota">Bogotá (UTC-5)</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+
+                <Separator />
+
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <Label className="text-base font-medium flex items-center">
+                      <Network className="mr-2 h-4 w-4" />
+                      RPA Proxy Settings
+                    </Label>
+                    <p className="text-sm text-gray-600">Configure proxy rotation for RPA automation</p>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <div className="space-y-0.5">
+                      <Label className="text-sm font-medium flex items-center">
+                        <RotateCw className="mr-2 h-3 w-3" />
+                        Enable Proxy Rotation
+                      </Label>
+                      <p className="text-xs text-gray-600">Automatically rotate IP addresses during RPA imports</p>
+                    </div>
+                    <Switch
+                      checked={userSettings.rpaProxyRotationEnabled}
+                      onCheckedChange={(checked) => updateSetting('rpaProxyRotationEnabled', checked)}
+                    />
+                  </div>
+
+                  {userSettings.rpaProxyRotationEnabled && (
+                    <>
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5">
+                          <Label className="text-sm font-medium">Rotation Interval</Label>
+                          <p className="text-xs text-gray-600">Number of imports before rotating proxy</p>
+                        </div>
+                        <div className="w-24">
+                          <Input
+                            type="number"
+                            min="1"
+                            max="1000"
+                            value={userSettings.rpaProxyRotationInterval || 100}
+                            onChange={(e) => updateSetting('rpaProxyRotationInterval', parseInt(e.target.value) || 100)}
+                            className="text-sm text-center"
+                          />
+                        </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <Label className="text-sm font-medium">Proxy List</Label>
+                        <p className="text-xs text-gray-600 mb-2">
+                          Enter proxy addresses (format: http://host:port or socks5://user:pass@host:port)
+                        </p>
+                        <div className="space-y-2 max-h-32 overflow-y-auto">
+                          {(userSettings.rpaProxyList || []).map((proxy, index) => (
+                            <div key={index} className="flex items-center space-x-2">
+                              <Input
+                                value={proxy}
+                                onChange={(e) => {
+                                  const newList = [...(userSettings.rpaProxyList || [])];
+                                  newList[index] = e.target.value;
+                                  updateSetting('rpaProxyList', newList);
+                                }}
+                                placeholder="http://proxy.example.com:8080"
+                                className="text-sm"
+                              />
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => {
+                                  const newList = (userSettings.rpaProxyList || []).filter((_, i) => i !== index);
+                                  updateSetting('rpaProxyList', newList);
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          ))}
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            const newList = [...(userSettings.rpaProxyList || []), ''];
+                            updateSetting('rpaProxyList', newList);
+                          }}
+                          className="w-full"
+                        >
+                          Add Proxy
+                        </Button>
+                      </div>
+
+                      <div className="text-xs text-gray-500 p-2 bg-gray-50 rounded">
+                        <p><strong>Current Status:</strong> {(userSettings.rpaProxyList || []).length} proxy(ies) configured</p>
+                        <p><strong>Active Proxy:</strong> {(userSettings.rpaProxyList || []).length > 0 
+                          ? `#${(userSettings.rpaCurrentProxyIndex || 0) + 1} - ${(userSettings.rpaProxyList || [])[userSettings.rpaCurrentProxyIndex || 0] || 'None'}`
+                          : 'None'}</p>
+                      </div>
+                    </>
+                  )}
                 </div>
               </CardContent>
             </Card>

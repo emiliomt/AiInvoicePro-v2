@@ -270,6 +270,29 @@ class PythonInvoiceImporter {
    * Common import process logic shared by both methods
    */
   private async _executeImportProcess(config: InvoiceImporterConfig, progress: ImportProgress): Promise<void> {
+    // Fetch user proxy rotation settings
+    let userProxySettings = {
+      proxyRotationEnabled: false,
+      proxyRotationInterval: 100,
+      proxyList: [] as string[],
+      currentProxyIndex: 0
+    };
+    
+    try {
+      const userSettings = await storage.getUserSetting(config.userId, 'user_preferences');
+      if (userSettings) {
+        const preferences = JSON.parse(userSettings.value || '{}');
+        userProxySettings = {
+          proxyRotationEnabled: preferences.rpaProxyRotationEnabled || false,
+          proxyRotationInterval: preferences.rpaProxyRotationInterval || 100,
+          proxyList: preferences.rpaProxyList || [],
+          currentProxyIndex: preferences.rpaCurrentProxyIndex || 0
+        };
+      }
+    } catch (error) {
+      console.log('Could not fetch user proxy settings, using defaults:', error.message);
+    }
+    
     // Prepare Python RPA configuration
     const pythonConfig = {
       erpUrl: config.erpUrl,
@@ -280,11 +303,16 @@ class PythonInvoiceImporter {
       headless: config.headless !== undefined ? config.headless : true,
       fileTypes: config.fileTypes || 'both',
       zipDownloadTimeout: config.zipDownloadTimeout || 60,
-      // Proxy configuration from environment variables or config
+      // Legacy proxy configuration from environment variables or config (for backward compatibility)
       proxyHost: config.proxyHost || process.env.PROXY_HOST,
       proxyPort: config.proxyPort || process.env.PROXY_PORT,
       proxyUser: config.proxyUser || process.env.PROXY_USER,
       proxyPass: config.proxyPass || process.env.PROXY_PASS,
+      // New proxy rotation configuration
+      proxyRotationEnabled: userProxySettings.proxyRotationEnabled,
+      proxyRotationInterval: userProxySettings.proxyRotationInterval,
+      proxyList: userProxySettings.proxyList,
+      currentProxyIndex: userProxySettings.currentProxyIndex,
     };
 
     // Validate required fields
@@ -300,9 +328,15 @@ class PythonInvoiceImporter {
       zipDownloadTimeout: pythonConfig.zipDownloadTimeout,
       headless: pythonConfig.headless,
       fileTypes: pythonConfig.fileTypes,
+      // Legacy proxy settings
       proxyHost: pythonConfig.proxyHost ? 'configured' : 'not set',
       proxyPort: pythonConfig.proxyPort || 'not set',
       proxyAuth: pythonConfig.proxyUser ? 'enabled' : 'disabled',
+      // New proxy rotation settings
+      proxyRotationEnabled: pythonConfig.proxyRotationEnabled,
+      proxyRotationInterval: pythonConfig.proxyRotationInterval,
+      proxyListCount: pythonConfig.proxyList.length,
+      currentProxyIndex: pythonConfig.currentProxyIndex,
     });
 
     // Execute Python RPA process

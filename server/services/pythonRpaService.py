@@ -58,6 +58,13 @@ class InvoiceRPAService:
         
         # Get ZIP download timeout from config (default to 60 seconds)
         self.zip_download_timeout = config.get('zipDownloadTimeout', 60)
+        
+        # Proxy Rotation Configuration
+        self.proxy_rotation_enabled = config.get('proxyRotationEnabled', False)
+        self.proxy_rotation_interval = config.get('proxyRotationInterval', 100)
+        self.proxy_list = config.get('proxyList', [])
+        self.current_proxy_index = config.get('currentProxyIndex', 0)
+        self.imports_since_rotation = 0
 
         # Validate required config values early
         if not self.erp_url:
@@ -113,6 +120,59 @@ class InvoiceRPAService:
         """Check if driver and wait objects are properly initialized"""
         return (self.driver is not None and self.wait is not None
                 and self.short_wait is not None and self.long_wait is not None)
+
+    def get_current_proxy(self) -> str:
+        """Get the current proxy from the rotation list"""
+        if not self.proxy_list or len(self.proxy_list) == 0:
+            return None
+        
+        # Ensure index is within bounds
+        if self.current_proxy_index >= len(self.proxy_list):
+            self.current_proxy_index = 0
+            
+        return self.proxy_list[self.current_proxy_index].strip()
+    
+    def rotate_proxy(self) -> bool:
+        """Rotate to the next proxy in the list"""
+        if not self.proxy_rotation_enabled or not self.proxy_list or len(self.proxy_list) <= 1:
+            return False
+            
+        self.current_proxy_index = (self.current_proxy_index + 1) % len(self.proxy_list)
+        self.imports_since_rotation = 0
+        
+        new_proxy = self.get_current_proxy()
+        self.log(f"🔄 Rotated to proxy: {new_proxy} (index: {self.current_proxy_index + 1}/{len(self.proxy_list)})")
+        return True
+    
+    def should_rotate_proxy(self) -> bool:
+        """Check if proxy should be rotated based on import count"""
+        return (self.proxy_rotation_enabled and 
+                len(self.proxy_list) > 1 and
+                self.imports_since_rotation >= self.proxy_rotation_interval)
+    
+    def increment_import_count(self):
+        """Increment import count for proxy rotation tracking"""
+        self.imports_since_rotation += 1
+        if self.proxy_rotation_enabled:
+            self.log(f"📊 Imports since last rotation: {self.imports_since_rotation}/{self.proxy_rotation_interval}")
+    
+    def restart_driver_with_new_proxy(self) -> bool:
+        """Restart WebDriver with new proxy configuration"""
+        try:
+            if self.driver:
+                self.log("🔄 Shutting down current WebDriver for proxy rotation...")
+                self.driver.quit()
+                self.driver = None
+                self.wait = None
+                self.short_wait = None
+                self.long_wait = None
+            
+            # Setup driver with new proxy
+            return self.setup_driver()
+            
+        except Exception as e:
+            self.log(f"❌ Error restarting driver with new proxy: {e}", "ERROR")
+            return False
 
     def log(self, message: str, level: str = 'INFO'):
         """Log message with timestamp"""
@@ -524,6 +584,32 @@ class InvoiceRPAService:
             chrome_options.add_argument("--disable-background-downloads")
             chrome_options.add_argument("--disable-default-apps")
             chrome_options.add_argument("--disable-notifications")
+            
+            # Add proxy configuration if enabled
+            if self.proxy_rotation_enabled and self.proxy_list and len(self.proxy_list) > 0:
+                current_proxy = self.get_current_proxy()
+                if current_proxy:
+                    self.log(f"🌐 Configuring proxy: {current_proxy} (index: {self.current_proxy_index + 1}/{len(self.proxy_list)})")
+                    if current_proxy.startswith('socks5://'):
+                        # SOCKS5 proxy
+                        proxy_without_protocol = current_proxy.replace('socks5://', '')
+                        chrome_options.add_argument(f"--proxy-server=socks5://{proxy_without_protocol}")
+                    elif current_proxy.startswith('socks4://'):
+                        # SOCKS4 proxy  
+                        proxy_without_protocol = current_proxy.replace('socks4://', '')
+                        chrome_options.add_argument(f"--proxy-server=socks4://{proxy_without_protocol}")
+                    else:
+                        # HTTP proxy (default)
+                        if not current_proxy.startswith('http'):
+                            current_proxy = f"http://{current_proxy}"
+                        chrome_options.add_argument(f"--proxy-server={current_proxy}")
+                    
+                    # Disable proxy bypass for local addresses
+                    chrome_options.add_argument("--proxy-bypass-list=<-loopback>")
+                else:
+                    self.log("⚠️ No valid proxy available, continuing without proxy")
+            else:
+                self.log("🔄 Proxy rotation disabled or no proxies configured")
 
             self.log(
                 "Initializing ChromeDriver in headless mode with debug capture..."
@@ -936,8 +1022,7 @@ class InvoiceRPAService:
             # Initialize database
             db_conn = self.init_database(self.db_path, 'downloads')
             page_count = 0
-            time.sleep(60)
-            self.debug_capture("16_invoice_rows_found")
+
             while True:
                 rows = self.driver.find_elements(By.CSS_SELECTOR,
                                                  "div.rt-tr-group")
@@ -1106,6 +1191,21 @@ class InvoiceRPAService:
             """, (numero_documento, safe_emisor, valor_total,
                   os.path.basename(final_path)))
             db_conn.commit()
+            
+            # Increment import count and check for proxy rotation
+            self.increment_import_count()
+            if self.should_rotate_proxy():
+                self.log(f"🔄 Proxy rotation threshold reached ({self.proxy_rotation_interval} imports)")
+                if self.rotate_proxy():
+                    # Restart driver with new proxy after completing current batch
+                    # (Driver will be restarted on next operation)
+                    self.log("🔄 Proxy rotated, driver will restart on next operation")
+                    
+                    # Optional: Restart immediately if needed
+                    # if not self.restart_driver_with_new_proxy():
+                    #     self.log("⚠️ Failed to restart driver with new proxy, continuing with current session")
+                        
+            return True
 
             # Close download dialog
             if not self.short_wait:
