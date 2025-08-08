@@ -114,9 +114,12 @@ export const lineItems = pgTable("line_items", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull(),
   description: text("description").notNull(),
-  quantity: decimal("quantity", { precision: 10, scale: 2 }).notNull(),
-  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }).notNull(),
-  totalPrice: decimal("total_price", { precision: 10, scale: 2 }).notNull(),
+  quantity: decimal("quantity", { precision: 10, scale: 2 }),
+  unitPrice: decimal("unit_price", { precision: 10, scale: 2 }),
+  totalPrice: decimal("total_price", { precision: 10, scale: 2 }),
+  unit: varchar("unit", { length: 50 }), // e.g., "kg", "hours", "pieces"
+  rawText: text("raw_text"), // Original extracted text for debugging
+  lineNumber: integer("line_number"), // Position in the invoice
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -770,6 +773,16 @@ export const importedInvoicesRelations = relations(importedInvoices, ({ one }) =
 
 // Classification keyword categories enum
 export const classificationCategoryEnum = pgEnum("classification_category", [
+  "materials_supplies",        // Raw materials, supplies, and consumable items
+  "equipment_tools",          // Tools, machinery, equipment, and hardware for operations
+  "services_labor",           // Professional services, labor, consulting, and expertise
+  "utilities_facilities",     // Utilities, facility costs, and operational overhead
+  "food_beverages",           // Food, beverages, and related consumables
+  "transportation_logistics", // Transportation, shipping, logistics, and related services
+  "technology_software",      // Technology, software, digital services, and IT solutions
+  "marketing_advertising",    // Marketing, advertising, promotional materials and services
+  "other",                    // Items that don't fit into standard business categories
+  // Legacy categories for backward compatibility
   "consumable_materials",
   "non_consumable_materials", 
   "labor",
@@ -787,14 +800,30 @@ export const classificationKeywords = pgTable("classification_keywords", {
   updatedAt: timestamp("updated_at").defaultNow(),
 });
 
+// Classification method enum
+export const classificationMethodEnum = pgEnum("classification_method", [
+  "keyword",    // Keyword matching
+  "ai",         // AI/OpenAI classification
+  "fuzzy",      // Fuzzy matching
+  "context",    // Context-based classification
+  "learned",    // Machine learning based
+  "manual"      // Manual user override
+]);
+
 // Line item classifications table
 export const lineItemClassifications = pgTable("line_item_classifications", {
   id: serial("id").primaryKey(),
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
-  matchedKeyword: varchar("matched_keyword", { length: 255 }).notNull(),
-  isManualOverride: boolean("is_manual_override").default(false),
+  subcategory: varchar("subcategory", { length: 255 }),
+  matchedKeywords: text("matched_keywords").array(), // Array of matched keywords
   confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
+  method: classificationMethodEnum("method").notNull(),
+  reasoning: text("reasoning"), // AI explanation for classification
+  vendorContext: text("vendor_context"), // Vendor-specific context
+  isUserVerified: boolean("is_user_verified").default(false),
+  isManualOverride: boolean("is_manual_override").default(false),
+  originalText: text("original_text"), // Store original line item text
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
 });
@@ -823,6 +852,18 @@ export const lineItemClassificationsRelations = relations(lineItemClassification
     references: [lineItems.id],
   }),
 }));
+
+// Enhanced classification schemas
+export const insertLineItemClassificationSchema = createInsertSchema(lineItemClassifications).omit({
+  id: true,
+  classifiedAt: true,
+});
+
+export const insertClassificationKeywordSchema = createInsertSchema(classificationKeywords).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+});
 
 // Types
 export type InsertCompany = typeof companies.$inferInsert;

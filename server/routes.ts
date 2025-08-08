@@ -5974,5 +5974,139 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
+  // Line Item Classification API Routes
+  app.post('/api/classification/classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const { description, quantity, unitPrice, totalPrice, unit, rawText, vendorContext } = req.body;
+
+      if (!description) {
+        return res.status(400).json({ error: 'Description is required' });
+      }
+
+      // Import the classifier dynamically to avoid initialization errors
+      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      
+      // Check if OpenAI key is available
+      let openaiKey;
+      try {
+        openaiKey = process.env.OPENAI_API_KEY;
+      } catch (error) {
+        console.log('OpenAI API key not found, using keyword-based classification');
+      }
+
+      const classifier = new AILineItemClassifier(openaiKey);
+      
+      const lineItem = {
+        description,
+        quantity: quantity ? parseFloat(quantity) : undefined,
+        unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
+        totalPrice: totalPrice ? parseFloat(totalPrice) : undefined,
+        unit,
+        rawText
+      };
+
+      const result = await classifier.classifyLineItem(lineItem, vendorContext);
+      res.json(result);
+    } catch (error) {
+      console.error('Classification error:', error);
+      res.status(500).json({ error: 'Failed to classify line item' });
+    }
+  });
+
+  app.post('/api/classification/batch', isAuthenticated, async (req: any, res) => {
+    try {
+      const { lineItems, vendorContext } = req.body;
+
+      if (!Array.isArray(lineItems) || lineItems.length === 0) {
+        return res.status(400).json({ error: 'Line items array is required' });
+      }
+
+      // Import the classifier dynamically
+      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      
+      let openaiKey;
+      try {
+        openaiKey = process.env.OPENAI_API_KEY;
+      } catch (error) {
+        console.log('OpenAI API key not found, using keyword-based classification');
+      }
+
+      const classifier = new AILineItemClassifier(openaiKey);
+      
+      const results = await classifier.classifyBatch(lineItems, vendorContext);
+      res.json({ results });
+    } catch (error) {
+      console.error('Batch classification error:', error);
+      res.status(500).json({ error: 'Failed to classify line items' });
+    }
+  });
+
+  app.get('/api/classification/categories', isAuthenticated, async (req: any, res) => {
+    try {
+      // Return the supported categories
+      const categories = {
+        materials_supplies: "Raw materials, supplies, and consumable items",
+        equipment_tools: "Tools, machinery, equipment, and hardware for operations",
+        services_labor: "Professional services, labor, consulting, and expertise",
+        utilities_facilities: "Utilities, facility costs, and operational overhead",
+        food_beverages: "Food, beverages, and related consumables",
+        transportation_logistics: "Transportation, shipping, logistics, and related services",
+        technology_software: "Technology, software, digital services, and IT solutions",
+        marketing_advertising: "Marketing, advertising, promotional materials and services",
+        other: "Items that don't fit into standard business categories"
+      };
+      
+      res.json(categories);
+    } catch (error) {
+      console.error('Error fetching categories:', error);
+      res.status(500).json({ error: 'Failed to fetch categories' });
+    }
+  });
+
+  // Test route for the classifier
+  app.post('/api/classification/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const testResults = [];
+      
+      // Import the classifier dynamically
+      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      
+      let openaiKey;
+      try {
+        openaiKey = process.env.OPENAI_API_KEY;
+      } catch (error) {
+        console.log('OpenAI API key not found, using keyword-based classification');
+      }
+
+      const classifier = new AILineItemClassifier(openaiKey);
+
+      // Test with sample line items from your uploaded test data
+      const testItems = [
+        { description: "C S IND MUROPLACA 4", rawText: "C S IND MUROPLACA 4" },
+        { description: "Cemento portland", quantity: 50, unit: "kg" },
+        { description: "Servicios de consultoría ingeniería", unitPrice: 150000, totalPrice: 450000 },
+        { description: "Laptop Dell Inspiron", quantity: 1, unitPrice: 2500000 },
+        { description: "Combustible diesel para equipos", quantity: 100, unit: "litros" }
+      ];
+
+      for (const item of testItems) {
+        const result = await classifier.classifyLineItem(item);
+        testResults.push({
+          item,
+          classification: result
+        });
+      }
+
+      res.json({ 
+        message: "Classification test completed",
+        results: testResults,
+        classifier_initialized: !!openaiKey
+      });
+    } catch (error) {
+      console.error('Classification test error:', error);
+      res.status(500).json({ error: 'Failed to run classification test' });
+    }
+  });
+
   return httpServer;
 }

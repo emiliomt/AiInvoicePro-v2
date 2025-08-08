@@ -1,807 +1,438 @@
+import { useState } from 'react';
+import { useMutation, useQuery } from '@tanstack/react-query';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Separator } from '@/components/ui/separator';
+import { Loader2, TestTube, Upload, FileText, Zap } from 'lucide-react';
+import { apiRequest } from '@/lib/queryClient';
+import { useToast } from '@/hooks/use-toast';
 
-import { useState, useEffect } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { useAuth } from "@/hooks/useAuth";
-import Header from "@/components/Header";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Badge } from "@/components/ui/badge";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { useToast } from "@/hooks/use-toast";
-import { 
-  Plus, 
-  Trash2, 
-  Upload, 
-  Download, 
-  Settings, 
-  Tag, 
-  Wrench, 
-  HardHat, 
-  Package,
-  Users,
-  RefreshCw,
-  Check,
-  AlertCircle,
-  Bot
-} from "lucide-react";
-
-interface ClassificationKeywords {
-  consumable_materials: { id: number; keyword: string; isDefault: boolean }[];
-  non_consumable_materials: { id: number; keyword: string; isDefault: boolean }[];
-  labor: { id: number; keyword: string; isDefault: boolean }[];
-  tools_equipment: { id: number; keyword: string; isDefault: boolean }[];
+interface ClassificationResult {
+  category: string;
+  confidence: number;
+  matchedKeywords: string[];
+  method: 'ai' | 'keyword' | 'hybrid';
+  reasoning?: string;
 }
 
-const CATEGORY_INFO = {
-  consumable_materials: {
-    label: "Consumable Materials",
-    icon: Package,
-    color: "bg-blue-100 text-blue-800",
-    description: "Materials that are used up during construction/operations"
-  },
-  non_consumable_materials: {
-    label: "Non-Consumable Materials", 
-    icon: Settings,
-    color: "bg-green-100 text-green-800",
-    description: "Durable materials and equipment that are reusable"
-  },
-  labor: {
-    label: "Labor",
-    icon: Users,
-    color: "bg-purple-100 text-purple-800", 
-    description: "Human resources and professional services"
-  },
-  tools_equipment: {
-    label: "Tools & Equipment",
-    icon: Wrench,
-    color: "bg-orange-100 text-orange-800",
-    description: "Tools, machinery, and equipment"
-  }
-};
+interface LineItem {
+  description: string;
+  quantity?: number;
+  unitPrice?: number;
+  totalPrice?: number;
+  unit?: string;
+  rawText?: string;
+}
 
 export default function LineItemClassification() {
-  const { user } = useAuth();
   const { toast } = useToast();
-  const queryClient = useQueryClient();
+  const [lineItem, setLineItem] = useState<LineItem>({
+    description: '',
+    quantity: undefined,
+    unitPrice: undefined,
+    totalPrice: undefined,
+    unit: '',
+    rawText: ''
+  });
+  const [batchItems, setBatchItems] = useState('');
+  const [classificationResult, setClassificationResult] = useState<ClassificationResult | null>(null);
+  const [batchResults, setBatchResults] = useState<any[] | null>(null);
 
-  const [activeCategory, setActiveCategory] = useState("consumable_materials");
-  const [newKeyword, setNewKeyword] = useState("");
-  const [bulkKeywords, setBulkKeywords] = useState("");
-  const [selectedInvoice, setSelectedInvoice] = useState<number | null>(null);
-  const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
-  const [bulkMode, setBulkMode] = useState(false);
-
-  // Fetch classification keywords
-  const { data: keywords = {} as ClassificationKeywords } = useQuery<ClassificationKeywords>({
-    queryKey: ["/api/classification/keywords"],
+  // Query for available categories
+  const { data: categories } = useQuery({
+    queryKey: ['/api/classification/categories'],
   });
 
-  // Fetch invoices for classification testing
-  const { data: invoices = [] } = useQuery({
-    queryKey: ["/api/invoices"],
-  });
-
-  // Fetch line item classifications for selected invoice
-  const { data: lineItemClassifications = [] } = useQuery({
-    queryKey: ["/api/invoices", selectedInvoice, "classifications"],
-    enabled: !!selectedInvoice,
-  });
-
-  // Add keyword mutation
-  const addKeywordMutation = useMutation({
-    mutationFn: async ({ category, keyword }: { category: string; keyword: string }) => {
-      const response = await fetch("/api/classification/keywords", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, keyword }),
-      });
-      if (!response.ok) throw new Error("Failed to add keyword");
-      return response.json();
+  // Single classification mutation
+  const classifySingleMutation = useMutation({
+    mutationFn: async (data: LineItem) => {
+      const response = await apiRequest('/api/classification/classify', data);
+      return response;
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/classification/keywords"] });
-      setNewKeyword("");
+    onSuccess: (result) => {
+      setClassificationResult(result);
       toast({
-        title: "Success",
-        description: "Keyword added successfully",
+        title: "Classification Complete",
+        description: `Classified as: ${result.category} (${Math.round(result.confidence * 100)}% confidence)`,
       });
     },
-    onError: () => {
+    onError: (error: any) => {
+      toast({
+        title: "Classification Failed",
+        description: error.message || "Failed to classify line item",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Batch classification mutation
+  const classifyBatchMutation = useMutation({
+    mutationFn: async (items: LineItem[]) => {
+      const response = await apiRequest('/api/classification/batch', { lineItems: items });
+      return response;
+    },
+    onSuccess: (result) => {
+      setBatchResults(result.results);
+      toast({
+        title: "Batch Classification Complete",
+        description: `Classified ${result.results.length} items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Batch Classification Failed",
+        description: error.message || "Failed to classify batch items",
+        variant: "destructive",
+      });
+    },
+  });
+
+  // Test classification mutation
+  const testClassificationMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('/api/classification/test', {});
+      return response;
+    },
+    onSuccess: (result) => {
+      setBatchResults(result.results);
+      toast({
+        title: "Test Complete",
+        description: `Tested ${result.results.length} sample items`,
+      });
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Test Failed",
+        description: error.message || "Failed to run classification test",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const handleSingleClassification = () => {
+    if (!lineItem.description.trim()) {
       toast({
         title: "Error",
-        description: "Failed to add keyword",
+        description: "Description is required",
         variant: "destructive",
       });
-    },
-  });
-
-  // Remove keyword mutation
-  const removeKeywordMutation = useMutation({
-    mutationFn: async (keywordId: number) => {
-      const response = await fetch(`/api/classification/keywords/${keywordId}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) throw new Error("Failed to remove keyword");
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/classification/keywords"] });
-      toast({
-        title: "Success",
-        description: "Keyword removed successfully",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to remove keyword",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Bulk add keywords mutation
-  const bulkAddMutation = useMutation({
-    mutationFn: async ({ category, keywords }: { category: string; keywords: string[] }) => {
-      const response = await fetch("/api/classification/keywords/bulk", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category, keywords }),
-      });
-      if (!response.ok) throw new Error("Failed to bulk add keywords");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/classification/keywords"] });
-      setBulkKeywords("");
-      toast({
-        title: "Success",
-        description: "Keywords added successfully",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to bulk add keywords",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Auto-classify mutation
-  const autoClassifyMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
-      const response = await fetch(`/api/invoices/${invoiceId}/auto-classify`, {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error("Failed to auto-classify");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      toast({
-        title: "Success",
-        description: "Auto-classification completed",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to auto-classify invoice",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // AI classify mutation
-  const aiClassifyMutation = useMutation({
-    mutationFn: async (invoiceId: number) => {
-      const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error("Failed to AI classify");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      toast({
-        title: "Success",
-        description: "AI classification completed",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to AI classify invoice",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Bulk AI classify mutation
-  const bulkAiClassifyMutation = useMutation({
-    mutationFn: async (invoiceIds: number[]) => {
-      const results = [];
-      for (const invoiceId of invoiceIds) {
-        try {
-          const response = await fetch(`/api/invoices/${invoiceId}/ai-classify`, {
-            method: "POST",
-          });
-          if (!response.ok) throw new Error(`Failed to AI classify invoice ${invoiceId}`);
-          results.push(await response.json());
-        } catch (error) {
-          console.error(`Error classifying invoice ${invoiceId}:`, error);
-        }
-      }
-      return results;
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      toast({
-        title: "Success",
-        description: `AI classification completed for ${selectedInvoices.length} invoices`,
-      });
-      setSelectedInvoices([]);
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to AI classify some invoices",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Single line item AI classify mutation
-  const aiClassifyLineItemMutation = useMutation({
-    mutationFn: async (lineItemId: number) => {
-      const response = await fetch(`/api/line-items/${lineItemId}/ai-classify`, {
-        method: "POST",
-      });
-      if (!response.ok) throw new Error("Failed to AI classify line item");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      toast({
-        title: "Success",
-        description: "AI classification completed for line item",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to AI classify line item",
-        variant: "destructive",
-      });
-    },
-  });
-
-  // Manual classification update mutation
-  const updateClassificationMutation = useMutation({
-    mutationFn: async ({ lineItemId, category }: { lineItemId: number; category: string }) => {
-      const response = await fetch(`/api/invoices/${selectedInvoice}/line-items/${lineItemId}/classify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ category }),
-      });
-      if (!response.ok) throw new Error("Failed to update classification");
-      return response.json();
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices", selectedInvoice, "classifications"] });
-      toast({
-        title: "Success",
-        description: "Classification updated successfully",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error", 
-        description: "Failed to update classification",
-        variant: "destructive",
-      });
-    },
-  });
-
-  const handleAddKeyword = () => {
-    if (newKeyword.trim()) {
-      addKeywordMutation.mutate({
-        category: activeCategory,
-        keyword: newKeyword.trim(),
-      });
+      return;
     }
+    classifySingleMutation.mutate(lineItem);
   };
 
-  const handleBulkAdd = () => {
-    if (bulkKeywords.trim()) {
-      const keywordList = bulkKeywords
-        .split(/[,\n]/)
-        .map(k => k.trim())
-        .filter(k => k.length > 0);
-      
-      if (keywordList.length > 0) {
-        bulkAddMutation.mutate({
-          category: activeCategory,
-          keywords: keywordList,
-        });
-      }
-    }
-  };
+  const handleBatchClassification = () => {
+    try {
+      const items = batchItems.split('\n').filter(line => line.trim()).map(line => {
+        const parts = line.split(',').map(part => part.trim());
+        return {
+          description: parts[0] || '',
+          quantity: parts[1] ? parseFloat(parts[1]) : undefined,
+          unitPrice: parts[2] ? parseFloat(parts[2]) : undefined,
+          unit: parts[3] || undefined
+        };
+      }).filter(item => item.description);
 
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file) return;
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const text = e.target?.result as string;
-        let keywordList: string[] = [];
-
-        if (file.name.endsWith('.json')) {
-          const data = JSON.parse(text);
-          keywordList = Array.isArray(data) ? data : data[activeCategory] || [];
-        } else if (file.name.endsWith('.csv')) {
-          keywordList = text.split(/[,\n]/).map(k => k.trim()).filter(k => k.length > 0);
-        }
-
-        if (keywordList.length > 0) {
-          bulkAddMutation.mutate({
-            category: activeCategory,
-            keywords: keywordList,
-          });
-        }
-      } catch (error) {
+      if (items.length === 0) {
         toast({
           title: "Error",
-          description: "Failed to parse file",
+          description: "No valid items found in batch input",
           variant: "destructive",
         });
+        return;
       }
-    };
-    reader.readAsText(file);
-  };
 
-  const exportKeywords = () => {
-    const categoryKeywords = keywords[activeCategory as keyof ClassificationKeywords] || [];
-    const userKeywords = categoryKeywords.filter(k => !k.isDefault);
-    
-    const data = {
-      category: activeCategory,
-      keywords: userKeywords.map(k => k.keyword),
-      exportDate: new Date().toISOString(),
-    };
-
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `${activeCategory}_keywords.json`;
-    link.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleSelectAllInvoices = () => {
-    if (selectedInvoices.length === invoices.length) {
-      setSelectedInvoices([]);
-    } else {
-      setSelectedInvoices(invoices.map((invoice: any) => invoice.id));
+      classifyBatchMutation.mutate(items);
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "Invalid batch format",
+        variant: "destructive",
+      });
     }
   };
 
-  const handleInvoiceToggle = (invoiceId: number) => {
-    setSelectedInvoices(prev => 
-      prev.includes(invoiceId)
-        ? prev.filter(id => id !== invoiceId)
-        : [...prev, invoiceId]
-    );
+  const getCategoryColor = (category: string) => {
+    const colors: Record<string, string> = {
+      materials_supplies: 'bg-blue-100 text-blue-800',
+      equipment_tools: 'bg-green-100 text-green-800',
+      services_labor: 'bg-purple-100 text-purple-800',
+      utilities_facilities: 'bg-orange-100 text-orange-800',
+      food_beverages: 'bg-pink-100 text-pink-800',
+      transportation_logistics: 'bg-indigo-100 text-indigo-800',
+      technology_software: 'bg-cyan-100 text-cyan-800',
+      marketing_advertising: 'bg-yellow-100 text-yellow-800',
+      other: 'bg-gray-100 text-gray-800'
+    };
+    return colors[category] || 'bg-gray-100 text-gray-800';
   };
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <Header />
-
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+    <div className="min-h-screen bg-background">
+      <div className="container mx-auto p-6">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">Line Item Classification</h1>
-          <p className="text-gray-600 mt-2">
-            Manage classification keywords and categorize invoice line items
+          <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
+            <FileText className="h-8 w-8" />
+            Line Item Classification
+          </h1>
+          <p className="text-muted-foreground">
+            AI-powered classification of invoice line items with confidence scoring and batch processing
           </p>
         </div>
 
-        <Tabs defaultValue="keywords" className="space-y-6">
-          <TabsList>
-            <TabsTrigger value="keywords">Keyword Management</TabsTrigger>
-            <TabsTrigger value="classify">Classify Line Items</TabsTrigger>
-          </TabsList>
-
-          {/* Keyword Management Tab */}
-          <TabsContent value="keywords">
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Category Selection */}
-              <div className="lg:col-span-1">
-                <Card>
-                  <CardHeader>
-                    <CardTitle className="flex items-center gap-2">
-                      <Tag className="w-5 h-5" />
-                      Categories
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-2">
-                    {Object.entries(CATEGORY_INFO).map(([key, info]) => {
-                      const Icon = info.icon;
-                      return (
-                        <div
-                          key={key}
-                          onClick={() => setActiveCategory(key)}
-                          className={`p-3 rounded-lg cursor-pointer border-2 transition-all ${
-                            activeCategory === key
-                              ? "border-primary-500 bg-primary-50"
-                              : "border-gray-200 hover:border-gray-300"
-                          }`}
-                        >
-                          <div className="flex items-center gap-3">
-                            <Icon className="w-5 h-5" />
-                            <div>
-                              <div className="font-medium">{info.label}</div>
-                              <div className="text-sm text-gray-500">{info.description}</div>
-                            </div>
-                          </div>
-                          <div className="mt-2">
-                            <Badge variant="secondary">
-                              {keywords[key as keyof ClassificationKeywords]?.length || 0} keywords
-                            </Badge>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </CardContent>
-                </Card>
-              </div>
-
-              {/* Keyword Management */}
-              <div className="lg:col-span-2 space-y-6">
-                {/* Add Keywords */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>
-                      Add Keywords - {CATEGORY_INFO[activeCategory as keyof typeof CATEGORY_INFO].label}
-                    </CardTitle>
-                  </CardHeader>
-                  <CardContent className="space-y-4">
-                    {/* Single Keyword */}
-                    <div className="flex gap-2">
-                      <Input
-                        placeholder="Enter keyword..."
-                        value={newKeyword}
-                        onChange={(e) => setNewKeyword(e.target.value)}
-                        onKeyPress={(e) => e.key === "Enter" && handleAddKeyword()}
-                      />
-                      <Button onClick={handleAddKeyword} disabled={!newKeyword.trim()}>
-                        <Plus className="w-4 h-4 mr-2" />
-                        Add
-                      </Button>
-                    </div>
-
-                    {/* Bulk Keywords */}
-                    <div className="space-y-2">
-                      <Label>Bulk Add (comma or line separated)</Label>
-                      <Textarea
-                        placeholder="keyword1, keyword2, keyword3..."
-                        value={bulkKeywords}
-                        onChange={(e) => setBulkKeywords(e.target.value)}
-                        rows={3}
-                      />
-                      <div className="flex gap-2">
-                        <Button variant="outline" onClick={handleBulkAdd} disabled={!bulkKeywords.trim()}>
-                          <Plus className="w-4 h-4 mr-2" />
-                          Bulk Add
-                        </Button>
-                        <label className="cursor-pointer">
-                          <Button variant="outline" asChild>
-                            <span>
-                              <Upload className="w-4 h-4 mr-2" />
-                              Upload File
-                            </span>
-                          </Button>
-                          <input
-                            type="file"
-                            accept=".csv,.json"
-                            onChange={handleFileUpload}
-                            className="hidden"
-                          />
-                        </label>
-                        <Button variant="outline" onClick={exportKeywords}>
-                          <Download className="w-4 h-4 mr-2" />
-                          Export
-                        </Button>
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-
-                {/* Current Keywords */}
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Current Keywords</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-4">
-                      {/* Default Keywords */}
-                      <div>
-                        <h4 className="font-medium text-gray-700 mb-2">Default Keywords</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {keywords[activeCategory as keyof ClassificationKeywords]
-                            ?.filter(k => k.isDefault)
-                            .map((keyword) => (
-                              <Badge key={keyword.id} variant="secondary">
-                                {keyword.keyword}
-                              </Badge>
-                            ))}
-                        </div>
-                      </div>
-
-                      {/* Custom Keywords */}
-                      <div>
-                        <h4 className="font-medium text-gray-700 mb-2">Custom Keywords</h4>
-                        <div className="flex flex-wrap gap-2">
-                          {keywords[activeCategory as keyof ClassificationKeywords]
-                            ?.filter(k => !k.isDefault)
-                            .map((keyword) => (
-                              <Badge 
-                                key={keyword.id} 
-                                variant="default"
-                                className="flex items-center gap-1"
-                              >
-                                {keyword.keyword}
-                                <button
-                                  onClick={() => removeKeywordMutation.mutate(keyword.id)}
-                                  className="ml-1 hover:text-red-400"
-                                >
-                                  <Trash2 className="w-3 h-3" />
-                                </button>
-                              </Badge>
-                            ))}
-                        </div>
-                        {keywords[activeCategory as keyof ClassificationKeywords]
-                          ?.filter(k => !k.isDefault).length === 0 && (
-                          <p className="text-gray-500 text-sm">No custom keywords added yet</p>
-                        )}
-                      </div>
-                    </div>
-                  </CardContent>
-                </Card>
-              </div>
+        {/* Available Categories */}
+        <Card className="mb-6">
+          <CardHeader>
+            <CardTitle>Available Categories</CardTitle>
+            <CardDescription>
+              These are the classification categories supported by the AI classifier
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <div className="flex flex-wrap gap-2">
+              {categories && Object.entries(categories).map(([key, description]) => (
+                <Badge key={key} variant="secondary" className={getCategoryColor(key)}>
+                  {key.replace(/_/g, ' ')}
+                </Badge>
+              ))}
             </div>
-          </TabsContent>
+          </CardContent>
+        </Card>
 
-          {/* Classify Line Items Tab */}
-          <TabsContent value="classify">
-            <div className="space-y-6">
-              {/* Invoice Selection */}
-              <Card>
-                <CardHeader>
-                  <CardTitle className="flex items-center justify-between">
-                    Select Invoice(s)
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Single Item Classification */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Zap className="h-5 w-5" />
+                Single Item Classification
+              </CardTitle>
+              <CardDescription>
+                Classify individual line items with detailed analysis
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="description">Description *</Label>
+                <Textarea
+                  id="description"
+                  placeholder="e.g., Cemento portland tipo I, 50kg"
+                  value={lineItem.description}
+                  onChange={(e) => setLineItem({...lineItem, description: e.target.value})}
+                />
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="quantity">Quantity</Label>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    placeholder="50"
+                    value={lineItem.quantity || ''}
+                    onChange={(e) => setLineItem({...lineItem, quantity: parseFloat(e.target.value) || undefined})}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="unit">Unit</Label>
+                  <Input
+                    id="unit"
+                    placeholder="kg, m², pcs"
+                    value={lineItem.unit || ''}
+                    onChange={(e) => setLineItem({...lineItem, unit: e.target.value})}
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <Label htmlFor="unitPrice">Unit Price</Label>
+                  <Input
+                    id="unitPrice"
+                    type="number"
+                    placeholder="25000"
+                    value={lineItem.unitPrice || ''}
+                    onChange={(e) => setLineItem({...lineItem, unitPrice: parseFloat(e.target.value) || undefined})}
+                  />
+                </div>
+                <div>
+                  <Label htmlFor="totalPrice">Total Price</Label>
+                  <Input
+                    id="totalPrice"
+                    type="number"
+                    placeholder="1250000"
+                    value={lineItem.totalPrice || ''}
+                    onChange={(e) => setLineItem({...lineItem, totalPrice: parseFloat(e.target.value) || undefined})}
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="rawText">Raw Text (Optional)</Label>
+                <Textarea
+                  id="rawText"
+                  placeholder="Original text from invoice if different from description"
+                  value={lineItem.rawText || ''}
+                  onChange={(e) => setLineItem({...lineItem, rawText: e.target.value})}
+                />
+              </div>
+
+              <Button 
+                onClick={handleSingleClassification}
+                disabled={classifySingleMutation.isPending}
+                className="w-full"
+              >
+                {classifySingleMutation.isPending ? (
+                  <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Classifying...</>
+                ) : (
+                  <>Classify Item</>
+                )}
+              </Button>
+
+              {/* Single Item Result */}
+              {classificationResult && (
+                <div className="mt-4 p-4 border rounded-lg">
+                  <h4 className="font-semibold mb-2">Classification Result</h4>
+                  <div className="space-y-2">
                     <div className="flex items-center gap-2">
-                      <Label className="text-sm font-normal">Bulk Mode</Label>
-                      <input
-                        type="checkbox"
-                        checked={bulkMode}
-                        onChange={(e) => {
-                          setBulkMode(e.target.checked);
-                          if (!e.target.checked) {
-                            setSelectedInvoices([]);
-                          } else {
-                            setSelectedInvoice(null);
-                          }
-                        }}
-                        className="h-4 w-4"
-                      />
+                      <Badge className={getCategoryColor(classificationResult.category)}>
+                        {classificationResult.category.replace(/_/g, ' ')}
+                      </Badge>
+                      <span className="text-sm text-muted-foreground">
+                        {Math.round(classificationResult.confidence * 100)}% confidence
+                      </span>
                     </div>
-                  </CardTitle>
-                </CardHeader>
-                <CardContent>
-                  {!bulkMode ? (
-                    <div className="flex gap-4 items-end">
-                      <div className="flex-1">
-                        <Label>Invoice</Label>
-                        <Select value={selectedInvoice?.toString() || ""} onValueChange={(value) => setSelectedInvoice(parseInt(value))}>
-                          <SelectTrigger>
-                            <SelectValue placeholder="Select an invoice" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {invoices.map((invoice: any) => (
-                              <SelectItem key={invoice.id} value={invoice.id.toString()}>
-                                {invoice.fileName} - {invoice.vendorName || 'Unknown Vendor'}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                    <p className="text-sm">Method: {classificationResult.method}</p>
+                    {classificationResult.matchedKeywords.length > 0 && (
+                      <div>
+                        <p className="text-sm font-medium">Matched Keywords:</p>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {classificationResult.matchedKeywords.map((keyword, i) => (
+                            <Badge key={i} variant="outline" className="text-xs">
+                              {keyword}
+                            </Badge>
+                          ))}
+                        </div>
                       </div>
-                      <Button
-                        onClick={() => selectedInvoice && autoClassifyMutation.mutate(selectedInvoice)}
-                        disabled={!selectedInvoice || autoClassifyMutation.isPending}
-                        variant="outline"
-                      >
-                        <RefreshCw className="w-4 h-4 mr-2" />
-                        Keyword Classify
-                      </Button>
-                      <Button
-                        onClick={() => selectedInvoice && aiClassifyMutation.mutate(selectedInvoice)}
-                        disabled={!selectedInvoice || aiClassifyMutation.isPending}
-                        className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white"
-                      >
-                        <AlertCircle className="w-4 h-4 mr-2" />
-                        {aiClassifyMutation.isPending ? "AI Classifying..." : "AI Classify All"}
-                      </Button>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      <div className="flex gap-4 items-center">
-                        <Button
-                          onClick={handleSelectAllInvoices}
-                          variant="outline"
-                          className="w-fit"
-                        >
-                          {selectedInvoices.length === invoices.length ? "Deselect All" : "Select All"}
-                        </Button>
-                        {selectedInvoices.length > 0 && (
-                          <span className="text-sm text-gray-600">
-                            {selectedInvoices.length} selected
-                          </span>
-                        )}
-                        <Button
-                          onClick={() => bulkAiClassifyMutation.mutate(selectedInvoices)}
-                          disabled={selectedInvoices.length === 0 || bulkAiClassifyMutation.isPending}
-                          className="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white ml-auto"
-                        >
-                          <Bot className="w-4 h-4 mr-2" />
-                          {bulkAiClassifyMutation.isPending ? `AI Classifying ${selectedInvoices.length} invoices...` : `AI Classify Selected (${selectedInvoices.length})`}
-                        </Button>
+                    )}
+                    {classificationResult.reasoning && (
+                      <div>
+                        <p className="text-sm font-medium">AI Reasoning:</p>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          {classificationResult.reasoning}
+                        </p>
                       </div>
-                      
-                      <div className="max-h-60 overflow-y-auto border rounded-lg">
-                        {invoices.map((invoice: any) => (
-                          <div
-                            key={invoice.id}
-                            className={`p-3 border-b last:border-b-0 cursor-pointer hover:bg-gray-50 flex items-center gap-3 ${
-                              selectedInvoices.includes(invoice.id) ? 'bg-blue-50 border-blue-200' : ''
-                            }`}
-                            onClick={() => handleInvoiceToggle(invoice.id)}
-                          >
-                            <input
-                              type="checkbox"
-                              checked={selectedInvoices.includes(invoice.id)}
-                              onChange={() => handleInvoiceToggle(invoice.id)}
-                              className="h-4 w-4"
-                            />
-                            <div className="flex-1">
-                              <div className="font-medium text-sm">{invoice.fileName}</div>
-                              <div className="text-xs text-gray-500">{invoice.vendorName || 'Unknown Vendor'}</div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-
-              {/* Line Items Classification */}
-              {selectedInvoice && !bulkMode && (
-                <Card>
-                  <CardHeader>
-                    <CardTitle>Line Item Classifications</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead>Description</TableHead>
-                          <TableHead>Quantity</TableHead>
-                          <TableHead>Unit Price</TableHead>
-                          <TableHead>Total</TableHead>
-                          <TableHead>Category</TableHead>
-                          <TableHead>Matched Keyword</TableHead>
-                          <TableHead>Confidence</TableHead>
-                          <TableHead>Actions</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {lineItemClassifications.map((item: any) => (
-                          <TableRow key={item.lineItemId}>
-                            <TableCell>{item.description}</TableCell>
-                            <TableCell>{item.quantity}</TableCell>
-                            <TableCell>${item.unitPrice}</TableCell>
-                            <TableCell>${item.totalPrice}</TableCell>
-                            <TableCell>
-                              <div className="flex items-center gap-2">
-                                {item.category ? (
-                                  <Badge className={CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.color}>
-                                    {CATEGORY_INFO[item.category as keyof typeof CATEGORY_INFO]?.label}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="secondary">Unclassified</Badge>
-                                )}
-                                {item.isManualOverride && (
-                                  <Badge variant="outline" className="text-xs">
-                                    Manual
-                                  </Badge>
-                                )}
-                                {item.matchedKeyword === 'AI Classification' && (
-                                  <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
-                                    <Bot className="w-3 h-3 mr-1" />
-                                    AI
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {item.matchedKeyword && (
-                                <Badge variant="outline" className="text-xs">
-                                  {item.matchedKeyword}
-                                </Badge>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              {item.confidence && (
-                                <div className="flex items-center gap-1">
-                                  <span className="text-sm">{Math.round(parseFloat(item.confidence) * 100)}%</span>
-                                  {parseFloat(item.confidence) > 0.7 ? (
-                                    <Check className="w-4 h-4 text-green-500" />
-                                  ) : (
-                                    <AlertCircle className="w-4 h-4 text-yellow-500" />
-                                  )}
-                                </div>
-                              )}
-                            </TableCell>
-                            <TableCell>
-                              <div className="flex gap-2">
-                                <Select
-                                  value={item.category || ""}
-                                  onValueChange={(category) => updateClassificationMutation.mutate({
-                                    lineItemId: item.lineItemId,
-                                    category
-                                  })}
-                                >
-                                  <SelectTrigger className="w-40">
-                                    <SelectValue placeholder="Classify" />
-                                  </SelectTrigger>
-                                  <SelectContent>
-                                    {Object.entries(CATEGORY_INFO).map(([key, info]) => (
-                                      <SelectItem key={key} value={key}>
-                                        {info.label}
-                                      </SelectItem>
-                                    ))}
-                                  </SelectContent>
-                                </Select>
-                                <Button
-                                  size="sm"
-                                  variant="outline"
-                                  onClick={() => aiClassifyLineItemMutation.mutate(item.lineItemId)}
-                                  disabled={aiClassifyLineItemMutation.isPending}
-                                  title="AI Classify this item"
-                                >
-                                  <AlertCircle className="w-3 h-3" />
-                                </Button>
-                              </div>
-                            </TableCell>
-                          </TableRow>
-                        ))}
-                      </TableBody>
-                    </Table>
-                  </CardContent>
-                </Card>
+                    )}
+                  </div>
+                </div>
               )}
-            </div>
-          </TabsContent>
-        </Tabs>
+            </CardContent>
+          </Card>
+
+          {/* Batch Classification */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Upload className="h-5 w-5" />
+                Batch Classification
+              </CardTitle>
+              <CardDescription>
+                Process multiple items at once (CSV format: description, quantity, unitPrice, unit)
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div>
+                <Label htmlFor="batchItems">Batch Items</Label>
+                <Textarea
+                  id="batchItems"
+                  placeholder={`Cemento portland tipo I, 50, 25000, kg
+Servicios de consultoría, 1, 150000
+Laptop Dell Inspiron, 1, 2500000, pcs`}
+                  value={batchItems}
+                  onChange={(e) => setBatchItems(e.target.value)}
+                  rows={8}
+                />
+              </div>
+
+              <div className="flex gap-2">
+                <Button 
+                  onClick={handleBatchClassification}
+                  disabled={classifyBatchMutation.isPending}
+                  className="flex-1"
+                >
+                  {classifyBatchMutation.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /> Processing...</>
+                  ) : (
+                    <>Classify Batch</>
+                  )}
+                </Button>
+                
+                <Button 
+                  variant="outline"
+                  onClick={() => testClassificationMutation.mutate()}
+                  disabled={testClassificationMutation.isPending}
+                >
+                  {testClassificationMutation.isPending ? (
+                    <><Loader2 className="mr-2 h-4 w-4 animate-spin" /></>
+                  ) : (
+                    <><TestTube className="mr-2 h-4 w-4" /> Test</>
+                  )}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        {/* Batch Results */}
+        {batchResults && (
+          <Card className="mt-6">
+            <CardHeader>
+              <CardTitle>Batch Results</CardTitle>
+              <CardDescription>
+                Classification results for {batchResults.length} items
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {batchResults.map((result, index) => (
+                  <div key={index} className="p-3 border rounded-lg">
+                    <div className="flex items-start justify-between mb-2">
+                      <div className="flex-1">
+                        <h5 className="font-medium">{result.item.description}</h5>
+                        {result.item.quantity && (
+                          <p className="text-sm text-muted-foreground">
+                            Qty: {result.item.quantity} {result.item.unit}
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <Badge className={getCategoryColor(result.classification.category)}>
+                          {result.classification.category.replace(/_/g, ' ')}
+                        </Badge>
+                        <span className="text-xs text-muted-foreground">
+                          {Math.round(result.classification.confidence * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                    {result.classification.matchedKeywords.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {result.classification.matchedKeywords.map((keyword: string, i: number) => (
+                          <Badge key={i} variant="outline" className="text-xs">
+                            {keyword}
+                          </Badge>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        )}
       </div>
     </div>
   );
