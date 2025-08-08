@@ -50,7 +50,7 @@ class InvoiceRPAService:
             self.password = raw_password
             self.log(f"Using raw password (decode failed: {e})")
         self.download_dir = config.get('downloadPath',
-                                       '/tmp/invoice_downloads')
+                                       'uploads/pdfs')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
 
         # Get headless mode from config (default to False for easier debugging)
@@ -80,11 +80,11 @@ class InvoiceRPAService:
 
         # Ensure directories exist (convert Windows paths to Linux paths in Replit)
         if os.name == 'posix':  # Linux/Unix (Replit environment)
-            # Convert Windows paths to temp directories
+            # Convert Windows paths to persistent directories
             if self.download_dir.startswith('C:\\'):
-                self.download_dir = '/tmp/invoice_downloads'
+                self.download_dir = 'uploads/pdfs'
             if self.xml_dir.startswith('C:\\'):
-                self.xml_dir = '/tmp/xml_invoices'
+                self.xml_dir = 'uploads/xmls'
 
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
@@ -2275,7 +2275,7 @@ class InvoiceRPAService:
                         original_filename = file_info.get('upload_filename', file_info['base_name'] + '.pdf')
                         if not original_filename.endswith('.pdf'):
                             original_filename += '.pdf'
-                        file_path = os.path.join('/tmp/invoice_downloads/pdfs', original_filename)
+                        file_path = os.path.join('uploads/pdfs', original_filename)
                     else:
                         # XML files are copied to uploads directory
                         file_path = os.path.join('uploads', file_info['upload_filename'])

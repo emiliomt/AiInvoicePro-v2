@@ -196,7 +196,7 @@ class PythonInvoiceImporter {
         erpUrl: config.erpUrl,
         erpUsername: config.erpUsername,
         erpPassword: config.erpPassword,
-        downloadPath: config.downloadPath || '/tmp/invoice_downloads',
+        downloadPath: config.downloadPath || 'uploads/pdfs',
         xmlPath: config.xmlPath || '/tmp/xml_invoices',
         headless: config.headless !== undefined ? config.headless : true, // Default to true for Replit
         fileTypes: config.fileTypes || 'both', // Support XML, PDF, or both
@@ -270,7 +270,7 @@ class PythonInvoiceImporter {
       erpUrl: config.erpUrl,
       erpUsername: config.erpUsername,
       erpPassword: config.erpPassword,
-      downloadPath: config.downloadPath || '/tmp/invoice_downloads',
+      downloadPath: config.downloadPath || 'uploads/pdfs',
       xmlPath: config.xmlPath || '/tmp/xml_invoices',
       headless: config.headless !== undefined ? config.headless : true,
       fileTypes: config.fileTypes || 'both',
@@ -364,7 +364,7 @@ class PythonInvoiceImporter {
 
     try {
       // Connect to Python RPA SQLite databases (matching Python service paths)
-      const downloadDbPath = '/tmp/invoice_downloads/invoices.db';
+      const downloadDbPath = 'uploads/invoices.db';
       const xmlDbPath = '/tmp/xml_invoices/invoices_xml.db';
 
       // Process downloaded files (PDFs/ZIPs)
@@ -402,7 +402,7 @@ class PythonInvoiceImporter {
   private async processDownloadedFiles(logId: number): Promise<void> {
     const fs = await import('fs');
     const sqlite3 = await import('sqlite3');
-    const dbPath = '/tmp/invoice_downloads/invoices.db';
+    const dbPath = 'uploads/invoices.db';
 
     return new Promise((resolve, reject) => {
       const db = new sqlite3.Database(dbPath, (err: any) => {

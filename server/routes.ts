@@ -5072,6 +5072,51 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Serve PDF files for linked invoices
+  app.get('/api/invoices/:id/pdf/:filename', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const fileName = req.params.filename;
+      const userId = (req.user as any).claims.sub;
+      
+      // Verify invoice access
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Check access permissions
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Construct file path
+      const filePath = path.join('uploads/pdfs', fileName);
+      
+      // Check if file exists
+      const fs = await import('fs');
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'PDF file not found' });
+      }
+
+      // Set headers for PDF display
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `inline; filename="${fileName}"`);
+      
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+      
+    } catch (error) {
+      console.error('Error serving PDF:', error);
+      res.status(500).json({ error: 'Failed to serve PDF file' });
+    }
+  });
+
   // Helper function for executing import tasks asynchronously
   async function executeImportAsync(configId: number) {
     try {
