@@ -109,6 +109,10 @@ class InvoiceRPAService:
             'progress': 0
         }
 
+        # Track files downloaded in current session (for accurate counting)
+        self.session_downloaded_files = set()  # Files downloaded in this session
+        self.session_start_time = datetime.now()  # Session start time for file age comparison
+
     def is_driver_ready(self) -> bool:
         """Check if driver and wait objects are properly initialized"""
         return (self.driver is not None and self.wait is not None
@@ -1463,6 +1467,9 @@ class InvoiceRPAService:
             dst = os.path.join(self.xml_dir, new_name)
             shutil.move(src, dst)
             
+            # Track as session file
+            self.session_downloaded_files.add(new_name)
+            
             self.log(f"📄 XML-ONLY PROCESSING: '{xml_file}' will be processed for structured data extraction")
             
             processed_files.append({
@@ -1491,6 +1498,9 @@ class InvoiceRPAService:
             src = os.path.join(temp_dir, pdf_file)
             dst = os.path.join(pdf_dir, new_name)
             shutil.move(src, dst)
+            
+            # Track as session file
+            self.session_downloaded_files.add(new_name)
             
             self.log(f"📄 PDF-ONLY PROCESSING: '{pdf_file}' will be processed via OCR (no XML available)")
             
@@ -1529,6 +1539,9 @@ class InvoiceRPAService:
             xml_dst = os.path.join(self.xml_dir, xml_new_name)
             shutil.move(xml_src, xml_dst)
             
+            # Track as session file
+            self.session_downloaded_files.add(xml_new_name)
+            
             xml_entry = {
                 'type': 'xml',
                 'original_name': xml_file,
@@ -1548,6 +1561,9 @@ class InvoiceRPAService:
                 pdf_src = os.path.join(temp_dir, pdf_file)
                 pdf_dst = os.path.join(pdf_dir, pdf_new_name)
                 shutil.move(pdf_src, pdf_dst)
+                
+                # Track as session file
+                self.session_downloaded_files.add(pdf_new_name)
                 
                 pdf_entry = {
                     'type': 'pdf',
@@ -1774,6 +1790,56 @@ class InvoiceRPAService:
             self.log(f"Error extracting buyer tax ID from XML: {e}", "ERROR")
             return None
 
+    def clear_download_directories(self):
+        """Clear download directories to prevent processing orphaned files from previous runs"""
+        try:
+            self.log("🧹 Clearing download directories to ensure clean session isolation...")
+            
+            # Clear PDF directory
+            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            if os.path.exists(pdf_dir):
+                pdf_files_cleared = 0
+                for filename in os.listdir(pdf_dir):
+                    file_path = os.path.join(pdf_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        pdf_files_cleared += 1
+                    except Exception as e:
+                        self.log(f"⚠️ Could not remove PDF file {filename}: {e}", "WARNING")
+                self.log(f"✅ Cleared {pdf_files_cleared} orphaned PDF files from {pdf_dir}")
+            
+            # Clear XML directory
+            if os.path.exists(self.xml_dir):
+                xml_files_cleared = 0
+                for filename in os.listdir(self.xml_dir):
+                    file_path = os.path.join(self.xml_dir, filename)
+                    try:
+                        os.remove(file_path)
+                        xml_files_cleared += 1
+                    except Exception as e:
+                        self.log(f"⚠️ Could not remove XML file {filename}: {e}", "WARNING")
+                self.log(f"✅ Cleared {xml_files_cleared} orphaned XML files from {self.xml_dir}")
+            
+            # Clear main download directory of any ZIP files
+            if os.path.exists(self.download_dir):
+                zip_files_cleared = 0
+                for filename in os.listdir(self.download_dir):
+                    if filename.lower().endswith('.zip'):
+                        file_path = os.path.join(self.download_dir, filename)
+                        try:
+                            os.remove(file_path)
+                            zip_files_cleared += 1
+                        except Exception as e:
+                            self.log(f"⚠️ Could not remove ZIP file {filename}: {e}", "WARNING")
+                if zip_files_cleared > 0:
+                    self.log(f"✅ Cleared {zip_files_cleared} orphaned ZIP files from {self.download_dir}")
+            
+            self.log("🎯 Directory cleanup completed - only files downloaded in this session will be processed")
+            
+        except Exception as e:
+            self.log(f"❌ Error clearing download directories: {e}", "ERROR")
+            # Don't fail the entire process if cleanup fails, but log the issue
+
     def cleanup(self):
         """Cleanup resources"""
         if self.driver:
@@ -1804,26 +1870,40 @@ class InvoiceRPAService:
             xml_files = {}
             pdf_files = {}
             
-            # Scan XML files
+            # Scan XML files (only those from current session)
             if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
                 xml_count = 0
                 for filename in os.listdir(self.xml_dir):
                     if filename.lower().endswith(".xml"):
-                        base_name = os.path.splitext(filename)[0]
-                        xml_files[base_name] = filename
-                        xml_count += 1
-                self.log(f"📁 Found {xml_count} XML files in {self.xml_dir}")
+                        file_path = os.path.join(self.xml_dir, filename)
+                        # Check if file was created after session start (current session file)
+                        file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        if file_mod_time >= self.session_start_time:
+                            base_name = os.path.splitext(filename)[0]
+                            xml_files[base_name] = filename
+                            xml_count += 1
+                            self.session_downloaded_files.add(filename)
+                        else:
+                            self.log(f"⏭️ Ignoring pre-session XML file: {filename} (modified: {file_mod_time})")
+                self.log(f"📁 Found {xml_count} XML files from current session in {self.xml_dir}")
 
-            # Scan PDF files with enhanced matching logic
+            # Scan PDF files with enhanced matching logic (only those from current session)
             pdf_dir = os.path.join(self.download_dir, 'pdfs')
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
                 pdf_count = 0
                 for filename in os.listdir(pdf_dir):
                     if filename.lower().endswith(".pdf"):
-                        base_name = os.path.splitext(filename)[0]
-                        pdf_files[base_name] = filename
-                        pdf_count += 1
-                self.log(f"📁 Found {pdf_count} PDF files in {pdf_dir}")
+                        file_path = os.path.join(pdf_dir, filename)
+                        # Check if file was created after session start (current session file)
+                        file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
+                        if file_mod_time >= self.session_start_time:
+                            base_name = os.path.splitext(filename)[0]
+                            pdf_files[base_name] = filename
+                            pdf_count += 1
+                            self.session_downloaded_files.add(filename)
+                        else:
+                            self.log(f"⏭️ Ignoring pre-session PDF file: {filename} (modified: {file_mod_time})")
+                self.log(f"📁 Found {pdf_count} PDF files from current session in {pdf_dir}")
 
             # Enhanced file matching: match PDFs to XMLs by invoice token
             matched_pairs = {}
@@ -1942,30 +2022,23 @@ class InvoiceRPAService:
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                         
                 elif base_name in unmatched_pdfs:
-                    # Case: Only PDF file present - check if this PDF should be processed or archived
+                    # Case: Only PDF file present - process it since it passed session time filtering
                     pdf_filename = pdf_files[base_name]
                     
-                    # Check if this PDF might be a leftover from previous processing
-                    should_process = self._should_process_orphaned_pdf(pdf_filename, base_name)
-                    
-                    if should_process:
-                        self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
-                        pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
-                        if pdf_info:
-                            pdf_info['base_file_name'] = base_name
-                            processed_files.append(pdf_info)
-                            processed_count += 1
-                            successful_count += 1
-                            self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
-                            
-                            # Send real-time progress update
-                            self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
-                        else:
-                            failed_count += 1
-                            self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                    self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
+                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
+                    if pdf_info:
+                        pdf_info['base_file_name'] = base_name
+                        processed_files.append(pdf_info)
+                        processed_count += 1
+                        successful_count += 1
+                        self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
+                        
+                        # Send real-time progress update
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     else:
-                        self.log(f"⏭️ Skipping orphaned PDF: {pdf_filename} (likely from previous processing)")
-                        # Don't count as processed since we're intentionally skipping
+                        failed_count += 1
+                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
 
             # Store processed files to database with proper linking (imported_invoices table)
             self._store_conditional_files_to_database(processed_files)
@@ -1985,6 +2058,9 @@ class InvoiceRPAService:
             self.log(f"✅ Processed {processed_count} files through manual pipeline with proper PDF linking")
             self.log(f"📊 Final stats: Processed={processed_count}, Success={successful_count}, Failed={failed_count}")
             self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
+            self.log(f"🎯 SESSION ISOLATION: {len(self.session_downloaded_files)} files from current session processed")
+            if processed_count == 0 and len(self.session_downloaded_files) == 0:
+                self.log("⚠️ No files were downloaded or processed in this session - this indicates no new invoices were available")
             
             return True
 
@@ -2725,6 +2801,9 @@ class InvoiceRPAService:
         """Run the complete import process"""
         try:
             self.log("Starting Python RPA invoice import process")
+
+            # CRITICAL FIX: Clear download directories to prevent processing orphaned files from previous runs
+            self.clear_download_directories()
 
             # Setup driver
             if not self.setup_driver():

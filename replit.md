@@ -1,221 +1,7 @@
 # Invoice Procurement Platform - AI-Powered Automation
 
-## Project Overview
-An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
-
-## Recent Critical Fix: Buyer Tax ID Extraction Implementation (Aug 7, 2025)
-
-### Issue Resolved
-- **Problem**: Python RPA service was not extracting buyer tax ID from XML invoices, causing missing customer identification data in processed invoices. Database showed all buyer_tax_id fields as empty despite XML files containing the data.
-- **Root Cause**: Python RPA service had incomplete XML extraction logic that only extracted supplier tax ID (emisor) but completely missed buyer tax ID from AttachedDocument format invoices.
-
-### Solution Implemented
-1. **Added Buyer Tax ID Extraction to Python RPA Service**:
-   - Added `_extract_buyer_tax_id_from_xml()` method with recursive AttachedDocument handling
-   - Handles both regular invoices and CDATA-embedded invoices in AttachedDocument wrappers
-   - Extracts buyer tax ID from AccountingCustomerParty using multiple patterns
-   - Validates tax ID format and filters out country codes like "CO"
-
-2. **Updated Metadata Storage**:
-   - Modified PostgreSQL insertion in `pythonRpaService.py` line 1705 to include buyerTaxId
-   - Enhanced `_process_xml_for_pipeline()` to extract and pass buyer tax ID
-   - Updated `trigger_manual_processing()` to send buyer tax ID to Node.js endpoint
-
-3. **Enhanced Node.js RPA Integration**:
-   - Modified `/api/rpa/process-xml` endpoint to receive buyerTaxId parameter
-   - Added fallback logic to use Python-extracted buyer tax ID if XML parser misses it
-   - Enhanced logging to show both XML parser and Python RPA extraction results
-
-4. **Validation Rule Updates**:
-   - Updated validation rules to accept Colombian NIT format with check digit
-   - Rules now accept `86052780-0` (full NIT format) instead of just `860527800`
-
-### Technical Implementation Details
-```python
-# Python RPA extraction handles AttachedDocument format
-def _extract_buyer_tax_id_from_xml(self, xml_content: str) -> Optional[str]:
-    if '<AttachedDocument' in xml_content and '<![CDATA[' in xml_content:
-        # Extract embedded invoice from CDATA section
-        embedded_xml = extract_cdata_content(xml_content)
-        return self._extract_buyer_tax_id_from_xml(embedded_xml)  # Recursive
-    
-    # Extract from AccountingCustomerParty section
-    return extract_tax_id_with_multiple_patterns(xml_content)
-```
-
-### Test Results Verification
-Recent testing confirmed the complete fix works correctly:
-
-**Database Verification:**
-- Invoice ID 804: `buyer_tax_id = 86052780-0` ✅ (Colombian NIT with check digit)
-- Invoice ID 803: `buyer_tax_id = 86052780-0` ✅
-- Invoice ID 802: `buyer_tax_id = 86052780-0` ✅
-- All recent RPA-processed invoices now contain proper buyer tax ID
-
-**XML Processing Pipeline:**
-- Python RPA extracts: `860527800` (base number)
-- TypeScript XML parser extracts: `86052780-0` (with check digit) 
-- Both formats are valid Colombian NIT representations of the same company
-- Node.js endpoint properly receives and processes both formats
-
-### Expected Results
-- All new invoice imports now include buyer tax ID in extracted data
-- Historical invoices processed before this fix still need reprocessing for complete data
-- Validation rules properly accept Colombian NIT format with check digits
-- RPA automation correctly identifies customer information for all supported invoice formats
-
-## Previous Critical Fix: Enhanced Duplicate Invoice Detection (Aug 6, 2025)
-
-### Issue Resolved
-- **Problem**: Python RPA service was not properly skipping invoices that had already been imported in previous runs, causing duplicate processing and wasted resources.
-- **Root Cause**: The duplicate checking logic was not robust enough and didn't properly normalize invoice numbers, vendor names, and validate total amounts before processing.
-
-### Solution Implemented
-1. **Created Robust `is_duplicate_invoice()` Helper Function**:
-   - Normalizes invoice_number by trimming whitespace and converting to uppercase
-   - Normalizes emisor_id by trimming whitespace  
-   - Supports optional total_amount validation with 0.01 threshold
-   - Uses comprehensive SQL query checking both metadata JSONB and original_file_name patterns
-   - Handles vendor name normalization (S.A.S → SAS, &amp; → &, etc.)
-
-2. **Enhanced SQL Query**:
-   ```sql
-   SELECT 1 FROM imported_invoices 
-   WHERE 
-       (UPPER(TRIM(metadata->>'invoiceNumber')) = %s OR UPPER(TRIM(original_file_name)) LIKE %s)
-       AND (TRIM(metadata->>'emisorId') = %s OR UPPER(REPLACE(...vendor normalization...)) = UPPER(...))
-       AND (total_amount validation with 0.01 threshold if provided)
-   LIMIT 1;
-   ```
-
-3. **Updated Processing Logic**:
-   - `_is_invoice_successfully_processed()` now calls `is_duplicate_invoice()` first
-   - Early duplicate checking occurs BEFORE any download/processing actions
-   - Proper logging with detailed skip reasons and amount validation status
-   - Fallback error handling returns False to allow processing if duplicate check fails
-
-4. **Applied to Multiple Files**:
-   - `server/services/pythonRpaService.py` - Main RPA service
-   - `test_rpa_fixes_simulation.py` - Test simulation scripts
-   - Both now use the same robust duplicate checking logic
-
-### Additional Fixes Applied (Aug 6, 2025 - Evening)
-After analyzing recent RPA import logs, identified and fixed additional issues:
-
-1. **Enhanced Total Amount Normalization**: 
-   - Fixed handling of currency amounts with newlines and currency codes (`$9000000\nCOP`)
-   - Enhanced regex processing to extract only numeric digits for comparison
-   - Increased tolerance from 0.01 to 100 for better currency matching
-
-2. **Simplified Duplicate Detection Logic**:
-   - Streamlined SQL query to use filename-based matching (more reliable)
-   - Removed complex metadata field matching that wasn't working with actual data structure
-   - Query now uses: `UPPER(TRIM(original_file_name)) LIKE 'INVOICE%'`
-   - Only skips invoices marked as 'failed', allows retry of 'downloaded' status
-
-3. **Corrected Processing Status Enum**:
-   - Fixed enum values to match database schema: `downloaded`, `processing`, `completed`, `failed`
-   - Removed invalid enum values like `error` and `retry`
-
-4. **Comprehensive Pre-Download Duplicate Prevention (Aug 6, 2025 - Final)**:
-   - Implemented robust `is_duplicate_invoice()` helper with pre-download database checks
-   - Invoice metadata extraction moved BEFORE any download/processing operations
-   - Enhanced Colombian currency normalization handles `$9000000\nCOP` format with newlines
-   - Added database constraint: `UNIQUE (original_file_name, log_id)` to prevent duplicate insertions
-   - Fixed statistics counting: `processed_invoices` now reflects actual work, not total encounters
-
-5. **Enhanced Metrics Tracking with Relationship Constraints (Aug 6, 2025 - Complete)**:
-   - Implemented comprehensive metrics system tracking all import stages
-   - Added relationship constraint validation: `total_invoices = skipped_invoices + processed_invoices`
-   - Added relationship constraint validation: `processed_invoices = successful_imports + failed_imports`
-   - Enhanced statistics fields: `total_invoices`, `skipped_invoices`, `processed_invoices`, `successful_imports`, `failed_imports`
-   - Automatic metrics correction and validation before final reporting
-   - Structured JSON output for consistent parsing and monitoring
-
-### Expected Results
-- Invoices are skipped immediately upon detection of existing records BEFORE downloading
-- No unnecessary ZIP downloads for already imported invoices  
-- Better resource utilization and faster processing times
-- Simplified but robust duplicate detection based on invoice number in filename
-- Enhanced currency amount normalization handles Colombian peso format
-- Accurate statistics: `processed_invoices` shows actual work done, not duplicates
-- Database-level protection against duplicate insertions
-- Clear logging showing why invoices are skipped vs processed
-
-### Test Results Verification
-Recent testing confirmed all fixes work correctly:
-
-**Duplicate Detection Tests:**
-- FE26891, FEV730, CB12305: Detected as duplicates and SKIPPED before download
-- NEW001, TEST123: Processed as new invoices
-- Statistics show accurate counts: 3 skipped, 2 processed (not 0 processed)
-- No more inefficient "processed_invoices: 0" after downloading all files
-
-**Enhanced Metrics Tracking Tests:**
-- Relationship constraint validation: ✅ All constraints pass
-- Example metrics: `{"total_invoices": 10, "skipped_invoices": 6, "processed_invoices": 4, "successful_imports": 3, "failed_imports": 1}`
-- Mathematical relationships enforced: 10 = 6 + 4, and 4 = 3 + 1
-- Automatic correction of inconsistent metrics before reporting
-- Structured JSON output for consistent monitoring and debugging
-
-## Previous Fix: Validation Rules Implementation (Aug 6, 2025)
-
-### Issue Resolved
-- **Problem**: Validation rules were not executing during automation process due to Python simulation scripts returning mock validation results instead of using real TypeScript validation logic.
-- **Root Cause**: The system was using `server/services/process_automation.py` with `simulate_workflow_step("Validation")` that returned fake success data instead of calling the real TypeScript validation services.
-
-### Solution Implemented
-1. **Implemented Real Validation Logic**: Replaced stub `validateInvoiceData()` method in `server/storage.ts` with comprehensive validation system that:
-   - Retrieves active validation rules from database
-   - Supports multiple rule types: `required`, `enum`, `regex`, `range`, `format`
-   - Handles nested field paths (e.g., `extractedData.buyerTaxId`)
-   - Provides detailed violation reporting with severity levels
-   - Returns structured validation results with scores
-
-2. **Updated Database Schema**: Added validation fields to `invoices` table:
-   - `validation_status` VARCHAR(50) DEFAULT 'pending'
-   - `validation_results` JSONB (stores complete validation details)
-   - `validation_score` DECIMAL(3,2) (0-1 validation score)
-   - `is_validated` BOOLEAN DEFAULT false
-   - `validated_at` TIMESTAMP
-   - `uploaded_at` TIMESTAMP DEFAULT NOW()
-
-3. **Enhanced Invoice Processing**: Modified `server/routes.ts` to:
-   - Call real validation after AI extraction
-   - Store comprehensive validation results in database
-   - Automatically approve/reject based on validation results
-   - Log detailed validation violations and warnings
-
-4. **Fixed Automation Flow**: Modified Python mock scripts to delegate validation to TypeScript system instead of returning fake results.
-
-5. **Added Test Validation Rule**: Created NIT validation rule for testing:
-   - Field: `extractedData.buyerTaxId`
-   - Type: `enum`
-   - Expected Value: `860527800`
-   - Severity: `critical`
-
-### Expected Results
-- Invoice Verification dashboard now shows real validation status
-- "Needs Review" counts reflect actual rule violations
-- Validation rules like NIT checking execute automatically during processing
-- `validationResult` and `validationErrors` fields are properly populated
-- Business rules are enforced during automation workflow
-
-## Key Technologies
-- React frontend with Tanstack Query for dynamic data management
-- Express.js backend with comprehensive security protocols  
-- Advanced token-based file matching for PDF and XML invoices
-- Real-time validation system with database-driven rules
-- Multi-language invoice processing with adaptive parsing
-- Playwright-based browser automation for reliable data extraction
-
-## Architecture
-- Frontend: React with TypeScript, Tailwind CSS, shadcn/ui components
-- Backend: Express.js with TypeScript
-- Database: PostgreSQL with Drizzle ORM
-- Authentication: Replit Auth integration
-- File Processing: OCR with Tesseract.js, AI extraction with OpenAI
-- Validation: Rule-based validation engine with JSONB storage
+## Overview
+This project is an advanced AI-powered invoice procurement platform designed to streamline multilingual financial document processing. It focuses on intelligent automation, enhanced security, and robust data extraction capabilities, aiming to deliver a comprehensive solution for efficient invoice management. The platform's core purpose is to automate and secure the handling of diverse financial documents, improving efficiency and data accuracy for businesses.
 
 ## User Preferences
 - Focus on business logic accuracy over UI polish
@@ -223,9 +9,30 @@ Recent testing confirmed all fixes work correctly:
 - Use comprehensive logging for debugging validation issues
 - Maintain clear error reporting for failed validations
 
-## Development Guidelines
-- All validation rules stored in database for easy management
-- Validation results stored as structured JSONB for detailed analysis
-- Mock data should never be used for validation - always use real rule processing
-- Validation system should be extensible for new rule types
-- Critical business rules (like NIT validation) should have `critical` severity
+## System Architecture
+The platform is built with a microservices-oriented approach, emphasizing modularity and scalability.
+
+**Technical Implementations & Feature Specifications:**
+- **Invoice Processing:** Leverages AI for multi-language invoice processing and adaptive parsing. OCR (Tesseract.js) and AI extraction (OpenAI) are used for data extraction.
+- **Data Extraction:** Robust logic for extracting critical fields like buyer tax ID from various XML formats, including those embedded in CDATA sections.
+- **Duplicate Prevention:** A robust duplicate invoice detection system is implemented, normalizing invoice numbers, vendor names, and optionally validating total amounts. This system performs checks *before* file download to optimize resource usage.
+- **Validation System:** A real-time, rule-based validation engine retrieves active rules from a database. It supports various rule types (`required`, `enum`, `regex`, `range`, `format`), handles nested field paths, provides detailed violation reporting with severity levels, and returns structured validation results with scores. Validation results are stored in JSONB format in the database.
+- **RPA Automation:** The Robotic Process Automation (RPA) system ensures session isolation for accurate file counting by clearing download directories at the start of each run and tracking only files downloaded during the current session.
+- **Security:** Comprehensive security protocols are integrated at the backend.
+- **File Matching:** Advanced token-based file matching for PDF and XML invoices.
+
+**System Design Choices:**
+- **Frontend:** React with TypeScript, utilizing Tailwind CSS and shadcn/ui components for a modern and efficient user interface.
+- **Backend:** Express.js with TypeScript for a robust and scalable server-side.
+- **Database:** PostgreSQL with Drizzle ORM for data storage and management. Invoice data includes fields for validation status, results, score, and timestamps.
+- **Authentication:** Integrated with Replit Auth for secure user authentication.
+- **UI/UX Decisions:** While the focus is on business logic, the choice of React, Tailwind CSS, and shadcn/ui suggests a modern, component-based design approach with an emphasis on functional and clean aesthetics. The Invoice Verification dashboard is a key UI component for displaying real-time validation status.
+
+## External Dependencies
+- **Replit Auth:** For user authentication.
+- **PostgreSQL:** Primary database for data storage.
+- **Tesseract.js:** For Optical Character Recognition (OCR).
+- **OpenAI:** For AI-powered data extraction.
+- **Express.js:** Backend framework.
+- **React:** Frontend library.
+- **Playwright:** For browser automation.
