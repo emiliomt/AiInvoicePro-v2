@@ -10,6 +10,7 @@ import { Separator } from '@/components/ui/separator';
 import { Loader2, TestTube, Upload, FileText, Zap } from 'lucide-react';
 import { apiRequest } from '@/lib/queryClient';
 import { useToast } from '@/hooks/use-toast';
+import Header from '@/components/Header';
 
 interface ClassificationResult {
   category: string;
@@ -173,6 +174,7 @@ export default function LineItemClassification() {
 
   return (
     <div className="min-h-screen bg-background">
+      <Header />
       <div className="container mx-auto p-6">
         <div className="mb-8">
           <h1 className="text-3xl font-bold mb-2 flex items-center gap-2">
@@ -225,7 +227,7 @@ export default function LineItemClassification() {
                   onChange={(e) => setLineItem({...lineItem, description: e.target.value})}
                 />
               </div>
-              
+
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <Label htmlFor="quantity">Quantity</Label>
@@ -370,7 +372,7 @@ Laptop Dell Inspiron, 1, 2500000, pcs`}
                     <>Classify Batch</>
                   )}
                 </Button>
-                
+
                 <Button 
                   variant="outline"
                   onClick={() => testClassificationMutation.mutate()}
