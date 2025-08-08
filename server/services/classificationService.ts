@@ -4,6 +4,8 @@ import { classificationKeywords, lineItemClassifications, lineItems } from "@sha
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "@shared/schema";
 
+const db = getDb();
+
 export interface ClassificationResult {
   category: string;
   matchedKeyword: string | null;
