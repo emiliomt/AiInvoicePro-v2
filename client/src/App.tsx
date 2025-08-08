@@ -102,7 +102,7 @@ const AppContent = React.memo(() => {
         <Route path="/ai-learning">
           {user ? <AILearningDashboard /> : <Landing />}
         </Route>
-        <Route path="/classification">
+        <Route path="/line-item-classification">
           {user ? <LineItemClassification /> : <Landing />}
         </Route>
         <Route path="/erp-connect">
