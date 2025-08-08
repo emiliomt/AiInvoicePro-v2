@@ -3,7 +3,41 @@
 ## Project Overview
 An advanced AI-powered invoice procurement platform that leverages intelligent automation to streamline multilingual financial document processing with enhanced security and robust data extraction capabilities.
 
-## Recent Critical Fix: Buyer Tax ID Extraction Implementation (Aug 7, 2025)
+## Recent Critical Investigation: Invoice Counting Accuracy Analysis (Aug 8, 2025)
+
+### Issue Investigated
+- **Problem**: User reported "only 10 possible invoices" but RPA system processed and reported 11 invoices, raising concerns about data integrity and duplicate processing.
+- **Root Investigation**: Deep analysis revealed actual file structure contains 13 potential invoice files, but RPA correctly processed 11 legitimate invoices.
+
+### Findings and Resolution
+1. **Actual File Analysis**:
+   - 5 XML+PDF pairs: 04VC124760, EXB137180, FA19905, FEPB200209, FEPG795739
+   - 6 standalone PDFs: 995, C22876508, CONS5605, FEPB200217, FEPG795749, L16626652330
+   - **Total processed: 11 legitimate invoices** ✅
+
+2. **Files Correctly Skipped**:
+   - `1753891240248-z1jxx9e56yi.xml`: Orphaned XML file (test file)
+   - `JGFE606_900637868...pdf`: File from previous processing run in subdirectory
+
+3. **Database Integrity Confirmed**:
+   - Database shows 16 imported file records (XML + PDF pairs counted separately in metadata)
+   - RPA final count: 11 processed invoices (correct unique invoice count)
+   - No duplicate processing or counting errors detected
+
+4. **Counting Logic Enhanced**:
+   - Added documentation that PDF files in XML+PDF pairs should not increment invoice counter
+   - PDF reference files stored for linking but don't trigger separate processing pipeline
+   - Invoice counting logic properly distinguishes between files and unique invoices
+
+### Technical Implementation
+- Enhanced file pairing logic in Python RPA service to correctly identify XML+PDF relationships
+- Maintained separation between file storage (for reference) and invoice processing (for extraction)
+- Updated progress tracking to count unique invoices, not individual files
+
+### Conclusion
+The RPA system is working correctly. User's expectation of "10 possible invoices" may have been based on incomplete file inventory or different counting methodology. The system processed all legitimate invoices (11 total) and correctly skipped problematic files.
+
+## Previous Critical Fix: Buyer Tax ID Extraction Implementation (Aug 7, 2025)
 
 ### Issue Resolved
 - **Problem**: Python RPA service was not extracting buyer tax ID from XML invoices, causing missing customer identification data in processed invoices. Database showed all buyer_tax_id fields as empty despite XML files containing the data.

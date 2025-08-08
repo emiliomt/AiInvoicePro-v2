@@ -2067,6 +2067,7 @@ class InvoiceRPAService:
                         self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
                     
                     # Store PDF as reference ONLY - NO extraction pipeline
+                    # IMPORTANT: PDF files in pairs should NOT be counted as processed invoices
                     pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
                     if pdf_info:
                         # Mark PDF to be linked after XML processing is complete
@@ -2074,6 +2075,7 @@ class InvoiceRPAService:
                         pdf_info['xml_filename'] = xml_filename
                         processed_files.append(pdf_info)
                         self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION, will link to XML invoice)")
+                        # NOTE: We do NOT increment processed_count here - only the XML counts as 1 invoice
                     
                 elif base_name in unmatched_xmls:
                     # Case: Only XML file present - store XML, set isDataSource = true
