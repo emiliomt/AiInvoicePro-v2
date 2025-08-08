@@ -1849,8 +1849,38 @@ export async function getStorage(): Promise<IStorage> {
   return createStorage();
 }
 
-// Legacy synchronous export for backward compatibility
-export const storage: IStorage = createStorage();
+// Create a storage proxy that properly initializes the database
+let storageInstance: IStorage | null = null;
+let initializationPromise: Promise<IStorage> | null = null;
+
+// Get or create the storage instance
+export async function getStorageInstance(): Promise<IStorage> {
+  if (!storageInstance) {
+    if (!initializationPromise) {
+      initializationPromise = (async () => {
+        await ensureDbConnected();
+        storageInstance = createStorage();
+        return storageInstance;
+      })();
+    }
+    await initializationPromise;
+  }
+  return storageInstance!;
+}
+
+// Create a proxy that automatically initializes the database before each call
+export const storage: IStorage = new Proxy({} as IStorage, {
+  get(target, prop: string | symbol) {
+    return async (...args: any[]) => {
+      const realStorage = await getStorageInstance();
+      const method = (realStorage as any)[prop];
+      if (typeof method === 'function') {
+        return method.apply(realStorage, args);
+      }
+      return method;
+    };
+  }
+});
 
 // Helper function to get total invoice count
 export async function getInvoiceCount(): Promise<number> {
