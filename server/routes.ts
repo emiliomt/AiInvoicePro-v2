@@ -6019,38 +6019,38 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
-  // Line Item Classification API Routes
+  // Line Item Classification API Routes (Updated with new service)
   app.post('/api/classification/classify', isAuthenticated, async (req: any, res) => {
     try {
-      const { description, quantity, unitPrice, totalPrice, unit, rawText, vendorContext } = req.body;
+      const { description, quantity, unitPrice, totalPrice, unit, rawText, useAI } = req.body;
 
       if (!description) {
         return res.status(400).json({ error: 'Description is required' });
       }
 
-      // Import the classifier dynamically to avoid initialization errors
-      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
       
-      // Check if OpenAI key is available
-      let openaiKey;
-      try {
-        openaiKey = process.env.OPENAI_API_KEY;
-      } catch (error) {
-        console.log('OpenAI API key not found, using keyword-based classification');
-      }
+      const userId = (req.user as any).claims.sub;
 
-      const classifier = new AILineItemClassifier(openaiKey);
-      
-      const lineItem = {
+      // Create a temporary line item object for classification
+      const tempLineItem = {
+        id: 0,
+        invoiceId: 0,
         description,
-        quantity: quantity ? parseFloat(quantity) : undefined,
-        unitPrice: unitPrice ? parseFloat(unitPrice) : undefined,
-        totalPrice: totalPrice ? parseFloat(totalPrice) : undefined,
-        unit,
-        rawText
+        quantity: quantity?.toString(),
+        unitPrice: unitPrice?.toString(),
+        totalPrice: totalPrice?.toString(),
+        unit: unit || null,
+        rawText: rawText || null,
+        lineNumber: null,
+        createdAt: new Date(),
       };
 
-      const result = await classifier.classifyLineItem(lineItem, vendorContext);
+      const result = useAI 
+        ? await ClassificationService.classifyLineItemWithAI(tempLineItem, userId)
+        : await ClassificationService.classifyLineItem(tempLineItem, userId);
+
       res.json(result);
     } catch (error) {
       console.error('Classification error:', error);
@@ -6060,25 +6060,43 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
 
   app.post('/api/classification/batch', isAuthenticated, async (req: any, res) => {
     try {
-      const { lineItems, vendorContext } = req.body;
+      const { items, useAI } = req.body;
 
-      if (!Array.isArray(lineItems) || lineItems.length === 0) {
+      if (!Array.isArray(items) || items.length === 0) {
         return res.status(400).json({ error: 'Line items array is required' });
       }
 
-      // Import the classifier dynamically
-      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
       
-      let openaiKey;
-      try {
-        openaiKey = process.env.OPENAI_API_KEY;
-      } catch (error) {
-        console.log('OpenAI API key not found, using keyword-based classification');
+      const userId = (req.user as any).claims.sub;
+
+      const results = [];
+      for (const item of items) {
+        // Create temporary line item object
+        const tempLineItem = {
+          id: 0,
+          invoiceId: 0,
+          description: item.description,
+          quantity: item.quantity?.toString(),
+          unitPrice: item.unitPrice?.toString(),
+          totalPrice: item.totalPrice?.toString(),
+          unit: item.unit || null,
+          rawText: item.rawText || null,
+          lineNumber: null,
+          createdAt: new Date(),
+        };
+
+        const classification = useAI 
+          ? await ClassificationService.classifyLineItemWithAI(tempLineItem, userId)
+          : await ClassificationService.classifyLineItem(tempLineItem, userId);
+
+        results.push({
+          ...item,
+          classification
+        });
       }
 
-      const classifier = new AILineItemClassifier(openaiKey);
-      
-      const results = await classifier.classifyBatch(lineItems, vendorContext);
       res.json({ results });
     } catch (error) {
       console.error('Batch classification error:', error);
@@ -6088,19 +6106,10 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
 
   app.get('/api/classification/categories', isAuthenticated, async (req: any, res) => {
     try {
-      // Return the supported categories
-      const categories = {
-        materials_supplies: "Raw materials, supplies, and consumable items",
-        equipment_tools: "Tools, machinery, equipment, and hardware for operations",
-        services_labor: "Professional services, labor, consulting, and expertise",
-        utilities_facilities: "Utilities, facility costs, and operational overhead",
-        food_beverages: "Food, beverages, and related consumables",
-        transportation_logistics: "Transportation, shipping, logistics, and related services",
-        technology_software: "Technology, software, digital services, and IT solutions",
-        marketing_advertising: "Marketing, advertising, promotional materials and services",
-        other: "Items that don't fit into standard business categories"
-      };
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
       
+      const categories = ClassificationService.getAvailableCategories();
       res.json(categories);
     } catch (error) {
       console.error('Error fetching categories:', error);
@@ -6108,44 +6117,152 @@ app.get('/api/invoices/processing-status', isAuthenticated, async (req: any, res
     }
   });
 
-  // Test route for the classifier
+  // Additional classification routes for the new system
+  app.post('/api/classification/classify-invoice/:invoiceId', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const useAI = req.body.useAI === true;
+      const userId = (req.user as any).claims.sub;
+
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
+
+      const results = await ClassificationService.classifyInvoiceLineItems(invoiceId, useAI, userId);
+      
+      res.json({
+        invoiceId,
+        classificationsCount: results.length,
+        results
+      });
+    } catch (error) {
+      console.error("Error classifying invoice line items:", error);
+      res.status(500).json({ error: "Failed to classify invoice line items" });
+    }
+  });
+
+  app.get('/api/classification/invoice/:invoiceId', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: "Invalid invoice ID" });
+      }
+
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
+
+      const classifications = await ClassificationService.getInvoiceClassifications(invoiceId);
+      
+      res.json(classifications);
+    } catch (error) {
+      console.error("Error fetching invoice classifications:", error);
+      res.status(500).json({ error: "Failed to fetch classifications" });
+    }
+  });
+
+  app.post('/api/classification/manual-override', isAuthenticated, async (req: any, res) => {
+    try {
+      const { lineItemId, category } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!userId) {
+        return res.status(401).json({ error: "User authentication required" });
+      }
+
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
+
+      await ClassificationService.manualOverride(lineItemId, category, userId);
+      
+      res.json({ success: true, message: "Classification overridden successfully" });
+    } catch (error) {
+      console.error("Error in manual override:", error);
+      res.status(500).json({ error: "Failed to override classification" });
+    }
+  });
+
+  app.get('/api/classification/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
+      
+      const stats = await ClassificationService.getClassificationStats(userId);
+      
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching classification stats:", error);
+      res.status(500).json({ error: "Failed to fetch statistics" });
+    }
+  });
+
+  // Test route for the new classifier
   app.post('/api/classification/test', isAuthenticated, async (req: any, res) => {
     try {
       const testResults = [];
       
-      // Import the classifier dynamically
-      const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
+      // Import the new classification service
+      const { ClassificationService } = await import('./services/classificationServiceNew');
       
-      let openaiKey;
-      try {
-        openaiKey = process.env.OPENAI_API_KEY;
-      } catch (error) {
-        console.log('OpenAI API key not found, using keyword-based classification');
-      }
+      const userId = (req.user as any).claims.sub;
 
-      const classifier = new AILineItemClassifier(openaiKey);
+      // Initialize default keywords
+      await ClassificationService.initializeDefaultKeywords();
 
-      // Test with sample line items from your uploaded test data
+      // Test with sample line items from Colombian construction context
       const testItems = [
-        { description: "C S IND MUROPLACA 4", rawText: "C S IND MUROPLACA 4" },
-        { description: "Cemento portland", quantity: 50, unit: "kg" },
-        { description: "Servicios de consultoría ingeniería", unitPrice: 150000, totalPrice: 450000 },
-        { description: "Laptop Dell Inspiron", quantity: 1, unitPrice: 2500000 },
-        { description: "Combustible diesel para equipos", quantity: 100, unit: "litros" }
+        { description: "Cemento Portland Gris 50KG", quantity: "100", unit: "bultos" },
+        { description: "Servicios de consultoría ingeniería estructural", quantity: "40", unit: "horas" },
+        { description: "Laptop Dell Inspiron 15 para oficina", quantity: "1", unit: "unidad" },
+        { description: "Combustible diesel para equipos pesados", quantity: "500", unit: "litros" },
+        { description: "Almuerzo ejecutivo para reunión", quantity: "8", unit: "personas" },
+        { description: "Hierro corrugado 1/2 pulgada", quantity: "200", unit: "varillas" },
+        { description: "Transporte de materiales a obra", quantity: "1", unit: "viaje" }
       ];
 
       for (const item of testItems) {
-        const result = await classifier.classifyLineItem(item);
+        // Create temporary line item
+        const tempLineItem = {
+          id: 0,
+          invoiceId: 0,
+          description: item.description,
+          quantity: item.quantity,
+          unitPrice: null,
+          totalPrice: null,
+          unit: item.unit,
+          rawText: null,
+          lineNumber: null,
+          createdAt: new Date(),
+        };
+
+        // Test both keyword and AI classification
+        const keywordResult = await ClassificationService.classifyLineItem(tempLineItem, userId);
+        
+        let aiResult = null;
+        try {
+          if (process.env.OPENAI_API_KEY) {
+            aiResult = await ClassificationService.classifyLineItemWithAI(tempLineItem, userId);
+          }
+        } catch (error) {
+          console.log('AI classification failed for test item, using keyword only');
+        }
+
         testResults.push({
           item,
-          classification: result
+          keywordClassification: keywordResult,
+          aiClassification: aiResult
         });
       }
 
       res.json({ 
-        message: "Classification test completed",
+        message: "Classification test completed with new service",
         results: testResults,
-        classifier_initialized: !!openaiKey
+        openai_available: !!process.env.OPENAI_API_KEY
       });
     } catch (error) {
       console.error('Classification test error:', error);
