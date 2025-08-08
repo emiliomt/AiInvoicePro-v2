@@ -15,8 +15,6 @@ import json
 import base64
 import psycopg2
 import xml.etree.ElementTree as ET
-import requests
-import tempfile
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -94,12 +92,6 @@ class InvoiceRPAService:
         self.log(f"Download directory: {self.download_dir}")
         self.log(f"XML directory: {self.xml_dir}")
 
-        # Proxy configuration from environment variables
-        self.proxy_host = config.get('proxyHost') or os.getenv('PROXY_HOST')
-        self.proxy_port = config.get('proxyPort') or os.getenv('PROXY_PORT')
-        self.proxy_user = config.get('proxyUser') or os.getenv('PROXY_USER')
-        self.proxy_pass = config.get('proxyPass') or os.getenv('PROXY_PASS')
-        
         # Initialize driver
         self.driver = None
         self.wait = None
@@ -127,125 +119,6 @@ class InvoiceRPAService:
         timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         print(f"[{timestamp}] {level}: {message}")
         sys.stdout.flush()
-    
-    def check_current_ip(self):
-        """Check current public IP address"""
-        try:
-            response = requests.get('https://api.ipify.org', timeout=10)
-            current_ip = response.text.strip()
-            self.log(f"🌐 Current public IP address: {current_ip}")
-            return current_ip
-        except Exception as e:
-            self.log(f"⚠️ Could not check IP address: {e}", "WARNING")
-            return None
-    
-    def create_proxy_extension(self, proxy_host: str, proxy_port: str, proxy_user: str, proxy_pass: str) -> str:
-        """Create Chrome extension for authenticated proxy support"""
-        try:
-            # Create a temporary directory for the extension
-            extension_dir = tempfile.mkdtemp(prefix='proxy_auth_')
-            
-            # Manifest for Chrome extension
-            manifest = {
-                "version": "1.0.0",
-                "manifest_version": 2,
-                "name": "Proxy Authentication",
-                "permissions": [
-                    "proxy",
-                    "tabs",
-                    "unlimitedStorage",
-                    "storage",
-                    "<all_urls>",
-                    "webRequest",
-                    "webRequestBlocking"
-                ],
-                "background": {
-                    "scripts": ["background.js"]
-                },
-                "minimum_chrome_version": "22.0.0"
-            }
-            
-            # Background script for proxy authentication
-            background_js = f"""
-var config = {{
-    mode: "fixed_servers",
-    rules: {{
-        singleProxy: {{
-            scheme: "http",
-            host: "{proxy_host}",
-            port: parseInt("{proxy_port}")
-        }},
-        bypassList: ["localhost"]
-    }}
-}};
-
-chrome.proxy.settings.set({{value: config, scope: "regular"}}, function() {{}});
-
-function callbackFn(details) {{
-    return {{
-        authCredentials: {{
-            username: "{proxy_user}",
-            password: "{proxy_pass}"
-        }}
-    }};
-}}
-
-chrome.webRequest.onAuthRequired.addListener(
-    callbackFn,
-    {{urls: ["<all_urls>"]}},
-    ['blocking']
-);
-"""
-            
-            # Write manifest.json
-            with open(os.path.join(extension_dir, 'manifest.json'), 'w') as f:
-                json.dump(manifest, f)
-            
-            # Write background.js
-            with open(os.path.join(extension_dir, 'background.js'), 'w') as f:
-                f.write(background_js)
-            
-            self.log(f"📁 Created proxy authentication extension at: {extension_dir}")
-            return extension_dir
-            
-        except Exception as e:
-            self.log(f"❌ Error creating proxy extension: {e}", "ERROR")
-            return None
-    
-    def setup_proxy_configuration(self, chrome_options):
-        """Configure proxy settings for Chrome WebDriver"""
-        if not self.proxy_host or not self.proxy_port:
-            self.log("🔄 No proxy configuration found, using direct connection")
-            return chrome_options
-        
-        self.log(f"🔧 Configuring proxy: {self.proxy_host}:{self.proxy_port}")
-        
-        # Check if proxy requires authentication
-        if self.proxy_user and self.proxy_pass:
-            self.log("🔐 Proxy authentication detected, setting up Chrome extension")
-            
-            # Create proxy authentication extension
-            extension_dir = self.create_proxy_extension(
-                self.proxy_host, self.proxy_port, self.proxy_user, self.proxy_pass
-            )
-            
-            if extension_dir:
-                # Load the extension
-                chrome_options.add_argument(f"--load-extension={extension_dir}")
-                # Disable extension loading security checks
-                chrome_options.add_argument("--disable-extensions-file-access-check")
-                chrome_options.add_argument("--disable-extensions-http-throttling")
-                self.log("✅ Proxy authentication extension loaded")
-            else:
-                self.log("❌ Failed to create proxy extension, falling back to direct connection", "ERROR")
-                return chrome_options
-        else:
-            # Simple proxy without authentication
-            proxy_url = f"http://{self.proxy_host}:{self.proxy_port}"
-            chrome_options.add_argument(f"--proxy-server={proxy_url}")
-            self.log(f"✅ Proxy configured: {proxy_url}")
-        
-        return chrome_options
 
     def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: str = None) -> bool:
         """
@@ -589,12 +462,8 @@ chrome.webRequest.onAuthRequired.addListener(
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
     def setup_driver(self):
-        """Initialize Chrome WebDriver with download preferences and proxy support"""
+        """Initialize Chrome WebDriver with download preferences"""
         self.log("Setting up Chrome WebDriver...")
-        
-        # Check current IP before proxy setup
-        self.log("🔍 Checking IP address before proxy setup...")
-        initial_ip = self.check_current_ip()
 
         try:
             # Check if Chrome/Chromium is available
@@ -614,27 +483,28 @@ chrome.webRequest.onAuthRequired.addListener(
             if 'chromium' in chrome_path:
                 chrome_options.binary_location = chrome_path
 
+            # Ensure download directory is absolute path for Chrome
+            abs_download_dir = os.path.abspath(self.download_dir)
+            self.log(f"Setting Chrome download directory to: {abs_download_dir}")
+            
             prefs = {
-                "download.default_directory": self.download_dir,
+                "download.default_directory": abs_download_dir,
                 "download.prompt_for_download": False,
                 "download.directory_upgrade": True,
                 "safebrowsing.enabled": False,
                 "safebrowsing.disable_download_protection": True,
-                "profile.default_content_settings.popups": 0
+                "profile.default_content_settings.popups": 0,
+                "download.extensions_to_open": "",
+                "download.open_pdf_in_system_reader": False
             }
             chrome_options.add_experimental_option("prefs", prefs)
             chrome_options.add_argument("--no-sandbox")
             chrome_options.add_argument("--disable-gpu")
             chrome_options.add_argument("--disable-dev-shm-usage")
 
-            # Configure proxy settings before other options
-            chrome_options = self.setup_proxy_configuration(chrome_options)
-
             # Force headless mode for Replit environment with enhanced flags
             chrome_options.add_argument("--headless=new")
-            # Only disable extensions if not using proxy authentication extension
-            if not (self.proxy_host and self.proxy_user and self.proxy_pass):
-                chrome_options.add_argument("--disable-extensions")
+            chrome_options.add_argument("--disable-extensions")
             chrome_options.add_argument("--disable-setuid-sandbox")
             chrome_options.add_argument("--disable-web-security")
             chrome_options.add_argument("--allow-running-insecure-content")
@@ -649,6 +519,11 @@ chrome.webRequest.onAuthRequired.addListener(
             chrome_options.add_argument("--disable-renderer-backgrounding")
             chrome_options.add_argument("--disable-features=TranslateUI")
             chrome_options.add_argument("--disable-ipc-flooding-protection")
+            
+            # Additional arguments for reliable downloads
+            chrome_options.add_argument("--disable-background-downloads")
+            chrome_options.add_argument("--disable-default-apps")
+            chrome_options.add_argument("--disable-notifications")
 
             self.log(
                 "Initializing ChromeDriver in headless mode with debug capture..."
@@ -664,22 +539,6 @@ chrome.webRequest.onAuthRequired.addListener(
             self.long_wait = WebDriverWait(self.driver, 60)
 
             self.log("Chrome WebDriver initialized successfully")
-            
-            # Verify proxy is working by checking IP after driver initialization
-            if self.proxy_host:
-                self.log("🔍 Verifying proxy configuration...")
-                try:
-                    # Navigate to IP check service to verify proxy
-                    self.driver.get("https://api.ipify.org")
-                    time.sleep(2)
-                    proxy_ip = self.driver.find_element("tag name", "body").text.strip()
-                    if proxy_ip and proxy_ip != initial_ip:
-                        self.log(f"✅ Proxy is working! New IP: {proxy_ip} (was: {initial_ip})")
-                    else:
-                        self.log(f"⚠️ Proxy may not be working. Current IP: {proxy_ip}", "WARNING")
-                except Exception as e:
-                    self.log(f"⚠️ Could not verify proxy IP: {e}", "WARNING")
-            
             return True
 
         except ImportError as e:
@@ -694,7 +553,6 @@ chrome.webRequest.onAuthRequired.addListener(
                 "ERROR")
             self.log("2. Install Selenium: pip3 install selenium", "ERROR")
             self.log("3. Check if ports are blocked by firewall", "ERROR")
-            self.log("4. Verify proxy configuration if using proxy", "ERROR")
             return False
 
     def init_database(self,
@@ -735,6 +593,8 @@ chrome.webRequest.onAuthRequired.addListener(
                          before_files: Optional[set] = None) -> str:
         """Wait for a new ZIP file to be downloaded"""
         deadline = time.time() + timeout
+        start_time = time.time()
+        
         if before_files is None:
             before_files = {
                 os.path.join(self.download_dir, f)
@@ -742,22 +602,56 @@ chrome.webRequest.onAuthRequired.addListener(
                 if f.lower().endswith(".zip")
             }
 
+        self.log(f"🔍 Waiting for ZIP download in {self.download_dir} (timeout: {timeout}s)")
+        self.log(f"📁 Files before download: {len(before_files)} ZIP files")
+        
+        last_status_time = start_time
         while time.time() < deadline:
             # Check for Chrome download files
-            crdownloads = [
-                f for f in os.listdir(self.download_dir)
-                if f.endswith(".crdownload")
-            ]
-            current_files = {
-                os.path.join(self.download_dir, f)
-                for f in os.listdir(self.download_dir)
-                if f.lower().endswith(".zip")
-            }
-            new_files = list(current_files - before_files)
-            if new_files and not crdownloads:
-                return max(new_files, key=os.path.getctime)
+            try:
+                all_files = os.listdir(self.download_dir)
+                crdownloads = [f for f in all_files if f.endswith(".crdownload")]
+                current_files = {
+                    os.path.join(self.download_dir, f)
+                    for f in all_files
+                    if f.lower().endswith(".zip")
+                }
+                new_files = list(current_files - before_files)
+                
+                # Log status every 10 seconds
+                current_time = time.time()
+                if current_time - last_status_time >= 10:
+                    elapsed = current_time - start_time
+                    self.log(f"⏳ Download status after {elapsed:.1f}s: {len(crdownloads)} .crdownload files, {len(new_files)} new ZIP files")
+                    if crdownloads:
+                        self.log(f"📥 Chrome downloading: {crdownloads}")
+                    last_status_time = current_time
+                
+                if new_files and not crdownloads:
+                    newest_file = max(new_files, key=os.path.getctime)
+                    elapsed = current_time - start_time
+                    self.log(f"✅ Download completed after {elapsed:.1f}s: {os.path.basename(newest_file)}")
+                    return newest_file
+                    
+            except Exception as e:
+                self.log(f"⚠️ Error checking download directory: {e}", "WARNING")
+            
             time.sleep(1)
 
+        # Enhanced timeout error with diagnostic info
+        try:
+            all_files = os.listdir(self.download_dir)
+            zip_files = [f for f in all_files if f.lower().endswith(".zip")]
+            crdownloads = [f for f in all_files if f.endswith(".crdownload")]
+            other_files = [f for f in all_files if not f.lower().endswith(".zip") and not f.endswith(".crdownload")]
+            
+            self.log(f"❌ Download timeout after {timeout}s. Directory contents:", "ERROR")
+            self.log(f"   📁 ZIP files: {len(zip_files)} - {zip_files[:3]}{'...' if len(zip_files) > 3 else ''}", "ERROR")
+            self.log(f"   📥 Chrome downloads: {len(crdownloads)} - {crdownloads}", "ERROR")
+            self.log(f"   📄 Other files: {len(other_files)} - {other_files[:3]}{'...' if len(other_files) > 3 else ''}", "ERROR")
+        except Exception as e:
+            self.log(f"❌ Could not list directory contents: {e}", "ERROR")
+            
         raise TimeoutError(
             f"No new .zip file downloaded within {timeout} seconds.")
 
@@ -1179,14 +1073,18 @@ chrome.webRequest.onAuthRequired.addListener(
             ActionChains(self.driver).move_to_element(
                 buttons[3]).click().perform()
 
-            # Click actual download button
-            if not self.short_wait:
-                self.log("Short wait object not initialized", "ERROR")
+            # Click actual download button with longer timeout
+            if not self.wait:
+                self.log("Wait object not initialized", "ERROR")
                 return False
-            download_button = self.short_wait.until(
+            
+            self.log("Waiting for download button to appear...")
+            download_button = self.wait.until(
                 EC.element_to_be_clickable((By.CLASS_NAME, "descargar")))
+            self.log("Download button found, clicking...")
             ActionChains(self.driver).move_to_element(
                 download_button).click().perform()
+            self.log("Download button clicked, waiting for file...")
 
             # Wait for download to complete with configurable timeout
             downloaded_zip = self.wait_for_new_zip(timeout=self.zip_download_timeout,
