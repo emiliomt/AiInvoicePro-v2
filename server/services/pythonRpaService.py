@@ -2131,14 +2131,18 @@ class InvoiceRPAService:
             # The manual pipeline creates records in the main 'invoices' table
             # The conditional storage above is for metadata and file linking in 'imported_invoices' table
 
-            # Update final stats
-            self.stats['processed_invoices'] = processed_count
-            self.stats['successful_imports'] = successful_count
+            # Calculate correct invoice count (only count data sources, not reference files)
+            actual_invoice_count = sum(1 for f in processed_files if f.get('is_data_source', False))
+            reference_file_count = sum(1 for f in processed_files if not f.get('is_data_source', False))
+            
+            # Update final stats with correct invoice counting
+            self.stats['processed_invoices'] = actual_invoice_count
+            self.stats['successful_imports'] = actual_invoice_count  # Only data sources create actual imports
             self.stats['failed_imports'] = failed_count
             
-            self.log(f"✅ Processed {processed_count} files through manual pipeline with proper PDF linking")
-            self.log(f"📊 Final stats: Processed={processed_count}, Success={successful_count}, Failed={failed_count}")
-            self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
+            self.log(f"✅ Processed {actual_invoice_count} unique invoices with {reference_file_count} reference files")
+            self.log(f"📊 CORRECTED Final stats: Invoices={actual_invoice_count}, Success={actual_invoice_count}, Failed={failed_count}")
+            self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF ({reference_file_count} reference-only)")
             
             return True
 
@@ -2786,11 +2790,13 @@ class InvoiceRPAService:
             file_progress = min(int((processed_count / total_files) * 100), 100) if total_files > 0 else 0
             overall_progress = 90 + int(file_progress * 0.08)  # Map to 90-98% range
             
-            # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
+            # CRITICAL FIX: Send the count that reflects unique invoices, not total files processed
+            # The processed_count parameter represents unique invoices (data sources only)
+            # The total_files parameter represents unique invoice entities to be processed
             stats_data = {
                 'total_invoices': total_files,
-                'processed_invoices': processed_count,
-                'successful_imports': successful_count,
+                'processed_invoices': processed_count,  # This is already the correct unique invoice count
+                'successful_imports': successful_count,  # This is already the correct unique invoice count  
                 'failed_imports': failed_count,
                 'progress': overall_progress
             }
@@ -2800,7 +2806,7 @@ class InvoiceRPAService:
             print(f"STATS: {json.dumps(stats_data)}")
             sys.stdout.flush()
             
-            self.log(f"📊 Progress update: Processed={processed_count}/{total_files}, Success={successful_count}, Failed={failed_count}")
+            self.log(f"📊 Progress update: Unique invoices processed={processed_count}/{total_files}, Success={successful_count}, Failed={failed_count}")
                 
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")

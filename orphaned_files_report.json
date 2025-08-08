@@ -1,0 +1,22 @@
+{
+  "timestamp": "2025-08-08T18:55:12.591536",
+  "file_system": {
+    "temp_xml": 0,
+    "temp_pdf": 0,
+    "uploaded_xml": 1,
+    "uploaded_pdf": 0,
+    "orphaned_temp_xml": 0,
+    "orphaned_temp_pdf": 0,
+    "orphaned_uploaded_xml": 1,
+    "orphaned_uploaded_pdf": 0
+  },
+  "database": {
+    "valid_records": 0,
+    "orphaned_records": 0,
+    "rpa_invoices": 0,
+    "complete_pairs": 0,
+    "xml_only": 0,
+    "pdf_only": 0
+  },
+  "cleanup_needed": true
+}
