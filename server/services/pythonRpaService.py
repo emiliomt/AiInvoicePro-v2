@@ -868,7 +868,7 @@ class InvoiceRPAService:
             # Wait for rows to load
             self.log("⏳ Waiting for invoice rows to populate...")
             start = time.time()
-            max_wait = 20
+            max_wait = 25
 
             while time.time() - start < max_wait:
                 rows = self.driver.find_elements(By.CSS_SELECTOR,
@@ -889,7 +889,8 @@ class InvoiceRPAService:
             # Initialize database
             db_conn = self.init_database(self.db_path, 'downloads')
             page_count = 0
-
+            #time.sleep(6)
+            #self.debug_capture("16_invoice_rows_found")
             while True:
                 rows = self.driver.find_elements(By.CSS_SELECTOR,
                                                  "div.rt-tr-group")
