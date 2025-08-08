@@ -2709,10 +2709,13 @@ class InvoiceRPAService:
             
             # Validate metric consistency before reporting
             try:
-                # Relationship constraint 1: total_invoices = skipped_invoices + processed_invoices
-                expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
-                if self.stats['total_invoices'] != expected_total:
-                    self.log(f"⚠️ Metrics validation: total_invoices ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']}) = {expected_total}", "WARNING")
+                # NOTE: During web scraping phase, total_invoices is NOT yet set correctly
+                # Skip validation until file processing phase sets the correct total_invoices
+                if self.stats['total_invoices'] > 0:  # Only validate if total_invoices has been properly set
+                    # Relationship constraint 1: total_invoices = skipped_invoices + processed_invoices
+                    expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
+                    if self.stats['total_invoices'] != expected_total:
+                        self.log(f"⚠️ Metrics validation: total_invoices ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']}) = {expected_total}", "WARNING")
                 
                 # Relationship constraint 2: processed_invoices = successful_imports + failed_imports  
                 expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
@@ -2749,11 +2752,12 @@ class InvoiceRPAService:
             
             # Validate and enforce relationship constraints
             try:
-                # Constraint 1: total_invoices = skipped_invoices + processed_invoices
-                expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
-                if self.stats['total_invoices'] != expected_total:
-                    self.log(f"🔧 Correcting total_invoices: {self.stats['total_invoices']} -> {expected_total}")
-                    self.stats['total_invoices'] = expected_total
+                # NOTE: DO NOT "correct" total_invoices to match skipped+processed
+                # total_invoices is now correctly set during file processing to represent unique invoices
+                # The relationship total_invoices = skipped+processed is only valid when counting web table rows
+                # but that's not the correct business logic for unique invoice counting
+                
+                # Just validate that processed_invoices follows the correct constraint
                 
                 # Constraint 2: processed_invoices = successful_imports + failed_imports
                 expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
@@ -2761,9 +2765,16 @@ class InvoiceRPAService:
                     self.log(f"🔧 Correcting processed_invoices: {self.stats['processed_invoices']} -> {expected_processed}")
                     self.stats['processed_invoices'] = expected_processed
                     
-                # Final validation assertions
-                assert self.stats['total_invoices'] == self.stats['skipped_invoices'] + self.stats['processed_invoices'], f"Constraint violation: total ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']})"
+                # Only validate the constraint that actually makes business sense:
+                # processed_invoices = successful_imports + failed_imports
                 assert self.stats['processed_invoices'] == self.stats['successful_imports'] + self.stats['failed_imports'], f"Constraint violation: processed ({self.stats['processed_invoices']}) != successful ({self.stats['successful_imports']}) + failed ({self.stats['failed_imports']})"
+                
+                # Log the final relationships for transparency (but don't enforce the old flawed constraint)
+                self.log(f"📊 Final counts - Unique invoices: {self.stats['total_invoices']}, Skipped: {self.stats['skipped_invoices']}, Processed: {self.stats['processed_invoices']}")
+                
+                # IMPORTANT: total_invoices represents unique invoices found in files
+                # It may not equal skipped+processed because web scraping phase and file processing phase
+                # operate on different concepts (web table rows vs actual unique invoice files)
                 
                 self.log("✅ All metric relationship constraints validated successfully")
                 

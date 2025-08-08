@@ -8,6 +8,7 @@ An advanced AI-powered invoice procurement platform that leverages intelligent a
 - Prioritize data integrity and validation correctness
 - Use comprehensive logging for debugging validation issues
 - Maintain clear error reporting for failed validations
+- Invoice counting must reflect actual business entities (unique invoices), not technical artifacts
 
 ## System Architecture
 The platform is built with a React frontend, an Express.js backend, and a PostgreSQL database. UI/UX utilizes Tailwind CSS and shadcn/ui components. Core architectural decisions include robust token-based file matching for PDF and XML invoices, a real-time validation system with database-driven rules, and multi-language invoice processing with adaptive parsing. Authentication is handled via Replit Auth. AI extraction is performed using OpenAI, and OCR with Tesseract.js. The validation system is extensible, allowing new rule types and storing results as structured JSONB for detailed analysis. Critical business rules, such as NIT validation, are enforced with high severity. Duplicate invoice detection is robust, normalizing invoice numbers and vendor names, and checking against existing records to prevent re-processing. The system ensures accurate invoice counting by distinguishing between unique invoices and associated reference files. Buyer tax ID extraction is comprehensive, handling various XML formats including those embedded in CDATA sections.
