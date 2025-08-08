@@ -37,36 +37,22 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **React:** Frontend library.
 - **Playwright:** For browser automation.
 
-## Current Issue: Invoice Download Failures (Aug 8, 2025)
+## Current Issue: PDF File Path Directory Structure Fixed (Aug 8, 2025)
 
-### Problem Identified
-After fixing the file counting issue, a new problem emerged: **invoices are failing to download**. The RPA system finds invoices to process but encounters timeout errors during the actual file download process.
+### Problem Identified ✅ RESOLVED
+After fixing download issues, PDFs were being saved in wrong directory structure (`uploads/pdfs/pdfs/` instead of `uploads/pdfs/`), causing UI display failures despite correct database linking.
 
-### Download Failure Investigation
-1. **Session Isolation Fix Working**: The RPA correctly reports "0 files from current session processed" instead of false counts
-2. **Download Process Failing**: System found 10 invoices but failed to download any ZIP files
-3. **Timeout Issues**: Download operations are timing out, suggesting browser automation or network issues
+### Root Cause Analysis & Fix
+1. **Issue**: PDF directory path construction in Python RPA service was incorrectly nested
+2. **Problem**: Four instances of `os.path.join(self.download_dir, 'pdfs')` where `download_dir` was already `uploads/pdfs`
+3. **Result**: Created `uploads/pdfs/pdfs/` instead of `uploads/pdfs/`
 
-### Download Debugging Enhancements Implemented
-1. **Enhanced Browser Configuration**:
-   - Improved Chrome download preferences with absolute paths
-   - Added download-specific Chrome flags (`--allow-downloads`, `--disable-popup-blocking`)
-   - Enhanced permission validation for download directory
+### Solution Implemented ✅
+1. **Fixed Path Construction**: Corrected all 4 instances in `pythonRpaService.py` to use `self.download_dir` directly
+2. **File Migration**: Moved existing PDF from `uploads/pdfs/pdfs/` to `uploads/pdfs/`
+3. **Database Linking Verified**: Confirmed PDF linking logic works correctly (invoice 951 properly linked to its PDF)
 
-2. **Detailed Download Logging**:
-   - Added step-by-step download process logging
-   - Enhanced `wait_for_new_zip` with polling details every 10 seconds
-   - Better timeout error reporting with final state information
-   - Debug capture on download failures
-
-3. **Improved Error Handling**:
-   - Try-catch blocks around download button interactions
-   - Separate timeout handling from other download errors
-   - Debug screenshots captured on download failures
-   - Better validation of download directory permissions
-
-### Expected Results
-- Detailed logging will show exactly where download process fails
-- Enhanced error messages will provide specific failure context
-- Debug screenshots will be captured for visual troubleshooting
-- Better browser configuration should improve download success rate
+### Previous Fixes Successfully Completed
+1. **Session Isolation Fix Working**: RPA correctly reports session-specific file counts
+2. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
+3. **Database Linking Operational**: PDFs properly linked to invoices with `linked_invoice_id`

@@ -1576,8 +1576,8 @@ class InvoiceRPAService:
     def _process_pdf_file(self, temp_dir, pdf_file, zip_base_name, processed_files):
         """Process standalone PDF file for OCR (when no XML is available)"""
         try:
-            # Create PDF directory if it doesn't exist
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            # Use download_dir directly as it's already 'uploads/pdfs'
+            pdf_dir = self.download_dir  
             os.makedirs(pdf_dir, exist_ok=True)
             
             # Keep the same naming convention as ZIP
@@ -1641,7 +1641,7 @@ class InvoiceRPAService:
             
             # Process PDF if available (for reference ONLY - no extraction)
             if pdf_file:
-                pdf_dir = os.path.join(self.download_dir, 'pdfs')
+                pdf_dir = self.download_dir  # Already 'uploads/pdfs'
                 os.makedirs(pdf_dir, exist_ok=True)
                 
                 pdf_new_name = f"{zip_base_name}.pdf"
@@ -1882,8 +1882,8 @@ class InvoiceRPAService:
         try:
             self.log("🧹 Clearing download directories to ensure clean session isolation...")
             
-            # Clear PDF directory
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            # Clear PDF directory (download_dir is already 'uploads/pdfs')
+            pdf_dir = self.download_dir
             if os.path.exists(pdf_dir):
                 pdf_files_cleared = 0
                 for filename in os.listdir(pdf_dir):
@@ -1975,7 +1975,7 @@ class InvoiceRPAService:
                 self.log(f"📁 Found {xml_count} XML files from current session in {self.xml_dir}")
 
             # Scan PDF files with enhanced matching logic (only those from current session)
-            pdf_dir = os.path.join(self.download_dir, 'pdfs')
+            pdf_dir = self.download_dir  # Already 'uploads/pdfs'
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
                 pdf_count = 0
                 for filename in os.listdir(pdf_dir):
