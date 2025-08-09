@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle } from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import {
   AlertDialog,
@@ -73,11 +73,11 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
     return false;
   }
-  
+
   // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
   const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
   const hasOCRText = !!invoice.ocrText;
-  
+
   return isPDFImageFile || hasOCRText;
 };
 
@@ -120,6 +120,7 @@ export default function Invoices() {
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, currentStep: '' });
   const [showProcessingStatus, setShowProcessingStatus] = useState(false);
   const [processingComplete, setProcessingComplete] = useState<{show: boolean, success: boolean, message: string}>({show: false, success: false, message: ''});
+  const [processing, setProcessing] = useState({ show: false, message: '', progress: 0, total: 0, processed: 0 }); // State for the processing bar
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -377,7 +378,7 @@ export default function Invoices() {
 
       toast({
         title: "Download Started",
-        description: hasLinkedFiles 
+        description: hasLinkedFiles
           ? `Downloading ${invoice.fileName} with ${linkedInfo.linkedFiles.length} linked file(s)`
           : `Downloading ${invoice.fileName}`,
       });
@@ -478,14 +479,14 @@ export default function Invoices() {
     console.log('🔄 handleSelectInvoice called with ID:', invoiceId);
     setSelectedInvoices(prev => {
       const isCurrentlySelected = prev.includes(invoiceId);
-      const newSelection = isCurrentlySelected 
+      const newSelection = isCurrentlySelected
         ? prev.filter(id => id !== invoiceId)
         : [...prev, invoiceId];
-      
+
       console.log('📋 Previous selection:', prev);
       console.log('📋 New selection:', newSelection);
       console.log('📊 Selection count:', newSelection.length);
-      
+
       return newSelection;
     });
   };
@@ -494,11 +495,11 @@ export default function Invoices() {
     console.log('🔄 handleSelectAll called');
     console.log('📊 Current selection count:', selectedInvoices.length);
     console.log('📊 Total invoices:', invoices.length);
-    
-    const newSelection = selectedInvoices.length === invoices.length 
-      ? [] 
+
+    const newSelection = selectedInvoices.length === invoices.length
+      ? []
       : invoices.map(invoice => invoice.id);
-    
+
     console.log('📋 New selection after select all:', newSelection);
     setSelectedInvoices(newSelection);
   };
@@ -507,7 +508,7 @@ export default function Invoices() {
     console.log('🚀 handleInitiateAutomaticProcess called');
     console.log('📝 Selected invoices:', selectedInvoices);
     console.log('📊 Selected count:', selectedInvoices.length);
-    
+
     if (selectedInvoices.length === 0) {
       toast({
         title: "No Invoices Selected",
@@ -523,10 +524,10 @@ export default function Invoices() {
 
     setIsProcessingAutomatic(true);
     setShowProcessingStatus(true);
-    setProcessingProgress({ 
-      current: 0, 
-      total: selectedInvoices.length, 
-      currentStep: 'Initiating automatic processing...' 
+    setProcessingProgress({
+      current: 0,
+      total: selectedInvoices.length,
+      currentStep: 'Initiating automatic processing...'
     });
 
     try {
@@ -538,10 +539,10 @@ export default function Invoices() {
       console.log('📤 Sending automatic processing request:', requestPayload);
 
       // Update progress to show we're making the request
-      setProcessingProgress({ 
-        current: 1, 
-        total: selectedInvoices.length, 
-        currentStep: `Processing ${selectedInvoices.length} selected invoice${selectedInvoices.length === 1 ? '' : 's'}...` 
+      setProcessingProgress({
+        current: 1,
+        total: selectedInvoices.length,
+        currentStep: `Processing ${selectedInvoices.length} selected invoice${selectedInvoices.length === 1 ? '' : 's'}...`
       });
 
       const response = await fetch('/api/invoices/initiate-automatic-process', {
@@ -561,10 +562,10 @@ export default function Invoices() {
       console.log('✅ Processing result:', result);
 
       // Show completion
-      setProcessingProgress({ 
-        current: selectedInvoices.length, 
-        total: selectedInvoices.length, 
-        currentStep: 'Processing completed successfully!' 
+      setProcessingProgress({
+        current: selectedInvoices.length,
+        total: selectedInvoices.length,
+        currentStep: 'Processing completed successfully!'
       });
 
       // Show completion message
@@ -591,12 +592,12 @@ export default function Invoices() {
 
     } catch (error: any) {
       console.error('❌ Automatic processing failed:', error);
-      
+
       // Show error in progress
-      setProcessingProgress({ 
-        current: 0, 
-        total: selectedInvoices.length, 
-        currentStep: 'Processing failed' 
+      setProcessingProgress({
+        current: 0,
+        total: selectedInvoices.length,
+        currentStep: 'Processing failed'
       });
 
       setProcessingComplete({
@@ -618,6 +619,185 @@ export default function Invoices() {
       }, 5000);
     } finally {
       setIsProcessingAutomatic(false);
+    }
+  };
+
+  const handleCancelProcessing = async () => {
+    try {
+      const response = await fetch('/api/invoices/cancel-processing', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (response.ok) {
+        setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
+        setProcessingComplete({
+          show: true,
+          success: false,
+          message: 'Processing cancelled by user'
+        });
+        refetch();
+      } else {
+        console.error('Failed to cancel processing');
+      }
+    } catch (error) {
+      console.error('Error cancelling processing:', error);
+    }
+  };
+
+  const handleBatchProcess = async () => {
+    if (selectedInvoices.length === 0) {
+      toast({
+        title: "No Invoices Selected",
+        description: "Please select invoices to process",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setProcessing({
+      show: true,
+      message: 'Starting batch processing...',
+      progress: 0,
+      total: selectedInvoices.length,
+      processed: 0
+    });
+
+    try {
+      const response = await fetch('/api/invoices/process-batch', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceIds: selectedInvoices,
+          source: 'batch_manual',
+          skipValidation: false
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to start batch processing');
+      }
+
+      const result = await response.json();
+
+      setProcessing(prev => ({
+        ...prev,
+        message: `Processing ${result.totalInvoices} invoices...`,
+        total: result.totalInvoices
+      }));
+
+      // Poll for updates
+      const pollInterval = setInterval(async () => {
+        try {
+          const statusResponse = await fetch('/api/invoices/processing-status');
+          if (!statusResponse.ok) {
+            throw new Error('Failed to fetch processing status');
+          }
+          const statusData = await statusResponse.json();
+
+          const processedCount = statusData.processing || 0;
+          const totalProcessing = result.totalInvoices;
+
+          setProcessing(prev => ({
+            ...prev,
+            processed: totalProcessing - processedCount,
+            progress: Math.round(((totalProcessing - processedCount) / totalProcessing) * 100)
+          }));
+
+          if (processedCount === 0) {
+            clearInterval(pollInterval);
+            setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
+            setProcessingComplete({
+              show: true,
+              success: true,
+              message: `Successfully processed ${result.totalInvoices} invoices`
+            });
+            refetch();
+            // Auto-hide processing complete after 5 seconds
+            setTimeout(() => {
+              setProcessingComplete({show: false, success: false, message: ''});
+            }, 5000);
+          }
+        } catch (error) {
+          console.error('Error polling status:', error);
+          // Optionally, stop polling on error or show an error message
+          clearInterval(pollInterval);
+          setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
+          setProcessingComplete({
+            show: true,
+            success: false,
+            message: 'Error occurred during processing. Please try again.'
+          });
+          // Auto-hide processing complete after 5 seconds
+          setTimeout(() => {
+            setProcessingComplete({show: false, success: false, message: ''});
+          }, 5000);
+        }
+      }, 2000);
+
+    } catch (error: any) {
+      console.error('Batch processing error:', error);
+      setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
+      setProcessingComplete({
+        show: true,
+        success: false,
+        message: `Processing failed: ${error.message}`
+      });
+      // Auto-hide processing complete after 5 seconds
+      setTimeout(() => {
+        setProcessingComplete({show: false, success: false, message: ''});
+      }, 5000);
+    }
+  };
+
+  const handleResetStatus = async (invoiceId: number) => {
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/reset-status`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        }
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to reset invoice status');
+      }
+
+      // Refresh the data
+      refetch();
+    } catch (error: any) {
+      console.error('Reset error:', error);
+      alert(`Failed to reset invoice status: ${error.message}`);
+    }
+  };
+
+  const handleProcessSingle = async (invoiceId: number) => {
+    try {
+      const response = await fetch(`/api/invoices/${invoiceId}/process`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          source: 'manual',
+          skipValidation: false
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process invoice');
+      }
+
+      // Refresh the data
+      refetch();
+    } catch (error: any) {
+      console.error('Processing error:', error);
+      alert(`Failed to process invoice: ${error.message}`);
     }
   };
 
@@ -744,8 +924,8 @@ export default function Invoices() {
                     <span>Progress</span>
                     <span>{processingProgress.current} of {processingProgress.total}</span>
                   </div>
-                  <Progress 
-                    value={processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0} 
+                  <Progress
+                    value={processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0}
                     className="w-full h-2"
                   />
                 </div>
@@ -853,8 +1033,8 @@ export default function Invoices() {
                           <Square className="h-4 w-4" />
                         )}
                         <span>
-                          {selectedInvoices.length === invoices.length 
-                            ? "Deselect All" 
+                          {selectedInvoices.length === invoices.length
+                            ? "Deselect All"
                             : `Select All (${invoices.length})`}
                         </span>
                       </Button>
@@ -958,7 +1138,7 @@ export default function Invoices() {
                         <div className="border-t pt-4 mb-4">
                           <h4 className="text-sm font-medium text-gray-700 mb-3">Processing Results</h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                            
+
                             {/* Item Classification */}
                             <div className="space-y-2">
                               <p className="text-xs font-medium text-gray-500">Item Classification</p>
@@ -972,9 +1152,9 @@ export default function Invoices() {
                                       }
                                     });
                                     return Array.from(classifications).map((classification: any) => (
-                                      <Badge 
+                                      <Badge
                                         key={classification}
-                                        variant="outline" 
+                                        variant="outline"
                                         className={`text-xs ${
                                           classification === 'consumable_materials' ? 'bg-blue-50 text-blue-700 border-blue-200' :
                                           classification === 'non_consumable_materials' ? 'bg-green-50 text-green-700 border-green-200' :
@@ -1003,11 +1183,11 @@ export default function Invoices() {
                                   const amount = parseFloat(invoice.totalAmount || '0');
                                   const isPettyCash = amount <= 500000; // 500K COP threshold
                                   return (
-                                    <Badge 
+                                    <Badge
                                       variant={isPettyCash ? "default" : "outline"}
                                       className={`text-xs ${
-                                        isPettyCash 
-                                          ? 'bg-green-100 text-green-800 border-green-200' 
+                                        isPettyCash
+                                          ? 'bg-green-100 text-green-800 border-green-200'
                                           : 'bg-red-50 text-red-700 border-red-200'
                                       }`}
                                     >
@@ -1025,29 +1205,29 @@ export default function Invoices() {
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
                                   const isPettyCash = amount <= 500000; // 500K COP threshold
-                                  
+
                                   if (isPettyCash) {
                                     return (
-                                      <Badge 
-                                        variant="default" 
+                                      <Badge
+                                        variant="default"
                                         className="text-xs bg-green-100 text-green-800 border-green-200"
                                       >
                                         Petty Cash
                                       </Badge>
                                     );
                                   }
-                                  
+
                                   if ((invoice.extractedData as any)?.projectName || invoice.projectName) {
                                     return (
-                                      <Badge 
-                                        variant="default" 
+                                      <Badge
+                                        variant="default"
                                         className="text-xs bg-blue-100 text-blue-800 border-blue-200"
                                       >
                                         {(invoice.extractedData as any)?.projectName || invoice.projectName}
                                       </Badge>
                                     );
                                   }
-                                  
+
                                   return (
                                     <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
                                       No Match
@@ -1062,7 +1242,7 @@ export default function Invoices() {
                               <p className="text-xs font-medium text-gray-500">Validation</p>
                               <div>
                                 {(invoice.extractedData as any)?.validationResults ? (
-                                  <Badge 
+                                  <Badge
                                     variant={(invoice.extractedData as any)?.validationResults?.isValid ? "default" : "destructive"}
                                     className={`text-xs ${
                                       (invoice.extractedData as any)?.validationResults?.isValid
@@ -1096,8 +1276,8 @@ export default function Invoices() {
                               <p className="text-xs font-medium text-gray-500">PO Match</p>
                               <div>
                                 {(invoice.extractedData as any)?.poMatch ? (
-                                  <Badge 
-                                    variant="default" 
+                                  <Badge
+                                    variant="default"
                                     className="text-xs bg-green-100 text-green-800 border-green-200"
                                   >
                                     <Package className="w-3 h-3 mr-1" />
@@ -1115,7 +1295,7 @@ export default function Invoices() {
                           </div>
 
                           {/* Detailed Results Summary */}
-                          {((invoice.extractedData as any)?.validationResults?.violations?.length > 0 || 
+                          {((invoice.extractedData as any)?.validationResults?.violations?.length > 0 ||
                             (invoice.extractedData as any)?.confidenceScore) && (
                             <div className="mt-3 p-3 bg-gray-50 rounded-md">
                               <div className="flex items-center justify-between text-sm">
@@ -1159,8 +1339,8 @@ export default function Invoices() {
                             </Button>
                           </>
                         )}
-                        <Button 
-                          variant="outline" 
+                        <Button
+                          variant="outline"
                           size="sm"
                           onClick={() => handleDownload(invoice)}
                           className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-blue-600 border-blue-300" : ""}
@@ -1188,7 +1368,7 @@ export default function Invoices() {
                               <ThumbsUp size={14} className="mr-1" />
                               Good Job AI!
                             </Button>
-                            
+
                             {/* Report Error button - show for all eligible PDF invoices */}
                             {isEligibleForProblemReport(invoice) && (
                               <Button
