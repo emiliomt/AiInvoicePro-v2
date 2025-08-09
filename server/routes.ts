@@ -19,6 +19,8 @@ import { invoiceImporterService } from "./services/invoiceImporterService.js";
 import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
 import { invoiceProcessingService } from "./services/invoiceProcessingService.js";
+import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
+import { classifyLineItemSchema, batchClassifySchema } from "@shared/schema";
 
 // Configure multer for file uploads
 const upload = multer({

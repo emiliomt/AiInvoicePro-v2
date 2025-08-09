@@ -123,6 +123,8 @@ export const lineItems = pgTable("line_items", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+
+
 // Approvals table
 export const approvals = pgTable("approvals", {
   id: serial("id").primaryKey(),
@@ -1080,3 +1082,22 @@ export const insertScheduledTaskSchema = createInsertSchema(scheduledTasks).omit
   nextRun: true,
   runCount: true,
 });
+
+// Classification request schemas for API
+export const classifyLineItemSchema = z.object({
+  description: z.string().min(1, "Description is required"),
+  quantity: z.number().optional(),
+  unitPrice: z.number().optional(),
+  totalPrice: z.number().optional(),
+  unit: z.string().optional(),
+  rawText: z.string().optional(),
+  invoiceId: z.number().optional(),
+});
+
+export const batchClassifySchema = z.object({
+  lineItems: z.array(classifyLineItemSchema),
+  invoiceId: z.number().optional(),
+});
+
+export type ClassifyLineItemRequest = z.infer<typeof classifyLineItemSchema>;
+export type BatchClassifyRequest = z.infer<typeof batchClassifySchema>;

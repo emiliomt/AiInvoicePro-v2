@@ -21,6 +21,8 @@ import {
   savedWorkflows,
   scheduledTasks,
   feedbackLogs,
+  lineItemClassifications,
+  classificationKeywords,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -57,7 +59,11 @@ import {
   type SavedWorkflow,
   type InsertSavedWorkflow,
   type ScheduledTask,
-  type InsertScheduledTask
+  type InsertScheduledTask,
+  type LineItemClassification,
+  type InsertLineItemClassification,
+  type ClassificationKeyword,
+  type InsertClassificationKeyword
 } from "@shared/schema";
 
 import FallbackStorage from "./fallback-storage";
@@ -188,11 +194,13 @@ export interface IStorage {
   getInvoiceFlags(): Promise<any[]>;
   resolveInvoiceFlag(id: number): Promise<void>;
   getPredictiveAlerts(): Promise<any[]>;
-  getClassificationKeywords(): Promise<any[]>;
-  addClassificationKeyword(keyword: any): Promise<any>;
+  getClassificationKeywords(): Promise<ClassificationKeyword[]>;
+  addClassificationKeyword(keyword: InsertClassificationKeyword): Promise<ClassificationKeyword>;
   removeClassificationKeyword(id: number): Promise<void>;
-  getLineItemClassifications(): Promise<any[]>;
-  updateLineItemClassification(id: number, updates: any): Promise<any>;
+  getLineItemClassifications(): Promise<LineItemClassification[]>;
+  getLineItemClassificationsByInvoice(invoiceId: number): Promise<LineItemClassification[]>;
+  createLineItemClassification(data: InsertLineItemClassification): Promise<LineItemClassification>;
+  updateLineItemClassification(id: number, updates: Partial<InsertLineItemClassification>): Promise<LineItemClassification>;
   createApprovedInvoiceProject(data: any): Promise<any>;
   getApprovedInvoiceProjects(): Promise<any[]>;
   getVerifiedInvoiceProjects(): Promise<any[]>;
@@ -1760,24 +1768,74 @@ class PostgresStorage implements IStorage {
     return [];
   }
 
-  async getClassificationKeywords(): Promise<any[]> {
-    return [];
+  async getClassificationKeywords(): Promise<ClassificationKeyword[]> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.getClassificationKeywords() || [];
+    }
+    return await db.select().from(classificationKeywords);
   }
 
-  async addClassificationKeyword(keyword: any): Promise<any> {
-    return { id: Date.now(), ...keyword, createdAt: new Date() };
+  async addClassificationKeyword(keyword: InsertClassificationKeyword): Promise<ClassificationKeyword> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.addClassificationKeyword(keyword) || { id: Date.now(), ...keyword, createdAt: new Date(), updatedAt: new Date() } as ClassificationKeyword;
+    }
+    const [result] = await db.insert(classificationKeywords).values({
+      ...keyword,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }).returning();
+    return result;
   }
 
   async removeClassificationKeyword(id: number): Promise<void> {
-    // Placeholder implementation
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.removeClassificationKeyword(id);
+    }
+    await db.delete(classificationKeywords).where(eq(classificationKeywords.id, id));
   }
 
-  async getLineItemClassifications(): Promise<any[]> {
-    return [];
+  async getLineItemClassifications(): Promise<LineItemClassification[]> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.getLineItemClassifications() || [];
+    }
+    return await db.select().from(lineItemClassifications);
   }
 
-  async updateLineItemClassification(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+  async getLineItemClassificationsByInvoice(invoiceId: number): Promise<LineItemClassification[]> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.getLineItemClassifications() || [];
+    }
+    return await db.select().from(lineItemClassifications).where(eq(lineItemClassifications.invoiceId, invoiceId));
+  }
+
+  async createLineItemClassification(data: InsertLineItemClassification): Promise<LineItemClassification> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.updateLineItemClassification(Date.now(), data) || { id: Date.now(), ...data, createdAt: new Date(), updatedAt: new Date() } as LineItemClassification;
+    }
+    const [result] = await db.insert(lineItemClassifications).values({
+      ...data,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }).returning();
+    return result;
+  }
+
+  async updateLineItemClassification(id: number, updates: Partial<InsertLineItemClassification>): Promise<LineItemClassification> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return fallbackStorage?.updateLineItemClassification(id, updates) || { id, ...updates, updatedAt: new Date() } as LineItemClassification;
+    }
+    const [result] = await db.update(lineItemClassifications).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(lineItemClassifications.id, id)).returning();
+    return result;
   }
 
   async createApprovedInvoiceProject(data: any): Promise<any> {
