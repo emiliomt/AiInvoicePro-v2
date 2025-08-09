@@ -7214,7 +7214,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     }
   }
 
-  const httpServer = createServer(app);
 
   // Progress tracking endpoint for invoice importer
   app.get('/api/invoice-importer/progress/:configId', isAuthenticated, async (req: any, res) => {
