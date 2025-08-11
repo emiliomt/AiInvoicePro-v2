@@ -1241,14 +1241,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
-      // Update the project validation status
-      const updatedProject = await storage.updateProject(projectId, {
+      // First find the project by projectId to get the integer id
+      const project = await storage.getProjectByProjectId(projectId);
+      if (!project) {
+        return res.status(404).json({ message: "Project not found" });
+      }
+
+      // Update the project validation status using the integer id
+      await storage.updateProject(project.id, {
         validationStatus,
         isValidated,
         validatedBy: userId,
         validatedAt: new Date()
       });
 
+      // Return the updated project
+      const updatedProject = await storage.getProjectByProjectId(projectId);
       res.json(updatedProject);
     } catch (error) {
       console.error("Error validating project:", error);

@@ -537,6 +537,11 @@ class PostgresStorage implements IStorage {
     return result || null;
   }
 
+  async getProjectByProjectId(projectId: string): Promise<Project | null> {
+    const [result] = await db.select().from(projects).where(eq(projects.projectId, projectId));
+    return result || null;
+  }
+
   async getProjects(): Promise<Project[]> {
     return await db.select().from(projects).orderBy(desc(projects.createdAt));
   }
