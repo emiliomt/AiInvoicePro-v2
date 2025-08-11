@@ -104,7 +104,7 @@ export default function ProjectMatcher() {
 
   // Calculate stats for the dashboard cards
   const { data: stats } = useQuery({
-    queryKey: ["/api/invoices", "/api/projects"],
+    queryKey: ["/api/invoices", "/api/projects", confidenceThreshold],
     select: () => {
       if (!invoices.length || !projects.length) {
         return {
@@ -117,13 +117,31 @@ export default function ProjectMatcher() {
       }
 
       const totalInvoices = invoices.length;
-      // Count as matched if invoice has status 'matched' or 'approved'
-      const matched = invoices.filter(invoice => invoice.status === 'matched' || invoice.status === 'approved').length;
-      const needsReview = invoices.filter(invoice => {
-        const status = getMatchStatus(invoice, confidenceThreshold[0]);
-        return invoice.status !== 'approved' && invoice.status !== 'matched' && status.status === "needs_review";
-      }).length;
-      const unmatched = totalInvoices - matched - needsReview;
+      
+      // Calculate stats based on actual matching logic
+      let matched = 0;
+      let needsReview = 0;
+      let unmatched = 0;
+
+      invoices.forEach(invoice => {
+        // First check if already approved/matched in database
+        if (invoice.status === 'matched' || invoice.status === 'approved') {
+          matched++;
+        } else {
+          // Use the actual matching logic to determine status
+          const bestMatch = getBestProjectMatch(invoice, projects);
+          const matchStatus = getMatchStatus(invoice, confidenceThreshold[0]);
+          
+          if (bestMatch.project && bestMatch.confidence >= confidenceThreshold[0]) {
+            needsReview++; // Has a good match but not yet approved
+          } else if (bestMatch.project && bestMatch.confidence >= 60) {
+            needsReview++; // Has a decent match that needs review
+          } else {
+            unmatched++; // No good match found
+          }
+        }
+      });
+
       const totalValue = invoices.reduce((sum, invoice) => 
         sum + parseFloat(invoice.totalAmount || "0"), 0
       );
@@ -406,7 +424,17 @@ export default function ProjectMatcher() {
       }
     }
 
+    // Debug logging for troubleshooting
+    console.log(`Matching invoice ${invoice.id}:`, {
+      invoiceAddress,
+      invoiceCity,
+      vendorAddress: invoice.extractedData?.vendorAddress,
+      availableProjects: projects.length,
+      projectSample: projects.slice(0, 3).map(p => ({ name: p.name, address: p.address, city: p.city }))
+    });
+
     if (!invoiceAddress && !invoiceCity) {
+      console.log(`No address/city data for invoice ${invoice.id}`);
       return { project: null, confidence: 0 };
     }
 
@@ -437,6 +465,7 @@ export default function ProjectMatcher() {
       }
     }
 
+    console.log(`Best match for invoice ${invoice.id}:`, bestMatch);
     return bestMatch;
   };
 
