@@ -47,12 +47,10 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
   const [isPolling, setIsPolling] = useState(false);
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'error'>('disconnected');
   const [ws, setWs] = useState<WebSocket | null>(null);
-  const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
     if (isOpen && configId) {
-      // Fetch user ID first, then initialize connection
-      fetchUserIdAndInitialize();
+      initializeConnection();
     } else {
       cleanup();
     }
@@ -60,34 +58,14 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
     return () => cleanup();
   }, [isOpen, configId]);
 
-  const fetchUserIdAndInitialize = async () => {
-    try {
-      const response = await fetch('/api/user');
-      if (response.ok) {
-        const userData = await response.json();
-        setUserId(userData.id);
-        initializeConnection(userData.id);
-      } else {
-        // Fallback to hardcoded user if API fails
-        console.warn('Failed to fetch user ID, using fallback');
-        setUserId('current-user');
-        initializeConnection('current-user');
-      }
-    } catch (error) {
-      console.error('Error fetching user ID:', error);
-      setUserId('current-user');
-      initializeConnection('current-user');
-    }
-  };
-
-  const initializeConnection = (actualUserId: string) => {
+  const initializeConnection = () => {
     // Try WebSocket first, fallback to polling
-    connectWebSocket(actualUserId);
+    connectWebSocket();
     // Also start polling as backup - start immediately to catch any existing progress
     startPolling();
   };
 
-  const connectWebSocket = (actualUserId: string) => {
+  const connectWebSocket = () => {
     try {
       setConnectionStatus('connecting');
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -103,7 +81,7 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
         // Subscribe to progress updates
         websocket.send(JSON.stringify({
           type: 'subscribe',
-          userId: actualUserId, // Use actual user ID from API
+          userId: 'current-user', // This should be actual user ID
           configId: configId
         }));
       };
@@ -132,8 +110,8 @@ export default function ProgressTracker({ isOpen, onClose, configId, configName,
 
         // Retry connection after 3 seconds
         setTimeout(() => {
-          if (isOpen && configId && userId) {
-            connectWebSocket(userId);
+          if (isOpen && configId) {
+            connectWebSocket();
           }
         }, 3000);
       };

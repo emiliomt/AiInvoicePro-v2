@@ -111,7 +111,6 @@ class PythonInvoiceImporter {
         status: 'processing',
         message: `Starting import: ${config.taskName}`,
         timestamp: new Date(),
-        configId: configId, // Add configId at top level for frontend filtering
         data: { configId, logId }
       });
 
@@ -552,9 +551,6 @@ class PythonInvoiceImporter {
               
               console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
               console.log(`📊 Stats update:`, statsUpdate);
-              
-              // Send dedicated progress update when STATS are processed
-              this.sendProgressUpdate(progress);
             }
 
             // Debug: Log STATS lines when detected
@@ -764,43 +760,6 @@ class PythonInvoiceImporter {
   }
 
 
-
-  /**
-   * Send dedicated progress update via WebSocket
-   */
-  private sendProgressUpdate(progress: ImportProgress): void {
-    try {
-      storage.getInvoiceImporterConfig(progress.configId).then(config => {
-        if (config) {
-          progressTracker.sendProgress(config.userId, {
-            taskId: progress.logId,
-            step: progress.progress,
-            totalSteps: 100,
-            status: progress.isComplete ? 'completed' : 'processing',
-            message: progress.currentStep,
-            timestamp: new Date(),
-            configId: progress.configId, // Move configId to top level for frontend filtering
-            data: {
-              configId: progress.configId,
-              logId: progress.logId,
-              currentStep: progress.currentStep,
-              progress: progress.progress,
-              totalInvoices: progress.totalInvoices,
-              skippedInvoices: progress.skippedInvoices || 0,
-              processedInvoices: progress.processedInvoices,
-              successfulImports: progress.successfulImports,
-              failedImports: progress.failedImports,
-              isComplete: progress.isComplete
-            }
-          });
-        }
-      }).catch(error => {
-        console.error('Failed to get config for progress update:', error);
-      });
-    } catch (error) {
-      console.error('Failed to send progress update:', error);
-    }
-  }
 
   /**
    * Send real-time individual log line via WebSocket

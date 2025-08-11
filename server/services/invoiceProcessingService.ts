@@ -540,59 +540,7 @@ export class InvoiceProcessingService {
       return false;
     }
 
-    // Step 4: Check for petty cash auto-approval
-    if (invoice && invoice.extractedData) {
-      await this.updateInvoiceStatus(invoiceId, 'processing', 'Checking petty cash criteria...');
-
-      try {
-        // Get petty cash threshold
-        const thresholdSetting = await storage.getSetting('petty_cash_threshold');
-        const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 1000;
-        
-        const amount = parseFloat(invoice.totalAmount || "0");
-        const isPettyCash = amount <= threshold && amount > 0;
-
-        if (isPettyCash) {
-          console.log(`💰 Invoice ${invoiceId} qualifies for petty cash (${amount} <= ${threshold})`);
-          
-          // Create or update petty cash log
-          const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-          
-          if (existingLog) {
-            await storage.updatePettyCashLog(existingLog.id, {
-              isPettyCash: true,
-              classificationMethod: 'automatic',
-              confidenceScore: 1.0,
-              status: 'approved',
-              costCenter: 'Petty Cash',
-              approvedBy: userId,
-              approvedAt: new Date(),
-              approvalNotes: 'Auto-approved during processing - meets petty cash criteria',
-              updatedAt: new Date()
-            });
-          } else {
-            await storage.createPettyCashLog({
-              invoiceId,
-              isPettyCash: true,
-              classificationMethod: 'automatic',
-              confidenceScore: 1.0,
-              status: 'approved',
-              costCenter: 'Petty Cash',
-              approvedBy: userId,
-              approvedAt: new Date(),
-              approvalNotes: 'Auto-approved during processing - meets petty cash criteria'
-            });
-          }
-          
-          console.log(`✅ Auto-approved petty cash for invoice ${invoiceId}`);
-        }
-      } catch (pettyCashError: any) {
-        console.error(`❌ Petty cash processing failed for invoice ${invoiceId}:`, pettyCashError);
-        // Continue with normal processing even if petty cash fails
-      }
-    }
-
-    // Step 5: Finalize invoice status
+    // Step 4: Finalize invoice status
     // Set to approved if everything went well
     await this.updateInvoiceStatus(invoiceId, 'approved', 'Invoice processing completed');
 

@@ -79,11 +79,11 @@ async function initializeDb(): Promise<void> {
     if (!process.env.DATABASE_URL) {
       throw new Error("DATABASE_URL environment variable is required");
     }
-
+    
     console.log("🔄 Initializing database connection...");
     const client = neon(process.env.DATABASE_URL);
     db = drizzle(client);
-
+    
     // Test connection
     await db.select({ count: sql`1` });
     isDbConnected = true;
@@ -892,7 +892,7 @@ class PostgresStorage implements IStorage {
   async getDashboardStats(userId?: string): Promise<any> {
     try {
       console.log(`📊 Getting dashboard stats for user: ${userId}`);
-
+      
       // Get user information to find company for accessing RPA invoices
       let whereCondition = sql`true`;
       if (userId) {
@@ -1193,7 +1193,7 @@ class PostgresStorage implements IStorage {
   async getSetting(key: string): Promise<Setting | null> {
     try {
       const [setting] = await db.select().from(settings).where(eq(settings.key, key));
-
+      
       if (!setting) {
         // Return default settings if not found
         const defaultSettings: Record<string, any> = {
@@ -1214,7 +1214,7 @@ class PostgresStorage implements IStorage {
         };
         return defaultSettings[key] || null;
       }
-
+      
       return setting;
     } catch (error) {
       console.error('Error in getSetting:', error);
@@ -1236,7 +1236,7 @@ class PostgresStorage implements IStorage {
           updatedAt: new Date()
         }
       }).returning();
-
+      
       return setting;
     } catch (error) {
       console.error('Error in updateSetting:', error);
@@ -1257,7 +1257,7 @@ class PostgresStorage implements IStorage {
           updatedAt: new Date()
         }
       }).returning();
-
+      
       return result;
     } catch (error) {
       console.error('Error in setSetting:', error);
@@ -1425,9 +1425,9 @@ class PostgresStorage implements IStorage {
       // Get active validation rules from database
       const rules = await this.getValidationRules();
       const activeRules = rules.filter(rule => rule.isActive);
-
+      
       console.log(`📋 Found ${activeRules.length} active validation rules`);
-
+      
       const violations: any[] = [];
       const warnings: any[] = [];
       let validationScore = 1.0; // Start with perfect score
@@ -1436,7 +1436,7 @@ class PostgresStorage implements IStorage {
       for (const rule of activeRules) {
         try {
           const result = await this.validateSingleRule(invoiceData, rule);
-
+          
           if (!result.isValid) {
             const violation = {
               ruleId: rule.id,
@@ -1473,7 +1473,7 @@ class PostgresStorage implements IStorage {
 
       // Ensure score doesn't go below 0
       validationScore = Math.max(0, validationScore);
-
+      
       const isValid = violations.length === 0;
       const finalResult = {
         isValid,
@@ -1527,7 +1527,7 @@ class PostgresStorage implements IStorage {
   private async validateSingleRule(invoiceData: any, rule: any): Promise<{ isValid: boolean; actualValue: any; message: string }> {
     // Get the field value using dot notation (e.g., "extractedData.buyerTaxId")
     const fieldValue = this.getNestedFieldValue(invoiceData, rule.fieldName);
-
+    
     console.log(`🔍 Validating rule ${rule.id} (${rule.ruleType}) for field ${rule.fieldName}:`, {
       expected: rule.ruleValue,
       actual: fieldValue
@@ -1583,7 +1583,7 @@ class PostgresStorage implements IStorage {
         try {
           const numValue = parseFloat(String(fieldValue));
           const [min, max] = rule.ruleValue.split('-').map((n: string) => parseFloat(n.trim()));
-
+          
           if (isNaN(numValue)) {
             return {
               isValid: false,
@@ -1591,7 +1591,7 @@ class PostgresStorage implements IStorage {
               message: `Field ${rule.fieldName} is not a valid number`
             };
           }
-
+          
           const rangeValid = numValue >= min && numValue <= max;
           return {
             isValid: rangeValid,
@@ -1718,40 +1718,13 @@ class PostgresStorage implements IStorage {
 
   async getPettyCashLogs(status?: string): Promise<any[]> {
     try {
-      const { pettyCashLog, invoices } = await import('@shared/schema');
-
-      // Build query with invoice join
-      let query = db.select({
-        id: pettyCashLog.id,
-        invoiceId: pettyCashLog.invoiceId,
-        projectId: pettyCashLog.projectId,
-        costCenter: pettyCashLog.costCenter,
-        approvedBy: pettyCashLog.approvedBy,
-        approvalFileUrl: pettyCashLog.approvalFileUrl,
-        status: pettyCashLog.status,
-        approvalNotes: pettyCashLog.approvalNotes,
-        approvedAt: pettyCashLog.approvedAt,
-        isPettyCash: pettyCashLog.isPettyCash,
-        classificationMethod: pettyCashLog.classificationMethod,
-        confidenceScore: pettyCashLog.confidenceScore,
-        createdAt: pettyCashLog.createdAt,
-        updatedAt: pettyCashLog.updatedAt,
-        invoice: {
-          id: invoices.id,
-          vendorName: invoices.vendorName,
-          invoiceNumber: invoices.invoiceNumber,
-          totalAmount: invoices.totalAmount,
-          fileName: invoices.fileName,
-          createdAt: invoices.createdAt,
-        }
-      })
-      .from(pettyCashLog)
-      .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id));
-
+      const { pettyCashLog } = await import('@shared/schema');
+      let query = db.select().from(pettyCashLog);
+      
       if (status) {
         query = query.where(eq(pettyCashLog.status, status as any));
       }
-
+      
       return await query.orderBy(desc(pettyCashLog.createdAt));
     } catch (error) {
       console.error('Error getting petty cash logs:', error);
@@ -1761,36 +1734,9 @@ class PostgresStorage implements IStorage {
 
   async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
     try {
-      const { pettyCashLog, invoices } = await import('@shared/schema');
-
-      const [result] = await db.select({
-        id: pettyCashLog.id,
-        invoiceId: pettyCashLog.invoiceId,
-        projectId: pettyCashLog.projectId,
-        costCenter: pettyCashLog.costCenter,
-        approvedBy: pettyCashLog.approvedBy,
-        approvalFileUrl: pettyCashLog.approvalFileUrl,
-        status: pettyCashLog.status,
-        approvalNotes: pettyCashLog.approvalNotes,
-        approvedAt: pettyCashLog.approvedAt,
-        isPettyCash: pettyCashLog.isPettyCash,
-        classificationMethod: pettyCashLog.classificationMethod,
-        confidenceScore: pettyCashLog.confidenceScore,
-        createdAt: pettyCashLog.createdAt,
-        updatedAt: pettyCashLog.updatedAt,
-        invoice: {
-          id: invoices.id,
-          vendorName: invoices.vendorName,
-          invoiceNumber: invoices.invoiceNumber,
-          totalAmount: invoices.totalAmount,
-          fileName: invoices.fileName,
-          createdAt: invoices.createdAt,
-        }
-      })
-      .from(pettyCashLog)
-      .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id))
-      .where(eq(pettyCashLog.invoiceId, invoiceId));
-
+      const { pettyCashLog } = await import('@shared/schema');
+      const [result] = await db.select().from(pettyCashLog)
+        .where(eq(pettyCashLog.invoiceId, invoiceId));
       return result || null;
     } catch (error) {
       console.error('Error getting petty cash log by invoice ID:', error);
@@ -2042,7 +1988,7 @@ export async function getStorage(): Promise<IStorage> {
   return createStorage();
 }
 
-// Create a storage proxy that properly initializes the database before each call
+// Create a storage proxy that properly initializes the database
 let storageInstance: IStorage | null = null;
 let initializationPromise: Promise<IStorage> | null = null;
 
