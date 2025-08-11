@@ -1944,7 +1944,7 @@ class PostgresStorage implements IStorage {
         createdAt: invoiceImporterLogs.createdAt,
         triggeredBy: sql<string>`
           CASE 
-            WHEN ${invoiceImporterConfigs.scheduleType} = 'once' THEN 'Manual'
+            WHEN ${invoiceImporterConfigs.scheduleType} = 'manual' THEN 'Manual'
             ELSE 'Scheduled'
           END
         `
