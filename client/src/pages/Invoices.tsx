@@ -118,7 +118,6 @@ export default function Invoices() {
   const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
   const [linkedFilesMap, setLinkedFilesMap] = useState<Record<number, LinkedFilesInfo>>({});
   const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, currentStep: '' });
-  const [showProcessingStatus, setShowProcessingStatus] = useState(false);
   const [processingComplete, setProcessingComplete] = useState<{show: boolean, success: boolean, message: string}>({show: false, success: false, message: ''});
   const [processing, setProcessing] = useState({ show: false, message: '', progress: 0, total: 0, processed: 0 }); // State for the processing bar
 
@@ -801,6 +800,51 @@ export default function Invoices() {
     }
   };
 
+  // Mutation for processing selected invoices
+  const processSelectedMutation = useMutation({
+    mutationFn: async (invoiceIds: number[]) => {
+      const response = await fetch('/api/invoices/process-multiple', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceIds,
+          skipValidation: false
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to process invoices');
+      }
+
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+
+      let successMessage = data.message;
+      if (data.autoApprovedPettyCash > 0) {
+        successMessage += ` ${data.autoApprovedPettyCash} invoices were automatically approved as petty cash.`;
+      }
+
+      toast({
+        title: "Success",
+        description: successMessage,
+      });
+      setSelectedInvoices([]);
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -1090,7 +1134,7 @@ export default function Invoices() {
                                 <div className="flex items-center space-x-1 text-purple-600 text-xs">
                                   <span>RPA</span>
                                   {linkedFilesMap[invoice.id] ? (
-                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'} links)</span>
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'}) links)</span>
                                   ) : (
                                     <span>(loading...)</span>
                                   )}
