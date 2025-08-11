@@ -23,7 +23,6 @@ import {
   feedbackLogs,
   lineItemClassifications,
   classificationKeywords,
-  pettyCashLog,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -451,8 +450,6 @@ class PostgresStorage implements IStorage {
     await db.delete(invoicePoMatches).where(eq(invoicePoMatches.invoiceId, id));
     // Delete invoice-project matches
     await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, id));
-    // Delete petty cash log entries
-    await db.delete(pettyCashLog).where(eq(pettyCashLog.invoiceId, id));
     // Finally delete the main invoice
     await db.delete(invoices).where(eq(invoices.id, id));
 
@@ -1086,7 +1083,6 @@ class PostgresStorage implements IStorage {
         await db.delete(approvals).where(inArray(approvals.invoiceId, invoiceIds));
         await db.delete(invoicePoMatches).where(inArray(invoicePoMatches.invoiceId, invoiceIds));
         await db.delete(invoiceProjectMatches).where(inArray(invoiceProjectMatches.invoiceId, invoiceIds));
-        await db.delete(pettyCashLog).where(inArray(pettyCashLog.invoiceId, invoiceIds));
 
         // Finally delete the main invoices
         await db.delete(invoices).where(inArray(invoices.id, invoiceIds));
@@ -1172,15 +1168,15 @@ class PostgresStorage implements IStorage {
             )
           );
 
-        // Delete petty cash log entries
-        await db
-          .delete(pettyCashLog)
-          .where(
-            inArray(
-              pettyCashLog.invoiceId,
-              db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
-            )
-          );
+        // Delete feedback logs
+        // await db
+        //   .delete(feedbackLogs)
+        //   .where(
+        //     inArray(
+        //       feedbackLogs.invoiceId,
+        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
+        //     )
+        //   );
 
         // Finally delete the invoices
         await db.delete(invoices).where(eq(invoices.companyId, companyId));
@@ -1960,7 +1956,17 @@ class PostgresStorage implements IStorage {
     }).where(eq(importedInvoices.id, id));
   }
 
+  async getInvoiceImporterConfig(id: number): Promise<InvoiceImporterConfig | null> {
+    const [result] = await db.select().from(invoiceImporterConfigs).where(eq(invoiceImporterConfigs.id, id));
+    return result || null;
+  }
 
+  async updateInvoiceImporterConfig(id: number, updates: Partial<InsertInvoiceImporterConfig>): Promise<void> {
+     await db.update(invoiceImporterConfigs).set({
+      ...updates,
+      updatedAt: new Date()
+    }).where(eq(invoiceImporterConfigs.id, id));
+  }
 
   // Enhanced import logs with comprehensive metadata
   async getImportLogsWithDetails(): Promise<any[]> {
