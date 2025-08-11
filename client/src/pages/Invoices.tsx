@@ -522,7 +522,7 @@ export default function Invoices() {
     console.log('🔍 Selected invoice objects:', selectedInvoiceObjects);
 
     setIsProcessingAutomatic(true);
-    setShowProcessingStatus(true);
+    setProcessing({ show: true, message: 'Initiating automatic processing...', progress: 0, total: selectedInvoices.length, processed: 0 });
     setProcessingProgress({
       current: 0,
       total: selectedInvoices.length,
@@ -585,7 +585,7 @@ export default function Invoices() {
 
       // Hide progress after delay
       setTimeout(() => {
-        setShowProcessingStatus(false);
+        setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
         setProcessingComplete({show: false, success: false, message: ''});
       }, 3000);
 
@@ -613,7 +613,7 @@ export default function Invoices() {
 
       // Hide progress after delay
       setTimeout(() => {
-        setShowProcessingStatus(false);
+        setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
         setProcessingComplete({show: false, success: false, message: ''});
       }, 5000);
     } finally {
@@ -952,7 +952,7 @@ export default function Invoices() {
         </div>
 
         {/* Processing Progress Display */}
-        {showProcessingStatus && (
+        {processing.show && (
           <Card className="mb-6 border-blue-200 bg-blue-50">
             <CardContent className="py-4">
               <div className="space-y-3">
@@ -1261,13 +1261,13 @@ export default function Invoices() {
                                     );
                                   }
 
-                                  if ((invoice.extractedData as any)?.projectName || invoice.projectName) {
+                                  if ((invoice.extractedData as any)?.projectName) {
                                     return (
                                       <Badge
                                         variant="default"
                                         className="text-xs bg-blue-100 text-blue-800 border-blue-200"
                                       >
-                                        {(invoice.extractedData as any)?.projectName || invoice.projectName}
+                                        {(invoice.extractedData as any)?.projectName}
                                       </Badge>
                                     );
                                   }
