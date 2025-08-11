@@ -89,7 +89,7 @@ export default function InvoiceImporter() {
     name: '',
     connectionId: '',
     fileTypes: 'pdf',
-    scheduleType: 'manual',
+    scheduleType: 'once',
     scheduleConfig: {
       timeOfDay: '09:00',
       timezone: 'UTC',
@@ -105,7 +105,7 @@ export default function InvoiceImporter() {
     endDate: '',
     isPaused: false,
     // Legacy fields for backward compatibility
-    schedule: 'manual',
+    schedule: 'once',
     executionsPerDay: 3,
     spacingValue: 120,
     spacingUnit: 'minutes',
@@ -816,7 +816,7 @@ export default function InvoiceImporter() {
           name: '', 
           connectionId: '', 
           fileTypes: 'pdf', 
-          scheduleType: 'manual',
+          scheduleType: 'once',
           scheduleConfig: {
             timeOfDay: '09:00',
             timezone: 'UTC',
@@ -832,7 +832,7 @@ export default function InvoiceImporter() {
           endDate: '',
           isPaused: false,
           // Legacy fields for backward compatibility
-          schedule: 'manual',
+          schedule: 'once',
           executionsPerDay: 3,
           spacingValue: 120,
           spacingUnit: 'minutes',
@@ -1002,7 +1002,7 @@ export default function InvoiceImporter() {
           name: '', 
           connectionId: '', 
           fileTypes: 'pdf', 
-          scheduleType: 'manual',
+          scheduleType: 'once',
           scheduleConfig: {
             timeOfDay: '09:00',
             timezone: 'UTC',
@@ -1017,7 +1017,7 @@ export default function InvoiceImporter() {
           startDate: '',
           endDate: '',
           isPaused: false,
-          schedule: 'manual',
+          schedule: 'once',
           executionsPerDay: 3,
           spacingValue: 120,
           spacingUnit: 'minutes',
@@ -1450,7 +1450,7 @@ export default function InvoiceImporter() {
                 {/* Schedule Type Selector */}
                 <div className="grid grid-cols-3 gap-2">
                   {[
-                    { value: 'manual', label: 'Manual', icon: '🔘' },
+                    { value: 'once', label: 'Once', icon: '🔘' },
                     { value: 'daily', label: 'Daily', icon: '🔁' },
                     { value: 'weekly', label: 'Weekly', icon: '🔁' },
                     { value: 'hourly', label: 'Hourly', icon: '🔁' },
@@ -1476,7 +1476,7 @@ export default function InvoiceImporter() {
                 </div>
 
                 {/* Dynamic Schedule Configuration */}
-                {newConfig.scheduleType !== 'manual' && (
+                {newConfig.scheduleType !== 'once' && (
                   <div className="space-y-4 p-4 bg-gray-50 rounded-lg border">
                     {/* Daily Schedule */}
                     {newConfig.scheduleType === 'daily' && (

@@ -466,7 +466,7 @@ export const feedbackLogs = pgTable("feedback_logs", {
 
 // Invoice Importer module enums
 export const fileTypeEnum = pgEnum("file_type", ["xml", "pdf", "both"]);
-export const scheduleTypeEnum = pgEnum("schedule_type", ["manual", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
+export const scheduleTypeEnum = pgEnum("schedule_type", ["once", "daily", "weekly", "hourly", "multiple_daily", "cron"]);
 export const importerStatusEnum = pgEnum("importer_status", ["pending", "running", "completed", "failed", "scheduled"]);
 export const processingStatusEnum = pgEnum("processing_status", ["downloaded", "processing", "completed", "failed"]);
 
@@ -479,7 +479,7 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   taskName: varchar("task_name", { length: 255 }).notNull(),
   description: text("description"),
   fileTypes: fileTypeEnum("file_types").default("both"),
-  scheduleType: scheduleTypeEnum("schedule_type").default("manual"),
+  scheduleType: scheduleTypeEnum("schedule_type").default("once"),
   
   // Enhanced scheduling fields
   scheduleConfig: jsonb("schedule_config"), // Comprehensive schedule configuration object

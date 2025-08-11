@@ -4312,9 +4312,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         configs = [...configs, ...companyConfigs];
       }
 
-      // Filter out manual configurations and one-time ('once') configurations, only show active ones
+      // Filter out one-time ('once') configurations, only show active scheduled ones
       const scheduledConfigs = configs.filter(config => 
-        config.scheduleType !== 'manual' && 
         config.scheduleType !== 'once' && 
         config.isActive === true
       ).map(config => {
