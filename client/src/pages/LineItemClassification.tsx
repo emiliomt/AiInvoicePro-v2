@@ -11,9 +11,9 @@ import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
-import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Brain, Tag, FileText, TrendingUp, Download, Upload } from "lucide-react";
+import { Loader2, Brain, Tag, FileText, TrendingUp, Download, Upload, RefreshCcw, FileCheck, CheckCircle, Play, Plus, Trash2, Target, Bot, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import TopMenu from "@/components/TopMenu";
 
@@ -41,6 +41,29 @@ interface VendorContext {
   businessType?: string;
 }
 
+interface InvoiceForProcessing {
+  id: number;
+  invoiceNumber: string;
+  vendorName: string;
+  totalAmount: string;
+  currency: string;
+  invoiceDate: string;
+  status: string;
+  projectId: string;
+  matchScore: string;
+  lineItemsExtracted: boolean;
+  hasClassifications: boolean;
+  lineItemsCount: number;
+}
+
+interface ProcessingProgress {
+  status: 'idle' | 'processing' | 'completed' | 'failed';
+  totalInvoices: number;
+  processedInvoices: number;
+  currentInvoice?: string;
+  sessionId?: string;
+}
+
 export default function LineItemClassification() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -65,10 +88,36 @@ export default function LineItemClassification() {
   const [batchText, setBatchText] = useState("");
   const [currentTab, setCurrentTab] = useState("single");
 
+  // Invoice processing state
+  const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
+  const [filterProjectId, setFilterProjectId] = useState("");
+  const [filterDateFrom, setFilterDateFrom] = useState("");
+  const [filterDateTo, setFilterDateTo] = useState("");
+  const [filterStatus, setFilterStatus] = useState("");
+  const [processingSessionId, setProcessingSessionId] = useState<string>("");
+
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['/api/classification/categories'],
     queryFn: () => apiRequest('/api/classification/categories'),
+  });
+
+  // Fetch invoices ready for line item classification
+  const { data: invoicesData, isLoading: invoicesLoading, refetch: refetchInvoices } = useQuery<{
+    invoices: InvoiceForProcessing[];
+    count: number;
+  }>({
+    queryKey: ['/api/invoices/ready-for-line-item-classification', { filterProjectId, filterDateFrom, filterDateTo, filterStatus }],
+    queryFn: async () => {
+      const params = new URLSearchParams();
+      if (filterProjectId) params.append('projectId', filterProjectId);
+      if (filterDateFrom) params.append('dateFrom', filterDateFrom);
+      if (filterDateTo) params.append('dateTo', filterDateTo);
+      if (filterStatus) params.append('status', filterStatus);
+      
+      return apiRequest(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
+    },
+    enabled: currentTab === 'process'
   });
 
   // Single item classification mutation
@@ -116,6 +165,29 @@ export default function LineItemClassification() {
       toast({
         title: "Batch Classification Failed",
         description: "Unable to classify items. Please try again.",
+        variant: "destructive"
+      });
+    }
+  });
+
+  // Process invoices mutation
+  const processInvoicesMutation = useMutation({
+    mutationFn: (data: { invoiceIds: number[]; filters?: any }) =>
+      apiRequest('/api/process-invoices-line-items', {
+        method: 'POST',
+        body: JSON.stringify(data)
+      }),
+    onSuccess: (result) => {
+      setProcessingSessionId(result.sessionId);
+      toast({
+        title: "Processing Started",
+        description: "Invoice processing has begun. You can track progress below.",
+      });
+    },
+    onError: (error) => {
+      toast({
+        title: "Processing Failed",
+        description: "Unable to start invoice processing. Please try again.",
         variant: "destructive"
       });
     }
@@ -247,9 +319,10 @@ export default function LineItemClassification() {
         </div>
 
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-3">
+          <TabsList className="grid w-full grid-cols-4">
             <TabsTrigger value="single">Single Item</TabsTrigger>
             <TabsTrigger value="batch">Batch Processing</TabsTrigger>
+            <TabsTrigger value="process">Process Invoices</TabsTrigger>
             <TabsTrigger value="results">Results & History</TabsTrigger>
           </TabsList>
 
@@ -486,9 +559,9 @@ export default function LineItemClassification() {
                       id="batchText"
                       value={batchText}
                       onChange={(e) => setBatchText(e.target.value)}
-                      placeholder="Description	Quantity	Unit Price	Unit
-Cemento portland	10	25000	kg
-Consultoría ingeniería	1	150000	service"
+                      placeholder="Description  Quantity        Unit Price      Unit
+Cemento portland        10      25000   kg
+Consultoría ingeniería  1       150000  service"
                       className="min-h-[120px] font-mono text-sm"
                     />
                     <Button onClick={parseBatchText} variant="outline" size="sm">
@@ -612,6 +685,238 @@ Consultoría ingeniería	1	150000	service"
                 </CardContent>
               </Card>
             </div>
+          </TabsContent>
+
+          <TabsContent value="process" className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Process Invoices for Line Item Classification</CardTitle>
+                <CardDescription>
+                  Process invoices from the invoiceProjectMatches table to automatically extract and classify their line items
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-6">
+                {/* Filters */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div>
+                    <Label htmlFor="projectId">Project ID</Label>
+                    <Input
+                      id="projectId"
+                      placeholder="Enter project ID"
+                      value={filterProjectId}
+                      onChange={(e) => setFilterProjectId(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dateFrom">Date From</Label>
+                    <Input
+                      id="dateFrom"
+                      type="date"
+                      value={filterDateFrom}
+                      onChange={(e) => setFilterDateFrom(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="dateTo">Date To</Label>
+                    <Input
+                      id="dateTo"
+                      type="date"
+                      value={filterDateTo}
+                      onChange={(e) => setFilterDateTo(e.target.value)}
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="status">Status</Label>
+                    <select
+                      id="status"
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background"
+                    >
+                      <option value="">All Statuses</option>
+                      <option value="extracted">Extracted</option>
+                      <option value="approved">Approved</option>
+                      <option value="verified">Verified</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="flex space-x-2">
+                  <Button onClick={() => refetchInvoices()} variant="outline">
+                    <RefreshCcw className="h-4 w-4 mr-2" />
+                    Refresh Invoices
+                  </Button>
+                  <Button 
+                    onClick={() => {
+                      if (selectedInvoices.length > 0) {
+                        processInvoicesMutation.mutate({ invoiceIds: selectedInvoices });
+                      } else {
+                        processInvoicesMutation.mutate({ 
+                          invoiceIds: [], 
+                          filters: { filterProjectId, filterDateFrom, filterDateTo, filterStatus }
+                        });
+                      }
+                    }}
+                    disabled={processInvoicesMutation.isPending}
+                  >
+                    {processInvoicesMutation.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <FileCheck className="h-4 w-4 mr-2" />
+                    )}
+                    {selectedInvoices.length > 0 
+                      ? `Process ${selectedInvoices.length} Selected` 
+                      : "Process All Filtered"}
+                  </Button>
+                </div>
+
+                {/* Processing Status */}
+                {processingSessionId && (
+                  <Alert>
+                    <CheckCircle className="h-4 w-4" />
+                    <AlertTitle>Processing In Progress</AlertTitle>
+                    <AlertDescription>
+                      Session ID: {processingSessionId}. The system is processing invoices in the background.
+                    </AlertDescription>
+                  </Alert>
+                )}
+
+                {/* Invoices Table */}
+                {invoicesLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-6 w-6 animate-spin" />
+                    <span className="ml-2">Loading invoices...</span>
+                  </div>
+                ) : invoicesData?.invoices && invoicesData.invoices.length > 0 ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center justify-between">
+                      <p className="text-sm text-muted-foreground">
+                        Found {invoicesData.count} invoices ready for processing
+                      </p>
+                      <div className="flex items-center space-x-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            if (selectedInvoices.length === invoicesData.invoices.length) {
+                              setSelectedInvoices([]);
+                            } else {
+                              setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
+                            }
+                          }}
+                        >
+                          {selectedInvoices.length === invoicesData.invoices.length ? 'Deselect All' : 'Select All'}
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <div className="border rounded-lg">
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead className="w-12">
+                              <input
+                                type="checkbox"
+                                checked={selectedInvoices.length === invoicesData.invoices.length}
+                                onChange={(e) => {
+                                  if (e.target.checked) {
+                                    setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
+                                  } else {
+                                    setSelectedInvoices([]);
+                                  }
+                                }}
+                              />
+                            </TableHead>
+                            <TableHead>Invoice #</TableHead>
+                            <TableHead>Vendor</TableHead>
+                            <TableHead>Amount</TableHead>
+                            <TableHead>Date</TableHead>
+                            <TableHead>Project</TableHead>
+                            <TableHead>Status</TableHead>
+                            <TableHead>Line Items</TableHead>
+                            <TableHead>Classifications</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {invoicesData.invoices.map((invoice) => (
+                            <TableRow key={invoice.id}>
+                              <TableCell>
+                                <input
+                                  type="checkbox"
+                                  checked={selectedInvoices.includes(invoice.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedInvoices(prev => [...prev, invoice.id]);
+                                    } else {
+                                      setSelectedInvoices(prev => prev.filter(id => id !== invoice.id));
+                                    }
+                                  }}
+                                />
+                              </TableCell>
+                              <TableCell className="font-medium">
+                                {invoice.invoiceNumber}
+                              </TableCell>
+                              <TableCell>{invoice.vendorName}</TableCell>
+                              <TableCell>
+                                {invoice.currency} {invoice.totalAmount}
+                              </TableCell>
+                              <TableCell>
+                                {new Date(invoice.invoiceDate).toLocaleDateString()}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="outline">{invoice.projectId}</Badge>
+                              </TableCell>
+                              <TableCell>
+                                <Badge 
+                                  className={
+                                    invoice.status === 'verified' ? 'bg-green-100 text-green-800' :
+                                    invoice.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                                    'bg-yellow-100 text-yellow-800'
+                                  }
+                                >
+                                  {invoice.status}
+                                </Badge>
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex items-center space-x-2">
+                                  {invoice.lineItemsExtracted ? (
+                                    <Badge className="bg-green-100 text-green-800">
+                                      {invoice.lineItemsCount} items
+                                    </Badge>
+                                  ) : (
+                                    <Badge className="bg-gray-100 text-gray-800">
+                                      OCR only
+                                    </Badge>
+                                  )}
+                                </div>
+                              </TableCell>
+                              <TableCell>
+                                {invoice.hasClassifications ? (
+                                  <Badge className="bg-blue-100 text-blue-800">
+                                    <CheckCircle className="h-3 w-3 mr-1" />
+                                    Classified
+                                  </Badge>
+                                ) : (
+                                  <Badge className="bg-orange-100 text-orange-800">
+                                    Pending
+                                  </Badge>
+                                )}
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    </div>
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertDescription>
+                      No invoices found matching your criteria. Try adjusting the filters above.
+                    </AlertDescription>
+                  </Alert>
+                )}
+              </CardContent>
+            </Card>
           </TabsContent>
 
           <TabsContent value="results" className="space-y-6">

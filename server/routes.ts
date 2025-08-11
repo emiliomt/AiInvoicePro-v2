@@ -22,6 +22,8 @@ import { invoiceProcessingService } from "./services/invoiceProcessingService.js
 import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
 import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
+import { lineItems, lineItemClassifications, invoiceProjectMatches } from "@shared/schema";
+import { and, or, eq, gte, lte, desc, sql } from "drizzle-orm";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -3024,6 +3026,509 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: 'Failed to fetch classification categories' });
     }
   });
+
+  // Get invoices ready for line item classification
+  app.get('/api/invoices/ready-for-line-item-classification', isAuthenticated, async (req: any, res) => {
+    try {
+      const { projectId, dateFrom, dateTo, status } = req.query;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      // Query invoices from invoiceProjectMatches that need line item classification
+      const db = await getDb();
+      let query = db
+        .select({
+          id: invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+          vendorName: invoices.vendorName,
+          totalAmount: invoices.totalAmount,
+          currency: invoices.currency,
+          invoiceDate: invoices.invoiceDate,
+          status: invoices.status,
+          extractedData: invoices.extractedData,
+          ocrText: invoices.ocrText,
+          projectId: invoiceProjectMatches.projectId,
+          matchScore: invoiceProjectMatches.matchScore,
+          lineItemsExtracted: sql<boolean>`CASE WHEN ${invoices.extractedData}->>'lineItems' IS NOT NULL THEN true ELSE false END`,
+          hasClassifications: sql<boolean>`EXISTS (
+            SELECT 1 FROM ${lineItems} li 
+            INNER JOIN ${lineItemClassifications} lic ON li.id = lic.line_item_id 
+            WHERE li.invoice_id = ${invoices.id}
+          )`
+        })
+        .from(invoices)
+        .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+        .where(
+          and(
+            eq(invoices.companyId, user.companyId || 'default'),
+            eq(invoiceProjectMatches.isActive, true),
+            or(
+              eq(invoices.status, 'extracted'),
+              eq(invoices.status, 'approved'),
+              eq(invoices.status, 'verified')
+            )
+          )
+        );
+
+      // Apply filters
+      const conditions = [
+        eq(invoices.companyId, user.companyId || 'default'),
+        eq(invoiceProjectMatches.isActive, true),
+        or(
+          eq(invoices.status, 'extracted'),
+          eq(invoices.status, 'approved'),
+          eq(invoices.status, 'verified')
+        )
+      ];
+
+      if (projectId) {
+        conditions.push(eq(invoiceProjectMatches.projectId, projectId));
+      }
+
+      if (dateFrom) {
+        conditions.push(gte(invoices.invoiceDate, new Date(dateFrom)));
+      }
+
+      if (dateTo) {
+        conditions.push(lte(invoices.invoiceDate, new Date(dateTo)));
+      }
+
+      if (status) {
+        conditions.push(eq(invoices.status, status));
+      }
+
+      query = query.where(and(...conditions));
+      
+      const results = await query.orderBy(desc(invoices.createdAt)).limit(100);
+      
+      res.json({
+        invoices: results.map(invoice => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          vendorName: invoice.vendorName,
+          totalAmount: invoice.totalAmount,
+          currency: invoice.currency,
+          invoiceDate: invoice.invoiceDate,
+          status: invoice.status,
+          projectId: invoice.projectId,
+          matchScore: invoice.matchScore,
+          lineItemsExtracted: invoice.lineItemsExtracted,
+          hasClassifications: invoice.hasClassifications,
+          lineItemsCount: invoice.extractedData?.lineItems?.length || 0
+        })),
+        count: results.length
+      });
+    } catch (error) {
+      console.error('Error fetching invoices ready for classification:', error);
+      res.status(500).json({ message: 'Failed to fetch invoices ready for classification' });
+    }
+  });
+
+  // Process invoices for line item classification
+  app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
+    try {
+      const { invoiceIds, filters } = req.body;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      // Start processing in background
+      const sessionId = `process-${Date.now()}`;
+      
+      // Start the processing (don't await to make it non-blocking)
+      processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
+        .catch(error => {
+          console.error('Background invoice processing failed:', error);
+        });
+
+      res.json({ 
+        message: 'Invoice processing started',
+        sessionId,
+        status: 'processing'
+      });
+    } catch (error) {
+      console.error('Error starting invoice processing:', error);
+      res.status(500).json({ message: 'Failed to start invoice processing' });
+    }
+  });
+
+  // Get line item classification results with pagination
+  app.get('/api/line-item-classification-results', isAuthenticated, async (req: any, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const { projectId, dateFrom, dateTo, category } = req.query;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      const db = await getDb();
+      let query = db
+        .select({
+          id: lineItemClassifications.id,
+          invoiceId: lineItems.invoiceId,
+          invoiceNumber: invoices.invoiceNumber,
+          vendorName: invoices.vendorName,
+          projectId: sql<string>`(
+            SELECT ipm.project_id FROM ${invoiceProjectMatches} ipm 
+            WHERE ipm.invoice_id = ${lineItems.invoiceId} AND ipm.is_active = true 
+            LIMIT 1
+          )`,
+          lineItemDescription: lineItems.description,
+          category: lineItemClassifications.category,
+          subcategory: lineItemClassifications.subcategory,
+          confidence: lineItemClassifications.confidence,
+          method: lineItemClassifications.method,
+          reasoning: lineItemClassifications.reasoning,
+          matchedKeywords: lineItemClassifications.matchedKeywords,
+          classifiedAt: lineItemClassifications.classifiedAt,
+          isUserVerified: lineItemClassifications.isUserVerified
+        })
+        .from(lineItemClassifications)
+        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
+        .where(eq(invoices.companyId, user.companyId || 'default'));
+
+      // Apply filters
+      const conditions = [eq(invoices.companyId, user.companyId || 'default')];
+
+      if (projectId) {
+        conditions.push(sql`EXISTS (
+          SELECT 1 FROM ${invoiceProjectMatches} ipm 
+          WHERE ipm.invoice_id = ${lineItems.invoiceId} 
+          AND ipm.project_id = ${projectId}
+          AND ipm.is_active = true
+        )`);
+      }
+
+      if (dateFrom) {
+        conditions.push(gte(lineItemClassifications.classifiedAt, new Date(dateFrom)));
+      }
+
+      if (dateTo) {
+        conditions.push(lte(lineItemClassifications.classifiedAt, new Date(dateTo)));
+      }
+
+      if (category) {
+        conditions.push(eq(lineItemClassifications.category, category));
+      }
+
+      if (conditions.length > 1) {
+        query = query.where(and(...conditions));
+      }
+
+      const results = await query
+        .orderBy(desc(lineItemClassifications.classifiedAt))
+        .limit(limit)
+        .offset((page - 1) * limit);
+
+      // Get total count for pagination
+      const countQuery = db
+        .select({ count: sql<number>`count(*)` })
+        .from(lineItemClassifications)
+        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
+        .where(conditions.length > 1 ? and(...conditions) : conditions[0]);
+
+      const [{ count }] = await countQuery;
+
+      res.json({
+        results,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          pages: Math.ceil(count / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching line item classification results:', error);
+      res.status(500).json({ message: 'Failed to fetch classification results' });
+    }
+  });
+
+  // Invoice processing function for line item classification
+  async function processInvoicesForLineItemClassification(
+    invoiceIds: number[], 
+    filters: any, 
+    userId: string, 
+    companyId: string, 
+    sessionId: string
+  ) {
+    console.log(`Starting invoice processing for line item classification - Session: ${sessionId}`);
+    
+    try {
+      const db = await getDb();
+      const { ClassificationService } = await import('./services/classificationService');
+      
+      // Get invoices to process
+      let targetInvoices: any[] = [];
+      
+      if (invoiceIds && invoiceIds.length > 0) {
+        // Process specific invoices
+        const query = db
+          .select({
+            id: invoices.id,
+            invoiceNumber: invoices.invoiceNumber,
+            vendorName: invoices.vendorName,
+            extractedData: invoices.extractedData,
+            ocrText: invoices.ocrText,
+            projectId: invoiceProjectMatches.projectId
+          })
+          .from(invoices)
+          .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+          .where(
+            and(
+              eq(invoices.companyId, companyId),
+              eq(invoiceProjectMatches.isActive, true),
+              sql`${invoices.id} = ANY(${invoiceIds})`
+            )
+          );
+          
+        targetInvoices = await query;
+      } else if (filters) {
+        // Process based on filters
+        const conditions = [
+          eq(invoices.companyId, companyId),
+          eq(invoiceProjectMatches.isActive, true),
+          or(
+            eq(invoices.status, 'extracted'),
+            eq(invoices.status, 'approved'),
+            eq(invoices.status, 'verified')
+          )
+        ];
+
+        if (filters.projectId) {
+          conditions.push(eq(invoiceProjectMatches.projectId, filters.projectId));
+        }
+
+        if (filters.dateFrom) {
+          conditions.push(gte(invoices.invoiceDate, new Date(filters.dateFrom)));
+        }
+
+        if (filters.dateTo) {
+          conditions.push(lte(invoices.invoiceDate, new Date(filters.dateTo)));
+        }
+
+        const query = db
+          .select({
+            id: invoices.id,
+            invoiceNumber: invoices.invoiceNumber,
+            vendorName: invoices.vendorName,
+            extractedData: invoices.extractedData,
+            ocrText: invoices.ocrText,
+            projectId: invoiceProjectMatches.projectId
+          })
+          .from(invoices)
+          .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+          .where(and(...conditions))
+          .limit(100);
+
+        targetInvoices = await query;
+      }
+
+      console.log(`Processing ${targetInvoices.length} invoices for line item classification`);
+      
+      let processedCount = 0;
+      let successCount = 0;
+      let failedCount = 0;
+      const results: any[] = [];
+
+      for (const invoice of targetInvoices) {
+        try {
+          console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
+          
+          // Extract line items from invoice data or OCR text
+          let lineItemsData: any[] = [];
+          
+          if (invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0) {
+            lineItemsData = invoice.extractedData.lineItems;
+          } else if (invoice.ocrText) {
+            // Extract line items from OCR text using basic parsing
+            lineItemsData = await extractLineItemsFromOcrText(invoice.ocrText);
+          }
+
+          if (lineItemsData.length === 0) {
+            console.log(`No line items found for invoice ${invoice.id}`);
+            results.push({
+              invoiceId: invoice.id,
+              vendorName: invoice.vendorName,
+              projectId: invoice.projectId,
+              lineItemsCount: 0,
+              classificationsCount: 0,
+              status: 'skipped',
+              error: 'No line items found'
+            });
+            continue;
+          }
+
+          let classificationsCount = 0;
+
+          // Process each line item
+          for (let i = 0; i < lineItemsData.length; i++) {
+            const lineItemData = lineItemsData[i];
+            
+            try {
+              // Check if line item already exists in database
+              let existingLineItem = await db.query.lineItems.findFirst({
+                where: (li, { eq, and }) => and(
+                  eq(li.invoiceId, invoice.id),
+                  eq(li.lineItemIndex, i)
+                )
+              });
+
+              // Create line item if it doesn't exist
+              if (!existingLineItem) {
+                const [newLineItem] = await db.insert(lineItems).values({
+                  invoiceId: invoice.id,
+                  lineItemIndex: i,
+                  description: lineItemData.description || lineItemData.item || 'Unknown item',
+                  quantity: parseFloat(lineItemData.quantity) || null,
+                  unitPrice: parseFloat(lineItemData.unitPrice) || parseFloat(lineItemData.price) || null,
+                  totalPrice: parseFloat(lineItemData.totalPrice) || parseFloat(lineItemData.total) || null,
+                  unit: lineItemData.unit || null,
+                  originalText: JSON.stringify(lineItemData)
+                }).returning();
+                existingLineItem = newLineItem;
+              }
+
+              // Check if classification already exists
+              const existingClassification = await db.query.lineItemClassifications.findFirst({
+                where: (lic, { eq }) => eq(lic.lineItemId, existingLineItem.id)
+              });
+
+              if (existingClassification) {
+                console.log(`Line item ${existingLineItem.id} already classified, skipping`);
+                continue;
+              }
+
+              // Classify the line item
+              const lineItemForClassification = {
+                description: existingLineItem.description,
+                quantity: existingLineItem.quantity,
+                unitPrice: existingLineItem.unitPrice,
+                totalPrice: existingLineItem.totalPrice,
+                unit: existingLineItem.unit
+              };
+
+              const classificationResult = await ClassificationService.classifyLineItem(lineItemForClassification, userId);
+
+              // Store classification
+              await db.insert(lineItemClassifications).values({
+                lineItemId: existingLineItem.id,
+                category: classificationResult.category as any,
+                subcategory: classificationResult.subcategory,
+                matchedKeywords: classificationResult.matchedKeywords || [],
+                confidence: classificationResult.confidence?.toString() || '0',
+                method: classificationResult.method as any,
+                reasoning: classificationResult.reasoning,
+                classifiedBy: userId
+              });
+
+              classificationsCount++;
+              
+            } catch (lineItemError) {
+              console.error(`Error processing line item ${i} for invoice ${invoice.id}:`, lineItemError);
+            }
+          }
+
+          results.push({
+            invoiceId: invoice.id,
+            vendorName: invoice.vendorName,
+            projectId: invoice.projectId,
+            lineItemsCount: lineItemsData.length,
+            classificationsCount,
+            status: classificationsCount > 0 ? 'success' : 'failed'
+          });
+
+          if (classificationsCount > 0) {
+            successCount++;
+          } else {
+            failedCount++;
+          }
+          
+          processedCount++;
+          
+        } catch (invoiceError) {
+          console.error(`Error processing invoice ${invoice.id}:`, invoiceError);
+          results.push({
+            invoiceId: invoice.id,
+            vendorName: invoice.vendorName,
+            projectId: invoice.projectId,
+            lineItemsCount: 0,
+            classificationsCount: 0,
+            status: 'failed',
+            error: invoiceError instanceof Error ? invoiceError.message : 'Unknown error'
+          });
+          failedCount++;
+          processedCount++;
+        }
+      }
+
+      console.log(`Invoice processing completed - Session: ${sessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+      
+    } catch (error) {
+      console.error(`Error in invoice processing session ${sessionId}:`, error);
+    }
+  }
+
+  // Helper function to extract line items from OCR text
+  async function extractLineItemsFromOcrText(ocrText: string): Promise<any[]> {
+    const lineItems: any[] = [];
+    
+    // Simple parsing logic - can be enhanced with AI or more sophisticated parsing
+    const lines = ocrText.split('\n');
+    let currentItem: any = {};
+    
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+      
+      // Skip empty lines
+      if (!trimmedLine) continue;
+      
+      // Look for patterns that might indicate line items
+      // This is a simplified approach - you can enhance with regex patterns
+      const quantityMatch = trimmedLine.match(/(\d+(?:\.\d+)?)\s*(pcs?|kg|m|cm|l|units?|pieces?)/i);
+      const priceMatch = trimmedLine.match(/\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+      
+      if (quantityMatch && priceMatch) {
+        // This line likely contains quantity and price info
+        if (Object.keys(currentItem).length > 0) {
+          lineItems.push({ ...currentItem });
+          currentItem = {};
+        }
+        
+        currentItem = {
+          description: trimmedLine,
+          quantity: parseFloat(quantityMatch[1]),
+          unit: quantityMatch[2],
+          unitPrice: parseFloat(priceMatch[1].replace(/,/g, ''))
+        };
+      } else if (trimmedLine.length > 3 && !trimmedLine.match(/^[\d\s\$,\.]+$/)) {
+        // This line might be a description
+        if (Object.keys(currentItem).length === 0) {
+          currentItem.description = trimmedLine;
+        }
+      }
+    }
+    
+    // Add the last item if it exists
+    if (Object.keys(currentItem).length > 0) {
+      lineItems.push(currentItem);
+    }
+    
+    return lineItems;
+  }
 
   app.post('/api/line-items/:id/ai-classify', isAuthenticated, async (req: any, res) => {
     try {
