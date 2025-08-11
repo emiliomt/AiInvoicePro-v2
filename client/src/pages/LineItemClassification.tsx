@@ -15,7 +15,7 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
 import { Loader2, Brain, Tag, FileText, TrendingUp, Download, Upload, RefreshCcw, FileCheck, CheckCircle, Play, Plus, Trash2, Target, Bot, Sparkles } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
-import TopMenu from "@/components/TopMenu";
+import Header from "@/components/Header";
 
 interface LineItem {
   description: string;
@@ -114,7 +114,7 @@ export default function LineItemClassification() {
       if (filterDateFrom) params.append('dateFrom', filterDateFrom);
       if (filterDateTo) params.append('dateTo', filterDateTo);
       if (filterStatus) params.append('status', filterStatus);
-      
+
       return apiRequest(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
     },
     enabled: currentTab === 'process'
@@ -296,7 +296,7 @@ export default function LineItemClassification() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <TopMenu />
+      <Header />
       <div className="container mx-auto py-6 space-y-6">
         <div className="flex items-center justify-between">
           <div>
@@ -809,7 +809,7 @@ Consultoría ingeniería  1       150000  service"
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div className="border rounded-lg">
                       <Table>
                         <TableHeader>
