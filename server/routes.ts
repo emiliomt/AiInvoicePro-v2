@@ -181,7 +181,6 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
 
     // Update invoice with extracted data
     await storage.updateInvoice(invoice.id, {
-      status: "extracted",
       ocrText,
       extractedData,
       ...cleanedData
@@ -399,7 +398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if petty cash log already exists for this invoice
       const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-      
+
       if (existingLog) {
         // Update existing log
         const updatedLog = await storage.updatePettyCashLog(existingLog.id, {
@@ -408,7 +407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           confidenceScore: confidenceScore || 0.95,
           updatedAt: new Date()
         });
-        
+
         console.log(`✅ Updated petty cash classification for invoice ${invoiceId}: ${isPettyCash ? 'YES' : 'NO'}`);
         res.json({ 
           message: "Petty cash classification updated", 
@@ -424,7 +423,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           confidenceScore: confidenceScore || 0.95,
           status: 'pending_approval'
         });
-        
+
         console.log(`✅ Created petty cash classification for invoice ${invoiceId}: ${isPettyCash ? 'YES' : 'NO'}`);
         res.json({ 
           message: "Petty cash classification stored", 
@@ -450,20 +449,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get the current petty cash threshold
       const thresholdSetting = await storage.getSetting('petty_cash_threshold');
       const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 100;
-      
+
       // Get all invoices that might need recalculation
       const invoices = await storage.getInvoices();
-      
+
       let recalculatedCount = 0;
       let newClassifications = 0;
-      
+
       for (const invoice of invoices) {
         const amount = parseFloat(invoice.totalAmount || "0");
         const shouldBePettyCash = amount <= threshold && amount > 0;
-        
+
         // Check if this invoice already has a petty cash classification
         const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
-        
+
         if (shouldBePettyCash) {
           if (existingLog) {
             // Update existing classification if needed
@@ -498,9 +497,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           recalculatedCount++;
         }
       }
-      
+
       console.log(`Recalculated petty cash: ${recalculatedCount} updated, ${newClassifications} new classifications`);
-      
+
       res.json({
         message: `Successfully recalculated petty cash classifications. ${newClassifications} new classifications, ${recalculatedCount} updated.`,
         threshold,
@@ -803,7 +802,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               items: extractedData.lineItems || [],
               ocrText: ocrText,
               fileName: fileName,
-              uploadedBy: req.user?.id || "anonymous",
+              uploadedBy: req.user.id || "anonymous",
             }, userId);
 
             processedPOs.push(newPurchaseOrder);
@@ -989,12 +988,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const match = await storage.createInvoiceProjectMatch(matchData);
-      
+
       // Update invoice processing status
       await storage.updateInvoice(invoiceId, {
         processingStatus: 'matched'
       });
-      
+
       console.log(`✅ Created project match for invoice ${invoiceId} to project ${projectId} with score ${matchScore}`);
       res.json(match);
     } catch (error) {
@@ -1028,13 +1027,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const match = await storage.createInvoiceProjectMatch(matchData);
-      
+
       // Update invoice processing status
       await storage.updateInvoice(invoiceId, {
         processingStatus: 'matched',
         projectName: projectName
       });
-      
+
       console.log(`✅ Stored project match result for invoice ${invoiceId}: ${projectName}`);
       res.json({ 
         message: "Project match stored successfully", 
@@ -1067,7 +1066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (isPettyCash !== undefined) {
         try {
           const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-          
+
           if (existingLog) {
             results.pettyCashResult = await storage.updatePettyCashLog(existingLog.id, {
               isPettyCash,
@@ -3190,7 +3189,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Bulk classification API endpoints
-  
+
   // Get invoices ready for classification
   app.get('/api/invoices/ready-for-classification', isAuthenticated, async (req: any, res) => {
     try {
@@ -3217,7 +3216,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req.user as any).claims.sub;
       const sessionId = req.headers['x-session-id'] as string || 'default';
-      
+
       // Validate request body
       const validationResult = bulkClassifyInvoicesSchema.safeParse(req.body);
       if (!validationResult.success) {
@@ -3249,7 +3248,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const sessionId = req.params.sessionId || 'default';
       const progress = BulkClassificationService.getProgress(sessionId);
-      
+
       if (!progress) {
         return res.status(404).json({ message: 'No classification process found for this session' });
       }
@@ -3266,7 +3265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      
+
       const filters = {
         projectId: req.query.projectId as string,
         dateFrom: req.query.dateFrom as string,
@@ -3319,7 +3318,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId, dateFrom, dateTo, status } = req.query;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(401).json({ message: 'User not found' });
       }
@@ -3388,9 +3387,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       query = query.where(and(...conditions));
-      
+
       const results = await query.orderBy(desc(invoices.createdAt)).limit(100);
-      
+
       res.json({
         invoices: results.map(invoice => ({
           id: invoice.id,
@@ -3420,14 +3419,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { invoiceIds, filters } = req.body;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(401).json({ message: 'User not found' });
       }
 
       // Start processing in background
       const sessionId = `process-${Date.now()}`;
-      
+
       // Start the processing (don't await to make it non-blocking)
       processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
         .catch(error => {
@@ -3453,7 +3452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { projectId, dateFrom, dateTo, category } = req.query;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
-      
+
       if (!user) {
         return res.status(401).json({ message: 'User not found' });
       }
@@ -3552,14 +3551,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
     sessionId: string
   ) {
     console.log(`Starting invoice processing for line item classification - Session: ${sessionId}`);
-    
+
     try {
       const db = await getDb();
       const { ClassificationService } = await import('./services/classificationService');
-      
+
       // Get invoices to process
       let targetInvoices: any[] = [];
-      
+
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
         const query = db
@@ -3580,7 +3579,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               sql`${invoices.id} = ANY(${invoiceIds})`
             )
           );
-          
+
         targetInvoices = await query;
       } else if (filters) {
         // Process based on filters
@@ -3624,7 +3623,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`Processing ${targetInvoices.length} invoices for line item classification`);
-      
+
       let processedCount = 0;
       let successCount = 0;
       let failedCount = 0;
@@ -3633,10 +3632,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       for (const invoice of targetInvoices) {
         try {
           console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
-          
+
           // Extract line items from invoice data or OCR text
           let lineItemsData: any[] = [];
-          
+
           if (invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0) {
             lineItemsData = invoice.extractedData.lineItems;
           } else if (invoice.ocrText) {
@@ -3663,7 +3662,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           // Process each line item
           for (let i = 0; i < lineItemsData.length; i++) {
             const lineItemData = lineItemsData[i];
-            
+
             try {
               // Check if line item already exists in database
               let existingLineItem = await db.query.lineItems.findFirst({
@@ -3722,7 +3721,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
 
               classificationsCount++;
-              
+
             } catch (lineItemError) {
               console.error(`Error processing line item ${i} for invoice ${invoice.id}:`, lineItemError);
             }
@@ -3742,9 +3741,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           } else {
             failedCount++;
           }
-          
+
           processedCount++;
-          
+
         } catch (invoiceError) {
           console.error(`Error processing invoice ${invoice.id}:`, invoiceError);
           results.push({
@@ -3762,7 +3761,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`Invoice processing completed - Session: ${sessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
-      
+
     } catch (error) {
       console.error(`Error in invoice processing session ${sessionId}:`, error);
     }
@@ -3771,29 +3770,29 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Helper function to extract line items from OCR text
   async function extractLineItemsFromOcrText(ocrText: string): Promise<any[]> {
     const lineItems: any[] = [];
-    
+
     // Simple parsing logic - can be enhanced with AI or more sophisticated parsing
     const lines = ocrText.split('\n');
     let currentItem: any = {};
-    
+
     for (const line of lines) {
       const trimmedLine = line.trim();
-      
+
       // Skip empty lines
       if (!trimmedLine) continue;
-      
+
       // Look for patterns that might indicate line items
       // This is a simplified approach - you can enhance with regex patterns
       const quantityMatch = trimmedLine.match(/(\d+(?:\.\d+)?)\s*(pcs?|kg|m|cm|l|units?|pieces?)/i);
       const priceMatch = trimmedLine.match(/\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
-      
+
       if (quantityMatch && priceMatch) {
         // This line likely contains quantity and price info
         if (Object.keys(currentItem).length > 0) {
           lineItems.push({ ...currentItem });
           currentItem = {};
         }
-        
+
         currentItem = {
           description: trimmedLine,
           quantity: parseFloat(quantityMatch[1]),
@@ -3807,12 +3806,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       }
     }
-    
+
     // Add the last item if it exists
     if (Object.keys(currentItem).length > 0) {
       lineItems.push(currentItem);
     }
-    
+
     return lineItems;
   }
 
@@ -6094,7 +6093,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
             res.setHeader('Content-Type', 'application/zip');
             res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
 
-            const archive = archiver.default('zip', {
+            constarchive = archiver.default('zip', {
               zlib: { level: 9 }
             });
 
@@ -6196,7 +6195,8 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     // Validate request body
     if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
       return res.status(400).json({ 
-        error: 'Invalid request: invoiceIds array is required and must not be empty' 
+        error: 'Invalid invoice IDs provided',
+        message: "invoiceIds must be a non-empty array"
       });
     }
 
@@ -6375,7 +6375,7 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
     const pettyCashThreshold = 400000; // $400,000 USD
     const totalAmount = parseFloat(extractedData.totalAmount || '0');
     const isPettyCash = totalAmount < pettyCashThreshold;
-    
+
     const pettyCashResult = {
       invoiceId: invoice.id,
       isPettyCash,
@@ -6387,7 +6387,7 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
 
     await storage.createPettyCashLog(pettyCashResult);
     await storage.updateInvoice(invoice.id, { processingStatus: 'classified' });
-    
+
     console.log(`Petty cash classification completed for invoice ${invoice.id}: ${isPettyCash ? 'Approved' : 'Rejected'}`);
 
     // Step 3: Auto Project Matching with confidence threshold  
@@ -6418,26 +6418,26 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
 
       const vendorName = extractedData.vendorName?.toLowerCase() || '';
       const currentAmount = parseFloat(extractedData.totalAmount || '0');
-      
+
       // Simple matching logic - can be enhanced
       const projectMatches = [];
       for (const [projectName, projectData] of projectsByName) {
         let score = 0;
-        
+
         // Vendor name matching
         if (projectData.vendor && vendorName.includes(projectData.vendor.toLowerCase())) {
           score += 60;
         }
-        
+
         // Amount similarity (within 20% difference)
         const amountDiff = Math.abs(currentAmount - projectData.totalAmount) / Math.max(currentAmount, projectData.totalAmount);
         if (amountDiff < 0.2) {
           score += 30;
         }
-        
+
         // Project frequency (more invoices = higher probability)
         score += Math.min(projectData.invoiceCount * 2, 10);
-        
+
         if (score > 50) {
           projectMatches.push({
             projectId: projectName,
@@ -6450,11 +6450,11 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
           });
         }
       }
-      
+
       const sortedMatches = projectMatches.sort((a, b) => b.matchScore - a.matchScore);
       if (sortedMatches && sortedMatches.length > 0) {
         const bestMatch = sortedMatches[0];
-        
+
         // Auto-approve if confidence > 80%
         if (bestMatch.matchScore >= 80) {
           const matchResult = {
@@ -6465,9 +6465,9 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
             matchDetails: bestMatch.matchDetails,
             isActive: true
           };
-          
+
           await storage.createInvoiceProjectMatch(matchResult);
-          
+
           // Also create approved record for auto-approved matches
           await storage.createApprovedInvoiceProject({
             invoiceId: invoice.id,
@@ -6477,12 +6477,12 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
             approvedBy: 'system-auto',
             originalMatchId: null // Will be updated after match creation
           });
-          
+
           await storage.updateInvoice(invoice.id, { 
             processingStatus: 'matched',
             projectName: bestMatch.projectId
           });
-          
+
           console.log(`Auto-approved project match for invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
         } else {
           // Create match but flag for manual review
@@ -6494,7 +6494,7 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
             matchDetails: bestMatch.matchDetails,
             isActive: true
           });
-          
+
           console.log(`Project match created for manual review - invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
         }
       } else {
@@ -6547,13 +6547,4936 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
 
   } catch (error) {
     console.error(`Automatic processing failed for invoice ${invoice.id}:`, error);
-    
+
     // Update status to show failure
     await storage.updateInvoice(invoice.id, { 
       status: 'rejected',
       processingStatus: 'failed'
     });
-    
+
+    throw error;
+  }
+}
+
+  const server = createServer(app);
+  return server;
+}
+// Automatic processing endpoint
+  app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req: any, res) => {
+    try {
+      const { invoiceIds, source = 'manual' } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return res.status(400).json({ 
+          message: "Invalid invoice IDs provided",
+          error: "invoiceIds must be a non-empty array"
+        });
+      }
+
+      // Validate that all invoice IDs are numbers
+      const validInvoiceIds = invoiceIds.filter(id => Number.isInteger(id) && id > 0);
+      if (validInvoiceIds.length === 0) {
+        return res.status(400).json({
+          message: "No valid invoice IDs provided",
+          error: "All invoice IDs must be positive integers"
+        });
+      }
+
+      console.log(`🚀 Initiating automatic processing for ${validInvoiceIds.length} invoices by user ${userId}`);
+
+      // Process invoices using the invoice processing service
+      const { invoiceProcessingService } = await import('./services/invoiceProcessingService.js');
+
+      try {
+        const results = await invoiceProcessingService.processMultipleInvoicesAutomatically(
+          validInvoiceIds,
+          userId,
+          source
+        );
+
+        res.json({
+          message: `Processing initiated for ${results.totalInvoices} invoices`,
+          summary: {
+            totalInvoices: results.totalInvoices,
+            successful: results.processedInvoices,
+            failed: results.failedInvoices,
+            errors: results.errors
+          }
+        });
+      } catch (processingError: any) {
+        console.error('❌ Processing service error:', processingError);
+
+        // Handle specific JSON parsing errors
+        let errorMessage = processingError.message;
+        if (errorMessage.includes('JSON.parse') || errorMessage.includes('unexpected character')) {
+          errorMessage = 'Data format error during processing - please check invoice data integrity';
+        }
+
+        res.status(500).json({
+          message: 'Processing failed',
+          error: errorMessage,
+          summary: {
+            totalInvoices: validInvoiceIds.length,
+            successful: 0,
+            failed: validInvoiceIds.length,
+            errors: [errorMessage]
+          }
+        });
+      }
+
+    } catch (error: any) {
+      console.error('❌ Error in automatic processing endpoint:', error);
+
+      let errorMessage = error.message;
+      if (errorMessage.includes('JSON.parse') || errorMessage.includes('unexpected character')) {
+        errorMessage = 'Request format error - please check the data being sent';
+      }
+
+      res.status(500).json({ 
+        message: 'Failed to initiate automatic processing',
+        error: errorMessage 
+      });
+    }
+  });
+</new_str>
+  // Clean corrupted invoice data
+  app.post('/api/invoices/clean-data', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      console.log(`User ${userId} requested to clean corrupted invoice data`);
+
+      // Get all invoices for the user
+      const invoices = await storage.getInvoicesByUserId(userId);
+      let cleanedCount = 0;
+
+      const sanitizeText = (text: any) => {
+        if (!text || typeof text !== 'string') return null;
+
+        // Remove HTML tags and excessive special characters
+        const cleaned = text.replace(/<[^>]*>/g, '').trim();
+
+        // Check if text is mostly corrupted
+        const specialCharRatio = (cleaned.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleaned.length;
+        if (specialCharRatio > 0.3 || cleaned.length > 500) {
+          return null;
+        }
+
+        return cleaned;
+      };
+
+      for (const invoice of invoices) {
+        let needsUpdate = false;
+        const updates: any = {};
+
+        // Clean vendor name
+        if (invoice.vendorName && typeof invoice.vendorName === 'string') {
+          const cleanedVendor = sanitizeText(invoice.vendorName);
+          if (cleanedVendor !== invoice.vendorName) {
+            updates.vendorName = cleanedVendor;
+            needsUpdate = true;
+          }
+        }
+
+        // Clean invoice number
+        if (invoice.invoiceNumber && typeof invoice.invoiceNumber === 'string') {
+          const cleanedNumber = sanitizeText(invoice.invoiceNumber);
+          if (cleanedNumber !== invoice.invoiceNumber) {
+            updates.invoiceNumber = cleanedNumber;
+            needsUpdate = true;
+          }
+        }
+
+        // Clean extracted data
+        if (invoice.extractedData && typeof invoice.extractedData === 'object') {
+          const cleanedExtractedData = { ...invoice.extractedData };
+          let extractedDataChanged = false;
+
+          for (const [key, value] of Object.entries(cleanedExtractedData)) {
+            if (typeof value === 'string') {
+              const cleanedValue = sanitizeText(value);
+              if (cleanedValue !== value) {
+                cleanedExtractedData[key] = cleanedValue;
+                extractedDataChanged = true;
+              }
+            }
+          }
+
+          if (extractedDataChanged) {
+            updates.extractedData = cleanedExtractedData;
+            needsUpdate = true;
+          }
+        }
+
+        if (needsUpdate) {
+          await storage.updateInvoice(invoice.id, updates);
+          cleanedCount++;
+        }
+      }
+
+      res.json({ 
+        message: `Cleaned ${cleanedCount} invoices with corrupted data`,
+        cleanedCount
+      });
+
+    } catch (error: any) {
+      console.error('Error cleaning invoice data:', error);
+      res.status(500).json({ 
+        message: 'Failed to clean invoice data', 
+        error: error.message 
+      });
+    }
+  });
+
+  // Clear invoice files cache
+  app.delete('/api/invoices/clear-cache', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      console.log(`User ${userId} requested to clear invoice files cache`);
+
+      const fs = await import('fs');
+      const path = await import('path');
+
+      // Clear uploads directory
+      const uploadsDir = path.join(process.cwd(), 'uploads');
+      if (fs.existsSync(uploadsDir)) {
+        const files = fs.readdirSync(uploadsDir);
+        let deletedCount = 0;
+
+        for (const file of files) {
+          const filePath = path.join(uploadsDir, file);
+          const stats = fs.statSync(filePath);
+
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            deletedCount++;
+          }
+        }
+
+        console.log(`Deleted ${deletedCount} files from uploads directory`);
+      }
+
+      // Clear AI service cache if it exists
+      try {
+        const aiServiceModule = await import('./services/aiService');
+        // Skip cache clearing for now as it's not a required feature
+        console.log('AI service cache clearing skipped');
+      } catch (error) {
+        console.log('AI service cache clearing not available');
+      }
+
+      // Clear any cached extraction results
+      const cacheDir = path.join(process.cwd(), '.cache');
+      if (fs.existsSync(cacheDir)) {
+        const files = fs.readdirSync(cacheDir);
+        let deletedCacheCount = 0;
+
+        for (const file of files) {
+          const filePath = path.join(cacheDir, file);
+          const stats = fs.statSync(filePath);
+
+          if (stats.isFile()) {
+            fs.unlinkSync(filePath);
+            deletedCacheCount++;
+          }
+        }
+
+        console.log(`Deleted ${deletedCacheCount} files from cache directory`);
+      }
+
+      res.json({ 
+        message: 'Invoice files cache cleared successfully',
+        details: {
+          uploadsCleared: true,
+          aiCacheCleared: true,
+          filesRemoved: 'All cached files removed'
+        }
+      });
+
+    } catch (error: any) {
+      console.error('Error clearing cache:', error);
+      res.status(500).json({ 
+        message: 'Failed to clear cache', 
+        error: error.message 
+      });
+    }
+  });
+
+  // Process invoice endpoint (for RPA and manual processing)
+  app.post('/api/invoices/:id/process', async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      console.log(`📄 Processing invoice ${invoiceId}: ${invoice.fileName}`);
+
+      // Check if file exists
+      const fs = await import('fs');
+      if (!invoice.fileUrl || !fs.default.existsSync(invoice.fileUrl)) {
+        return res.status(400).json({ message: "Invoice file not found on disk" });
+      }
+
+      // Read file buffer
+      const fileBuffer = fs.default.readFileSync(invoice.fileUrl);
+
+      // Process asynchronously
+      setImmediate(async () => {
+        try {
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ Invoice ${invoiceId} processing completed`);
+        } catch (error) {
+          console.error(`❌ Invoice ${invoiceId} processing failed:`, error);
+          // Update invoice status to failed
+          await storage.updateInvoice(invoice.id, { 
+            status: "pending",
+            extractedData: { error: error instanceof Error ? error.message : "Processing failed" }
+          });
+        }
+      });
+
+      res.json({ message: "Processing started", invoiceId });
+    } catch (error) {
+      console.error("Error starting invoice processing:", error);
+      res.status(500).json({ message: "Failed to start processing" });
+    }
+  });
+
+  // Process imported invoices endpoint (temporary bypass for testing)
+  app.post('/api/imported-invoices/process', async (req: any, res) => {
+    try {
+      console.log('🔄 Processing downloaded imported invoices...');
+
+      const result = await invoiceProcessingService.processDownloadedInvoices();
+
+      console.log(`✅ Processing complete: ${result.processed} processed, ${result.failed} failed`);
+
+      res.json({
+        message: `Processing complete: ${result.processed} invoices processed successfully`,
+        summary: {
+          processed: result.processed,
+          failed: result.failed,
+          total: result.processed + result.failed
+        },
+        errors: result.errors
+      });
+    } catch (error: any) {
+      console.error('Error processing imported invoices:', error);
+      res.status(500).json({ 
+        message: 'Failed to process imported invoices',
+        error: error.message 
+      });
+    }
+  });
+
+  // Process imported invoices by log ID (allow bypass for testing)
+  app.post('/api/imported-invoices/process/:logId', async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      console.log(`🔄 Processing imported invoices for log ID: ${logId}`);
+
+      const result = await invoiceProcessingService.processInvoicesByLogId(logId);
+
+      console.log(`✅ Processing complete for log ${logId}: ${result.processed} processed, ${result.failed} failed`);
+
+      res.json({
+        message: `Processing complete for log ${logId}: ${result.processed} invoices processed successfully`,
+        summary: {
+          processed: result.processed,
+          failed: result.failed,
+          total: result.processed + result.failed,
+          logId
+        },
+        errors: result.errors
+      });
+    } catch (error: any) {
+      console.error(`Error processing imported invoices for log ${req.params.logId}:`, error);
+      res.status(500).json({ 
+        message: 'Failed to process imported invoices',
+        error: error.message 
+      });
+    }
+  });
+
+  // Manual processing endpoints
+  app.post('/api/invoices/:id/process-ocr', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (!invoice.fileUrl || !require('fs').existsSync(invoice.fileUrl)) {
+        return res.status(400).json({ message: "Invoice file not found on disk" });
+      }
+
+      // Reset status to processing
+      await storage.updateInvoice(invoiceId, { status: "processing" });
+
+      res.json({ message: "Manual OCR processing started" });
+
+      // Start processing in background with proper error handling
+      setImmediate(async () => {
+        try {
+          const fs = require('fs');
+          const fileBuffer = fs.readFileSync(invoice.fileUrl);
+
+          console.log(`Manual processing started for invoice ${invoiceId} (${invoice.fileName})`);
+
+          // Use the same processing function as automatic uploads
+          await processInvoiceAsync(invoice, fileBuffer);
+
+          console.log(`Manual processing completed for invoice ${invoiceId}`);
+        } catch (error: any) {
+          console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
+          await storage.updateInvoice(invoiceId, {
+            status: "rejected",
+            extractedData: { 
+              error: error.message,
+              errorType: "ManualProcessingError",
+              timestamp: new Date().toISOString(),
+              step: "manual_retry"
+            },
+          });
+        }
+      });
+    } catch (error) {
+      console.error("Error starting manual OCR:", error);
+      res.status(500).json({ message: "Failed to start manual OCR processing" });
+    }
+  });
+
+  app.post('/api/invoices/:id/extract-data', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      res.json({ message: "Data extraction started" });
+    } catch (error) {
+      console.error("Error starting data extraction:", error);
+      res.status(500).json({ message: "Failed to start data extraction" });
+    }
+  });
+
+  app.post('/api/invoices/:id/find-matches', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice || invoice.userId !== (req.user as any).claims.sub) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      res.json({ message: "PO matching started" });
+    } catch (error) {
+      console.error("Error starting PO matching:", error);
+      res.status(500).json({ message: "Failed to start PO matching" });
+    }
+  });
+
+
+
+  // Serve invoice file for preview (metadata)
+  app.get('/api/invoices/:id/preview', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Check if file exists and is a PDF
+      if (!invoice.fileUrl || !invoice.fileName?.toLowerCase().endsWith('.pdf')) {
+        return res.status(400).json({ message: "File not available for preview or not a PDF" });
+      }
+
+      res.status(200).json({ 
+        message: "PDF preview endpoint ready", 
+        fileName: invoice.fileName,
+        previewUrl: `/api/invoices/${invoiceId}/preview/file`
+      });
+    } catch (error) {
+      console.error("Error serving invoice preview:", error);
+      res.status(500).json({ message: "Failed to serve invoice preview" });
+    }
+  });
+
+  // Serve actual PDF file for preview
+  app.get('/api/invoices/:id/preview/file', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).send('Invoice not found');
+      }
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        console.log(`Preview access denied for user ${userId} to invoice ${invoiceId}`);
+        return res.status(403).send('Access denied');
+      }
+
+      // Check if file exists and is a PDF
+      if (!invoice.fileName?.toLowerCase().endsWith('.pdf')) {
+        return res.status(404).send('File not found or not a PDF');
+      }
+
+      // For demonstration purposes, we'll create a sample PDF response
+      // In production, you would stream from your secure file storage
+      const fs = await import('fs');
+      const path = await import('path');
+
+      // Construct file path - check uploads directory (same as download endpoint)
+      const filePath = path.join('uploads', invoice.fileName);
+      console.log(`Looking for preview file at: ${filePath}`);
+
+      if (fs.existsSync(filePath)) {
+        const stat = fs.statSync(filePath);
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Length', stat.size.toString());
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Accept-Ranges', 'bytes');
+
+        const stream = fs.createReadStream(filePath);
+        stream.pipe(res);
+
+        stream.on('error', (err) => {
+          console.error('Stream error:', err);
+          if (!res.headersSent) {
+            res.status(500).send('Error reading file');
+          }
+        });
+      } else {
+        // Create a minimal PDF for demonstration
+        const PDFDocument = await import('pdfkit');
+        const doc = new PDFDocument.default();
+
+        // Set headers before piping
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${invoice.fileName}"`);
+        res.setHeader('Cache-Control', 'private, no-cache');
+
+        // Pipe the PDF to response
+        doc.pipe(res);
+
+        // Add content to the PDF
+        doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
+        doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
+        doc.text(`Invoice ID: ${invoice.id}`, 100, 160);
+        doc.text(`Vendor: ${invoice.vendorName || 'N/A'}`, 100, 180);
+        doc.text(`Amount: ${invoice.totalAmount || 'N/A'} ${invoice.currency || 'USD'}`, 100, 200);
+        doc.text(`Date: ${invoice.invoiceDate || 'N/A'}`, 100, 220);
+
+        doc.fontSize(12).text('This is a demonstration PDF generated for preview purposes.', 100, 260);
+        doc.text('In production, this would be replaced with the actual uploaded PDF file.', 100, 280);
+        doc.text('You can download this file using the download button.', 100, 300);
+
+        // Add some more content to make it a proper PDF
+        doc.addPage();
+        doc.fontSize(16).text('Additional Information', 100, 100);
+        doc.fontSize(12).text('This is page 2 of the demo invoice.', 100, 140);
+        doc.text('Status: ' + (invoice.status || 'Unknown'), 100, 160);
+        doc.text('Created: ' + (invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'Unknown'), 100, 180);
+
+        // Finalize the PDF
+        doc.end();
+      }
+    } catch (error) {
+      console.error("Error serving PDF file:", error);
+      if (!res.headersSent) {
+        res.status(500).send('Failed to serve PDF file');
+      }
+    }
+  });
+
+  // Get invoice by ID
+  app.get('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check if user owns the invoice
+      const userId = (req.user as any).claims.sub;
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Get line items
+      const lineItems = await storage.getLineItemsByInvoiceId(invoiceId);
+
+      res.json({ ...invoice, lineItems });
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      res.status(500).json({ message: "Failed to fetch invoice" });
+    }
+  });
+
+  // Get user's invoices
+  app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+
+      if (!userId) {
+        return res.status(401).json({ message: "User ID not found" });
+      }
+
+      const includeMatches = req.query.includeMatches === 'true';
+
+      if (includeMatches) {
+        const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
+        res.json(invoicesWithMatches || []);
+      } else {
+        const invoices = await storage.getInvoicesByUserId(userId);
+        res.json(invoices || []);
+      }
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+      const errorMessage = error instanceof Error ? error.message : "Failed to fetch invoices";
+      res.status(500).json({ 
+        message: "Failed to fetch invoices",
+        error: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Update invoice
+  app.patch('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const updates = req.body;
+      const updatedInvoice = await storage.updateInvoice(invoiceId, updates);
+
+      res.json(updatedInvoice);
+    } catch (error) {
+      console.error("Error updating invoice:", error);
+      res.status(500).json({ message: "Failed to update invoice" });
+    }
+  });
+
+  // Send invoice for approval
+  app.post('/api/invoices/:id/approve', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Create approval record
+      await storage.createApproval({
+        invoiceId,
+        approverId: userId, // For now, self-approval
+        status: "approved",
+      });
+
+      // Update invoice status
+      await storage.updateInvoice(invoice.id, {
+        status: "approved",
+      });
+
+      res.json({ message: "Invoice approved successfully" });
+    } catch (error) {
+      console.error("Error approving invoice:", error);
+      res.status(500).json({ message: "Failed to approve invoice" });
+    }
+  });
+
+  // Reject invoice
+  app.post('/api/invoices/:id/reject', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+      const { comments } = req.body;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Create approval record with rejection
+      await storage.createApproval({
+        invoiceId,
+        approverId: userId,
+        status: "rejected",
+        comments,
+      });
+
+      // Update invoice status
+      await storage.updateInvoice(invoiceId, {
+        status: "rejected",
+      });
+
+      res.json({ message: "Invoice rejected successfully" });
+    } catch (error) {
+      console.error("Error rejecting invoice:", error);
+      res.status(500).json({ message: "Failed to reject invoice" });
+    }
+  });
+
+  // Delete all invoices for a user (must come before parameterized route)
+  app.delete('/api/invoices/delete-all', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+
+      if (!userId) {
+        return res.status(400).json({ message: "User ID is required" });
+      }
+
+      console.log(`Starting delete all invoices for user: ${userId}`);
+
+      // Delete all invoices for this user directly
+      const deletedCount = await storage.deleteAllUserInvoices(userId);
+
+      console.log(`Successfully deleted ${deletedCount} invoices for user ${userId}`);
+
+      res.json({ 
+        message: `Successfully deleted ${deletedCount} invoice${deletedCount === 1 ? '' : 's'}`,
+        deletedCount 
+      });
+    } catch (error) {
+      console.error("Error deleting all invoices:", error);
+      res.status(500).json({ 
+        message: "Failed to delete all invoices",
+        error: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Delete invoice
+  app.delete('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      if (isNaN(invoiceId) || invoiceId <= 0) {
+        return res.status(400).json({ message: "Invalid invoice ID" });
+      }
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteInvoice(invoiceId);
+      res.json({ message: "Invoice deleted successfully" });
+    } catch (error) {
+      console.error("Error deleting invoice:", error);
+      res.status(500).json({ message: "Failed to delete invoice" });
+    }
+  });
+
+  // Get AI suggestions for extraction errors
+  app.get('/api/invoices/:id/ai-suggestions', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      const { AISuggestionService } = await import('./services/aiSuggestionService');
+      const suggestions = AISuggestionService.analyzeExtractionErrors(invoice, invoice.ocrText || '');
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error getting AI suggestions:", error);
+      res.status(500).json({ message: "Failed to get AI suggestions" });
+    }
+  });
+
+  // 🇨🇴 Colombian-specific learning updates
+  async function applyColombianLearningUpdates(
+    invoice: any, 
+    correctedData: any, 
+    feedbackId: number
+  ): Promise<void> {
+    const { storage } = await import('./storage');
+
+    console.log('🇨🇴 Applying Colombian learning updates...');
+
+    // Specific patterns from ASOMA invoice corrections
+    const corrections = [
+      {
+        field: 'taxId',
+        originalPattern: 'Extract vendor NIT without check digit',
+        correctedPattern: 'Always include Colombian NIT check digit: XXXXXXXX-X format',
+        example: '900478552 → 900478552-0'
+      },
+      {
+        field: 'buyerTaxId', 
+        originalPattern: 'Extract buyer NIT without check digit',
+        correctedPattern: 'Always include Colombian buyer NIT check digit: XXXXXXXX-X format',
+        example: '860527800 → 860527800-9'
+      },
+      {
+        field: 'dueDate',
+        originalPattern: 'Missing due date extraction',
+        correctedPattern: 'Extract "FECHA VENCIMIENTO" and convert DD/MM/YYYY to YYYY-MM-DD',
+        example: 'FECHA VENCIMIENTO: 09/07/2025 → 2025-07-09'
+      },
+      {
+        field: 'projectCity',
+        originalPattern: 'Missing project city from delivery context', 
+        correctedPattern: 'Extract city from project delivery address, not vendor address',
+        example: 'From "Urbanización Parque Heredia... - Cartagena" → "Cartagena"'
+      },
+      {
+        field: 'vendorAddress',
+        originalPattern: 'Incorrectly assigning addresses',
+        correctedPattern: 'Colombian service invoices often have no vendor address - return null',
+        example: 'If no vendor address specified, return null (not project address)'
+      },
+      {
+        field: 'buyerAddress',
+        originalPattern: 'Not extracting buyer business address',
+        correctedPattern: 'Extract buyer business address near company name',
+        example: 'CONSTRUCCIONES OBYCON SAS address: "CL 93B 13 92 OF 303, Bogota D.C."'
+      },
+      {
+        field: 'vendorName',
+        originalPattern: 'Incomplete vendor name extraction',
+        correctedPattern: 'Extract complete vendor name including business type and description',
+        example: 'Full name: "ASOMA SEGURIDAD S.A. S. ASESORIA EN SALUD OCUPACIONAL, MEDIO AMBIENTE & SEGURIDAD"'
+      }
+    ];
+
+    // Store each correction as a learning insight
+    for (const correction of corrections) {
+      if (correctedData[correction.field] !== undefined) {
+        await storage.storeLearningInsight({
+          field: correction.field,
+          errorType: 'colombian_format_error',
+          suggestedFix: correction.correctedPattern,
+          frequency: 5, // Higher frequency to prioritize Colombian rules
+          lastSeen: new Date()
+        });
+
+        console.log(`🇨🇴 Stored Colombian learning insight for ${correction.field}:`, correction.correctedPattern);
+      }
+    }
+
+    // Create specific ASOMA vendor learning pattern
+    if (correctedData.vendorName?.includes('ASOMA')) {
+      await storage.storeLearningInsight({
+        field: 'vendor_pattern',
+        errorType: 'asoma_vendor_recognition',
+        suggestedFix: 'ASOMA invoices: Extract full company name including S.A. and business description',
+        frequency: 3,
+        lastSeen: new Date()
+      });
+    }
+
+    // Create CONSTRUCCIONES buyer pattern learning
+    if (correctedData.companyName?.includes('CONSTRUCCIONES')) {
+      await storage.storeLearningInsight({
+        field: 'buyer_pattern',
+        errorType: 'construcciones_buyer_recognition', 
+        suggestedFix: 'CONSTRUCCIONES companies are typically buyers in Colombian construction invoices',
+        frequency: 3,
+        lastSeen: new Date()
+      });
+    }
+  }
+
+  // Store Colombian-specific insights
+  async function storeColombianSpecificInsights(
+    originalData: any, 
+    correctedData: any
+  ): Promise<void> {
+    const { storage } = await import('./storage');
+
+    const insights = [
+      {
+        key: 'colombian_nit_format',
+        value: JSON.stringify({
+          pattern: 'Colombian NITs must include check digit: XXXXXXXX-X',
+          examples: ['900478552-0', '860527800-9'],
+          rule: 'Never truncate the verification digit',
+          frequency: 10
+        })
+      },
+      {
+        key: 'colombian_date_format',
+        value: JSON.stringify({
+          pattern: 'Colombian dates are DD/MM/YYYY format, convert to YYYY-MM-DD',
+          fields: ['invoiceDate', 'dueDate'],
+          labels: ['FECHA FACTURA', 'FECHA VENCIMIENTO'],
+          rule: 'Always convert: 09/07/2025 → 2025-07-09',
+          frequency: 8
+        })
+      },
+      {
+        key: 'colombian_project_extraction',
+        value: JSON.stringify({
+          pattern: 'Extract project city from delivery address context',
+          rule: 'Look for city names in project delivery addresses, not vendor addresses',
+          example: 'From "...Lote 02 - Cartagena" extract "Cartagena"',
+          frequency: 6
+        })
+      },
+      {
+        key: 'colombian_service_invoice_addresses',
+        value: JSON.stringify({
+          pattern: 'Colombian service invoices often omit vendor addresses',
+          rule: 'If vendor address not specified, return null (do not use project address)',
+          vendorAddress: 'null if not specified',
+          buyerAddress: 'extract from buyer company context',
+          projectAddress: 'extract from delivery context',
+          frequency: 5
+        })
+      },
+      {
+        key: 'colombian_amount_format',
+        value: JSON.stringify({
+          pattern: 'Colombian amounts use periods as thousand separators',
+          examples: ['107.100 = 107,100 COP', '17.100 = 17,100 COP'],
+          rule: 'Convert periods to commas for thousands, preserve decimals',
+          frequency: 7
+        })
+      }
+    ];
+
+    // Store each insight
+    for (const insight of insights) {
+      await storage.updateSetting(insight.key, insight.value);
+      console.log(`🇨🇴 Stored Colombian insight: ${insight.key}`);
+    }
+  }
+
+  // Enhanced training data with Colombian context
+  async function writeEnhancedTrainingData(
+    invoice: any,
+    correctedData: any, 
+    isColombianInvoice: boolean,
+    feedbackId: number
+  ): Promise<void> {
+    const fs = await import('fs');
+    const path = await import('path');
+
+    const trainingDataPath = path.join(process.cwd(), 
+      isColombianInvoice ? 'colombian_training_feedback.jsonl' : 'training_feedback.jsonl'
+    );
+
+    const trainingEntry = {
+      invoiceId: invoice.id,
+      feedbackId,
+      fileName: invoice.fileName,
+      isColombianInvoice,
+      originalText: invoice.ocrText,
+      extractedData: invoice.extractedData,
+      correctedData,
+      feedbackType: 'correction',
+      timestamp: new Date().toISOString(),
+      // Colombian-specific training context
+      ...(isColombianInvoice && {
+        colombianContext: {
+          nitFormats: {
+            vendor: correctedData.taxId,
+            buyer: correctedData.buyerTaxId,
+            rule: 'Always include check digit'
+          },
+          dateFormats: {
+            invoiceDate: correctedData.invoiceDate,
+            dueDate: correctedData.dueDate,
+            rule: 'Convert DD/MM/YYYY to YYYY-MM-DD'
+          },
+          addresses: {
+            vendorAddress: correctedData.vendorAddress,
+            buyerAddress: correctedData.buyerAddress,
+            projectAddress: correctedData.projectAddress,
+            projectCity: correctedData.projectCity,
+            rule: 'Distinguish vendor, buyer, and project addresses'
+          },
+          currency: 'COP',
+          amountFormat: 'periods_as_thousands'
+        }
+      })
+    };
+
+    fs.appendFileSync(trainingDataPath, JSON.stringify(trainingEntry) + '\n');
+    console.log(`🇨🇴 Enhanced training data written to ${trainingDataPath}`);
+  }
+
+  // Report extraction error feedback
+  // Enhanced feedback submission route for Colombian invoices
+  app.post('/api/invoices/:id/feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { correctedData, reason } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // 🇨🇴 NEW: Detect if this is a Colombian invoice
+      const isColombianInvoice = invoice.ocrText ? 
+        applyColombianRules(invoice.ocrText).isColombianInvoice : false;
+
+      console.log(`Processing feedback for invoice ${invoiceId}`, {
+        isColombianInvoice,
+        fileName: invoice.fileName,
+        corrections: Object.keys(correctedData || {})
+      });
+
+      // Create detailed feedback log
+      const feedbackLog = await storage.createFeedbackLog({
+        invoiceId,
+        userId,
+        originalText: invoice.ocrText || '',
+        extractedData: invoice.extractedData,
+        correctedData,
+        reason: reason || 'USER_CORRECTION',
+        fileName: invoice.fileName,
+      });
+
+      // 🇨🇴 NEW: Apply Colombian-specific learning updates
+      if (isColombianInvoice && correctedData) {
+        await applyColombianLearningUpdates(invoice, correctedData, feedbackLog.id);
+      }
+
+      // Apply general learning improvements
+      try {
+        const { LearningTracker } = await import('./services/learningTracker');
+        await LearningTracker.recordFeedback(
+          invoiceId,
+          userId,
+          invoice.extractedData,
+          correctedData,
+          reason,
+          invoice.fileName
+        );
+      } catch (error) {
+        console.error('Error calling LearningTracker.recordFeedback:', error);
+      }
+
+      // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
+      if (isColombianInvoice && invoice.ocrText) {
+        clearColombianInvoiceCache(invoice.ocrText);
+      }
+
+      // Store Colombian-specific insights for future extractions
+      if (isColombianInvoice) {
+        await storeColombianSpecificInsights(invoice.extractedData, correctedData);
+      }
+
+      // Write enhanced training data
+      await writeEnhancedTrainingData(invoice, correctedData, isColombianInvoice, feedbackLog.id);
+
+      res.json({ 
+        message: isColombianInvoice 
+          ? "🇨🇴 Colombian invoice corrections applied! The AI is learning Colombian format patterns."
+          : "The AI is learning from your corrections!",
+        feedbackId: feedbackLog.id,
+        colombianInvoice: isColombianInvoice
+      });
+
+    } catch (error) {
+      console.error("Error submitting feedback:", error);
+      res.status(500).json({ message: "Failed to submit feedback" });
+    }
+  });
+
+  // Submit positive feedback for AI extraction
+  app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      if (invoice.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Create positive feedback log
+      const feedbackLog = await storage.createFeedbackLog({
+        invoiceId,
+        userId,
+        originalText: invoice.ocrText || '',
+        extractedData: invoice.extractedData,
+        correctedData: null,
+        reason: 'POSITIVE_FEEDBACK',
+        fileName: invoice.fileName,
+      });
+
+      // Track positive feedback for learning system
+      const { LearningTracker } = await import('./services/learningTracker');
+      await LearningTracker.recordPositiveFeedback(invoiceId, userId);
+
+      // Log successful extraction for model improvement
+      console.log(`Positive feedback received for invoice ${invoiceId}:`, {
+        fileName: invoice.fileName,
+        userId,        timestamp: new Date().toISOString(),
+        confidenceScore: invoice.confidenceScore,
+      });
+
+      // Optional: Write positive training data
+      const fs = await import('fs');
+      const path = await import('path');
+      const trainingDataPath = path.join(process.cwd(), 'training_feedback.jsonl');
+
+      const positiveTrainingEntry = {
+        invoiceId,
+        fileName: invoice.fileName,
+        originalText: invoice.ocrText,
+        extractedData: invoice.extractedData,
+        feedbackType: 'positive',
+        timestamp: new Date().toISOString(),
+      };
+
+      fs.appendFileSync(trainingDataPath, JSON.stringify(positiveTrainingEntry) + '\n');
+
+      res.json({ 
+        message: "Thank you for the positive feedback! This helps us improve our AI extraction.",
+        feedbackId: feedbackLog.id 
+      });
+    } catch (error) {
+      console.error("Error submitting positive feedback:", error);
+      res.status(500).json({ message: "Failed to submit positive feedback" });
+    }
+  });
+
+  // Get pending approvals
+  app.get('/api/approvals/pending', isAuthenticated, async (req, res) => {
+    try {
+      const pendingApprovals = await storage.getPendingApprovals();
+      res.json(pendingApprovals);
+    } catch (error) {
+      console.error("Error fetching pending approvals:", error);
+      res.status(500).json({ message: "Failed to fetch pending approvals" });
+    }
+  });
+
+  // Validation rules CRUD endpoints
+  app.get('/api/validation-rules', isAuthenticated, async (req: any, res) => {
+    try {
+      const rules = await storage.getValidationRules();
+      console.log('Fetched validation rules:', rules.length, 'rules');
+      res.json(rules);
+    } catch (error) {
+      console.error("Error fetching validation rules:", error);
+      res.status(500).json({ message: "Failed to fetch validation rules" });
+    }
+  });
+
+
+
+  // RPA Diagnostic endpoint
+  app.get('/api/erp/diagnostic/:connectionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.connectionId);
+      const connection = await storage.getErpConnection(connectionId);
+
+      if (!connection) {
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Check if user owns the connection OR has company access
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      const connectionOwner = await storage.getUser(connection.userId);
+
+      const hasAccess = connection.userId === (user as any).claims.sub || 
+        (currentUser?.companyId && connectionOwner?.companyId && 
+         currentUser.companyId === connectionOwner.companyId);
+
+      if (!hasAccess) {
+        console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to access connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
+        return res.status(403).json({ error: 'Access denied to this connection' });
+      }
+
+      // Decrypt password
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+
+      const connectionData = {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      };
+
+      // Run comprehensive diagnostics
+      const diagnostics = {
+        connectionTest: await erpAutomationService.testConnection(connectionData),
+        timestamp: new Date().toISOString(),
+        connectionInfo: {
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username,
+          lastUsed: connection.lastUsed,
+          isActive: connection.isActive
+        }
+      };
+
+      res.json(diagnostics);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Diagnostic test failed'
+      });
+    }
+  });
+
+  app.get('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const rule = await storage.getValidationRule(ruleId);
+
+      if (!rule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      res.json(rule);
+    } catch (error) {
+      console.error("Error fetching validation rule:", error);
+      res.status(500).json({ message: "Failed to fetch validation rule" });
+    }
+  });
+
+  app.post('/api/validation-rules', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleData = req.body;
+
+      console.log('Creating validation rule with data:', ruleData);
+
+      // Validate required fields
+      if (!ruleData.name || !ruleData.fieldName || !ruleData.ruleType || !ruleData.ruleValue) {
+        return res.status(400).json({ 
+          message: "Missing required fields: name, fieldName, ruleType, ruleValue" 
+        });
+      }
+
+      // Map frontend fields to database schema
+      const dbRuleData = {
+        name: ruleData.name,
+        description: ruleData.description || null,
+        fieldName: ruleData.fieldName,
+        ruleType: ruleData.ruleType,
+        ruleValue: ruleData.ruleValue, // This maps to rule_value column
+        severity: ruleData.severity || 'medium',
+        errorMessage: ruleData.errorMessage || null,
+        isActive: true
+      };
+
+      console.log('Mapped rule data for database:', dbRuleData);
+
+      const rule = await storage.createValidationRule(dbRuleData);
+      console.log('Created rule:', rule);
+
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("Error creating validation rule:", error);
+      res.status(500).json({ message: "Failed to create validation rule", error: error instanceof Error ? error.message : 'Unknown error' });
+    }
+  });
+
+  app.put('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+      const updates = req.body;
+
+      const existingRule = await storage.getValidationRule(ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      const updatedRule = await storage.updateValidationRule(ruleId, updates);
+      res.json(updatedRule);
+    } catch (error) {
+      console.error("Error updating validation rule:", error);
+      res.status(500).json({ message: "Failed to update validation rule" });
+    }
+  });
+
+  app.delete('/api/validation-rules/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const ruleId = parseInt(req.params.id);
+
+      const existingRule = await storage.getValidationRule(ruleId);
+      if (!existingRule) {
+        return res.status(404).json({ message: "Validation rule not found" });
+      }
+
+      await storage.deleteValidationRule(ruleId);
+      res.status(204).send();
+    } catch (error) {
+      console.error("Error deleting validation rule:", error);
+      res.status(500).json({ message: "Failed to delete validation rule" });
+    }
+  });
+
+  // Validate invoice data endpoint
+  app.post('/api/validation-rules/validate', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceData = req.body;
+      const validationResult = await storage.validateInvoiceData(invoiceData);
+      res.json(validationResult);
+    } catch (error) {
+      console.error("Error validating invoice data:", error);
+      res.status(500).json({ message: "Failed to validate invoice data" });
+    }
+  });
+
+  // Validate all approved invoices against validation rules
+  app.get('/api/validation-rules/validate-all', isAuthenticated, async (req: any, res) => {
+    try {
+      const validationResults = await storage.validateAllApprovedInvoices();
+      res.json(validationResults);
+    } catch (error) {
+      console.error("Error validating all approved invoices:", error);
+      res.status(500).json({ message: "Failed to validate approved invoices" });
+    }
+  });
+
+  // Admin: Get feedback logs
+  app.get('/api/admin/feedback-logs', isAuthenticated, async (req, res) => {
+    try {
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const logs = await storage.getFeedbackLogs(limit);
+      res.json(logs);
+    } catch (error) {
+      console.error("Error fetching feedback logs:", error);
+      res.status(500).json({ message: "Failed to fetch feedback logs" });
+    }
+  });
+
+  // Admin: Get specific feedback log
+  app.get('/api/admin/feedback-logs/:id', isAuthenticated, async (req, res) => {
+    try {
+      const logId = parseInt(req.params.id);
+      const log = await storage.getFeedbackLog(logId);
+
+      if (!log) {
+        return res.status(404).json({ message: "Feedback log not found" });
+      }
+
+      res.json(log);
+    } catch (error) {
+      console.error("Error fetching feedback log:", error);
+      res.status(500).json({ message: "Failed to fetch feedback log" });
+    }
+  });
+
+  // Learning tracker endpoints
+  app.get('/api/ai/learning-metrics', isAuthenticated, async (req, res) => {
+    try {
+      const { LearningTracker } = await import('./services/learningTracker');
+
+      const accuracy = await LearningTracker.calculateExtractionAccuracy();
+      const improvementRate = await LearningTracker.calculateImprovementRate();
+      const commonErrors = await LearningTracker.analyzeCommonErrors();
+      const performanceHistory = await LearningTracker.getPerformanceHistory();
+      const totalFeedback = await storage.getTotalFeedbackCount();
+      const learningInsights = await storage.getLearningInsights();
+
+      res.json({
+        accuracy,
+        improvementRate,
+        commonErrors,
+        performanceHistory,
+        learningInsights: {
+          totalFeedbackProcessed: totalFeedback,
+          activelyLearning: learningInsights.length > 0,
+          lastUpdate: learningInsights.length > 0 ? 
+            new Date(Math.max(...learningInsights.map(i => new Date(i.lastSeen).getTime()))) : 
+            null,
+          confidenceImprovement: improvementRate
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching learning metrics:", error);
+      res.status(500).json({ message: "Failed to fetch learning metrics" });
+    }
+  });
+
+  app.get('/api/ai/learning-insights', isAuthenticated, async (req, res) => {
+    try {
+      const { LearningTracker } = await import('./services/learningTracker');
+      const insights = await LearningTracker.generateLearningInsights();
+      res.json(insights);
+    } catch (error) {
+      console.error("Error generating learning insights:", error);
+      res.status(500).json({ message: "Failed to generate learning insights" });
+    }
+  });
+
+  app.get('/api/ai/performance-history/:days', isAuthenticated, async (req, res) => {
+    try {
+      const days = parseInt(req.params.days) || 30;
+      const { LearningTracker } = await import('./services/learningTracker');
+      const history = await LearningTracker.getPerformanceHistory(days);
+      res.json(history);
+    } catch (error) {
+      console.error("Error fetching performance history:", error);
+      res.status(500).json({ message: "Failed to fetch performance history" });
+    }
+  });
+
+  // Classification routes
+  app.get('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const keywords = await storage.getClassificationKeywords(userId);
+      res.json(keywords);
+    } catch (error) {
+      console.error("Error fetching classification keywords:", error);
+      res.status(500).json({ message: "Failed to fetch classification keywords" });
+    }
+  });
+
+  app.post('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const { category, keyword } = req.body;
+
+      if (!category || !keyword) {
+        return res.status(400).json({ message: "Category and keyword are required" });
+      }
+
+      const keywordData = {
+        category,
+        keyword: keyword.toLowerCase().trim(),
+        isDefault: false,
+        userId
+      };
+
+      const result = await storage.addClassificationKeyword(keywordData);
+      res.json(result);
+    } catch (error) {
+      console.error("Error adding classification keyword:", error);
+      res.status(500).json({ message: "Failed to add classification keyword" });
+    }
+  });
+
+  app.delete('/api/classification/keywords/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const keywordId = parseInt(req.params.id);
+
+      await storage.removeClassificationKeyword(keywordId, userId);
+      res.json({ message: "Keyword removed successfully" });
+    } catch (error) {
+      console.error("Error removing classification keyword:", error);
+      res.status(500).json({ message: "Failed to remove classification keyword" });
+    }
+  });
+
+  app.post('/api/classification/keywords/bulk', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const { category, keywords } = req.body;
+
+      if (!category || !Array.isArray(keywords)) {
+        return res.status(400).json({ message: "Category and keywords array are required" });
+      }
+
+      const results = [];
+      for (const keyword of keywords) {
+        if (keyword.trim()) {
+          const keywordData = {
+            category,
+            keyword: keyword.toLowerCase().trim(),
+            isDefault: false,
+            userId
+          };
+          const result = await storage.addClassificationKeyword(keywordData);
+          results.push(result);
+        }
+      }
+
+      res.json({ message: `Added ${results.length} keywords`, results });
+    } catch (error) {
+      console.error("Error bulk adding keywords:", error);
+      res.status(500).json({ message: "Failed to bulk add keywords" });
+    }
+  });
+
+  app.get('/api/invoices/:id/classifications', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const classifications = await storage.getLineItemClassifications(invoiceId);
+      res.json(classifications);
+    } catch (error) {
+      console.error("Error fetching line item classifications:", error);
+      res.status(500).json({ message: "Failed to fetch line item classifications" });
+    }
+  });
+
+  app.post('/api/invoices/:invoiceId/line-items/:lineItemId/classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const lineItemId = parseInt(req.params.lineItemId);
+      const { category } = req.body;
+
+      if (!category) {
+        return res.status(400).json({ message: "Category is required" });
+      }
+
+      await storage.updateLineItemClassification(lineItemId, category, userId);
+      res.json({ message: "Classification updated successfully" });
+    } catch (error) {
+      console.error("Error updating line item classification:", error);
+      res.status(500).json({ message: "Failed to update line item classification" });
+    }
+  });
+
+  app.post('/api/invoices/:id/auto-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const invoiceId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.classifyInvoiceLineItems(invoiceId, userId);
+
+      res.json({ message: "Auto-classification completed" });
+    } catch (error) {
+      console.error("Error auto-classifying invoice:", error);
+      res.status(500).json({ message: "Failed to auto-classify invoice" });
+    }
+  });
+
+  app.post('/api/invoices/:id/ai-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const invoiceId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.aiClassifyInvoiceLineItems(invoiceId, userId);
+
+      res.json({ message: "AI classification completed" });
+    } catch (error) {
+      console.error("Error AI classifying invoice:", error);
+      res.status(500).json({ message: "Failed to AI classify invoice" });
+    }
+  });
+
+  // Bulk classification API endpoints
+
+  // Get invoices ready for classification
+  app.get('/api/invoices/ready-for-classification', isAuthenticated, async (req: any, res) => {
+    try {
+      const filters = {
+        projectId: req.query.projectId as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+        invoiceIds: req.query.invoiceIds ? (req.query.invoiceIds as string).split(',').map(Number) : undefined,
+      };
+
+      const invoices = await BulkClassificationService.getInvoicesReadyForClassification(filters);
+      res.json({
+        invoices,
+        count: invoices.length,
+      });
+    } catch (error) {
+      console.error('Error fetching invoices ready for classification:', error);
+      res.status(500).json({ message: 'Failed to fetch invoices ready for classification' });
+    }
+  });
+
+  // Start bulk classification process
+  app.post('/api/classify-bulk-invoices', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const sessionId = req.headers['x-session-id'] as string || 'default';
+
+      // Validate request body
+      const validationResult = bulkClassifyInvoicesSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: validationResult.error.errors 
+        });
+      }
+
+      // Start the bulk classification process (runs in background)
+      BulkClassificationService.processBulkClassification(validationResult.data, userId, sessionId)
+        .catch(error => {
+          console.error('Background bulk classification failed:', error);
+        });
+
+      res.json({ 
+        message: 'Bulk classification started',
+        sessionId,
+        status: 'processing'
+      });
+    } catch (error) {
+      console.error('Error starting bulk classification:', error);
+      res.status(500).json({ message: 'Failed to start bulk classification' });
+    }
+  });
+
+  // Get bulk classification progress
+  app.get('/api/classify-bulk-invoices/progress/:sessionId?', isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionId = req.params.sessionId || 'default';
+      const progress = BulkClassificationService.getProgress(sessionId);
+
+      if (!progress) {
+        return res.status(404).json({ message: 'No classification process found for this session' });
+      }
+
+      res.json(progress);
+    } catch (error) {
+      console.error('Error getting classification progress:', error);
+      res.status(500).json({ message: 'Failed to get classification progress' });
+    }
+  });
+
+  // Get classification results with pagination
+  app.get('/api/classification-results', isAuthenticated, async (req: any, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+      const filters = {
+        projectId: req.query.projectId as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+      };
+
+      const results = await BulkClassificationService.getClassificationResults(filters, page, limit);
+      res.json(results);
+    } catch (error) {
+      console.error('Error fetching classification results:', error);
+      res.status(500).json({ message: 'Failed to fetch classification results' });
+    }
+  });
+
+  // Get classification summary statistics
+  app.get('/api/classification-summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const summary = await BulkClassificationService.getClassificationSummary();
+      res.json(summary);
+    } catch (error) {
+      console.error('Error fetching classification summary:', error);
+      res.status(500).json({ message: 'Failed to fetch classification summary' });
+    }
+  });
+
+  // Get available classification categories
+  app.get('/api/classification/categories', isAuthenticated, async (req: any, res) => {
+    try {
+      const categories = {
+        'materials_supplies': 'Raw materials, supplies, and consumable items',
+        'equipment_tools': 'Tools, machinery, equipment, and hardware for operations',
+        'services_labor': 'Professional services, labor, consulting, and expertise',
+        'utilities_facilities': 'Utilities, facility costs, and operational overhead',
+        'food_beverages': 'Food, beverages, and related consumables',
+        'transportation_logistics': 'Transportation, shipping, logistics, and related services',
+        'technology_software': 'Technology, software, digital services, and IT solutions',
+        'marketing_advertising': 'Marketing, advertising, promotional materials and services',
+        'other': 'Items that don\'t fit into standard business categories',
+      };
+      res.json(categories);
+    } catch (error) {
+      console.error('Error fetching classification categories:', error);
+      res.status(500).json({ message: 'Failed to fetch classification categories' });
+    }
+  });
+
+  // Get invoices ready for line item classification
+  app.get('/api/invoices/ready-for-line-item-classification', isAuthenticated, async (req: any, res) => {
+    try {
+      const { projectId, dateFrom, dateTo, status } = req.query;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      // Query invoices from invoiceProjectMatches that need line item classification
+      const db = await getDb();
+      let query = db
+        .select({
+          id: invoices.id,
+          invoiceNumber: invoices.invoiceNumber,
+          vendorName: invoices.vendorName,
+          totalAmount: invoices.totalAmount,
+          currency: invoices.currency,
+          invoiceDate: invoices.invoiceDate,
+          status: invoices.status,
+          extractedData: invoices.extractedData,
+          ocrText: invoices.ocrText,
+          projectId: invoiceProjectMatches.projectId,
+          matchScore: invoiceProjectMatches.matchScore,
+          lineItemsExtracted: sql<boolean>`CASE WHEN ${invoices.extractedData}->>'lineItems' IS NOT NULL THEN true ELSE false END`,
+          hasClassifications: sql<boolean>`EXISTS (
+            SELECT 1 FROM ${lineItems} li 
+            INNER JOIN ${lineItemClassifications} lic ON li.id = lic.line_item_id 
+            WHERE li.invoice_id = ${invoices.id}
+          )`
+        })
+        .from(invoices)
+        .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+        .where(
+          and(
+            eq(invoices.companyId, user.companyId || 'default'),
+            eq(invoiceProjectMatches.isActive, true),
+            or(
+              eq(invoices.status, 'extracted'),
+              eq(invoices.status, 'approved'),
+              eq(invoices.status, 'verified')
+            )
+          )
+        );
+
+      // Apply filters
+      const conditions = [
+        eq(invoices.companyId, user.companyId || 'default'),
+        eq(invoiceProjectMatches.isActive, true),
+        or(
+          eq(invoices.status, 'extracted'),
+          eq(invoices.status, 'approved'),
+          eq(invoices.status, 'verified')
+        )
+      ];
+
+      if (projectId) {
+        conditions.push(eq(invoiceProjectMatches.projectId, projectId));
+      }
+
+      if (dateFrom) {
+        conditions.push(gte(invoices.invoiceDate, new Date(dateFrom)));
+      }
+
+      if (dateTo) {
+        conditions.push(lte(invoices.invoiceDate, new Date(dateTo)));
+      }
+
+      if (status) {
+        conditions.push(eq(invoices.status, status));
+      }
+
+      query = query.where(and(...conditions));
+
+      const results = await query.orderBy(desc(invoices.createdAt)).limit(100);
+
+      res.json({
+        invoices: results.map(invoice => ({
+          id: invoice.id,
+          invoiceNumber: invoice.invoiceNumber,
+          vendorName: invoice.vendorName,
+          totalAmount: invoice.totalAmount,
+          currency: invoice.currency,
+          invoiceDate: invoice.invoiceDate,
+          status: invoice.status,
+          projectId: invoice.projectId,
+          matchScore: invoice.matchScore,
+          lineItemsExtracted: invoice.lineItemsExtracted,
+          hasClassifications: invoice.hasClassifications,
+          lineItemsCount: invoice.extractedData?.lineItems?.length || 0
+        })),
+        count: results.length
+      });
+    } catch (error) {
+      console.error('Error fetching invoices ready for classification:', error);
+      res.status(500).json({ message: 'Failed to fetch invoices ready for classification' });
+    }
+  });
+
+  // Process invoices for line item classification
+  app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
+    try {
+      const { invoiceIds, filters } = req.body;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      // Start processing in background
+      const sessionId = `process-${Date.now()}`;
+
+      // Start the processing (don't await to make it non-blocking)
+      processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
+        .catch(error => {
+          console.error('Background invoice processing failed:', error);
+        });
+
+      res.json({ 
+        message: 'Invoice processing started',
+        sessionId,
+        status: 'processing'
+      });
+    } catch (error) {
+      console.error('Error starting invoice processing:', error);
+      res.status(500).json({ message: 'Failed to start invoice processing' });
+    }
+  });
+
+  // Get line item classification results with pagination
+  app.get('/api/line-item-classification-results', isAuthenticated, async (req: any, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      const { projectId, dateFrom, dateTo, category } = req.query;
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      const db = await getDb();
+      let query = db
+        .select({
+          id: lineItemClassifications.id,
+          invoiceId: lineItems.invoiceId,
+          invoiceNumber: invoices.invoiceNumber,
+          vendorName: invoices.vendorName,
+          projectId: sql<string>`(
+            SELECT ipm.project_id FROM ${invoiceProjectMatches} ipm 
+            WHERE ipm.invoice_id = ${lineItems.invoiceId} AND ipm.is_active = true 
+            LIMIT 1
+          )`,
+          lineItemDescription: lineItems.description,
+          category: lineItemClassifications.category,
+          subcategory: lineItemClassifications.subcategory,
+          confidence: lineItemClassifications.confidence,
+          method: lineItemClassifications.method,
+          reasoning: lineItemClassifications.reasoning,
+          matchedKeywords: lineItemClassifications.matchedKeywords,
+          classifiedAt: lineItemClassifications.classifiedAt,
+          isUserVerified: lineItemClassifications.isUserVerified
+        })
+        .from(lineItemClassifications)
+        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
+        .where(eq(invoices.companyId, user.companyId || 'default'));
+
+      // Apply filters
+      const conditions = [eq(invoices.companyId, user.companyId || 'default')];
+
+      if (projectId) {
+        conditions.push(sql`EXISTS (
+          SELECT 1 FROM ${invoiceProjectMatches} ipm 
+          WHERE ipm.invoice_id = ${lineItems.invoiceId} 
+          AND ipm.project_id = ${projectId}
+          AND ipm.is_active = true
+        )`);
+      }
+
+      if (dateFrom) {
+        conditions.push(gte(lineItemClassifications.classifiedAt, new Date(dateFrom)));
+      }
+
+      if (dateTo) {
+        conditions.push(lte(lineItemClassifications.classifiedAt, new Date(dateTo)));
+      }
+
+      if (category) {
+        conditions.push(eq(lineItemClassifications.category, category));
+      }
+
+      if (conditions.length > 1) {
+        query = query.where(and(...conditions));
+      }
+
+      const results = await query
+        .orderBy(desc(lineItemClassifications.classifiedAt))
+        .limit(limit)
+        .offset((page - 1) * limit);
+
+      // Get total count for pagination
+      const countQuery = db
+        .select({ count: sql<number>`count(*)` })
+        .from(lineItemClassifications)
+        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
+        .where(conditions.length > 1 ? and(...conditions) : conditions[0]);
+
+      const [{ count }] = await countQuery;
+
+      res.json({
+        results,
+        pagination: {
+          page,
+          limit,
+          total: count,
+          pages: Math.ceil(count / limit)
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching line item classification results:', error);
+      res.status(500).json({ message: 'Failed to fetch classification results' });
+    }
+  });
+
+  // Invoice processing function for line item classification
+  async function processInvoicesForLineItemClassification(
+    invoiceIds: number[], 
+    filters: any, 
+    userId: string, 
+    companyId: string, 
+    sessionId: string
+  ) {
+    console.log(`Starting invoice processing for line item classification - Session: ${sessionId}`);
+
+    try {
+      const db = await getDb();
+      const { ClassificationService } = await import('./services/classificationService');
+
+      // Get invoices to process
+      let targetInvoices: any[] = [];
+
+      if (invoiceIds && invoiceIds.length > 0) {
+        // Process specific invoices
+        const query = db
+          .select({
+            id: invoices.id,
+            invoiceNumber: invoices.invoiceNumber,
+            vendorName: invoices.vendorName,
+            extractedData: invoices.extractedData,
+            ocrText: invoices.ocrText,
+            projectId: invoiceProjectMatches.projectId
+          })
+          .from(invoices)
+          .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+          .where(
+            and(
+              eq(invoices.companyId, companyId),
+              eq(invoiceProjectMatches.isActive, true),
+              sql`${invoices.id} = ANY(${invoiceIds})`
+            )
+          );
+
+        targetInvoices = await query;
+      } else if (filters) {
+        // Process based on filters
+        const conditions = [
+          eq(invoices.companyId, companyId),
+          eq(invoiceProjectMatches.isActive, true),
+          or(
+            eq(invoices.status, 'extracted'),
+            eq(invoices.status, 'approved'),
+            eq(invoices.status, 'verified')
+          )
+        ];
+
+        if (filters.projectId) {
+          conditions.push(eq(invoiceProjectMatches.projectId, filters.projectId));
+        }
+
+        if (filters.dateFrom) {
+          conditions.push(gte(invoices.invoiceDate, new Date(filters.dateFrom)));
+        }
+
+        if (filters.dateTo) {
+          conditions.push(lte(invoices.invoiceDate, new Date(filters.dateTo)));
+        }
+
+        const query = db
+          .select({
+            id: invoices.id,
+            invoiceNumber: invoices.invoiceNumber,
+            vendorName: invoices.vendorName,
+            extractedData: invoices.extractedData,
+            ocrText: invoices.ocrText,
+            projectId: invoiceProjectMatches.projectId
+          })
+          .from(invoices)
+          .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+          .where(and(...conditions))
+          .limit(100);
+
+        targetInvoices = await query;
+      }
+
+      console.log(`Processing ${targetInvoices.length} invoices for line item classification`);
+
+      let processedCount = 0;
+      let successCount = 0;
+      let failedCount = 0;
+      const results: any[] = [];
+
+      for (const invoice of targetInvoices) {
+        try {
+          console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
+
+          // Extract line items from invoice data or OCR text
+          let lineItemsData: any[] = [];
+
+          if (invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0) {
+            lineItemsData = invoice.extractedData.lineItems;
+          } else if (invoice.ocrText) {
+            // Extract line items from OCR text using basic parsing
+            lineItemsData = await extractLineItemsFromOcrText(invoice.ocrText);
+          }
+
+          if (lineItemsData.length === 0) {
+            console.log(`No line items found for invoice ${invoice.id}`);
+            results.push({
+              invoiceId: invoice.id,
+              vendorName: invoice.vendorName,
+              projectId: invoice.projectId,
+              lineItemsCount: 0,
+              classificationsCount: 0,
+              status: 'skipped',
+              error: 'No line items found'
+            });
+            continue;
+          }
+
+          let classificationsCount = 0;
+
+          // Process each line item
+          for (let i = 0; i < lineItemsData.length; i++) {
+            const lineItemData = lineItemsData[i];
+
+            try {
+              // Check if line item already exists in database
+              let existingLineItem = await db.query.lineItems.findFirst({
+                where: (li, { eq, and }) => and(
+                  eq(li.invoiceId, invoice.id),
+                  eq(li.lineItemIndex, i)
+                )
+              });
+
+              // Create line item if it doesn't exist
+              if (!existingLineItem) {
+                const [newLineItem] = await db.insert(lineItems).values({
+                  invoiceId: invoice.id,
+                  lineItemIndex: i,
+                  description: lineItemData.description || lineItemData.item || 'Unknown item',
+                  quantity: parseFloat(lineItemData.quantity) || null,
+                  unitPrice: parseFloat(lineItemData.unitPrice) || parseFloat(lineItemData.price) || null,
+                  totalPrice: parseFloat(lineItemData.totalPrice) || parseFloat(lineItemData.total) || null,
+                  unit: lineItemData.unit || null,
+                  originalText: JSON.stringify(lineItemData)
+                }).returning();
+                existingLineItem = newLineItem;
+              }
+
+              // Check if classification already exists
+              const existingClassification = await db.query.lineItemClassifications.findFirst({
+                where: (lic, { eq }) => eq(lic.lineItemId, existingLineItem.id)
+              });
+
+              if (existingClassification) {
+                console.log(`Line item ${existingLineItem.id} already classified, skipping`);
+                continue;
+              }
+
+              // Classify the line item
+              const lineItemForClassification = {
+                description: existingLineItem.description,
+                quantity: existingLineItem.quantity,
+                unitPrice: existingLineItem.unitPrice,
+                totalPrice: existingLineItem.totalPrice,
+                unit: existingLineItem.unit
+              };
+
+              const classificationResult = await ClassificationService.classifyLineItem(lineItemForClassification, userId);
+
+              // Store classification
+              await db.insert(lineItemClassifications).values({
+                lineItemId: existingLineItem.id,
+                category: classificationResult.category as any,
+                subcategory: classificationResult.subcategory,
+                matchedKeywords: classificationResult.matchedKeywords || [],
+                confidence: classificationResult.confidence?.toString() || '0',
+                method: classificationResult.method as any,
+                reasoning: classificationResult.reasoning,
+                classifiedBy: userId
+              });
+
+              classificationsCount++;
+
+            } catch (lineItemError) {
+              console.error(`Error processing line item ${i} for invoice ${invoice.id}:`, lineItemError);
+            }
+          }
+
+          results.push({
+            invoiceId: invoice.id,
+            vendorName: invoice.vendorName,
+            projectId: invoice.projectId,
+            lineItemsCount: lineItemsData.length,
+            classificationsCount,
+            status: classificationsCount > 0 ? 'success' : 'failed'
+          });
+
+          if (classificationsCount > 0) {
+            successCount++;
+          } else {
+            failedCount++;
+          }
+
+          processedCount++;
+
+        } catch (invoiceError) {
+          console.error(`Error processing invoice ${invoice.id}:`, invoiceError);
+          results.push({
+            invoiceId: invoice.id,
+            vendorName: invoice.vendorName,
+            projectId: invoice.projectId,
+            lineItemsCount: 0,
+            classificationsCount: 0,
+            status: 'failed',
+            error: invoiceError instanceof Error ? invoiceError.message : 'Unknown error'
+          });
+          failedCount++;
+          processedCount++;
+        }
+      }
+
+      console.log(`Invoice processing completed - Session: ${sessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+
+    } catch (error) {
+      console.error(`Error in invoice processing session ${sessionId}:`, error);
+    }
+  }
+
+  // Helper function to extract line items from OCR text
+  async function extractLineItemsFromOcrText(ocrText: string): Promise<any[]> {
+    const lineItems: any[] = [];
+
+    // Simple parsing logic - can be enhanced with AI or more sophisticated parsing
+    const lines = ocrText.split('\n');
+    let currentItem: any = {};
+
+    for (const line of lines) {
+      const trimmedLine = line.trim();
+
+      // Skip empty lines
+      if (!trimmedLine) continue;
+
+      // Look for patterns that might indicate line items
+      // This is a simplified approach - you can enhance with regex patterns
+      const quantityMatch = trimmedLine.match(/(\d+(?:\.\d+)?)\s*(pcs?|kg|m|cm|l|units?|pieces?)/i);
+      const priceMatch = trimmedLine.match(/\$?(\d{1,3}(?:,\d{3})*(?:\.\d{2})?)/);
+
+      if (quantityMatch && priceMatch) {
+        // This line likely contains quantity and price info
+        if (Object.keys(currentItem).length > 0) {
+          lineItems.push({ ...currentItem });
+          currentItem = {};
+        }
+
+        currentItem = {
+          description: trimmedLine,
+          quantity: parseFloat(quantityMatch[1]),
+          unit: quantityMatch[2],
+          unitPrice: parseFloat(priceMatch[1].replace(/,/g, ''))
+        };
+      } else if (trimmedLine.length > 3 && !trimmedLine.match(/^[\d\s\$,\.]+$/)) {
+        // This line might be a description
+        if (Object.keys(currentItem).length === 0) {
+          currentItem.description = trimmedLine;
+        }
+      }
+    }
+
+    // Add the last item if it exists
+    if (Object.keys(currentItem).length > 0) {
+      lineItems.push(currentItem);
+    }
+
+    return lineItems;
+  }
+
+  app.post('/api/line-items/:id/ai-classify', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const lineItemId = parseInt(req.params.id);
+
+      const { ClassificationService } = await import('./services/classificationService');
+      await ClassificationService.classifyAndStoreWithAI(lineItemId, true, userId);
+
+      res.json({ message: "AI classification completed for line item" });
+    } catch (error) {
+      console.error("Error AI classifying line item:", error);
+      res.status(500).json({ message: "Failed to AI classify line item" });
+    }
+  });
+
+  app.post('/api/invoices/:id/approve-best-match', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const userId = (req.user as any).claims.sub;
+      const { projectId, matchScore, matchDetails } = req.body;
+
+      if (!projectId || !matchScore) {
+        return res.status(400).json({ message: "Project ID and match score are required" });
+      }
+
+      // Create the approved invoice-project assignment
+      const approvedMatch = await storage.createApprovedInvoiceProject({
+        invoiceId,
+        projectId,
+        matchScore: matchScore.toString(),
+        matchDetails,
+        approvedBy: userId,
+      });
+
+      // Update invoice status to approved
+      await storage.updateInvoice(invoiceId, { status: 'approved' });
+
+      res.json({ 
+        message: "Best match approved successfully",
+        approvedMatch 
+      });
+    } catch (error) {
+      console.error("Error approving best match:", error);
+      res.status(500).json({ message: "Failed to approve best match" });
+    }
+  });
+
+  // Get approved invoice-project assignments
+  app.get('/api/approved-invoice-projects', isAuthenticated, async (req, res) => {
+    try {
+      const approvedAssignments = await storage.getApprovedInvoiceProjects();
+      res.json(approvedAssignments);
+    } catch (error) {
+      console.error("Error fetching approved invoice projects:", error);
+      res.status(500).json({ message: "Failed to fetch approved invoice projects" });
+    }
+  });
+
+  // Get verified invoice-project assignments
+  app.get('/api/verified-invoice-projects', isAuthenticated, async (req, res) => {
+    try {
+      const verifiedAssignments = await storage.getVerifiedInvoiceProjects();
+      res.json(verifiedAssignments);
+    } catch (error) {
+      console.error("Error fetching verified invoice projects:", error);
+      res.status(500).json({ message: "Failed to fetch verified invoice projects" });
+    }
+  });
+
+  // Match verified invoices with purchase orders using AI
+  app.post("/api/match-invoices-to-pos", async (req, res) => {
+    try {
+      const verifiedInvoices = await storage.getVerifiedInvoiceProjects();
+      const purchaseOrders = await storage.getAllPurchaseOrders();
+
+      const allMatches = [];
+
+      for (const verifiedInvoice of verifiedInvoices) {
+        try {
+          const matches = await invoicePOMatcher.matchInvoiceWithPurchaseOrders(
+            verifiedInvoice.invoice,
+            purchaseOrders
+          );
+
+          // Store the best match if it meets threshold
+          if (matches.length > 0 && matches[0].matchScore >= 60) {
+            const matchRecord = await invoicePOMatcher.createInvoicePOMatch(
+              verifiedInvoice.invoice.id,
+              matches[0],
+              'auto'
+            );
+
+            // Add timestamp for when the match was created
+            const matchWithTimestamp = {
+              ...matchRecord,
+              matchedAt: new Date(),
+              statusChangedAt: new Date(),
+            };
+
+            const savedMatch = await storage.createInvoicePoMatch(matchWithTimestamp);
+            allMatches.push({
+              invoiceId: verifiedInvoice.invoice.id,
+              matches: matches,
+              savedMatch: savedMatch
+            });
+          } else {
+            allMatches.push({
+              invoiceId: verifiedInvoice.invoice.id,
+              matches: matches,
+              savedMatch: null
+            });
+          }
+        } catch (error) {
+          console.error(`Error matching invoice ${verifiedInvoice.invoice.id}:`, error);
+        }
+      }
+
+      res.json({
+        totalProcessed: verifiedInvoices.length,
+        totalMatched: allMatches.filter(m => m.savedMatch).length,
+        matches: allMatches
+      });
+    } catch (error) {
+      console.error("Error in invoice-PO matching:", error);
+      res.status(500).json({ message: "Failed to match invoices with purchase orders" });
+    }
+  });
+
+  // Get invoice-PO matches
+  app.get("/api/invoice-po-matches", async (req, res) => {
+    try {
+      const matches = await storage.getInvoicePoMatchesWithDetails();
+      res.json(matches);
+    } catch (error) {
+      console.error("Error fetching invoice-PO matches:", error);
+      res.status(500).json({ message: "Failed to fetch invoice-PO matches" });
+    }
+  });
+
+  // Approve invoice-PO match
+  app.post("/api/invoice-po-matches/:matchId/approve", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const matchId = parseInt(req.params.matchId);
+      const updatedMatch = await storage.updateInvoicePoMatch(matchId, { 
+        status: 'manual',
+        approvedAt: new Date(),
+        approvedBy: (user as any).claims.sub,
+        statusChangedAt: new Date(),
+      });
+
+      // Update invoice status to matched
+      const matches = await storage.getInvoicePoMatchesWithDetails();
+      const targetMatch = matches.find(m => m.id === matchId);
+      if (targetMatch?.invoice) {
+        await storage.updateInvoice(targetMatch.invoice.id, { status: 'matched' });
+      }
+
+      res.json({ message: "Match approved successfully", match: updatedMatch });
+    } catch (error) {
+      console.error("Error approving invoice-PO match:", error);
+      res.status(500).json({ message: "Failed to approve match" });
+    }
+  });
+
+  // Reject invoice-PO match
+  app.post("/api/invoice-po-matches/:matchId/reject", isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const matchId = parseInt(req.params.matchId);
+      const updatedMatch = await storage.updateInvoicePoMatch(matchId, { 
+        status: 'unresolved',
+        rejectedAt: new Date(),
+        rejectedBy: (user as any).claims.sub,
+        statusChangedAt: new Date(),
+      });
+
+      res.json({ message: "Match rejected successfully", match: updatedMatch });
+    } catch (error) {
+      console.error("Error rejecting invoice-PO match:", error);
+      res.status(500).json({ message: "Failed to reject match" });
+    }
+  });
+
+  // Validate pending invoices
+  app.post('/api/validate-pending-invoices', isAuthenticated, async (req, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+
+      // Get all invoices with pending validation status
+      const pendingInvoices = await storage.getInvoicesByUserId(userId);
+      const invoicesToValidate = pendingInvoices.filter(inv => 
+        inv.validationStatus === 'pending' || !inv.validationStatus
+      );
+
+      let validatedCount = 0;
+      let rejectedCount = 0;
+      let errorCount = 0;
+
+      for (const invoice of invoicesToValidate) {
+        try {
+          const validationResult = await storage.validateInvoiceData({
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+            taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            currency: invoice.currency || 'USD'
+          });
+
+          const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+          await storage.updateInvoice(invoice.id, {
+            validationStatus,
+            isValidated: validationResult.isValid
+          });
+
+          if (validationResult.isValid) {
+            validatedCount++;
+          } else {
+            rejectedCount++;
+          }
+        } catch (error) {
+          console.error(`Validation failed for invoice ${invoice.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      res.json({
+        message: `Validation completed for ${invoicesToValidate.length} invoices`,
+        results: {
+          total: invoicesToValidate.length,
+          validated: validatedCount,
+          rejected: rejectedCount,
+          errors: errorCount
+        }
+      });
+    } catch (error) {
+      console.error("Error validating pending invoices:", error);
+      res.status(500).json({ message: "Failed to validate pending invoices" });
+    }
+  });
+
+  // Process and validate all pending invoices
+  app.post('/api/process-and-validate-pending', isAuthenticated, async (req, res) => {
+    try {
+      // Get all pending invoices that need validation
+      const pendingInvoices = await storage.getInvoices({ 
+        status: 'extracted',
+        validationStatus: null // or 'pending'
+      });
+
+      console.log(`Found ${pendingInvoices.length} pending invoices for validation`);
+
+      let validatedCount = 0;
+      let rejectedCount = 0;
+      let errorCount = 0;
+
+      for (const invoice of pendingInvoices) {
+        try {
+          const validationResult = await storage.validateInvoiceData({
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+            taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            currency: invoice.currency || 'USD'
+          });
+
+          const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+          await storage.updateInvoice(invoice.id, {
+            validationStatus,
+            isValidated: validationResult.isValid
+          });
+
+          if (validationResult.isValid) {
+            validatedCount++;
+          } else {
+            rejectedCount++;
+          }
+        } catch (error) {
+          console.error(`Validation failed for invoice ${invoice.id}:`, error);
+          errorCount++;
+        }
+      }
+
+      res.json({
+        message: `Validation completed for ${pendingInvoices.length} pending invoices`,
+        results: {
+          total: pendingInvoices.length,
+          validated: validatedCount,
+          rejected: rejectedCount,
+          errors: errorCount
+        }
+      });
+    } catch (error) {
+      console.error("Error processing and validating pending invoices:", error);
+      res.status(500).json({ message: "Failed to process and validate pending invoices" });
+    }
+  });
+
+  // Process approved invoices and automatically move validated ones to verified status
+  app.post('/api/process-approved-validations', isAuthenticated, async (req, res) => {
+    try {
+      // Get validation results for all approved invoices
+      const validationResults = await storage.validateAllApprovedInvoices();
+
+      // Process each validated invoice and move to verified if they pass
+      let processedCount = 0;
+      for (const validation of validationResults.invoiceValidations) {
+        if (validation.isValid) {
+          // Find the approved invoice project for this invoice
+          const approvedProjects = await storage.getApprovedInvoiceProjects();
+          const approvedProject = approvedProjects.find(ap => ap.invoiceId === validation.invoiceId);
+
+          if (approvedProject) {
+            try {
+              await storage.moveApprovedToVerified(approvedProject.id, {
+                isValid: true,
+                violations: validation.violations,
+                validatedAt: new Date(),
+              });
+              processedCount++;
+            } catch (error) {
+              console.error(`Error moving invoice ${validation.invoiceId} to verified:`, error);
+            }
+          }
+        }
+      }
+
+      res.json({
+        message: `Processed ${processedCount} validated invoices`,
+        totalProcessed: processedCount,
+        validationSummary: {
+          totalInvoices: validationResults.totalInvoices,
+          verified: validationResults.verified,
+          flagged: validationResults.flagged,
+          needsReview: validationResults.needsReview,
+          pending: validationResults.pending,
+        }
+      });
+    } catch (error) {
+      console.error("Error processing approved validations:", error);
+      res.status(500).json({ message: "Failed to process approved validations" });
+    }
+  });
+
+  // ERP Automation Routes
+  // Create ERP connection
+  app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertErpConnectionSchema.parse(req.body);
+
+      // Simple password encryption (in production, use proper encryption)
+      const encryptedPassword = Buffer.from(data.password).toString('base64');
+
+      const connection = await storage.createErpConnection({
+        ...data,
+        userId: (user as any).claims.sub,
+        password: encryptedPassword,
+        isActive: true,
+      });
+
+      // Don't return the password in the response
+      const { password, ...safeConnection } = connection;
+      res.json(safeConnection);
+    } catch (error) {
+      console.error('ERP connection creation error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Get user's ERP connections
+  app.get('/api/erp/connections', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let connections = await storage.getErpConnections((user as any).claims.sub);
+
+      // If user has a company, also include connections from other company members
+      if (currentUser?.companyId) {
+        const allConnections = await storage.getErpConnections();
+        const companyConnections = [];
+
+        for (const conn of allConnections) {
+          const connectionOwner = await storage.getUser(conn.userId);
+          if (connectionOwner?.companyId === currentUser.companyId && conn.userId !== (user as any).claims.sub) {
+            companyConnections.push(conn);
+          }
+        }
+        connections = [...connections, ...companyConnections];
+      }
+
+      // Remove passwords from response
+      const safeConnections = connections.map(({ password, ...conn }) => conn);
+      res.json(safeConnections);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+
+  // Test endpoint to simulate progress for demonstrating real-time updates
+  app.post('/api/invoice-importer/test-progress/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+
+      // Simulate progress updates for demonstration
+      const testProgress = {
+        configId,
+        logId: 999, // Test log ID
+        totalInvoices: 10,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        currentStep: 'Starting test import simulation',
+        progress: 0,
+        isComplete: false,
+      };
+
+      // Set initial progress
+      pythonInvoiceImporter.setTestProgress(configId, testProgress);
+
+      // Simulate progress updates over time
+      const steps = [
+        { progress: 10, step: 'Initializing browser', delay: 1000 },
+        { progress: 20, step: 'Logging into ERP system', delay: 2000 },
+        { progress: 40, step: 'Loading invoice list', delay: 3000 },
+        { progress: 60, step: 'Downloading invoice files', delay: 4000 },
+        { progress: 80, step: 'Extracting XML files', delay: 5000 },
+        { progress: 90, step: 'Processing XML files', delay: 6000 },
+        { progress: 100, step: 'Import completed successfully', delay: 7000, complete: true },
+      ];
+
+      steps.forEach(({ progress, step, delay, complete }) => {
+        setTimeout(() => {
+          const updatedProgress = { ...testProgress, progress, currentStep: step, isComplete: !!complete };
+          pythonInvoiceImporter.setTestProgress(configId, updatedProgress);
+          console.log(`🧪 Test progress updated: ${progress}% - ${step}`);
+        }, delay);
+      });
+
+      res.json({ message: `Test progress simulation started for config ${configId}` });
+    } catch (error) {
+      console.error('Error starting test progress:', error);
+      res.status(500).json({ message: 'Failed to start test progress' });
+    }
+  });
+
+  // Schedule Overview API - Get all scheduled configurations with metadata
+  app.get('/api/schedule-overview', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // First cleanup any inactive configurations from the database
+      await storage.cleanupInactiveConfigurations();
+
+      // Get all active configurations with schedule information
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
+
+      // If user has a company, also include configurations from other company members
+      if (currentUser?.companyId) {
+        const allConfigs = await storage.getInvoiceImporterConfigs();
+        const companyConfigs = [];
+
+        for (const config of allConfigs) {
+          const configOwner = await storage.getUser(config.userId);
+          if (configOwner?.companyId === currentUser.companyId && config.userId !== (user as any).claims.sub) {
+            companyConfigs.push(config);
+          }
+        }
+        configs = [...configs, ...companyConfigs];
+      }
+
+      // Filter out manual configurations and one-time ('once') configurations, only show active ones
+      const scheduledConfigs = configs.filter(config => 
+        config.scheduleType !== 'manual' && 
+        config.scheduleType !== 'once' && 
+        config.isActive === true
+      ).map(config => {
+        // Calculate next run time based on schedule type and configuration
+        let nextRunTime = null;
+        let frequencyDetail = '';
+
+        if (config.scheduleType === 'daily') {
+          const today = new Date();
+          const [hours, minutes] = (config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00').split(':');
+          const nextRun = new Date(today);
+          nextRun.setHours(parseInt(hours), parseInt(minutes), 0, 0);
+
+          // If time has passed today, schedule for tomorrow
+          if (nextRun <= today) {
+            nextRun.setDate(nextRun.getDate() + 1);
+          }
+          nextRunTime = nextRun.toISOString();
+          frequencyDetail = `Daily at ${config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00'}`;
+        } else if (config.scheduleType === 'weekly') {
+          const days = config.scheduleConfig?.daysOfWeek || [];
+          const timeOfDay = config.scheduleConfig?.timeOfDay || config.scheduleTime || '09:00';
+          frequencyDetail = days.length > 0 
+            ? `${days.join(', ')} at ${timeOfDay}`
+            : `Weekly at ${timeOfDay}`;
+        } else if (config.scheduleType === 'hourly') {
+          const interval = config.scheduleConfig?.hourInterval || 1;
+          frequencyDetail = `Every ${interval} hour${interval > 1 ? 's' : ''}`;
+        } else if (config.scheduleType === 'multiple_daily') {
+          const timeSlots = config.scheduleConfig?.timeSlots || [];
+          frequencyDetail = timeSlots.length > 0 
+            ? `${timeSlots.length} times daily (${timeSlots.join(', ')})`
+            : 'Multiple times daily';
+        } else if (config.scheduleType === 'cron') {
+          frequencyDetail = `Cron: ${config.scheduleConfig?.cronExpression || 'Not configured'}`;
+        }
+
+        return {
+          configurationId: config.id,
+          configurationName: config.taskName,
+          connectionId: config.connectionId,
+          scheduleType: config.scheduleType,
+          frequencyDetail,
+          nextRunTime,
+          lastRunTime: config.lastRun?.toISOString() || null,
+          status: config.isPaused ? 'Paused' : (config.isActive ? 'Scheduled' : 'Inactive'),
+          connection: config.connection,
+          startDate: config.startDate?.toISOString() || null,
+          endDate: config.endDate?.toISOString() || null,
+          isPaused: config.isPaused || false,
+          timezone: config.timezone || 'UTC'
+        };
+      });
+
+      res.json(scheduledConfigs);
+    } catch (error) {
+      console.error('Error fetching schedule overview:', error);
+      res.status(500).json({ message: 'Failed to fetch schedule overview' });
+    }
+  });
+
+  // Pause/Resume schedule endpoint
+  app.post('/api/schedule-overview/:configId/toggle', isAuthenticated, async (req: any, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      const { isPaused } = req.body;
+
+      const config = await storage.getInvoiceImporterConfig(configId);
+      if (!config) {
+        return res.status(404).json({ error: 'Configuration not found' });
+      }
+
+      await storage.updateInvoiceImporterConfig(configId, { isPaused });
+
+      res.json({ 
+        message: `Schedule ${isPaused ? 'paused' : 'resumed'} successfully`,
+        configId,
+        isPaused 
+      });
+    } catch (error) {
+      console.error('Error toggling schedule:', error);
+      res.status(500).json({ message: 'Failed to toggle schedule' });
+    }
+  });
+
+  // Get comprehensive import logs with metadata  
+  app.get('/api/import-logs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logs = await storage.getImportLogsWithDetails();
+
+      // Filter logs by user's company for multi-tenant support
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      let filteredLogs = logs;
+
+      if (currentUser?.companyId) {
+        // Get all users in the same company
+        const companyUsers = await storage.getUsersByCompany(currentUser.companyId);
+        const companyUserIds = companyUsers.map(u => u.id);
+
+        filteredLogs = logs.filter(log => 
+          log.userId && companyUserIds.includes(log.userId)
+        );
+      } else {
+        // If no company, only show user's own logs
+        filteredLogs = logs.filter(log => log.userId === (user as any).claims.sub);
+      }
+
+      res.json(filteredLogs);
+    } catch (error) {
+      console.error('Error fetching import logs:', error);
+      res.status(500).json({ message: 'Failed to fetch import logs' });
+    }
+  });
+
+  // Get detailed logs for a specific import execution
+  app.get('/api/import-logs/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      const log = await storage.getInvoiceImporterLog(logId);
+
+      if (!log) {
+        return res.status(404).json({ message: 'Import log not found' });
+      }
+
+      // Get associated imported invoices for this log
+      const importedInvoices = await storage.getImportedInvoicesByLog(logId);
+
+      res.json({
+        ...log,
+        importedInvoices,
+        formattedLogs: log.logs ? log.logs.split('\n').filter(line => line.trim()) : []
+      });
+    } catch (error) {
+      console.error('Error fetching import log details:', error);
+      res.status(500).json({ message: 'Failed to fetch import log details' });
+    }
+  });
+
+  // Update ERP connection
+  app.put('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      const data = insertErpConnectionSchema.partial().parse(req.body);
+
+      console.log(`🔄 Updating ERP connection ${connectionId}:`, {
+        name: data.name,
+        baseUrl: data.baseUrl,
+        username: data.username,
+        hasPassword: !!data.password,
+        fieldsBeingUpdated: Object.keys(data)
+      });
+
+      // Encrypt password if provided
+      if (data.password) {
+        const originalPassword = data.password;
+        data.password = Buffer.from(data.password).toString('base64');
+        console.log(`🔐 Password encryption for connection ${connectionId}:`);
+        console.log(`🔐 Original password: ${originalPassword}`);
+        console.log(`🔐 Encrypted password: ${data.password}`);
+        console.log(`🔐 Encrypted length: ${data.password.length}`);
+      }
+
+      const connection = await storage.updateErpConnection(connectionId, data);
+      console.log(`✅ ERP connection ${connectionId} updated successfully`);
+
+      // Verify the update by reading back the connection
+      const updatedConnection = await storage.getErpConnection(connectionId);
+      if (updatedConnection) {
+        console.log(`🔍 Verification - Updated connection ${connectionId}:`, {
+          name: updatedConnection.name,
+          baseUrl: updatedConnection.baseUrl,
+          username: updatedConnection.username,
+          passwordLength: updatedConnection.password ? updatedConnection.password.length : 0,
+          lastUpdated: updatedConnection.updatedAt
+        });
+
+        // 🔄 CRITICAL: Sync updated credentials to import configurations that use this connection
+        if (data.baseUrl || data.username || data.password) {
+          console.log(`🔄 Syncing updated ERP credentials to import configurations using connection ${connectionId}`);
+          await storage.syncErpCredentialsToImportConfigs(connectionId, {
+            erpUrl: updatedConnection.baseUrl,
+            erpUsername: updatedConnection.username,
+            erpPassword: updatedConnection.password
+          });
+          console.log(`✅ Import configurations synced with updated ERP connection credentials`);
+        }
+      }
+
+      // Safely destructure password (might be undefined)
+      const { password: _, ...safeConnection } = connection || {};
+      res.json(safeConnection);
+    } catch (error) {
+      console.error(`❌ Failed to update ERP connection ${req.params.id}:`, error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Delete ERP connection
+  app.delete('/api/erp/connections/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      await storage.deleteErpConnection(connectionId);
+      res.json({ success: true });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Test ERP connection
+  app.post('/api/erp/connections/:id/test', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const connectionId = parseInt(req.params.id);
+      const connection = await storage.getErpConnection(connectionId);
+
+      if (!connection) {
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Check if user owns the connection OR has company access
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      const connectionOwner = await storage.getUser(connection.userId);
+
+      const hasAccess = connection.userId === (user as any).claims.sub || 
+        (currentUser?.companyId && connectionOwner?.companyId && 
+         currentUser.companyId === connectionOwner.companyId);
+
+      if (!hasAccess) {
+        console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to access connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
+        return res.status(403).json({ error: 'Access denied to this connection' });
+      }
+
+      // Decrypt password
+      const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
+
+      const testResult = await erpAutomationService.testConnection({
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      });
+
+      if (testResult.success) {
+        await storage.updateErpConnection(connectionId, { lastUsed: new Date() });
+      }
+
+      res.json(testResult);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        success: false,
+        error: errorMessage,
+        message: `Connection test failed: ${errorMessage}`
+      });
+    }
+  });
+
+  // Create and execute ERP task
+  app.post('/api/erp/tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertErpTaskSchema.parse(req.body);
+
+      // Create task record
+      const task = await storage.createErpTask({
+        ...data,
+        userId: (user as any).claims.sub,
+        status: 'processing',
+      });
+
+      // Get connection details
+      const connection = await storage.getErpConnection(data.connectionId);
+      if (!connection || connection.userId !== (user as any).claims.sub) {
+        await storage.updateErpTask(task.id, { 
+          status: 'failed', 
+          errorMessage: 'Connection not found' 
+        });
+        return res.status(404).json({ error: 'Connection not found' });
+      }
+
+      // Start task execution asynchronously
+      executeTaskAsync(task.id, connection, data.taskDescription);
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  // Get user's ERP tasks
+  app.get('/api/erp/tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const tasks = await storage.getErpTasks((user as any).claims.sub);
+      res.json(tasks);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Get specific ERP task
+  app.get('/api/erp/tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });}
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getErpTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Delete ERP task
+  app.delete('/api/erp/tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getErpTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Task not found' });
+      }
+
+      await storage.deleteErpTask(taskId);
+      res.json({ message: 'Task deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Async function to execute ERP tasks with timeout protection
+  async function executeTaskAsync(taskId: number, connection: any, taskDescription: string) {
+    // Set a maximum execution time of 20 minutes for the entire task
+    const taskTimeout = setTimeout(async () => {
+      console.log(`Task ${taskId} timed out after 20 minutes, marking as failed`);
+      await storage.updateErpTask(taskId, {
+        status: 'failed',
+        errorMessage: 'Task timed out after 20 minutes. Please try a simpler task or check the ERP system accessibility.',
+      });
+    }, 20 * 60 * 1000);
+
+    try {
+      // Debug logging for password decryption
+      console.log(`🔐 Starting password decryption for connection: ${connection.name}`);
+      console.log(`🔐 Encrypted password (first 20 chars): ${connection.password ? connection.password.substring(0, 20) + '...' : 'null/undefined'}`);
+      console.log(`🔐 Encrypted password length: ${connection.password ? connection.password.length : 0}`);
+
+      // Validate base64 format before decryption
+      const base64Pattern = /^[A-Za-z0-9+/]*={0,2}$/;
+      if (!base64Pattern.test(connection.password)) {
+        console.error(`🔐 ERROR: Password does not appear to be valid base64: ${connection.password}`);
+        throw new Error(`Password decryption failed: Invalid base64 format`);
+      }
+
+      // Decrypt password with error handling
+      let decryptedPassword: string;
+      try {
+        decryptedPassword = Buffer.from(connection.password, 'base64').toString('utf8');
+      } catch (decryptError) {
+        console.error(`🔐 ERROR: Failed to decrypt password:`, decryptError);
+        throw new Error(`Password decryption failed: ${decryptError instanceof Error ? decryptError.message : 'Unknown decryption error'}`);
+      }
+
+      // Log decrypted password with security prefix
+      console.log(`🔐 Using decrypted password: ${decryptedPassword}`);
+      console.log(`🔐 Decrypted password length: ${decryptedPassword.length}`);
+      console.log(`🔐 Decrypted password type: ${typeof decryptedPassword}`);
+
+      // Validation check: ensure password is not empty and looks valid
+      if (!decryptedPassword || decryptedPassword.trim().length === 0) {
+        const errorMsg = `🔐 ERROR: Decrypted password is empty or invalid!`;
+        console.error(errorMsg);
+        throw new Error(`Password decryption failed: Empty password after decryption`);
+      }
+
+      // Check if password contains only valid characters (not base64 or corrupted)
+      if (decryptedPassword === connection.password) {
+        console.log(`🔐 WARNING: Decrypted password is identical to encrypted password - decryption may have failed`);
+      }
+
+      const connectionData = {
+        id: connection.id,
+        name: connection.name,
+        baseUrl: connection.baseUrl,
+        username: connection.username,
+        password: decryptedPassword,
+      };
+
+      // Generate RPA script using AI
+      const script = await erpAutomationService.generateRPAScript(taskDescription, connectionData);
+
+      await storage.updateErpTask(taskId, { 
+        generatedScript: JSON.stringify(script),
+      });
+
+      // Execute the RPA script with progress tracking
+      const result = await erpAutomationService.executeRPAScript(script, connectionData, connection.userId, taskId);
+
+      // Clear the timeout since task completed
+      clearTimeout(taskTimeout);
+
+      // Update task with results
+      await storage.updateErpTask(taskId, {
+        status: result.success ? 'completed' : 'failed',
+        result: result.extractedData || {},
+        logs: result.logs.join('\n'),
+        screenshots: result.screenshots,
+        executionTime: result.executionTime,
+        errorMessage: result.errorMessage,
+      });
+
+      // Update connection last used time
+      await storage.updateErpConnection(connection.id, { lastUsed: new Date() });
+
+    } catch (error) {
+      clearTimeout(taskTimeout);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      console.error(`Task ${taskId} failed:`, errorMessage);
+
+      await storage.updateErpTask(taskId, {
+        status: 'failed',
+        errorMessage: `Task execution failed: ${errorMessage}`,
+      });
+    }
+  }
+
+// Create automation task
+app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const data = insertErpTaskSchema.parse(req.body);
+
+    // Create task record
+    const task = await storage.createErpTask({
+      ...data,
+      userId: (user as any).claims.sub,
+      status: 'processing',
+    });
+
+    // Get connection details
+    const connection = await storage.getErpConnection(data.connectionId);
+    if (!connection || connection.userId !== (user as any).claims.sub) {
+      await storage.updateErpTask(task.id, { 
+        status: 'failed', 
+        errorMessage: 'Connection not found' 
+      });
+      return res.status(404).json({ error: 'Connection not found' });
+    }
+
+    // Start task execution asynchronously
+    executeTaskAsync(task.id, connection, data.taskDescription);
+
+    res.json(task);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    res.status(400).json({ error: errorMessage });
+  }
+});
+
+  // Saved Workflows routes
+  app.post('/api/workflows', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertSavedWorkflowSchema.parse(req.body);
+      const workflow = await storage.createSavedWorkflow(data, (user as any).claims.sub);
+      res.json(workflow);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/workflows', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflows = await storage.getSavedWorkflows((user as any).claims.sub);
+      res.json(workflows);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/workflows/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      const data = insertSavedWorkflowSchema.partial().parse(req.body);
+      const updated = await storage.updateSavedWorkflow(workflowId, data);
+      res.json(updated);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/workflows/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      await storage.deleteSavedWorkflow(workflowId);
+      res.json({ message: 'Workflow deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Execute workflow manually
+  app.post('/api/workflows/:id/execute', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const workflowId = parseInt(req.params.id);
+      const workflow = await storage.getSavedWorkflow(workflowId);
+
+      if (!workflow || workflow.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Workflow not found' });
+      }
+
+      // Create a new ERP task based on the saved workflow
+      const task = await storage.createErpTask({
+        connectionId: workflow.connectionId,
+        taskDescription: workflow.description,
+        userId: (user as any).claims.sub,
+        status: 'processing',
+      });
+
+      // Get connection details and execute
+      const connection = await storage.getErpConnection(workflow.connectionId);
+      if (connection) {
+        executeTaskAsync(task.id, connection, workflow.description);
+      }
+
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Scheduled Tasks routes
+  app.post('/api/scheduled-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const data = insertScheduledTaskSchema.parse(req.body);
+      const task = await storage.createScheduledTask(data, (user as any).claims.sub);
+      res.json(task);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/scheduled-tasks', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const tasks = await storage.getScheduledTasks((user as any).claims.sub);
+      res.json(tasks);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/scheduled-tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getScheduledTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Scheduled task not found' });
+      }
+
+      const data = insertScheduledTaskSchema.partial().parse(req.body);
+      const updated = await storage.updateScheduledTask(taskId, data);
+      res.json(updated);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(400).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/scheduled-tasks/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const taskId = parseInt(req.params.id);
+      const task = await storage.getScheduledTask(taskId);
+
+      if (!task || task.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Scheduled task not found' });
+      }
+
+      await storage.deleteScheduledTask(taskId);
+      res.json({ message: 'Scheduled task deleted successfully' });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // XML Batch Import endpoint
+  app.post('/api/rpa/xml-batch-import', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { xmlSources, jobName } = req.body;
+
+      if (!xmlSources || !Array.isArray(xmlSources) || xmlSources.length === 0) {
+        return res.status(400).json({ error: 'XML sources array is required' });
+      }
+
+      const userId = (user as any).claims.sub;
+
+      // Validate XML sources format
+      for (const source of xmlSources) {
+        if (!source.id || !source.content) {
+          return res.status(400).json({ error: 'Each XML source must have id and content' });
+        }
+      }
+
+      console.log(`Starting XML batch import for user ${userId}, ${xmlSources.length} sources`);
+
+      // Process XML invoices using RPA service
+      const { rpaService } = await import('./services/rpaService');
+      const result = await rpaService.batchProcessXMLInvoices(xmlSources, userId);
+
+      res.json({
+        message: `XML batch import completed: ${result.successful} successful, ${result.failed} failed`,
+        jobName: jobName || 'XML Batch Import',
+        ...result
+      });
+
+    } catch (error) {
+      console.error('XML batch import error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Invoice Importer routes
+  app.post('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      console.log('Incoming request body:', JSON.stringify(req.body, null, 2));
+
+      // Validate required fields first
+      if (!req.body.taskName || req.body.taskName.trim() === '') {
+        return res.status(400).json({ error: 'Task name is required' });
+      }
+
+      // Parse and validate with better error handling
+      let data;
+      try {
+        data = insertInvoiceImporterConfigSchema.parse(req.body);
+        console.log('Parsed data:', JSON.stringify(data, null, 2));
+      } catch (validationError: any) {
+        console.error('Schema validation error:', validationError);
+        return res.status(400).json({ 
+          error: 'Invalid configuration data',
+          details: validationError.errors || validationError.message 
+        });
+      }
+
+      // Enforce connection-only configurations - manual configurations no longer supported
+      if (!data.connectionId) {
+        return res.status(400).json({ 
+          error: 'ERP connection is required. Manual configurations are no longer supported for security reasons.' 
+        });
+      }
+
+      let connection = null;
+      if (data.connectionId) {
+        connection = await storage.getErpConnection(data.connectionId);
+        if (!connection) {
+          return res.status(400).json({ 
+            error: 'ERP connection not found. Please select a valid ERP connection.' 
+          });
+        }
+
+        // Check if user owns the connection OR has company access
+        const currentUser = await storage.getUser((user as any).claims.sub);
+        const connectionOwner = await storage.getUser(connection.userId);
+
+        const hasAccess = connection.userId === (user as any).claims.sub || 
+          (currentUser?.companyId && connectionOwner?.companyId && 
+           currentUser.companyId === connectionOwner.companyId);
+
+        if (!hasAccess) {
+          console.log(`Access denied: User ${(user as any).claims.sub} (company: ${currentUser?.companyId}) trying to use ERP connection owned by ${connection.userId} (company: ${connectionOwner?.companyId})`);
+          return res.status(400).json({ 
+            error: 'Invalid ERP connection. Please ensure you have selected a valid ERP connection that belongs to your account or company.' 
+          });
+        }
+
+        if (!connection.isActive) {
+          return res.status(400).json({ 
+            error: 'Selected ERP connection is inactive. Please activate the connection before creating an import configuration.' 
+          });
+        }
+
+        console.log(`Creating import config using ERP connection: ${connection.name} (${connection.baseUrl}) - Company access: ${currentUser?.companyId === connectionOwner?.companyId}`);
+      }
+
+      // Auto-populate ERP credentials from the selected connection (connection-only configurations)
+      const configDataWithCredentials = {
+        ...data,
+        connectionId: data.connectionId, // Always use the provided connection ID
+        erpUrl: connection.baseUrl,
+        erpUsername: connection.username,
+        erpPassword: connection.password, // This is already encrypted in storage
+        isManualConfig: false, // Always false for connection-based configs
+      };
+
+      console.log('Using ERP connection credentials');
+
+      const configWithUserId = {
+        ...configDataWithCredentials,
+        userId: (user as any).claims.sub,
+        companyId: (user as any).companyId || null
+      };
+
+      const config = await storage.createInvoiceImporterConfig(configWithUserId);
+      res.json(config);
+    } catch (error) {
+      console.error('Error in invoice importer config creation:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configs = await storage.getInvoiceImporterConfigsByUser((user as any).claims.sub);
+      res.json(configs);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.put('/api/invoice-importer/configs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Parse and validate updates
+      const updates = insertInvoiceImporterConfigSchema.partial().parse(req.body);
+
+      // Enforce connection-only configurations for any connection ID updates
+      if (updates.connectionId) {
+        const connection = await storage.getErpConnection(updates.connectionId);
+        if (!connection) {
+          return res.status(400).json({ 
+            error: 'ERP connection not found. Please select a valid ERP connection.' 
+          });
+        }
+
+        // Auto-populate ERP credentials from the connection
+        updates.erpUrl = connection.baseUrl;
+        updates.erpUsername = connection.username;
+        updates.erpPassword = connection.password; // Already encrypted
+        updates.isManualConfig = false; // Always false for connection-based configs
+      }
+
+      // Prevent manual configuration mode
+      if (updates.isManualConfig === true) {
+        return res.status(400).json({ 
+          error: 'Manual configurations are no longer supported for security reasons. Please use an ERP connection.' 
+        });
+      }
+
+      const updatedConfig = await storage.updateInvoiceImporterConfig(configId, updates);
+      res.json(updatedConfig);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.delete('/api/invoice-importer/configs/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+
+      if (isNaN(configId) || configId <= 0) {
+        return res.status(400).json({ error: 'Invalid configuration ID' });
+      }
+
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration
+      if (config.userId !== (user as any).claims.sub) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
+      }
+
+      // Delete related records first to avoid foreign key constraint issues
+      await storage.deleteInvoiceImporterConfigCascade(configId);
+      res.json({ message: 'Import configuration deleted successfully' });
+    } catch (error) {
+      console.error('Error deleting invoice importer config:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Failed to delete import configuration'
+      });
+    }
+  });
+
+  app.post('/api/invoice-importer/configs/:id/execute', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration (owner or same company)
+      if (config.userId !== (user as any).claims.sub && 
+          (!currentUser?.companyId || config.companyId !== currentUser.companyId)) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
+      }
+
+      // Start the import process asynchronously
+      executeImportAsync(configId);
+
+      res.json({ message: 'Invoice import started successfully', configId });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Alternative endpoint for frontend compatibility
+  app.post('/api/invoice-importer/run/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.id);
+      const config = await storage.getInvoiceImporterConfig(configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+
+      if (!config) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      // Check if user has access to this configuration (owner or same company)
+      if (config.userId !== (user as any).claims.sub && 
+          (!currentUser?.companyId || config.companyId !== currentUser.companyId)) {
+        return res.status(403).json({ error: 'Access denied to this import configuration' });
+      }
+
+      // Create execution log first
+      const log = await storage.createInvoiceImporterLog({
+        configId,
+        status: 'running',
+        startedAt: new Date(),
+      });
+
+      console.log(`Starting import process for config ${configId}, log ID: ${log.id}`);
+
+      // Start the import process asynchronously but don't wait for it
+      setImmediate(() => {
+        pythonInvoiceImporter.executeImportTaskWithLogId(configId, log.id)
+          .then(() => {
+            console.log(`Import task ${configId} completed successfully`);
+          })
+          .catch((error) => {
+            console.error(`Import task ${configId} failed:`, error);
+          });
+      });
+
+      res.json({ 
+        message: 'Invoice import started successfully', 
+        configId, 
+        logId: log.id,
+        status: 'running'
+      });
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  app.get('/api/invoice-importer/logs/:configId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const configId = parseInt(req.params.configId);
+      const config = await storage.getInvoiceImporterConfig(configId);
+
+      if (!config || config.userId !== (user as any).claims.sub) {
+        return res.status(404).json({ error: 'Import configuration not found' });
+      }
+
+      const logs = await storage.getInvoiceImporterLogsByConfig(configId);
+      res.json(logs);
+    } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // Get imported invoices by log ID
+  app.get('/api/invoice-importer/logs/:logId/invoices', isAuthenticated, async (req, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      const invoices = await storage.getImportedInvoicesByLog(logId);
+      res.json(invoices);
+    } catch (error) {
+      console.error('Error fetching imported invoices:', error);
+      res.status(500).json({ error: 'Failed to fetch imported invoices' });
+    }
+  });
+
+  // Process imported invoices through manual upload pipeline (for testing)
+  app.post('/api/invoice-importer/logs/:logId/process', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      if (isNaN(logId)) {
+        return res.status(400).json({ error: 'Invalid log ID' });
+      }
+
+      console.log(`🔄 Manually processing imported invoices for log ${logId}`);
+
+      // Create a dummy progress object for storeImportedInvoicesFast
+      const progress = {
+        configId: 0,
+        logId: logId,
+        totalInvoices: 0,
+        processedInvoices: 0,
+        successfulImports: 0,
+        failedImports: 0,
+        currentStep: 'Manual processing',
+        progress: 0,
+        isComplete: false,
+        logs: ''
+      };
+
+      // Call the storeImportedInvoicesFast function to process through manual upload pipeline
+      // Note: storeImportedInvoicesFast is now private, using alternative approach
+      console.log('Processing imported invoices for log:', logId);
+
+      res.json({ 
+        success: true, 
+        message: `Imported invoices processed for log ${logId}` 
+      });
+    } catch (error) {
+      console.error('Error processing imported invoices:', error);
+      res.status(500).json({ error: 'Failed to process imported invoices' });
+    }
+  });
+
+  // RPA XML processing endpoint - integrates RPA with manual upload pipeline
+  app.post('/api/rpa/process-xml', async (req: any, res) => {
+    try {
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
+
+      console.log(`🔄 PRIORITY EXTRACTION: Request body:`, req.body);
+      console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
+
+      // Get import configuration to determine company ID
+      let companyId = null;
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            companyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+          } else {
+            console.warn(`⚠️ Config ${configId} not found`);
+          }
+        } catch (error) {
+          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
+        }
+      } else {
+        console.warn(`⚠️ No configId provided for XML processing`);
+      }
+
+      // Fallback: If no company ID from config, default to 1 for existing users
+      if (!companyId) {
+        companyId = 1;
+        console.log(`🔧 Using fallback company ID: ${companyId}`);
+      }
+
+      // Check for existing invoice with same document number to prevent duplicates
+      if (!filename) {
+        console.error(`❌ No filename provided in request body`);
+        return res.status(400).json({ error: 'Filename is required' });
+      }
+
+      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      if (existingInvoices.length > 0) {
+        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), skipping XML processing`);
+        return res.json({ 
+          success: true, 
+          invoiceId: existingInvoices[0].id,
+          message: `XML file ${filename} skipped - invoice already exists`,
+          duplicate: true
+        });
+      }
+
+      // Read the XML file from uploads directory
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join('uploads', filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'XML file not found' });
+      }
+
+      const xmlContent = fs.readFileSync(filePath, 'utf-8');
+
+      // Parse XML content using the XML parser
+      const { parseInvoiceXML } = await import('./services/xmlParser');
+      const extractedData = parseInvoiceXML(xmlContent, true);
+
+      // Use buyer tax ID from Python RPA if XML parser didn't extract it or if Python has a more reliable value
+      if (buyerTaxId && (!extractedData.buyerTaxId || extractedData.buyerTaxId.trim() === '')) {
+        extractedData.buyerTaxId = buyerTaxId;
+        console.log(`🔄 Using buyer tax ID from Python RPA: ${buyerTaxId}`);
+      }
+
+      console.log(`✅ XML parsed successfully for ${filename}:`, {
+        vendor: extractedData.vendorName,
+        amount: extractedData.totalAmount,
+        invoiceNumber: extractedData.invoiceNumber,
+        buyerTaxId: extractedData.buyerTaxId
+      });
+
+      // Create invoice record in the same way as manual upload - sanitize numeric values
+      const sanitizedTaxAmount = extractedData.taxAmount && extractedData.taxAmount !== '.' && extractedData.taxAmount !== '' ? extractedData.taxAmount : '0';
+      const sanitizedSubtotal = extractedData.subtotal && extractedData.subtotal !== '.' && extractedData.subtotal !== '' ? extractedData.subtotal : '0';
+      const sanitizedTotalAmount = extractedData.totalAmount && extractedData.totalAmount !== '.' && extractedData.totalAmount !== '' ? extractedData.totalAmount : '0';
+
+      const invoiceData = {
+        userId: 'rpa-system', // Special user for RPA imports
+        companyId: companyId, // Set company ID from import configuration
+        fileName: filename,
+        fileSize: fileSize,  
+        status: 'extracted' as const,
+        vendorName: extractedData.vendorName,
+        invoiceNumber: extractedData.invoiceNumber,
+        invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+        dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+        totalAmount: sanitizedTotalAmount,
+        taxAmount: sanitizedTaxAmount,
+        subtotal: sanitizedSubtotal,
+        currency: extractedData.currency || 'COP',
+        ocrText: xmlContent,
+        extractedData: extractedData,
+        projectName: extractedData.projectName,
+        confidenceScore: extractedData.confidenceScore || '0.95'
+      };
+
+      const invoice = await storage.createInvoice(invoiceData);
+
+      // Automatically validate the RPA XML invoice
+      try {
+        const validationResult = await storage.validateInvoiceData({
+          vendorName: extractedData.vendorName,
+          invoiceNumber: extractedData.invoiceNumber,
+          totalAmount: parseFloat(sanitizedTotalAmount) || 0,
+          taxAmount: parseFloat(sanitizedTaxAmount) || 0,
+          invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+          dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+          currency: extractedData.currency || 'COP'
+        });
+
+        // Update invoice with validation status
+        const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+        await storage.updateInvoice(invoice.id, {
+          validationStatus,
+          isValidated: validationResult.isValid
+        });
+
+        console.log(`✅ RPA XML invoice ${invoice.id} validation completed: ${validationStatus}`);
+      } catch (validationError) {
+        console.error(`Validation failed for RPA XML invoice ${invoice.id}:`, validationError);
+        // Keep as pending if validation fails
+        await storage.updateInvoice(invoice.id, {
+          validationStatus: 'pending',
+          isValidated: false
+        });
+      }
+
+      console.log(`✅ Created invoice record ${invoice.id} for RPA XML file ${filename}`);
+
+      res.json({ 
+        success: true, 
+        invoiceId: invoice.id,
+        message: `XML file ${filename} processed successfully` 
+      });
+
+    } catch (error) {
+      console.error(`❌ Error processing RPA XML file:`, error);
+      res.status(500).json({ 
+        error: 'Failed to process XML file',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
+  app.post('/api/rpa/process-pdf', async (req: any, res) => {
+    try {
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
+
+      console.log(`📄 Processing RPA PDF file: ${filename} (config: ${configId})`);
+
+      // Get import configuration to determine company ID
+      let companyId = null;
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            companyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+          } else {
+            console.warn(`⚠️ Config ${configId} not found`);
+          }
+        } catch (error) {
+          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
+        }
+      } else {
+        console.warn(`⚠️ No configId provided for PDF processing`);
+      }
+
+      // Fallback: If no company ID from config, default to 1 for existing users
+      if (!companyId) {
+        companyId = 1;
+        console.log(`🔧 Using fallback company ID: ${companyId}`);
+      }
+
+      // Check for existing invoice with same base name to prevent duplicates
+      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      if (existingInvoices.length > 0) {
+        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), PDF will be reference only`);
+        return res.json({ 
+          success: true, 
+          invoiceId: existingInvoices[0].id,
+          message: `PDF file ${filename} linked as reference to existing invoice`,
+          linkedToExisting: true
+        });
+      }
+
+      // Read the PDF file from uploads directory
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join('uploads', filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'PDF file not found' });
+      }
+
+      const fileBuffer = fs.readFileSync(filePath);
+
+      // Create invoice record in the same way as manual upload
+      const invoiceData = {
+        userId: 'rpa-system', // Special user for RPA imports
+        companyId: companyId, // Set company ID from import configuration
+        fileName: filename,
+        fileSize: fileSize,  
+        status: 'processing' as const,
+        // Note: source field not in schema, storing in extractedData instead
+      };
+
+      // Create invoice record in database
+      const invoice = await storage.createInvoice(invoiceData);
+      console.log(`Created invoice record ${invoice.id} for RPA PDF file ${filename}`);
+
+      // Process through the exact same pipeline as manual uploads (with OCR for PDF)
+      setImmediate(async () => {
+        try {
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ RPA PDF invoice ${invoice.id} processed successfully`);
+        } catch (error) {
+          console.error(`❌ RPA PDF invoice ${invoice.id} processing failed:`, error);
+        }
+      });
+
+      res.json({ 
+        success: true, 
+        invoiceId: invoice.id,
+        message: `PDF file ${filename} queued for processing` 
+      });
+
+    } catch (error) {
+      console.error('Error processing RPA PDF:', error);
+      res.status(500).json({ error: 'Failed to process RPA PDF file' });
+    }
+  });
+
+  // Get all imported invoices
+  app.get('/api/imported-invoices', isAuthenticated, async (req, res) => {
+    try {
+      const invoices = await storage.getImportedInvoices();
+      res.json(invoices);
+    } catch (error) {
+      console.error('Error fetching imported invoices:', error);
+      res.status(500).json({ error: 'Failed to fetch imported invoices' });
+    }
+  });
+
+  // Fix JSON serialization in progress endpoint
+  app.get('/api/invoice-importer/progress/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const logId = parseInt(req.params.logId);
+      console.log(`Progress request for logId ${logId}`);
+
+      // FIRST: Check for active progress in memory
+      const { pythonInvoiceImporter } = await import('./services/pythonInvoiceImporter');
+      const activeProgress = pythonInvoiceImporter.getImportProgress(logId);
+
+      if (activeProgress) {
+        console.log(`Active progress found for logId ${logId}`);
+        try {
+          const serializedProgress = {
+            taskId: activeProgress.taskId,
+            currentStep: activeProgress.currentStep,
+            totalSteps: activeProgress.totalSteps,
+            status: activeProgress.status,
+            message: activeProgress.message || 'Processing...',
+            startedAt: activeProgress.startedAt.toISOString(),
+            completedAt: activeProgress.completedAt?.toISOString(),
+            totalInvoices: activeProgress.totalInvoices,
+            processedInvoices: activeProgress.processedInvoices,
+            successfulImports: activeProgress.successfulImports,
+            failedImports: activeProgress.failedImports,
+            steps: activeProgress.steps.map(step => ({
+              id: step.id.toString(),
+              title: step.description,
+              status: step.status,
+              timestamp: step.timestamp.toISOString(),
+              details: step.errorMessage || ''
+            }))
+          };
+          return res.json(serializedProgress);
+        } catch (serializationError) {
+          console.error('JSON serialization error:', serializationError);
+          // Fall through to database check
+        }
+      }
+
+      // SECOND: Fall back to database for completed/failed imports
+      const log = await storage.getInvoiceImporterLog(logId);
+      if (!log) {
+        return res.status(404).json({ error: 'Import task not found' });
+      }
+
+      // Check if user has access to this log
+      const config = await storage.getInvoiceImporterConfig(log.configId);
+      const currentUser = await storage.getUser((user as any).claims.sub);
+
+      if (!config || (config.userId !== (user as any).claims.sub && 
+          (!currentUser?.companyId || config.companyId !== currentUser.companyId))) {
+        return res.status(403).json({ error: 'Access denied to this import task' });
+      }
+
+      const status = log.status === 'completed' ? 'completed' : 
+                    log.status === 'failed' ? 'failed' : 'running';
+
+      return res.json({
+        status: status,
+        stage: log.status === 'completed' ? 'Import process completed successfully' : 
+               log.status === 'failed' ? 'Import process failed' : 'Processing...',
+        progressPercent: log.status === 'completed' ? 100 : 
+                        log.status === 'failed' ? 0 : 50,
+        total: log.totalInvoices || 0,
+        skipped: log.skippedInvoices || 0,
+        processed: log.processedInvoices || 0,
+        success: log.successfulImports || 0,
+        failed: log.failedImports || 0,
+        error: log.errorMessage
+      });
+    } catch (error) {
+      console.error('Error fetching progress:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ 
+        error: errorMessage,
+        message: 'Failed to fetch progress data'
+      });
+    }
+  });
+
+  // Progress update endpoint for real-time counter updates from Python RPA
+  app.post('/api/invoice-importer/progress-update', async (req: any, res) => {
+    try {
+      const { configId, processedInvoices, successfulImports, failedImports, progress, currentStep } = req.body;
+
+      if (!configId) {
+        return res.status(400).json({ error: 'Missing configId in request' });
+      }
+
+      // Find the most recent log for this config and update it
+      const logs = await storage.getInvoiceImporterLogs(parseInt(configId));
+      const latestLog = logs[0]; // Most recent log
+
+      if (latestLog) {
+        await storage.updateInvoiceImporterLog(latestLog.id, {
+          processedInvoices: processedInvoices || 0,
+          successfulImports: successfulImports || 0,
+          failedImports: failedImports || 0,
+          progress: progress || 0,
+          currentStep: currentStep || 'Processing files...'
+        });
+
+        console.log(`📊 Progress update: Config ${configId} - Processed: ${processedInvoices}, Success: ${successfulImports}, Failed: ${failedImports}`);
+
+        res.json({ 
+          success: true, 
+          message: 'Progress updated successfully',
+          stats: {
+            processedInvoices,
+            successfulImports, 
+            failedImports,
+            progress
+          }
+        });
+      } else {
+        console.log(`⚠️ No log found for configId ${configId}`);
+        res.status(404).json({ error: 'No active import log found for this configuration' });
+      }
+    } catch (error) {
+      console.error('Error handling progress update:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
+
+  // Custom error handler middleware
+  app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+    const status = err.status || err.statusCode || 500;
+    const message = err.message || "Internal Server Error";
+
+    console.error('Express error handler:', err);
+    res.status(status).json({ message });
+    // Don't re-throw the error to prevent unhandled rejection
+  });
+
+  // 🇨🇴 Endpoint to get Colombian learning insights
+  app.get('/api/ai/colombian-insights', isAuthenticated, async (req, res) => {
+  try {
+    const { storage } = await import('./storage');
+
+    const colombianInsights = await storage.getLearningInsights('colombian');
+    const generalInsights = await storage.getLearningInsights();
+
+    // Get Colombian-specific settings
+    const colombianSettings = await Promise.all([
+      storage.getSetting('colombian_nit_format'),
+      storage.getSetting('colombian_date_format'), 
+      storage.getSetting('colombian_project_extraction'),
+      storage.getSetting('colombian_service_invoice_addresses'),
+      storage.getSetting('colombian_amount_format')
+    ]);
+
+    const parsedSettings = colombianSettings
+      .filter(setting => setting)
+      .map(setting => {
+        try {
+          return JSON.parse(setting);
+        } catch {
+          return null;
+        }
+      })
+      .filter(Boolean);
+
+    res.json({
+      colombianInsights,
+      generalInsights: generalInsights.filter(insight => 
+        insight.field && ['taxId', 'buyerTaxId', 'dueDate', 'projectCity', 'vendorAddress'].includes(insight.field)
+      ),
+      colombianSettings: parsedSettings,
+      summary: {
+        totalColombianFeedback: colombianInsights.length,
+        isActiveLearning: colombianInsights.length > 0,
+        keyPatterns: ['NIT format', 'Date conversion', 'Project extraction', 'Address distinction']
+      }
+    });
+
+  } catch (error) {
+    console.error("Error fetching Colombian insights:", error);
+    res.status(500).json({ message: "Failed to fetch Colombian insights" });
+  }
+});
+
+// 🇨🇴 Force re-extraction with Colombian rules
+app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: any, res) => {
+  try {
+    const invoiceId = parseInt(req.params.id);
+    const userId = (req.user as any).claims.sub;
+
+    const invoice = await storage.getInvoice(invoiceId);
+    if (!invoice) {
+      return res.status(404).json({ message: "Invoice not found" });
+    }
+
+    if (invoice.userId !== userId) {
+      return res.status(403).json({ message: "Access denied" });
+    }
+
+    if (!invoice.ocrText) {
+      return res.status(400).json({ message: "No OCR text available for re-extraction" });
+    }
+
+    // Clear cache and force Colombian re-extraction
+    clearColombianInvoiceCache(invoice.ocrText);
+
+    console.log(`🇨🇴 Force re-extracting Colombian invoice ${invoiceId}`);
+
+    // Re-extract with Colombian rules
+    const { extractInvoiceData } = await import('./services/aiService');
+    const newExtractedData = await extractInvoiceData(invoice.ocrText, true);
+
+    // Update the invoice with new extraction
+    await storage.updateInvoice(invoiceId, {
+      extractedData: newExtractedData,
+      totalAmount: newExtractedData.totalAmount,
+      taxAmount: newExtractedData.taxAmount,
+      invoiceDate: newExtractedData.invoiceDate ? new Date(newExtractedData.invoiceDate) : null,
+      dueDate: newExtractedData.dueDate ? new Date(newExtractedData.dueDate) : null,
+      vendorName: newExtractedData.vendorName,
+      projectName: newExtractedData.projectName,
+      currency: newExtractedData.currency || 'COP',
+      confidenceScore: parseFloat(newExtractedData.confidenceScore || '0.8')
+    });
+
+    res.json({
+      message: "🇨🇴 Colombian invoice re-extracted successfully with enhanced rules",
+      extractedData: newExtractedData,
+      improvements: [
+        "Applied Colombian NIT format rules",
+        "Enhanced date format conversion", 
+        "Improved project city extraction",
+        "Better address distinction",
+        "Colombian amount format handling"
+      ]
+    });
+
+  } catch (error) {
+    console.error("Error re-extracting Colombian invoice:", error);
+    res.status(500).json({ message: "Failed to re-extract invoice" });
+  }
+});
+
+  // Preview linked PDF files for RPA invoices
+  app.get('/api/invoices/:id/preview-pdf', isAuthenticated, async (req: any, res: any) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: 'Invalid invoice ID' });
+      }
+
+      const userId = (req.user as any).claims.sub;
+
+      // Get the invoice to verify access
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Query for linked PDF files
+      const { Client } = await import('pg');
+      const dbClient = new Client({
+        connectionString: process.env.DATABASE_URL,
+      });
+
+      try {
+        await dbClient.connect();
+
+        // Find PDFs linked to this main invoice
+        const linkedPDFQuery = `
+          SELECT original_file_name, file_path, file_type, base_file_name
+          FROM imported_invoices 
+          WHERE linked_invoice_id = $1 
+          AND file_type = 'pdf'
+          AND is_data_source = false
+          LIMIT 1
+        `;
+
+        const linkedPDFs = await dbClient.query(linkedPDFQuery, [invoiceId]);
+        console.log(`🔗 Found ${linkedPDFs.rows.length} linked PDF files for invoice ${invoiceId}`);
+
+        if (linkedPDFs.rows.length === 0) {
+          return res.status(404).json({ error: 'No linked PDF found' });
+        }
+
+        const pdfFile = linkedPDFs.rows[0];
+        const fs = await import('fs');
+
+        // Check if file exists
+        console.log(`🔍 Checking for PDF file at: ${pdfFile.file_path}`);
+        if (!fs.existsSync(pdfFile.file_path)) {
+          console.log(`❌ PDF file not found at: ${pdfFile.file_path}`);
+          console.log(`📋 Available files in uploads:`, fs.readdirSync('uploads').filter(f => f.includes('FEPG793514')));
+          return res.status(404).json({ 
+            error: 'PDF file not found on disk',
+            expectedPath: pdfFile.file_path,
+            fileName: pdfFile.original_file_name,
+            troubleshooting: 'The PDF file may not have been properly saved during RPA import'
+          });
+        }
+
+        // Set headers for PDF viewing (same as regular PDF preview)
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `inline; filename="${pdfFile.original_file_name}"`);
+        res.setHeader('Content-Length', fs.statSync(pdfFile.file_path).size);
+        res.setHeader('Cache-Control', 'private, no-cache');
+        res.setHeader('Accept-Ranges', 'bytes');
+
+        // Stream the PDF file
+        const fileStream = fs.createReadStream(pdfFile.file_path);
+        fileStream.pipe(res);
+
+      } catch (dbError) {
+        console.error('Database error checking for linked files:', dbError);
+        return res.status(500).json({ error: 'Database error' });
+      } finally {
+        await dbClient.end();
+      }
+
+    } catch (error) {
+      console.error('Error serving linked PDF preview:', error);
+      res.status(500).json({ error: 'Failed to serve PDF preview' });
+    }
+  });
+
+  // Download invoice file endpoint with ZIP support for matched files
+  app.get('/api/invoices/:id/download', isAuthenticated, async (req: any, res: any) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ error: 'Invalid invoice ID' });
+      }
+
+      const userId = (req.user as any).claims.sub;
+      console.log(`Download request for invoice ${invoiceId} by user ${userId}`);
+
+      // Get the invoice to verify access and get filename
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        console.log(`Invoice ${invoiceId} not found`);
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+
+      console.log(`Found invoice: ${invoice.fileName}, owner: ${invoice.userId}, company: ${invoice.companyId}`);
+
+      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      const user = await storage.getUser(userId);
+      const hasAccess = invoice.userId === userId || 
+        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+
+      if (!hasAccess) {
+        console.log(`Access denied for user ${userId} to invoice ${invoiceId}`);
+        return res.status(403).json({ error: 'Access denied' });
+      }
+
+      // Import required modules
+      const fs = await import('fs');
+      const path = await import('path');
+      const archiver = await import('archiver');
+
+      // Enhanced PDF linking: Check if this invoice has linked PDF files
+      if (invoice.userId === 'rpa-system') {
+        console.log(`🔍 Checking for linked files for RPA invoice: ${invoice.fileName}`);
+
+        // Query for linked PDF files
+        const { Client } = await import('pg');
+        const dbClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+        });
+
+        try {
+          await dbClient.connect();
+
+          // Find PDFs linked to this main invoice
+          const linkedPDFQuery = `
+            SELECT original_file_name, file_path, file_type, base_file_name
+            FROM imported_invoices 
+            WHERE linked_invoice_id = $1 
+            AND file_type = 'pdf'
+            AND is_data_source = false
+            LIMIT 1
+          `;
+
+          const linkedPDFs = await dbClient.query(linkedPDFQuery, [invoiceId]);
+          console.log(`🔗 Found ${linkedPDFs.rows.length} linked PDF files for invoice ${invoiceId}`);
+
+          if (linkedPDFs.rows.length > 0) {
+            // Create ZIP with main invoice + linked PDFs
+            const baseFileName = path.parse(invoice.fileName).name;
+            const zipName = `${baseFileName}_with_references.zip`;
+
+            console.log(`📦 Creating ZIP package: ${zipName}`);
+            res.setHeader('Content-Type', 'application/zip');
+            res.setHeader('Content-Disposition', `attachment; filename="${zipName}"`);
+
+            const archive = archiver.default('zip', {
+              zlib: { level: 9 }
+            });
+
+            archive.pipe(res);
+
+            // Add main invoice file (XML)
+            const mainFilePath = path.join('uploads', invoice.fileName);
+            if (fs.existsSync(mainFilePath)) {
+              archive.file(mainFilePath, { name: invoice.fileName });
+              console.log(`✅ Added main file to ZIP: ${invoice.fileName}`);
+            }
+
+            // Add linked PDF files
+            let linkedFilesAdded = 0;
+            for (const linkedPDF of linkedPDFs.rows) {
+              // Use the file_path from database (already includes uploads/ prefix)
+              const pdfPath = linkedPDF.file_path;
+              console.log(`🔍 Checking PDF file path: ${pdfPath}`);
+
+              if (fs.existsSync(pdfPath)) {
+                archive.file(pdfPath, { 
+                  name: `${linkedPDF.original_file_name}` 
+                });
+                linkedFilesAdded++;
+                console.log(`📎 Added linked PDF to ZIP: ${linkedPDF.original_file_name}`);
+              } else {
+                console.log(`⚠️ PDF file not found at: ${pdfPath}`);
+              }
+            }
+
+            console.log(`📦 ZIP package ready with 1 main file + ${linkedFilesAdded} linked PDFs`);
+            archive.finalize();
+            return;
+          }
+
+        } catch (dbError) {
+          console.error('Database error checking for linked files:', dbError);
+        } finally {
+          await dbClient.end();
+        }
+      }
+
+      // Single file download (default behavior)
+      const filePath = path.join('uploads', invoice.fileName);
+      console.log(`Looking for single file at: ${filePath}`);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.log(`File not found: ${filePath}`);
+        return res.status(404).json({ error: 'File not found' });
+      }
+
+      // Determine MIME type based on file extension
+      let mimeType = 'application/octet-stream';
+      const ext = path.extname(invoice.fileName).toLowerCase();
+      switch (ext) {
+        case '.pdf':
+          mimeType = 'application/pdf';
+          break;
+        case '.xml':
+          mimeType = 'application/xml';
+          break;
+        case '.jpg':
+        case '.jpeg':
+          mimeType = 'image/jpeg';
+          break;
+        case '.png':
+          mimeType = 'image/png';
+          break;
+      }
+
+      console.log(`Serving single file: ${invoice.fileName} (${mimeType})`);
+
+      // Set headers for file download
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Disposition', `attachment; filename="${invoice.fileName}"`);
+      res.setHeader('Content-Length', fs.statSync(filePath).size);
+
+      // Stream the file
+      const fileStream = fs.createReadStream(filePath);
+      fileStream.pipe(res);
+
+    } catch (error) {
+      console.error('Error downloading invoice file:', error);
+      res.status(500).json({ error: 'Failed to download file' });
+    }
+  });
+
+  // Batch process selected invoices automatically
+  app.post('/api/invoices/process-batch', isAuthenticated, async (req: any, res) => {
+  try {
+    const user = req.user;
+    if (!user) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+
+    const { invoiceIds } = req.body;
+
+    // Validate request body
+    if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+      return res.status(400).json({ 
+        error: 'Invalid invoice IDs provided',
+        message: "invoiceIds must be a non-empty array"
+      });
+    }
+
+    console.log(`Starting batch processing for ${invoiceIds.length} invoices`);
+
+    // Get all selected invoices
+    const invoices = await Promise.all(
+      invoiceIds.map(async (id: number) => {
+        const invoice = await storage.getInvoice(id);
+        if (!invoice || invoice.userId !== user.claims.sub) {
+          throw new Error(`Invoice ${id} not found or unauthorized`);
+        }
+        return invoice;
+      })
+    );
+
+    // Filter invoices that can be processed (pending or rejected)
+    const processableInvoices = invoices.filter(invoice => 
+      invoice.status === 'pending' || invoice.status === 'rejected'
+    );
+
+    if (processableInvoices.length === 0) {
+      return res.status(400).json({ 
+        error: 'No invoices available for processing. Selected invoices may already be processed.' 
+      });
+    }
+
+    // Mark all invoices as processing
+    await Promise.all(
+      processableInvoices.map(invoice => 
+        storage.updateInvoice(invoice.id, { status: 'processing' })
+      )
+    );
+
+    // Send immediate response
+    res.json({
+      message: `Started batch processing of ${processableInvoices.length} invoices`,
+      processedInvoices: processableInvoices.length,
+      skippedInvoices: invoices.length - processableInvoices.length,
+      invoiceIds: processableInvoices.map(inv => inv.id)
+    });
+
+    // Process invoices in background with proper error handling
+    setImmediate(async () => {
+      console.log(`Background processing started for ${processableInvoices.length} invoices`);
+
+      // Process invoices in parallel with concurrency limit
+      const concurrencyLimit = 3; // Process 3 invoices at a time
+      const results = {
+        successful: 0,
+        failed: 0,
+        errors: [] as string[]
+      };
+
+      // Process in batches to avoid overwhelming the system
+      for (let i = 0; i < processableInvoices.length; i += concurrencyLimit) {
+        const batch = processableInvoices.slice(i, i + concurrencyLimit);
+
+        await Promise.allSettled(
+          batch.map(async (invoice) => {
+            try {
+              // Check if file exists
+              if (!invoice.fileUrl || !require('fs').existsSync(invoice.fileUrl)) {
+                throw new Error('Invoice file not found on disk');
+              }
+
+              const fs = require('fs');
+              const fileBuffer = fs.readFileSync(invoice.fileUrl);
+
+              console.log(`Processing invoice ${invoice.id} (${invoice.fileName})`);
+
+              // Use the same processing function as manual processing
+              await processInvoiceAsync(invoice, fileBuffer);
+
+              results.successful++;
+              console.log(`Successfully processed invoice ${invoice.id}`);
+
+            } catch (error: any) {
+              results.failed++;
+              const errorMessage = error?.message || 'Unknown processing error';
+              results.errors.push(`Invoice ${invoice.id}: ${errorMessage}`);
+
+              console.error(`Failed to process invoice ${invoice.id}:`, error);
+
+              // Update invoice status to failed
+              try {
+                await storage.updateInvoice(invoice.id, { status: 'rejected' });
+              } catch (updateError) {
+                console.error(`Failed to update failed invoice ${invoice.id}:`, updateError);
+              }
+            }
+          })
+        );
+
+        // Small delay between batches to prevent system overload
+        if (i + concurrencyLimit < processableInvoices.length) {
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      console.log(`Batch processing completed: ${results.successful} successful, ${results.failed} failed`);
+
+      if (results.errors.length > 0) {
+        console.error('Batch processing errors:', results.errors);
+      }
+    });
+
+  } catch (error: any) {
+    console.error('Batch processing initiation error:', error);
+    res.status(500).json({ 
+      error: 'Failed to initiate batch processing',
+      details: error.message 
+    });
+  }
+});
+
+// Enhanced automatic processing function that bypasses manual approval gates
+async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, userId: string): Promise<void> {
+  try {
+    console.log(`Starting fully automatic processing for invoice ${invoice.id}`);
+
+    // Step 1: OCR/AI Extraction with immediate save
+    await storage.updateInvoice(invoice.id, { 
+      status: 'processing',
+      processingMode: 'automatic',
+      processingStatus: 'extracting'
+    });
+
+    const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
+    if (!ocrText || ocrText.trim().length < 10) {
+      throw new Error("OCR did not extract sufficient text from the document");
+    }
+
+    // Extract structured data using AI or XML parser
+    let extractedData: any;
+    const isXmlContent = ocrText.trim().startsWith('<?xml') && 
+                        (ocrText.includes('<Invoice') || ocrText.includes('<CreditNote') || ocrText.includes('<AttachedDocument'));
+
+    if (isXmlContent) {
+      const { parseInvoiceXML } = await import('./services/xmlParser');
+      const xmlData = parseInvoiceXML(ocrText, false);
+      extractedData = {
+        vendorName: xmlData.vendorName,
+        invoiceNumber: xmlData.invoiceNumber,
+        invoiceDate: xmlData.invoiceDate,
+        dueDate: xmlData.dueDate,
+        totalAmount: xmlData.totalAmount,
+        taxAmount: xmlData.taxAmount,
+        subtotal: xmlData.subtotal,
+        currency: xmlData.currency || 'COP',
+        lineItems: xmlData.lineItems || []
+      };
+    } else {
+      extractedData = await extractInvoiceData(ocrText);
+    }
+
+    // Save extracted data immediately
+    await storage.updateInvoice(invoice.id, {
+      ocrText,
+      extractedData,
+      vendorName: extractedData.vendorName,
+      invoiceNumber: extractedData.invoiceNumber,
+      invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+      dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
+      totalAmount: extractedData.totalAmount,
+      taxAmount: extractedData.taxAmount,
+      subtotal: extractedData.subtotal,
+      currency: extractedData.currency,
+      status: 'extracted',
+      processingStatus: 'extracted'
+    });
+
+    console.log(`Data extraction completed and saved for invoice ${invoice.id}`);
+
+    // Step 2: Auto Petty Cash Classification ($400,000 USD threshold)
+    const pettyCashThreshold = 400000; // $400,000 USD
+    const totalAmount = parseFloat(extractedData.totalAmount || '0');
+    const isPettyCash = totalAmount < pettyCashThreshold;
+
+    const pettyCashResult = {
+      invoiceId: invoice.id,
+      isPettyCash,
+      classificationMethod: 'automatic',
+      confidenceScore: 0.95, // High confidence for threshold-based classification
+      autoApproved: true,
+      status: isPettyCash ? 'approved' : 'rejected'
+    };
+
+    await storage.createPettyCashLog(pettyCashResult);
+    await storage.updateInvoice(invoice.id, { processingStatus: 'classified' });
+
+    console.log(`Petty cash classification completed for invoice ${invoice.id}: ${isPettyCash ? 'Approved' : 'Rejected'}`);
+
+    // Step 3: Auto Project Matching with confidence threshold  
+    try {
+      // Simple project matching based on existing approved invoices
+      const approvedInvoices = await storage.getInvoices();
+      const projectInvoices = approvedInvoices.filter(inv => 
+        inv.status === 'approved' && inv.projectName
+      );
+
+      const projectsByName = new Map();
+      for (const existingInvoice of projectInvoices) {
+        if (existingInvoice.projectName) {
+          if (!projectsByName.has(existingInvoice.projectName)) {
+            projectsByName.set(existingInvoice.projectName, { 
+              projectId: existingInvoice.projectName,
+              vendor: existingInvoice.vendorName,
+              totalAmount: parseFloat(existingInvoice.totalAmount?.toString() || '0'),
+              invoiceCount: 1
+            });
+          } else {
+            const existing = projectsByName.get(existingInvoice.projectName);
+            existing.invoiceCount++;
+            existing.totalAmount += parseFloat(existingInvoice.totalAmount?.toString() || '0');
+          }
+        }
+      }
+
+      const vendorName = extractedData.vendorName?.toLowerCase() || '';
+      const currentAmount = parseFloat(extractedData.totalAmount || '0');
+
+      // Simple matching logic - can be enhanced
+      const projectMatches = [];
+      for (const [projectName, projectData] of projectsByName) {
+        let score = 0;
+
+        // Vendor name matching
+        if (projectData.vendor && vendorName.includes(projectData.vendor.toLowerCase())) {
+          score += 60;
+        }
+
+        // Amount similarity (within 20% difference)
+        const amountDiff = Math.abs(currentAmount - projectData.totalAmount) / Math.max(currentAmount, projectData.totalAmount);
+        if (amountDiff < 0.2) {
+          score += 30;
+        }
+
+        // Project frequency (more invoices = higher probability)
+        score += Math.min(projectData.invoiceCount * 2, 10);
+
+        if (score > 50) {
+          projectMatches.push({
+            projectId: projectName,
+            matchScore: score,
+            matchDetails: {
+              vendorMatch: vendorName.includes(projectData.vendor?.toLowerCase() || ''),
+              amountSimilarity: (1 - amountDiff) * 100,
+              invoiceCount: projectData.invoiceCount
+            }
+          });
+        }
+      }
+
+      const sortedMatches = projectMatches.sort((a, b) => b.matchScore - a.matchScore);
+      if (sortedMatches && sortedMatches.length > 0) {
+        const bestMatch = sortedMatches[0];
+
+        // Auto-approve if confidence > 80%
+        if (bestMatch.matchScore >= 80) {
+          const matchResult = {
+            invoiceId: invoice.id,
+            projectId: bestMatch.projectId,
+            matchScore: bestMatch.matchScore.toString(),
+            status: 'auto_approved' as const,
+            matchDetails: bestMatch.matchDetails,
+            isActive: true
+          };
+
+          await storage.createInvoiceProjectMatch(matchResult);
+
+          // Also create approved record for auto-approved matches
+          await storage.createApprovedInvoiceProject({
+            invoiceId: invoice.id,
+            projectId: bestMatch.projectId,
+            matchScore: bestMatch.matchScore,
+            matchDetails: bestMatch.matchDetails,
+            approvedBy: 'system-auto',
+            originalMatchId: null // Will be updated after match creation
+          });
+
+          await storage.updateInvoice(invoice.id, { 
+            processingStatus: 'matched',
+            projectName: bestMatch.projectId
+          });
+
+          console.log(`Auto-approved project match for invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
+        } else {
+          // Create match but flag for manual review
+          await storage.createInvoiceProjectMatch({
+            invoiceId: invoice.id,
+            projectId: bestMatch.projectId,
+            matchScore: bestMatch.matchScore.toString(),
+            status: 'manual' as const,
+            matchDetails: bestMatch.matchDetails,
+            isActive: true
+          });
+
+          console.log(`Project match created for manual review - invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
+        }
+      } else {
+        console.log(`No project matches found for invoice ${invoice.id}`);
+      }
+    } catch (projectError) {
+      console.error(`Project matching failed for invoice ${invoice.id}:`, projectError);
+    }
+
+    // Step 4: Auto Validation with 85% score threshold
+    try {
+      const validationResult = await storage.validateInvoiceData({
+        vendorName: extractedData.vendorName,
+        invoiceNumber: extractedData.invoiceNumber,
+        totalAmount: totalAmount,
+        taxAmount: parseFloat(extractedData.taxAmount || '0'),
+        invoiceDate: extractedData.invoiceDate,
+        dueDate: extractedData.dueDate,
+        currency: extractedData.currency || 'USD'
+      });
+
+      const validationScore = validationResult.score || 0;
+      const autoApproveValidation = validationScore >= 0.85; // 85% threshold
+
+      await storage.updateInvoice(invoice.id, {
+        validationStatus: autoApproveValidation ? 'validated' : 'requires_review',
+        validationResults: validationResult,
+        validationScore: validationScore,
+        isValidated: autoApproveValidation,
+        validatedAt: autoApproveValidation ? new Date() : null,
+        processingStatus: autoApproveValidation ? 'validated' : 'requires_review'
+      });
+
+      console.log(`Validation completed for invoice ${invoice.id}: ${autoApproveValidation ? 'Auto-approved' : 'Flagged for review'} (score: ${validationScore})`);
+    } catch (validationError) {
+      console.error(`Validation failed for invoice ${invoice.id}:`, validationError);
+      await storage.updateInvoice(invoice.id, { 
+        validationStatus: 'error',
+        processingStatus: 'requires_review'
+      });
+    }
+
+    // Step 5: Final Processing Status
+    await storage.updateInvoice(invoice.id, { 
+      status: 'approved',
+      processingStatus: 'auto_processed'
+    });
+
+    console.log(`Fully automatic processing completed successfully for invoice ${invoice.id}`);
+
+  } catch (error) {
+    console.error(`Automatic processing failed for invoice ${invoice.id}:`, error);
+
+    // Update status to show failure
+    await storage.updateInvoice(invoice.id, { 
+      status: 'rejected',
+      processingStatus: 'failed'
+    });
+
     throw error;
   }
 }

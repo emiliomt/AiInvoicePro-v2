@@ -162,7 +162,7 @@ export class InvoiceProcessingService {
             linkedInvoiceId: newInvoice.id,
             processedAt: new Date(),
           })
-          .where(eq(importedInvoices.id, importedInvoice.id));
+          .where(eq(importedInvoice.id, importedInvoice.id));
 
         console.log(`✅ Successfully processed ${importedInvoice.originalFileName} -> Invoice ID: ${newInvoice.id}`);
         processed++;
@@ -446,8 +446,19 @@ export class InvoiceProcessingService {
       await this.updateInvoiceStatus(invoiceId, 'processing', 'AI extraction in progress...');
 
       try {
-        // Extract data using AI service
-        const extractedData = await aiService.extractInvoiceData(invoice.ocrText || '', true);
+        // Validate OCR text before AI extraction
+        const ocrText = invoice.ocrText || '';
+        if (!ocrText || ocrText.trim().length < 10) {
+          throw new Error('Insufficient OCR text for AI extraction');
+        }
+
+        // Extract data using AI service with proper error handling
+        const extractedData = await aiService.extractInvoiceData(ocrText, true);
+
+        // Validate extracted data before storing
+        if (!extractedData || typeof extractedData !== 'object') {
+          throw new Error('AI extraction returned invalid data format');
+        }
 
         // Update invoice with extracted data
         await storage.updateInvoice(invoiceId, {
@@ -458,7 +469,14 @@ export class InvoiceProcessingService {
         console.log(`✅ AI extraction completed for invoice ${invoiceId}`);
       } catch (extractionError: any) {
         console.error(`❌ AI extraction failed for invoice ${invoiceId}:`, extractionError);
-        await this.updateInvoiceStatus(invoiceId, 'rejected', `AI extraction failed: ${extractionError.message}`);
+
+        // Handle specific JSON parsing errors
+        let errorMessage = extractionError.message;
+        if (errorMessage.includes('JSON.parse') || errorMessage.includes('unexpected character')) {
+          errorMessage = 'Invalid response format from AI service - please try again';
+        }
+
+        await this.updateInvoiceStatus(invoiceId, 'rejected', `AI extraction failed: ${errorMessage}`);
         return false;
       }
 
