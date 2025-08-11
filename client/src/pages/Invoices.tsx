@@ -234,10 +234,27 @@ export default function Invoices() {
   const getStatusColor = (status: string) => {
     switch (status) {
       case "processed": return "bg-green-100 text-green-800";
+      case "approved": return "bg-green-100 text-green-800";
       case "pending": return "bg-yellow-100 text-yellow-800";
       case "failed": return "bg-red-100 text-red-800";
       case "draft": return "bg-gray-100 text-gray-800";
+      case "extracted": return "bg-blue-100 text-blue-800";
       default: return "bg-gray-100 text-gray-800";
+    }
+  };
+
+  const getStatusDisplayText = (status: string) => {
+    switch (status) {
+      case "approved": return "Processed";
+      case "extracted": return "Extracted";
+      case "pending": return "Pending";
+      case "processing": return "Processing";
+      case "failed": return "Failed";
+      case "rejected": return "Rejected";
+      case "draft": return "Draft";
+      case "paid": return "Paid";
+      case "matched": return "Matched";
+      default: return status.charAt(0).toUpperCase() + status.slice(1);
     }
   };
 
@@ -1144,7 +1161,7 @@ export default function Invoices() {
                           </div>
                         </div>
                         <Badge className={getStatusColor(invoice.status)}>
-                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                          {getStatusDisplayText(invoice.status)}
                         </Badge>
                       </div>
                     </CardHeader>
@@ -1487,7 +1504,7 @@ export default function Invoices() {
                       <label className="text-sm font-medium text-gray-700">Status</label>
                       <div className="mt-1">
                         <Badge className={getStatusColor(selectedInvoice.status)}>
-                          {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
+                          {getStatusDisplayText(selectedInvoice.status)}
                         </Badge>
 </div>
                     </div>
