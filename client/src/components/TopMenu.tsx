@@ -8,7 +8,7 @@ import {
   DropdownMenuItem, 
   DropdownMenuTrigger 
 } from "@/components/ui/dropdown-menu";
-import { Bell, ChevronDown, LogOut, User, Settings, FileText } from "lucide-react";
+import { Bell, ChevronDown, LogOut, User, Settings, FileText, Bot, Zap, Brain } from "lucide-react";
 import { Link, useLocation } from "wouter";
 
 export default function TopMenu() {
@@ -61,18 +61,74 @@ export default function TopMenu() {
           </div>
 
           <nav className="hidden md:flex space-x-6 lg:space-x-8">
-            <Link href="/" className={getLinkClassName("/")}>
-              Dashboard
-            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/") || isActiveRoute("/ai-learning")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Dashboard</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/'}>
+                  Overview
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/ai-learning'}>
+                  <Brain className="mr-2 h-4 w-4" />
+                  AI Learning
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
             
-            <Link href="/invoices" className={getLinkClassName("/invoices")}>
-              Invoices
-            </Link>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/invoices") || isActiveRoute("/approvals")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Invoices</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/invoices'}>
+                  All Invoices
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/approvals'}>
+                  Approvals
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
 
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
-                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher")
+                  isActiveRoute("/validation-rules") || isActiveRoute("/invoice-verification")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Information Validation</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/validation-rules'}>
+                  Validation Rules
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/invoice-verification'}>
+                  Invoice Verification
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/project-validation") || isActiveRoute("/project-matcher") || isActiveRoute("/petty-cash") || isActiveRoute("/line-item-classification")
                     ? "text-primary-600 font-semibold border-b-2 border-primary-600"
                     : "text-gray-600 hover:text-gray-900"
                 }`}>
@@ -89,6 +145,54 @@ export default function TopMenu() {
                 </DropdownMenuItem>
                 <DropdownMenuItem onClick={() => window.location.href = '/petty-cash'}>
                   Petty Cash
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/line-item-classification'}>
+                  Line Item Classification
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/erp-connect") || isActiveRoute("/invoice-importer")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <Bot size={16} className="text-blue-600" />
+                  <span>ERP Automation</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/erp-connect'}>
+                  <Zap size={16} className="mr-2" />
+                  ERP Connections
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/invoice-importer'}>
+                  <FileText size={16} className="mr-2" />
+                  ERP Invoice Importer
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <button className={`flex items-center space-x-1 h-12 transition-colors text-sm font-medium whitespace-nowrap ${
+                  isActiveRoute("/purchase-orders") || isActiveRoute("/po-matching")
+                    ? "text-primary-600 font-semibold border-b-2 border-primary-600"
+                    : "text-gray-600 hover:text-gray-900"
+                }`}>
+                  <span>Purchases</span>
+                  <ChevronDown size={16} className="text-gray-400" />
+                </button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="w-56">
+                <DropdownMenuItem onClick={() => window.location.href = '/purchase-orders'}>
+                  Purchase Orders
+                </DropdownMenuItem>
+                <DropdownMenuItem onClick={() => window.location.href = '/po-matching'}>
+                  PO Matching
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
