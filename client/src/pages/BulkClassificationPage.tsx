@@ -87,7 +87,7 @@ export default function BulkClassificationPage() {
     invoices: InvoiceForClassification[];
     count: number;
   }>({
-    queryKey: ['/api/invoices/ready-for-classification', filterProjectId, dateFrom, dateTo],
+    queryKey: ['/api/invoices/ready-for-classification', { filterProjectId, dateFrom, dateTo }],
     queryFn: async () => {
       const response = await apiRequest({
         url: '/api/invoices/ready-for-classification',
@@ -105,7 +105,7 @@ export default function BulkClassificationPage() {
 
   // Get classification progress
   const { data: progressData, isLoading: progressLoading } = useQuery<ClassificationProgress>({
-    queryKey: ['/api/classify-bulk-invoices/progress', processingSessionId],
+    queryKey: ['/api/classify-bulk-invoices/progress', { processingSessionId }],
     queryFn: async () => {
       const response = await apiRequest({
         url: `/api/classify-bulk-invoices/progress/${processingSessionId || 'default'}`,
@@ -127,7 +127,7 @@ export default function BulkClassificationPage() {
       pages: number;
     };
   }>({
-    queryKey: ['/api/classification-results', resultsPage, filterProjectId, dateFrom, dateTo],
+    queryKey: ['/api/classification-results', { resultsPage, filterProjectId, dateFrom, dateTo }],
     queryFn: async () => {
       const response = await apiRequest({
         url: '/api/classification-results',
@@ -158,7 +158,7 @@ export default function BulkClassificationPage() {
     categoryBreakdown: Record<string, number>;
     averageConfidence: number;
   }>({
-    queryKey: ['/api/classification-summary'],
+    queryKey: ['/api/classification-summary', {}],
     queryFn: async () => {
       const response = await apiRequest({
         url: '/api/classification-summary',
@@ -174,7 +174,7 @@ export default function BulkClassificationPage() {
 
   // Get available categories
   const { data: categoriesData } = useQuery<Record<string, string>>({
-    queryKey: ['/api/classification/categories'],
+    queryKey: ['/api/classification/categories', {}],
     queryFn: async () => {
       const response = await apiRequest({
         url: '/api/classification/categories',

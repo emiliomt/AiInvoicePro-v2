@@ -81,6 +81,7 @@ export default function Header() {
         { label: "Project Matcher", href: "/project-matcher", icon: FileText },
         { label: "Petty Cash", href: "/petty-cash", icon: FileText },
         { label: "Line Item Classification", href: "/line-item-classification", icon: FileText },
+        { label: "Bulk Classification", href: "/bulk-classification", icon: Brain },
       ]
     },
     {

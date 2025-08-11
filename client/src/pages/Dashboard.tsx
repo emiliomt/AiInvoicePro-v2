@@ -4,10 +4,8 @@ import { useToast } from "@/hooks/use-toast";
 import Header from "@/components/Header";
 import DashboardStats from "@/components/DashboardStats";
 import InvoiceUpload from "@/components/InvoiceUpload";
-
 import TopIssuesWidget from "@/components/TopIssuesWidget";
 import Sidebar from "@/components/Sidebar";
-import Header from "@/components/Header";
 
 
 export default function Dashboard() {
