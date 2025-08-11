@@ -1099,9 +1099,18 @@ export default function Invoices() {
                             </div>
                           </div>
                         </div>
-                        <Badge className={getStatusColor(invoice.status)}>
-                          {invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
-                        </Badge>
+                        <div className="flex items-center space-x-2">
+                          <Badge className={getStatusColor(invoice.status)}>
+                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' ? 'Auto Approved' : 
+                             invoice.status === 'approved' ? 'Manually Approved' : 
+                             invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                          </Badge>
+                          {(invoice.status === 'approved' || invoice.status === 'extracted') && invoice.extractedData?.confidenceScore && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              AI: {Math.round(parseFloat(invoice.extractedData.confidenceScore) * 100)}%
+                            </Badge>
+                          )}
+                        </div>
                       </div>
                     </CardHeader>
                     <CardContent>
@@ -1133,10 +1142,18 @@ export default function Invoices() {
                         </div>
                       </div>
 
-                      {/* Processing Results Display */}
-                      {invoice.status === 'extracted' && (
+                      {/* Processing Results Display - Show for both extracted and approved invoices */}
+                      {(invoice.status === 'extracted' || invoice.status === 'approved') && (
                         <div className="border-t pt-4 mb-4">
-                          <h4 className="text-sm font-medium text-gray-700 mb-3">Processing Results</h4>
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">
+                            Processing Results
+                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' && (
+                              <span className="ml-2 text-xs text-green-600 font-normal">(Auto-processed)</span>
+                            )}
+                            {invoice.status === 'approved' && invoice.userId !== 'rpa-system' && (
+                              <span className="ml-2 text-xs text-blue-600 font-normal">(Manually processed)</span>
+                            )}
+                          </h4>
                           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
 
                             {/* Item Classification */}
@@ -1181,7 +1198,8 @@ export default function Invoices() {
                               <div>
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
-                                  const isPettyCash = amount <= 500000; // 500K COP threshold
+                                  const isPettyCash = amount <= 1000; // $1000 USD threshold as implemented in backend
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
                                   return (
                                     <Badge
                                       variant={isPettyCash ? "default" : "outline"}
@@ -1191,7 +1209,10 @@ export default function Invoices() {
                                           : 'bg-red-50 text-red-700 border-red-200'
                                       }`}
                                     >
-                                      {isPettyCash ? `Yes (≤${formatAmount('500000', invoice.currency)})` : 'No'}
+                                      {isPettyCash ? `Yes (≤$1,000)` : 'No'}
+                                      {isAutoProcessed && (
+                                        <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                      )}
                                     </Badge>
                                   );
                                 })()}
@@ -1204,7 +1225,8 @@ export default function Invoices() {
                               <div>
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
-                                  const isPettyCash = amount <= 500000; // 500K COP threshold
+                                  const isPettyCash = amount <= 1000; // $1000 USD threshold
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
 
                                   if (isPettyCash) {
                                     return (
@@ -1213,6 +1235,9 @@ export default function Invoices() {
                                         className="text-xs bg-green-100 text-green-800 border-green-200"
                                       >
                                         Petty Cash
+                                        {isAutoProcessed && (
+                                          <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                        )}
                                       </Badge>
                                     );
                                   }
@@ -1224,6 +1249,9 @@ export default function Invoices() {
                                         className="text-xs bg-blue-100 text-blue-800 border-blue-200"
                                       >
                                         {(invoice.extractedData as any)?.projectName || invoice.projectName}
+                                        {isAutoProcessed && (
+                                          <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                        )}
                                       </Badge>
                                     );
                                   }
@@ -1231,6 +1259,9 @@ export default function Invoices() {
                                   return (
                                     <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
                                       No Match
+                                      {isAutoProcessed && (
+                                        <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                      )}
                                     </Badge>
                                   );
                                 })()}
@@ -1241,33 +1272,47 @@ export default function Invoices() {
                             <div className="space-y-2">
                               <p className="text-xs font-medium text-gray-500">Validation</p>
                               <div>
-                                {(invoice.extractedData as any)?.validationResults ? (
-                                  <Badge
-                                    variant={(invoice.extractedData as any)?.validationResults?.isValid ? "default" : "destructive"}
-                                    className={`text-xs ${
-                                      (invoice.extractedData as any)?.validationResults?.isValid
-                                        ? 'bg-green-100 text-green-800'
-                                        : 'bg-red-100 text-red-800'
-                                    }`}
-                                  >
-                                    {(invoice.extractedData as any)?.validationResults?.isValid ? (
-                                      <>
-                                        <CheckCircle className="w-3 h-3 mr-1" />
-                                        Passed
-                                      </>
-                                    ) : (
-                                      <>
-                                        <XCircle className="w-3 h-3 mr-1" />
-                                        {(invoice.extractedData as any)?.validationResults?.violations?.length || 0} Issues
-                                      </>
-                                    )}
-                                  </Badge>
-                                ) : (
-                                  <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
-                                    <AlertTriangle className="w-3 h-3 mr-1" />
-                                    Pending
-                                  </Badge>
-                                )}
+                                {(() => {
+                                  const validationResults = (invoice.extractedData as any)?.validationResults;
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
+                                  
+                                  // If approved status, assume validation passed
+                                  const hasValidation = validationResults || invoice.status === 'approved';
+                                  const isValid = validationResults?.isValid || invoice.status === 'approved';
+                                  
+                                  if (hasValidation) {
+                                    return (
+                                      <Badge
+                                        variant={isValid ? "default" : "destructive"}
+                                        className={`text-xs ${
+                                          isValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                        }`}
+                                      >
+                                        {isValid ? (
+                                          <>
+                                            <CheckCircle className="w-3 h-3 mr-1" />
+                                            Passed
+                                            {isAutoProcessed && (
+                                              <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <XCircle className="w-3 h-3 mr-1" />
+                                            {validationResults?.violations?.length || 0} Issues
+                                          </>
+                                        )}
+                                      </Badge>
+                                    );
+                                  }
+                                  
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                                      <AlertTriangle className="w-3 h-3 mr-1" />
+                                      Pending
+                                    </Badge>
+                                  );
+                                })()}
                               </div>
                             </div>
 
