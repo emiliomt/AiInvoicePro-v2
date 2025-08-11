@@ -230,9 +230,11 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false, filte
               <div>
                 <Label>Upload Approval Document</Label>
                 <FileUpload
-                  onFileSelect={(file: File) => {
+                  onFileSelect={(files: File[]) => {
                     // Handle file upload for approval document
-                    console.log("File selected:", file);
+                    if (files.length > 0) {
+                      console.log("File selected:", files[0]);
+                    }
                   }}
                   accept={{ "application/pdf": [".pdf"], "image/*": [".jpg", ".jpeg", ".png"] }}
                   maxSize={10 * 1024 * 1024} // 10MB

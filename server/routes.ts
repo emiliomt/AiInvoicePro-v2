@@ -443,6 +443,76 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Petty cash recalculate endpoint
+  app.post('/api/petty-cash/recalculate', isAuthenticated, async (req, res) => {
+    try {
+      // Get the current petty cash threshold
+      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
+      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 100;
+      
+      // Get all invoices that might need recalculation
+      const invoices = await storage.getInvoices();
+      
+      let recalculatedCount = 0;
+      let newClassifications = 0;
+      
+      for (const invoice of invoices) {
+        const amount = parseFloat(invoice.totalAmount || "0");
+        const shouldBePettyCash = amount <= threshold && amount > 0;
+        
+        // Check if this invoice already has a petty cash classification
+        const existingLog = await storage.getPettyCashLogByInvoiceId(invoice.id);
+        
+        if (shouldBePettyCash) {
+          if (existingLog) {
+            // Update existing classification if needed
+            if (existingLog.isPettyCash !== true) {
+              await storage.updatePettyCashLog(existingLog.id, {
+                isPettyCash: true,
+                classificationMethod: 'rule-based',
+                confidenceScore: 1.0,
+                updatedAt: new Date()
+              });
+              recalculatedCount++;
+            }
+          } else {
+            // Create new petty cash log
+            await storage.createPettyCashLog({
+              invoiceId: invoice.id,
+              isPettyCash: true,
+              classificationMethod: 'rule-based',
+              confidenceScore: 1.0,
+              status: 'pending_approval'
+            });
+            newClassifications++;
+          }
+        } else if (existingLog && existingLog.isPettyCash === true) {
+          // Remove petty cash classification if amount is now above threshold
+          await storage.updatePettyCashLog(existingLog.id, {
+            isPettyCash: false,
+            classificationMethod: 'rule-based',
+            confidenceScore: 1.0,
+            updatedAt: new Date()
+          });
+          recalculatedCount++;
+        }
+      }
+      
+      console.log(`Recalculated petty cash: ${recalculatedCount} updated, ${newClassifications} new classifications`);
+      
+      res.json({
+        message: `Successfully recalculated petty cash classifications. ${newClassifications} new classifications, ${recalculatedCount} updated.`,
+        threshold,
+        newClassifications,
+        recalculatedCount,
+        totalProcessed: invoices.length
+      });
+    } catch (error) {
+      console.error("Error recalculating petty cash:", error);
+      res.status(500).json({ message: "Failed to recalculate petty cash classifications" });
+    }
+  });
+
   // Settings routes
   app.get('/api/settings/:key', isAuthenticated, async (req, res) => {
     try {
