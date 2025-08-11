@@ -546,8 +546,17 @@ export class RPAService {
         })
       };
       
-      // Note: Save to database using storage service
-
+      // Save to database
+      const { storage } = await import('../storage.js');
+      const savedInvoice = await storage.createInvoice(invoiceData);
+      
+      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
+      
+    } catch (error: any) {
+      console.error(`Failed to process invoice document ${document.id}:`, error);
+      throw error;
+    }
+  }
 
   /**
    * Batch process XML invoices from multiple sources
@@ -639,17 +648,6 @@ export class RPAService {
       failed,
       results
     };
-  }
-
-      const { storage } = await import('../storage.js');
-      const savedInvoice = await storage.createInvoice(invoiceData);
-      
-      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
-      
-    } catch (error: any) {
-      console.error(`Failed to process invoice document ${document.id}:`, error);
-      throw error;
-    }
   }
 
   private async processPurchaseOrderDocument(

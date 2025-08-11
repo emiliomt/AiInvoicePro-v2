@@ -382,7 +382,7 @@ class PostgresStorage implements IStorage {
       .leftJoin(importedInvoices, eq(invoices.id, importedInvoices.invoiceId))
       .orderBy(desc(invoices.createdAt));
 
-    return results.map(result => ({
+    return results.map((result: any) => ({
       ...result,
       isDataSource: result.isDataSource ?? null, // Convert undefined to null for consistency
     }));
@@ -904,7 +904,7 @@ class PostgresStorage implements IStorage {
             eq(invoices.userId, userId),
             and(
               eq(invoices.userId, 'rpa-system'),
-              eq(invoices.companyId, user.companyId)
+              eq(invoices.companyId, user.companyId!)
             )
           );
         } else {
@@ -1023,7 +1023,7 @@ class PostgresStorage implements IStorage {
             eq(invoices.userId, userId),
             and(
               eq(invoices.userId, 'rpa-system'),
-              eq(invoices.companyId, user.companyId)
+              eq(invoices.companyId, user.companyId!)
             )
           )
         );
@@ -1031,7 +1031,7 @@ class PostgresStorage implements IStorage {
       const count = accessibleInvoices.length;
 
       if (count > 0) {
-        const invoiceIds = accessibleInvoices.map(inv => inv.id);
+        const invoiceIds = accessibleInvoices.map((inv: any) => inv.id);
 
         // Delete linked imported invoice files first (for RPA invoices)
         const { Client } = await import('pg');
@@ -1901,7 +1901,7 @@ class PostgresStorage implements IStorage {
     if (!isDbConnected || !db) {
       return fallbackStorage?.getLineItemClassifications() || [];
     }
-    return await db.select().from(lineItemClassifications).where(eq(lineItemClassifications.invoiceId, invoiceId));
+    return await db.select().from(lineItemClassifications).where(eq(lineItemClassifications.lineItemId, invoiceId));
   }
 
   async createLineItemClassification(data: InsertLineItemClassification): Promise<LineItemClassification> {
