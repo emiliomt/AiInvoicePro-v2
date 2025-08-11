@@ -1,13 +1,4 @@
-import { erpConnections, erpTasks, invoiceImporterLogs, importedInvoices } from "../../shared/schema.js";
-
-type ErpConnection = typeof erpConnections.$inferSelect;
-
-// Define missing RPA types based on available schema
-interface RpaExtractionJob {
-  jobName: string;
-  extractionCriteria: any;
-  // Add other needed properties
-}
+import { ErpConnection, RpaExtractionJob, RpaJobExecution, RpaDocumentQueue, InsertRpaJobExecution, InsertRpaDocumentQueue } from "../../shared/schema.js";
 import { extractInvoiceData, extractPurchaseOrderData } from "./aiService.js";
 import { ocrService } from "./ocrService.js";
 
@@ -41,18 +32,24 @@ export class RPAService {
    */
   async testERPConnection(connection: ErpConnection): Promise<{ success: boolean; error?: string }> {
     try {
-      // Use basic connection properties since connectionConfig doesn't exist
-      const config = {
-        baseUrl: connection.baseUrl,
-        username: connection.username,
-        password: connection.password
-      };
+      const config = connection.connectionConfig as any;
       
-      // Default to basic connection test since erpSystemType doesn't exist
-      const systemType = 'generic';
-      
-      // Simple connection test for all systems
-      return await this.testBasicConnection(config);
+      switch (connection.erpSystemType) {
+        case 'custom_api':
+          return await this.testCustomAPIConnection(config);
+        case 'sftp':
+          return await this.testSFTPConnection(config);
+        case 'database':
+          return await this.testDatabaseConnection(config);
+        case 'sharepoint':
+          return await this.testSharePointConnection(config);
+        case 'sap':
+          return await this.testSAPConnection(config);
+        case 'oracle':
+          return await this.testOracleConnection(config);
+        default:
+          return { success: false, error: 'Unsupported ERP system type' };
+      }
     } catch (error: any) {
       console.error('ERP connection test failed:', error);
       return { success: false, error: error.message || 'Connection test failed' };
@@ -70,15 +67,11 @@ export class RPAService {
     const startTime = new Date();
     
     console.log(`Starting RPA extraction job: ${job.jobName} (${executionId})`);
-    console.log(`Connection type: generic`);
+    console.log(`Connection type: ${connection.erpSystemType}`);
     console.log(`Job criteria:`, job.extractionCriteria);
     
     try {
-      const config = {
-        baseUrl: connection.baseUrl,
-        username: connection.username,
-        password: connection.password
-      };
+      const config = connection.connectionConfig as any;
       const criteria = job.extractionCriteria as any;
       
       // Validate connection configuration
@@ -343,7 +336,12 @@ export class RPAService {
               metadata: {
                 lastModified: doc.lastModified,
                 fileSize: doc.size || doc.content?.length,
-                format: 'xml'
+                format: 'xml',
+                xmlExtracted: true,
+                vendorName: extractedData.vendorName,
+                invoiceNumber: extractedData.invoiceNumber,
+                totalAmount: extractedData.totalAmount,
+                currency: extractedData.currency
               }
             });
           } else {
@@ -548,17 +546,8 @@ export class RPAService {
         })
       };
       
-      // Save to database
-      const { storage } = await import('../storage.js');
-      const savedInvoice = await storage.createInvoice(invoiceData);
-      
-      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
-      
-    } catch (error: any) {
-      console.error(`Failed to process invoice document ${document.id}:`, error);
-      throw error;
-    }
-  }
+      // Note: Save to database using storage service
+
 
   /**
    * Batch process XML invoices from multiple sources
@@ -650,6 +639,17 @@ export class RPAService {
       failed,
       results
     };
+  }
+
+      const { storage } = await import('../storage.js');
+      const savedInvoice = await storage.createInvoice(invoiceData);
+      
+      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
+      
+    } catch (error: any) {
+      console.error(`Failed to process invoice document ${document.id}:`, error);
+      throw error;
+    }
   }
 
   private async processPurchaseOrderDocument(
