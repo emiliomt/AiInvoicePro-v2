@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { getStorage, getDb } from '../storage.js';
-import { importedInvoices, invoices, invoiceImporterLogs, lineItems } from '../../shared/schema.js';
+import { importedInvoices, invoices, invoiceImporterLogs, lineItems, pettyCashLog, invoiceProjectMatches, type Invoice } from '../../shared/schema.js';
 import * as aiService from './aiService.js';
 import { storage } from '../storage.js';
 import { parseInvoiceXML } from './xmlParser.js';
@@ -204,6 +204,7 @@ export class InvoiceProcessingService {
   async processInvoicesByLogId(logId: number): Promise<{ processed: number; failed: number; errors: string[] }> {
     console.log(`🔄 Processing imported invoices for log ID: ${logId}`);
 
+    const db = await getDb();
     const downloadedInvoices = await db
       .select()
       .from(importedInvoices)
@@ -477,8 +478,7 @@ export class InvoiceProcessingService {
 
         // Update invoice with validation results
         await storage.updateInvoice(invoiceId, {
-          validationResult: validationResult,
-          validationErrors: validationResult.violations || [],
+          validationResults: validationResult,
           status: validationResult.isValid ? 'extracted' : 'rejected'
         });
 
@@ -509,8 +509,9 @@ export class InvoiceProcessingService {
         if ((invoice.extractedData as any).lineItems && (invoice.extractedData as any).lineItems.length > 0) {
           for (const item of (invoice.extractedData as any).lineItems) {
             // Insert line item if it doesn't exist
+            const db = await getDb();
             const existingLineItem = await db.query.lineItems.findFirst({
-              where: (lt, { eq }) => eq(lt.invoiceId, invoiceId)
+              where: (lt: any, { eq }: any) => eq(lt.invoiceId, invoiceId)
             });
 
             if (!existingLineItem) {
@@ -540,12 +541,138 @@ export class InvoiceProcessingService {
       return false;
     }
 
-    // Step 4: Finalize invoice status
+    // Step 4: Automatic Petty Cash Detection
+    await this.updateInvoiceStatus(invoiceId, 'processing', 'Checking petty cash status...');
+    try {
+      if (invoice) {
+        await this.performPettyCashAnalysis(invoiceId, invoice);
+        console.log(`✅ Petty cash analysis completed for invoice ${invoiceId}`);
+      }
+    } catch (pettyCashError: any) {
+      console.error(`❌ Petty cash analysis failed for invoice ${invoiceId}:`, pettyCashError);
+      // Continue processing even if petty cash analysis fails
+    }
+
+    // Step 5: Automatic Project Assignment
+    await this.updateInvoiceStatus(invoiceId, 'processing', 'Matching with projects...');
+    try {
+      if (invoice) {
+        await this.performAutomaticProjectMatching(invoiceId, invoice, userId);
+        console.log(`✅ Project matching completed for invoice ${invoiceId}`);
+      }
+    } catch (projectError: any) {
+      console.error(`❌ Project matching failed for invoice ${invoiceId}:`, projectError);
+      // Continue processing even if project matching fails
+    }
+
+    // Step 6: Finalize invoice status
     // Set to approved if everything went well
-    await this.updateInvoiceStatus(invoiceId, 'approved', 'Invoice processing completed');
+    await this.updateInvoiceStatus(invoiceId, 'approved', 'Invoice processing completed successfully');
 
     console.log(`✅ Successfully processed invoice ID ${invoiceId}`);
     return true;
+  }
+
+  /**
+   * Perform automatic petty cash analysis
+   */
+  private async performPettyCashAnalysis(invoiceId: number, invoice: Invoice): Promise<void> {
+    const extractedData = invoice.extractedData as any;
+    const totalAmount = extractedData?.totalAmount || invoice.totalAmount;
+    
+    if (totalAmount) {
+      // Convert to number if it's a string
+      const amount = typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount;
+      
+      // Define petty cash threshold (configurable)
+      const PETTY_CASH_THRESHOLD = 1000; // $1000 USD or equivalent
+      
+      const isPettyCash = amount <= PETTY_CASH_THRESHOLD;
+      
+      if (isPettyCash) {
+        console.log(`📋 Invoice ${invoiceId} flagged as petty cash (Amount: $${amount})`);
+        
+        // Create petty cash log entry
+        const db = await getDb();
+        await db.insert(pettyCashLog).values({
+          invoiceId: invoiceId,
+          isPettyCash: true,
+          classificationMethod: 'rule-based',
+          confidenceScore: '1.00', // High confidence for rule-based classification
+          status: 'pending_approval'
+        });
+        
+        console.log(`✅ Petty cash log created for invoice ${invoiceId}`);
+      } else {
+        console.log(`📋 Invoice ${invoiceId} not petty cash (Amount: $${amount})`);
+      }
+    } else {
+      console.log(`⚠️ No total amount found for invoice ${invoiceId}, skipping petty cash analysis`);
+    }
+  }
+
+  /**
+   * Perform automatic project matching
+   */
+  private async performAutomaticProjectMatching(invoiceId: number, invoice: Invoice, userId: string): Promise<void> {
+    try {
+      // Get all active projects for the user's company
+      const projects = await storage.getProjects();
+      
+      if (!projects || projects.length === 0) {
+        console.log(`ℹ️ No projects found for automatic matching for invoice ${invoiceId}`);
+        return;
+      }
+
+      // Use project matcher service
+      const projectMatcher = new (await import('../projectMatcher')).ProjectMatcherService();
+      const matches = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
+      
+      if (matches && matches.length > 0) {
+        const bestMatch = matches[0];
+        
+        // Auto-assign if confidence is high enough (>= 70%)
+        if (bestMatch.matchScore >= 70) {
+          console.log(`🎯 Auto-assigning project to invoice ${invoiceId}: ${bestMatch.project?.projectId} (Score: ${bestMatch.matchScore}%)`);
+          
+          // Create project match record
+          const db = await getDb();
+          await db.insert(invoiceProjectMatches).values({
+            invoiceId: invoiceId,
+            projectId: bestMatch.project?.projectId || 'unknown',
+            matchScore: bestMatch.matchScore.toString(),
+            matchDetails: JSON.stringify(bestMatch.matchDetails),
+            isAutoMatched: true,
+            matchedBy: userId || 'system'
+          });
+          
+          // Update invoice with project assignment
+          await storage.updateInvoice(invoiceId, {
+            projectName: bestMatch.project?.name || bestMatch.project?.projectId || 'Unknown Project'
+          });
+          
+          console.log(`✅ Project auto-assigned to invoice ${invoiceId}`);
+        } else {
+          console.log(`📋 Project match found for invoice ${invoiceId} but confidence too low for auto-assignment (Score: ${bestMatch.matchScore}%)`);
+          
+          // Create project match record for manual review
+          const db = await getDb();
+          await db.insert(invoiceProjectMatches).values({
+            invoiceId: invoiceId,
+            projectId: bestMatch.project?.projectId || 'unknown',
+            matchScore: bestMatch.matchScore.toString(),
+            matchDetails: JSON.stringify(bestMatch.matchDetails),
+            isAutoMatched: false,
+            matchedBy: userId || 'system'
+          });
+        }
+      } else {
+        console.log(`📋 No project matches found for invoice ${invoiceId}`);
+      }
+    } catch (error: any) {
+      console.error(`❌ Project matching error for invoice ${invoiceId}:`, error);
+      throw error;
+    }
   }
 
   /**
@@ -554,6 +681,7 @@ export class InvoiceProcessingService {
   private async updateInvoiceStatus(invoiceId: number, status: 'pending' | 'processing' | 'extracted' | 'approved' | 'rejected' | 'paid' | 'matched', message: string): Promise<void> {
     console.log(`Updating invoice ${invoiceId} status to: ${status} - ${message}`);
     await storage.updateInvoice(invoiceId, { status });
+    const db = await getDb();
     await db.insert(invoiceImporterLogs).values({
       configId: 1, // Default config ID for RPA system
       status: 'running',
