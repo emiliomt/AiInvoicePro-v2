@@ -180,7 +180,7 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
           const cleaned = responseContent
             .replace(/```json\s*|\s*```/g, '')
             .replace(/```\s*|\s*```/g, '')
-            .replace(/^[^{]*({.*})[^}]*$/s, '$1')
+            .replace(/^[^{]*(\{.*\})[^}]*$/, '$1')
             .trim();
 
           extractedData = JSON.parse(cleaned);
@@ -215,10 +215,10 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
 
             } catch (braceError) {
               console.error('❌ All JSON parsing strategies failed:', {
-                original: directParseError.message,
-                cleanup: cleanupParseError.message,
-                extraction: extractionError.message,
-                brace: braceError.message,
+                original: directParseError instanceof Error ? directParseError.message : String(directParseError),
+                cleanup: cleanupParseError instanceof Error ? cleanupParseError.message : String(cleanupParseError),
+                extraction: extractionError instanceof Error ? extractionError.message : String(extractionError),
+                brace: braceError instanceof Error ? braceError.message : String(braceError),
                 responsePreview: responseContent.substring(0, 200)
               });
 
@@ -278,14 +278,16 @@ export async function extractInvoiceData(ocrText: string, applyLearning: boolean
             console.log('✅ Direct XML parsing found amounts:', directAmounts);
           }
         } catch (xmlError) {
-          console.warn('⚠️ Direct XML parsing failed:', xmlError.message);
+          console.warn('⚠️ Direct XML parsing failed:', xmlError instanceof Error ? xmlError.message : String(xmlError));
         }
       }
 
       // Cache successful result (with size management)
       if (extractionCache.size > 100) {
         const firstKey = extractionCache.keys().next().value;
-        extractionCache.delete(firstKey);
+        if (firstKey) {
+          extractionCache.delete(firstKey);
+        }
       }
       extractionCache.set(cacheKey, cleanedData);
 
