@@ -138,7 +138,7 @@ function App() {
   React.useEffect(() => {
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
       console.error('Unhandled promise rejection:', event.reason);
-      
+
       // Check if it's a WebSocket error (common cause of crashes)
       if (event.reason && typeof event.reason === 'object') {
         const reasonStr = String(event.reason);
@@ -148,21 +148,21 @@ function App() {
           return;
         }
       }
-      
+
       // Check if it's a fetch error (network issues)
       if (event.reason instanceof TypeError && event.reason.message.includes('fetch')) {
         console.warn('Network fetch error handled gracefully');
         event.preventDefault();
         return;
       }
-      
+
       // Prevent the default browser behavior for all unhandled rejections
       event.preventDefault();
     };
 
     const handleError = (event: ErrorEvent) => {
       console.error('Global error:', event.error);
-      
+
       // Don't let script errors crash the entire app
       if (event.error && event.error.name === 'ChunkLoadError') {
         console.warn('Chunk load error - possible network issue or cache problem');
