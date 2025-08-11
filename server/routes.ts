@@ -20,7 +20,8 @@ import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
 import { invoiceProcessingService } from "./services/invoiceProcessingService.js";
 import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
-import { classifyLineItemSchema, batchClassifySchema } from "@shared/schema";
+import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
+import { BulkClassificationService } from "./services/bulkClassificationService.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -2897,6 +2898,130 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error AI classifying invoice:", error);
       res.status(500).json({ message: "Failed to AI classify invoice" });
+    }
+  });
+
+  // Bulk classification API endpoints
+  
+  // Get invoices ready for classification
+  app.get('/api/invoices/ready-for-classification', isAuthenticated, async (req: any, res) => {
+    try {
+      const filters = {
+        projectId: req.query.projectId as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+        invoiceIds: req.query.invoiceIds ? (req.query.invoiceIds as string).split(',').map(Number) : undefined,
+      };
+
+      const invoices = await BulkClassificationService.getInvoicesReadyForClassification(filters);
+      res.json({
+        invoices,
+        count: invoices.length,
+      });
+    } catch (error) {
+      console.error('Error fetching invoices ready for classification:', error);
+      res.status(500).json({ message: 'Failed to fetch invoices ready for classification' });
+    }
+  });
+
+  // Start bulk classification process
+  app.post('/api/classify-bulk-invoices', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const sessionId = req.headers['x-session-id'] as string || 'default';
+      
+      // Validate request body
+      const validationResult = bulkClassifyInvoicesSchema.safeParse(req.body);
+      if (!validationResult.success) {
+        return res.status(400).json({ 
+          message: 'Invalid request data',
+          errors: validationResult.error.errors 
+        });
+      }
+
+      // Start the bulk classification process (runs in background)
+      BulkClassificationService.processBulkClassification(validationResult.data, userId, sessionId)
+        .catch(error => {
+          console.error('Background bulk classification failed:', error);
+        });
+
+      res.json({ 
+        message: 'Bulk classification started',
+        sessionId,
+        status: 'processing'
+      });
+    } catch (error) {
+      console.error('Error starting bulk classification:', error);
+      res.status(500).json({ message: 'Failed to start bulk classification' });
+    }
+  });
+
+  // Get bulk classification progress
+  app.get('/api/classify-bulk-invoices/progress/:sessionId?', isAuthenticated, async (req: any, res) => {
+    try {
+      const sessionId = req.params.sessionId || 'default';
+      const progress = BulkClassificationService.getProgress(sessionId);
+      
+      if (!progress) {
+        return res.status(404).json({ message: 'No classification process found for this session' });
+      }
+
+      res.json(progress);
+    } catch (error) {
+      console.error('Error getting classification progress:', error);
+      res.status(500).json({ message: 'Failed to get classification progress' });
+    }
+  });
+
+  // Get classification results with pagination
+  app.get('/api/classification-results', isAuthenticated, async (req: any, res) => {
+    try {
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+      
+      const filters = {
+        projectId: req.query.projectId as string,
+        dateFrom: req.query.dateFrom as string,
+        dateTo: req.query.dateTo as string,
+      };
+
+      const results = await BulkClassificationService.getClassificationResults(filters, page, limit);
+      res.json(results);
+    } catch (error) {
+      console.error('Error fetching classification results:', error);
+      res.status(500).json({ message: 'Failed to fetch classification results' });
+    }
+  });
+
+  // Get classification summary statistics
+  app.get('/api/classification-summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const summary = await BulkClassificationService.getClassificationSummary();
+      res.json(summary);
+    } catch (error) {
+      console.error('Error fetching classification summary:', error);
+      res.status(500).json({ message: 'Failed to fetch classification summary' });
+    }
+  });
+
+  // Get available classification categories
+  app.get('/api/classification/categories', isAuthenticated, async (req: any, res) => {
+    try {
+      const categories = {
+        'materials_supplies': 'Raw materials, supplies, and consumable items',
+        'equipment_tools': 'Tools, machinery, equipment, and hardware for operations',
+        'services_labor': 'Professional services, labor, consulting, and expertise',
+        'utilities_facilities': 'Utilities, facility costs, and operational overhead',
+        'food_beverages': 'Food, beverages, and related consumables',
+        'transportation_logistics': 'Transportation, shipping, logistics, and related services',
+        'technology_software': 'Technology, software, digital services, and IT solutions',
+        'marketing_advertising': 'Marketing, advertising, promotional materials and services',
+        'other': 'Items that don\'t fit into standard business categories',
+      };
+      res.json(categories);
+    } catch (error) {
+      console.error('Error fetching classification categories:', error);
+      res.status(500).json({ message: 'Failed to fetch classification categories' });
     }
   });
 

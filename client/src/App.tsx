@@ -24,6 +24,7 @@ import VerifiedInvoices from "@/pages/VerifiedInvoices";
 import InvoiceVerification from "@/pages/InvoiceVerification";
 import AILearningDashboard from "@/pages/AILearningDashboard";
 import LineItemClassification from "@/pages/LineItemClassification";
+import BulkClassificationPage from "@/pages/BulkClassificationPage";
 import ERPConnect from "@/pages/ERPConnect";
 import RPADashboard from "@/pages/RPADashboard";
 import AiWorkflow from "@/pages/AiWorkflow";
@@ -104,6 +105,9 @@ const AppContent = React.memo(() => {
         </Route>
         <Route path="/line-item-classification">
           {user ? <LineItemClassification /> : <Landing />}
+        </Route>
+        <Route path="/bulk-classification">
+          {user ? <BulkClassificationPage /> : <Landing />}
         </Route>
         <Route path="/erp-connect">
           {user ? <ERPConnect /> : <Landing />}

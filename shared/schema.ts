@@ -867,6 +867,43 @@ export const insertClassificationKeywordSchema = createInsertSchema(classificati
   updatedAt: true,
 });
 
+// Bulk classification schemas for the new bulk system
+export const bulkClassifyInvoicesSchema = z.object({
+  filters: z.object({
+    projectId: z.string().optional(),
+    dateFrom: z.string().optional(),
+    dateTo: z.string().optional(),
+    invoiceIds: z.array(z.number()).optional(),
+  }).optional(),
+  forceReclassify: z.boolean().default(false),
+});
+
+export const bulkClassificationResultSchema = z.object({
+  success: z.boolean(),
+  processed: z.number(),
+  successful: z.number(),
+  failed: z.number(),
+  results: z.array(z.object({
+    invoiceId: z.number(),
+    vendorName: z.string(),
+    projectId: z.string(),
+    lineItemsCount: z.number(),
+    classificationsCount: z.number(),
+    status: z.enum(['success', 'failed', 'skipped']),
+    error: z.string().optional(),
+  })),
+  summary: z.object({
+    totalInvoices: z.number(),
+    totalLineItems: z.number(),
+    totalClassifications: z.number(),
+    categoryBreakdown: z.record(z.number()),
+    averageConfidence: z.number(),
+  }),
+});
+
+export type BulkClassifyInvoicesRequest = z.infer<typeof bulkClassifyInvoicesSchema>;
+export type BulkClassificationResult = z.infer<typeof bulkClassificationResultSchema>;
+
 // Types
 export type InsertCompany = typeof companies.$inferInsert;
 export type Company = typeof companies.$inferSelect;
