@@ -64,6 +64,31 @@ interface ProcessingProgress {
   sessionId?: string;
 }
 
+interface Invoice {
+  id: number;
+  invoiceNumber: string | null;
+  vendorName: string | null;
+  totalAmount: string | null;
+  status: string;
+  createdAt: string;
+  projectId: string | null;
+}
+
+interface ClassificationResult {
+  invoiceId: number;
+  invoiceNumber: string | null;
+  vendorName: string | null;
+  totalAmount: string | null;
+  processedAt: string;
+  lineItems: {
+    description: string;
+    category: string;
+    amount: string;
+    confidence: number;
+  }[];
+}
+
+
 export default function LineItemClassification() {
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -86,7 +111,7 @@ export default function LineItemClassification() {
 
   const [batchItems, setBatchItems] = useState<LineItem[]>([]);
   const [batchText, setBatchText] = useState("");
-  const [currentTab, setCurrentTab] = useState("single");
+  const [currentTab, setCurrentTab] = useState("process"); // Default to 'process' tab
 
   // Invoice processing state
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
@@ -294,6 +319,37 @@ export default function LineItemClassification() {
     }
   };
 
+  // Placeholder states and functions for Process Invoices and Results tabs
+  const [projectId, setProjectId] = useState("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+  const [statusFilter, setStatusFilter] = useState("");
+  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
+  const [processingLoading, setProcessingLoading] = useState(false);
+  const [classificationResults, setClassificationResults] = useState<ClassificationResult[]>([]);
+
+  const refreshInvoices = () => {
+    // Placeholder for API call to refresh invoices
+    console.log("Refreshing invoices...");
+  };
+
+  const processSpecificInvoice = (id: number) => {
+    // Placeholder for API call to process a specific invoice
+    console.log(`Processing invoice ${id}...`);
+    toast({ title: "Processing Invoice", description: `Initiated processing for invoice ${id}.` });
+  };
+
+  const processAllFiltered = () => {
+    // Placeholder for API call to process all filtered invoices
+    setProcessingLoading(true);
+    console.log("Processing all filtered invoices...");
+    setTimeout(() => {
+      setProcessingLoading(false);
+      toast({ title: "Processing Invoices", description: "All filtered invoices have been submitted for processing." });
+    }, 2000);
+  };
+
+
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
@@ -319,14 +375,12 @@ export default function LineItemClassification() {
         </div>
 
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-4">
-            <TabsTrigger value="single">Single Item</TabsTrigger>
-            <TabsTrigger value="batch">Batch Processing</TabsTrigger>
+          <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="process">Process Invoices</TabsTrigger>
             <TabsTrigger value="results">Results & History</TabsTrigger>
           </TabsList>
 
-          {/* Vendor Context Card */}
+          {/* Vendor Context Card - Kept as it might be relevant for future functionality */}
           <Card>
             <CardHeader>
               <CardTitle className="text-lg">Vendor Context</CardTitle>
@@ -367,392 +421,87 @@ export default function LineItemClassification() {
             </CardContent>
           </Card>
 
-          <TabsContent value="single" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Input Form */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Line Item Details</CardTitle>
-                  <CardDescription>
-                    Enter the details of the line item to classify
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="description">Description *</Label>
-                    <Textarea
-                      id="description"
-                      value={lineItem.description}
-                      onChange={(e) => setLineItem({...lineItem, description: e.target.value})}
-                      placeholder="e.g., Cemento portland 50kg"
-                      className="min-h-[80px]"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="quantity">Quantity</Label>
-                      <Input
-                        id="quantity"
-                        type="number"
-                        value={lineItem.quantity || ""}
-                        onChange={(e) => setLineItem({...lineItem, quantity: parseFloat(e.target.value) || undefined})}
-                        placeholder="10"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="unit">Unit</Label>
-                      <Input
-                        id="unit"
-                        value={lineItem.unit || ""}
-                        onChange={(e) => setLineItem({...lineItem, unit: e.target.value})}
-                        placeholder="kg, pieces, hours"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <Label htmlFor="unitPrice">Unit Price</Label>
-                      <Input
-                        id="unitPrice"
-                        type="number"
-                        value={lineItem.unitPrice || ""}
-                        onChange={(e) => setLineItem({...lineItem, unitPrice: parseFloat(e.target.value) || undefined})}
-                        placeholder="25000"
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <Label htmlFor="totalPrice">Total Price</Label>
-                      <Input
-                        id="totalPrice"
-                        type="number"
-                        value={lineItem.totalPrice || ""}
-                        onChange={(e) => setLineItem({...lineItem, totalPrice: parseFloat(e.target.value) || undefined})}
-                        placeholder="250000"
-                      />
-                    </div>
-                  </div>
-
-                  <div className="space-y-2">
-                    <Label htmlFor="rawText">Raw Text (Optional)</Label>
-                    <Textarea
-                      id="rawText"
-                      value={lineItem.rawText || ""}
-                      onChange={(e) => setLineItem({...lineItem, rawText: e.target.value})}
-                      placeholder="Original text from invoice if different from description"
-                      className="min-h-[60px]"
-                    />
-                  </div>
-
-                  <Button
-                    onClick={handleSingleClassify}
-                    disabled={classifyMutation.isPending}
-                    className="w-full"
-                  >
-                    {classifyMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    <Brain className="h-4 w-4 mr-2" />
-                    Classify Item
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Classification Result */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Classification Result</CardTitle>
-                  <CardDescription>
-                    AI-powered categorization result
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {classifyMutation.isPending && (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                      <span className="ml-2">Classifying...</span>
-                    </div>
-                  )}
-
-                  {classifyMutation.data && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <Badge className={getCategoryColor(classifyMutation.data.category)}>
-                          {classifyMutation.data.category.replace('_', ' ').toUpperCase()}
-                        </Badge>
-                        <div className="flex items-center space-x-2">
-                          {getMethodIcon(classifyMutation.data.method)}
-                          <span className="text-sm text-muted-foreground">
-                            {classifyMutation.data.method.toUpperCase()}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="space-y-2">
-                        <div className="flex justify-between items-center">
-                          <span className="text-sm font-medium">Confidence</span>
-                          <span className="text-sm">{(classifyMutation.data.confidence * 100).toFixed(1)}%</span>
-                        </div>
-                        <Progress value={classifyMutation.data.confidence * 100} className="h-2" />
-                      </div>
-
-                      {classifyMutation.data.subcategory && (
-                        <div>
-                          <span className="text-sm font-medium">Subcategory: </span>
-                          <span className="text-sm">{classifyMutation.data.subcategory}</span>
-                        </div>
-                      )}
-
-                      {classifyMutation.data.reasoning && (
-                        <div>
-                          <span className="text-sm font-medium">Reasoning: </span>
-                          <span className="text-sm text-muted-foreground">{classifyMutation.data.reasoning}</span>
-                        </div>
-                      )}
-
-                      {classifyMutation.data.keywords_matched && classifyMutation.data.keywords_matched.length > 0 && (
-                        <div>
-                          <span className="text-sm font-medium">Matched Keywords: </span>
-                          <div className="flex flex-wrap gap-1 mt-1">
-                            {classifyMutation.data.keywords_matched.map((keyword, index) => (
-                              <Badge key={index} variant="outline" className="text-xs">
-                                {keyword}
-                              </Badge>
-                            ))}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  {classifyMutation.isError && (
-                    <Alert variant="destructive">
-                      <AlertDescription>
-                        Classification failed. Please check your input and try again.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-
-                  {!classifyMutation.data && !classifyMutation.isPending && !classifyMutation.isError && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      Enter a line item description and click "Classify Item" to see results
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
-          <TabsContent value="batch" className="space-y-6">
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Batch Input */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Batch Input</CardTitle>
-                  <CardDescription>
-                    Add multiple items for bulk classification
-                  </CardDescription>
-                </CardHeader>
-                <CardContent className="space-y-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="batchText">Paste Items (Tab-separated)</Label>
-                    <Textarea
-                      id="batchText"
-                      value={batchText}
-                      onChange={(e) => setBatchText(e.target.value)}
-                      placeholder="Description  Quantity        Unit Price      Unit
-Cemento portland        10      25000   kg
-Consultoría ingeniería  1       150000  service"
-                      className="min-h-[120px] font-mono text-sm"
-                    />
-                    <Button onClick={parseBatchText} variant="outline" size="sm">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Parse Items
-                    </Button>
-                  </div>
-
-                  <Separator />
-
-                  <div className="space-y-2">
-                    <div className="flex justify-between items-center">
-                      <Label>Manual Entry ({batchItems.length} items)</Label>
-                      <Button onClick={addBatchItem} variant="outline" size="sm">
-                        Add Item
-                      </Button>
-                    </div>
-
-                    <div className="max-h-[300px] overflow-y-auto space-y-2">
-                      {batchItems.map((item, index) => (
-                        <div key={index} className="grid grid-cols-12 gap-2 items-center p-2 border rounded">
-                          <div className="col-span-6">
-                            <Input
-                              value={item.description}
-                              onChange={(e) => updateBatchItem(index, 'description', e.target.value)}
-                              placeholder="Description"
-                              size="sm"
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Input
-                              type="number"
-                              value={item.quantity || ""}
-                              onChange={(e) => updateBatchItem(index, 'quantity', parseFloat(e.target.value) || undefined)}
-                              placeholder="Qty"
-                              size="sm"
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Input
-                              value={item.unit || ""}
-                              onChange={(e) => updateBatchItem(index, 'unit', e.target.value)}
-                              placeholder="Unit"
-                              size="sm"
-                            />
-                          </div>
-                          <div className="col-span-2">
-                            <Button
-                              onClick={() => removeBatchItem(index)}
-                              variant="outline"
-                              size="sm"
-                            >
-                              Remove
-                            </Button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <Button
-                    onClick={handleBatchClassify}
-                    disabled={batchClassifyMutation.isPending || batchItems.length === 0}
-                    className="w-full"
-                  >
-                    {batchClassifyMutation.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                    <Brain className="h-4 w-4 mr-2" />
-                    Classify Batch ({batchItems.length} items)
-                  </Button>
-                </CardContent>
-              </Card>
-
-              {/* Batch Results */}
-              <Card>
-                <CardHeader>
-                  <CardTitle>Batch Results</CardTitle>
-                  <CardDescription>
-                    Classification results for batch processing
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  {batchClassifyMutation.isPending && (
-                    <div className="flex items-center justify-center py-8">
-                      <Loader2 className="h-8 w-8 animate-spin" />
-                      <span className="ml-2">Processing batch...</span>
-                    </div>
-                  )}
-
-                  {batchClassifyMutation.data?.results && (
-                    <div className="space-y-3 max-h-[400px] overflow-y-auto">
-                      {batchClassifyMutation.data.results.map((result: ClassificationResult, index: number) => (
-                        <div key={index} className="border rounded p-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <span className="text-sm font-medium truncate">
-                              {batchItems[index]?.description || `Item ${index + 1}`}
-                            </span>
-                            <Badge className={getCategoryColor(result.category)}>
-                              {result.category.replace('_', ' ')}
-                            </Badge>
-                          </div>
-                          <div className="flex justify-between items-center">
-                            <div className="flex items-center space-x-2">
-                              {getMethodIcon(result.method)}
-                              <span className="text-xs text-muted-foreground">
-                                {result.method}
-                              </span>
-                            </div>
-                            <span className="text-sm">{(result.confidence * 100).toFixed(1)}%</span>
-                          </div>
-                          <Progress value={result.confidence * 100} className="h-1" />
-                        </div>
-                      ))}
-                    </div>
-                  )}
-
-                  {!batchClassifyMutation.data && !batchClassifyMutation.isPending && (
-                    <div className="text-center py-8 text-muted-foreground">
-                      Add items to batch and click "Classify Batch" to see results
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            </div>
-          </TabsContent>
-
+          {/* Process Invoices Content */}
           <TabsContent value="process" className="space-y-6">
-            <Card>
+            <Card className="bg-white shadow-sm border border-gray-200">
               <CardHeader>
-                <CardTitle>Process Invoices for Line Item Classification</CardTitle>
-                <CardDescription>
-                  Process invoices from the invoiceProjectMatches table to automatically extract and classify their line items
-                </CardDescription>
+                <CardTitle className="text-xl font-semibold text-gray-900">Process Invoices for Line Item Classification</CardTitle>
+                <p className="text-gray-600">Process invoices from the InvoiceProjectMatches table to automatically extract and classify their line items</p>
               </CardHeader>
-              <CardContent className="space-y-6">
-                {/* Filters */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              <CardContent>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
                   <div>
-                    <Label htmlFor="projectId">Project ID</Label>
+                    <Label htmlFor="project-id" className="text-sm font-medium text-gray-700">
+                      Project ID
+                    </Label>
                     <Input
-                      id="projectId"
-                      placeholder="Enter project ID"
+                      id="project-id"
                       value={filterProjectId}
                       onChange={(e) => setFilterProjectId(e.target.value)}
+                      placeholder="Enter project ID"
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="dateFrom">Date From</Label>
+                    <Label htmlFor="date-from" className="text-sm font-medium text-gray-700">
+                      Date From
+                    </Label>
                     <Input
-                      id="dateFrom"
+                      id="date-from"
                       type="date"
                       value={filterDateFrom}
                       onChange={(e) => setFilterDateFrom(e.target.value)}
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="dateTo">Date To</Label>
+                    <Label htmlFor="date-to" className="text-sm font-medium text-gray-700">
+                      Date To
+                    </Label>
                     <Input
-                      id="dateTo"
+                      id="date-to"
                       type="date"
                       value={filterDateTo}
                       onChange={(e) => setFilterDateTo(e.target.value)}
+                      className="mt-1"
                     />
                   </div>
                   <div>
-                    <Label htmlFor="status">Status</Label>
+                    <Label htmlFor="status-filter" className="text-sm font-medium text-gray-700">
+                      Status
+                    </Label>
                     <select
-                      id="status"
+                      id="status-filter"
                       value={filterStatus}
                       onChange={(e) => setFilterStatus(e.target.value)}
-                      className="w-full h-10 px-3 rounded-md border border-input bg-background text-sm ring-offset-background"
+                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
                     >
                       <option value="">All Statuses</option>
-                      <option value="extracted">Extracted</option>
+                      <option value="pending">Pending</option>
+                      <option value="processing">Processing</option>
                       <option value="approved">Approved</option>
-                      <option value="verified">Verified</option>
+                      <option value="rejected">Rejected</option>
+                      <option value="extracted">Extracted</option>
                     </select>
                   </div>
                 </div>
 
-                <div className="flex space-x-2">
-                  <Button onClick={() => refetchInvoices()} variant="outline">
+                <div className="flex space-x-4 mb-6">
+                  <Button
+                    onClick={() => refetchInvoices()}
+                    variant="outline"
+                    className="border-gray-300 text-gray-700 hover:bg-gray-50"
+                  >
                     <RefreshCcw className="h-4 w-4 mr-2" />
                     Refresh Invoices
                   </Button>
-                  <Button 
+                  <Button
                     onClick={() => {
                       if (selectedInvoices.length > 0) {
                         processInvoicesMutation.mutate({ invoiceIds: selectedInvoices });
                       } else {
-                        processInvoicesMutation.mutate({ 
-                          invoiceIds: [], 
+                        processInvoicesMutation.mutate({
+                          invoiceIds: [],
                           filters: { filterProjectId, filterDateFrom, filterDateTo, filterStatus }
                         });
                       }
@@ -764,149 +513,114 @@ Consultoría ingeniería  1       150000  service"
                     ) : (
                       <FileCheck className="h-4 w-4 mr-2" />
                     )}
-                    {selectedInvoices.length > 0 
-                      ? `Process ${selectedInvoices.length} Selected` 
+                    {selectedInvoices.length > 0
+                      ? `Process ${selectedInvoices.length} Selected`
                       : "Process All Filtered"}
                   </Button>
                 </div>
 
-                {/* Processing Status */}
-                {processingSessionId && (
-                  <Alert>
-                    <CheckCircle className="h-4 w-4" />
-                    <AlertTitle>Processing In Progress</AlertTitle>
-                    <AlertDescription>
-                      Session ID: {processingSessionId}. The system is processing invoices in the background.
-                    </AlertDescription>
-                  </Alert>
-                )}
-
-                {/* Invoices Table */}
                 {invoicesLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin" />
                     <span className="ml-2">Loading invoices...</span>
                   </div>
                 ) : invoicesData?.invoices && invoicesData.invoices.length > 0 ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm text-muted-foreground">
-                        Found {invoicesData.count} invoices ready for processing
-                      </p>
-                      <div className="flex items-center space-x-2">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          onClick={() => {
-                            if (selectedInvoices.length === invoicesData.invoices.length) {
-                              setSelectedInvoices([]);
-                            } else {
-                              setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
-                            }
-                          }}
-                        >
-                          {selectedInvoices.length === invoicesData.invoices.length ? 'Deselect All' : 'Select All'}
-                        </Button>
-                      </div>
-                    </div>
-
-                    <div className="border rounded-lg">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead className="w-12">
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead className="w-12">
+                            <input
+                              type="checkbox"
+                              checked={selectedInvoices.length === invoicesData.invoices.length && invoicesData.invoices.length > 0}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
+                                } else {
+                                  setSelectedInvoices([]);
+                                }
+                              }}
+                            />
+                          </TableHead>
+                          <TableHead>Invoice #</TableHead>
+                          <TableHead>Vendor</TableHead>
+                          <TableHead>Amount</TableHead>
+                          <TableHead>Date</TableHead>
+                          <TableHead>Project</TableHead>
+                          <TableHead>Status</TableHead>
+                          <TableHead>Line Items</TableHead>
+                          <TableHead>Classifications</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {invoicesData.invoices.map((invoice) => (
+                          <TableRow key={invoice.id}>
+                            <TableCell>
                               <input
                                 type="checkbox"
-                                checked={selectedInvoices.length === invoicesData.invoices.length}
+                                checked={selectedInvoices.includes(invoice.id)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
+                                    setSelectedInvoices(prev => [...prev, invoice.id]);
                                   } else {
-                                    setSelectedInvoices([]);
+                                    setSelectedInvoices(prev => prev.filter(id => id !== invoice.id));
                                   }
                                 }}
                               />
-                            </TableHead>
-                            <TableHead>Invoice #</TableHead>
-                            <TableHead>Vendor</TableHead>
-                            <TableHead>Amount</TableHead>
-                            <TableHead>Date</TableHead>
-                            <TableHead>Project</TableHead>
-                            <TableHead>Status</TableHead>
-                            <TableHead>Line Items</TableHead>
-                            <TableHead>Classifications</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {invoicesData.invoices.map((invoice) => (
-                            <TableRow key={invoice.id}>
-                              <TableCell>
-                                <input
-                                  type="checkbox"
-                                  checked={selectedInvoices.includes(invoice.id)}
-                                  onChange={(e) => {
-                                    if (e.target.checked) {
-                                      setSelectedInvoices(prev => [...prev, invoice.id]);
-                                    } else {
-                                      setSelectedInvoices(prev => prev.filter(id => id !== invoice.id));
-                                    }
-                                  }}
-                                />
-                              </TableCell>
-                              <TableCell className="font-medium">
-                                {invoice.invoiceNumber}
-                              </TableCell>
-                              <TableCell>{invoice.vendorName}</TableCell>
-                              <TableCell>
-                                {invoice.currency} {invoice.totalAmount}
-                              </TableCell>
-                              <TableCell>
-                                {new Date(invoice.invoiceDate).toLocaleDateString()}
-                              </TableCell>
-                              <TableCell>
-                                <Badge variant="outline">{invoice.projectId}</Badge>
-                              </TableCell>
-                              <TableCell>
-                                <Badge 
-                                  className={
-                                    invoice.status === 'verified' ? 'bg-green-100 text-green-800' :
-                                    invoice.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                                    'bg-yellow-100 text-yellow-800'
-                                  }
-                                >
-                                  {invoice.status}
-                                </Badge>
-                              </TableCell>
-                              <TableCell>
-                                <div className="flex items-center space-x-2">
-                                  {invoice.lineItemsExtracted ? (
-                                    <Badge className="bg-green-100 text-green-800">
-                                      {invoice.lineItemsCount} items
-                                    </Badge>
-                                  ) : (
-                                    <Badge className="bg-gray-100 text-gray-800">
-                                      OCR only
-                                    </Badge>
-                                  )}
-                                </div>
-                              </TableCell>
-                              <TableCell>
-                                {invoice.hasClassifications ? (
-                                  <Badge className="bg-blue-100 text-blue-800">
-                                    <CheckCircle className="h-3 w-3 mr-1" />
-                                    Classified
+                            </TableCell>
+                            <TableCell className="font-medium">
+                              {invoice.invoiceNumber}
+                            </TableCell>
+                            <TableCell>{invoice.vendorName}</TableCell>
+                            <TableCell>
+                              {invoice.currency} {invoice.totalAmount}
+                            </TableCell>
+                            <TableCell>
+                              {new Date(invoice.invoiceDate).toLocaleDateString()}
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{invoice.projectId}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge
+                                className={
+                                  invoice.status === 'verified' ? 'bg-green-100 text-green-800' :
+                                  invoice.status === 'approved' ? 'bg-blue-100 text-blue-800' :
+                                  'bg-yellow-100 text-yellow-800'
+                                }
+                              >
+                                {invoice.status}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex items-center space-x-2">
+                                {invoice.lineItemsExtracted ? (
+                                  <Badge className="bg-green-100 text-green-800">
+                                    {invoice.lineItemsCount} items
                                   </Badge>
                                 ) : (
-                                  <Badge className="bg-orange-100 text-orange-800">
-                                    Pending
+                                  <Badge className="bg-gray-100 text-gray-800">
+                                    OCR only
                                   </Badge>
                                 )}
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              {invoice.hasClassifications ? (
+                                <Badge className="bg-blue-100 text-blue-800">
+                                  <CheckCircle className="h-3 w-3 mr-1" />
+                                  Classified
+                                </Badge>
+                              ) : (
+                                <Badge className="bg-orange-100 text-orange-800">
+                                  Pending
+                                </Badge>
+                              )}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
                   </div>
                 ) : (
                   <Alert>
