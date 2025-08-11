@@ -216,7 +216,8 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         validationResults: validationResult, // Store complete validation results
         validationStatus: validationResult.status,
         isValidated: true, // Mark as validated regardless of pass/fail
-        validationScore: validationResult.validationScore
+        validationScore: validationResult.validationScore,
+        processingStatus: 'validated' // Update processing status
       });
 
       console.log(`✅ Invoice ${invoice.id} validation completed:`, {
@@ -383,6 +384,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error fetching petty cash by invoice:", error);
       res.status(500).json({ message: "Failed to fetch petty cash log" });
+    }
+  });
+
+  // Petty cash classification endpoint
+  app.post('/api/petty-cash/classify', isAuthenticated, async (req, res) => {
+    try {
+      const { invoiceId, isPettyCash, classificationMethod, confidenceScore } = req.body;
+
+      if (!invoiceId || isPettyCash === undefined) {
+        return res.status(400).json({ message: "invoiceId and isPettyCash are required" });
+      }
+
+      // Check if petty cash log already exists for this invoice
+      const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+      
+      if (existingLog) {
+        // Update existing log
+        const updatedLog = await storage.updatePettyCashLog(existingLog.id, {
+          isPettyCash,
+          classificationMethod: classificationMethod || 'manual',
+          confidenceScore: confidenceScore || 0.95,
+          updatedAt: new Date()
+        });
+        
+        console.log(`✅ Updated petty cash classification for invoice ${invoiceId}: ${isPettyCash ? 'YES' : 'NO'}`);
+        res.json({ 
+          message: "Petty cash classification updated", 
+          log: updatedLog,
+          result: isPettyCash ? 'YES' : 'NO'
+        });
+      } else {
+        // Create new petty cash log
+        const newLog = await storage.createPettyCashLog({
+          invoiceId,
+          isPettyCash,
+          classificationMethod: classificationMethod || 'manual',
+          confidenceScore: confidenceScore || 0.95,
+          status: 'pending_approval'
+        });
+        
+        console.log(`✅ Created petty cash classification for invoice ${invoiceId}: ${isPettyCash ? 'YES' : 'NO'}`);
+        res.json({ 
+          message: "Petty cash classification stored", 
+          log: newLog,
+          result: isPettyCash ? 'YES' : 'NO'
+        });
+      }
+
+      // Also update the invoice processing status
+      await storage.updateInvoice(invoiceId, {
+        processingStatus: 'classified'
+      });
+
+    } catch (error) {
+      console.error("Error storing petty cash classification:", error);
+      res.status(500).json({ message: "Failed to store petty cash classification" });
     }
   });
 
@@ -861,10 +918,166 @@ export async function registerRoutes(app: Express): Promise<Server> {
       };
 
       const match = await storage.createInvoiceProjectMatch(matchData);
+      
+      // Update invoice processing status
+      await storage.updateInvoice(invoiceId, {
+        processingStatus: 'matched'
+      });
+      
+      console.log(`✅ Created project match for invoice ${invoiceId} to project ${projectId} with score ${matchScore}`);
       res.json(match);
     } catch (error) {
       console.error("Error creating project match:", error);
       res.status(500).json({ message: "Failed to create project match" });
+    }
+  });
+
+  // Project matching endpoint - stores the match when "Project Match: CONSTRUCCIONES OBYCON" is determined
+  app.post('/api/project-matching', isAuthenticated, async (req, res) => {
+    try {
+      const { invoiceId, projectName, projectId, matchScore, matchDetails, classificationMethod } = req.body;
+
+      if (!invoiceId || !projectName) {
+        return res.status(400).json({ message: "invoiceId and projectName are required" });
+      }
+
+      // Create the project match record
+      const matchData = {
+        invoiceId,
+        projectId: projectId || projectName, // Use projectId if provided, otherwise use projectName
+        matchScore: matchScore || 85, // Default confidence score
+        status: 'auto' as any,
+        matchDetails: matchDetails || {
+          matchedProject: projectName,
+          method: classificationMethod || 'AI',
+          confidence: matchScore || 85,
+          timestamp: new Date().toISOString()
+        },
+        isActive: true,
+      };
+
+      const match = await storage.createInvoiceProjectMatch(matchData);
+      
+      // Update invoice processing status
+      await storage.updateInvoice(invoiceId, {
+        processingStatus: 'matched',
+        projectName: projectName
+      });
+      
+      console.log(`✅ Stored project match result for invoice ${invoiceId}: ${projectName}`);
+      res.json({ 
+        message: "Project match stored successfully", 
+        match,
+        projectMatch: projectName
+      });
+
+    } catch (error) {
+      console.error("Error storing project match:", error);
+      res.status(500).json({ message: "Failed to store project match" });
+    }
+  });
+
+  // Invoice processing endpoint - processes and stores all results in database
+  app.post('/api/invoices/process', isAuthenticated, async (req, res) => {
+    try {
+      const { invoiceId, isPettyCash, projectMatch, validationStatus } = req.body;
+
+      if (!invoiceId) {
+        return res.status(400).json({ message: "invoiceId is required" });
+      }
+
+      const results = {
+        pettyCashResult: null as any,
+        projectMatchResult: null as any,
+        validationResult: null as any
+      };
+
+      // Store petty cash classification if provided
+      if (isPettyCash !== undefined) {
+        try {
+          const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+          
+          if (existingLog) {
+            results.pettyCashResult = await storage.updatePettyCashLog(existingLog.id, {
+              isPettyCash,
+              classificationMethod: 'AI',
+              confidenceScore: 0.90,
+              updatedAt: new Date()
+            });
+          } else {
+            results.pettyCashResult = await storage.createPettyCashLog({
+              invoiceId,
+              isPettyCash,
+              classificationMethod: 'AI',
+              confidenceScore: 0.90,
+              status: 'pending_approval'
+            });
+          }
+          console.log(`✅ Stored petty cash classification for invoice ${invoiceId}: ${isPettyCash ? 'YES' : 'NO'}`);
+        } catch (error) {
+          console.error(`Error storing petty cash classification:`, error);
+        }
+      }
+
+      // Store project match if provided
+      if (projectMatch) {
+        try {
+          const matchData = {
+            invoiceId,
+            projectId: typeof projectMatch === 'string' ? projectMatch : projectMatch.projectId,
+            matchScore: typeof projectMatch === 'object' ? projectMatch.matchScore || 85 : 85,
+            status: 'auto' as any,
+            matchDetails: {
+              matchedProject: typeof projectMatch === 'string' ? projectMatch : projectMatch.projectName,
+              method: 'AI',
+              confidence: typeof projectMatch === 'object' ? projectMatch.matchScore || 85 : 85,
+              timestamp: new Date().toISOString()
+            },
+            isActive: true,
+          };
+
+          results.projectMatchResult = await storage.createInvoiceProjectMatch(matchData);
+          console.log(`✅ Stored project match for invoice ${invoiceId}: ${typeof projectMatch === 'string' ? projectMatch : projectMatch.projectName}`);
+        } catch (error) {
+          console.error(`Error storing project match:`, error);
+        }
+      }
+
+      // Update validation status if provided
+      if (validationStatus) {
+        try {
+          const updateData: any = {
+            validationStatus: validationStatus,
+            processingStatus: validationStatus === 'pending' ? 'validated' : 'processed'
+          };
+
+          await storage.updateInvoice(invoiceId, updateData);
+          results.validationResult = { status: validationStatus };
+          console.log(`✅ Updated validation status for invoice ${invoiceId}: ${validationStatus}`);
+        } catch (error) {
+          console.error(`Error updating validation status:`, error);
+        }
+      }
+
+      // Update overall processing status
+      let finalStatus = 'extracted';
+      if (isPettyCash !== undefined) finalStatus = 'classified';
+      if (projectMatch) finalStatus = 'matched';
+      if (validationStatus) finalStatus = 'validated';
+
+      await storage.updateInvoice(invoiceId, {
+        processingStatus: finalStatus
+      });
+
+      res.json({
+        message: "Invoice processing results stored successfully",
+        results,
+        processingStatus: finalStatus
+      });
+
+    } catch (error) {
+      console.error("Error processing invoice:", error);
+      res.status(500).json({ message: "Failed to process invoice" });
     }
   });
 

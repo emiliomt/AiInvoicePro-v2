@@ -105,6 +105,8 @@ export const invoices = pgTable("invoices", {
   isValidated: boolean("is_validated").default(false),
   validatedAt: timestamp("validated_at"),
   uploadedAt: timestamp("uploaded_at").defaultNow(), // Track when invoice was uploaded
+  // Processing status tracking
+  processingStatus: varchar("processing_status", { length: 50 }).default("pending"), // extracted, classified, matched, validated, approved
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -197,6 +199,10 @@ export const pettyCashLog = pgTable("petty_cash_log", {
   status: pettyCashStatusEnum("status").default("pending_approval"),
   approvalNotes: text("approval_notes"),
   approvedAt: timestamp("approved_at"),
+  // Petty cash classification fields
+  isPettyCash: boolean("is_petty_cash"), // true/false result of classification
+  classificationMethod: varchar("classification_method", { length: 50 }), // 'AI', 'rule-based', 'manual'
+  confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0-1 confidence score
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });

@@ -1690,21 +1690,58 @@ class PostgresStorage implements IStorage {
     };
   }
 
-  // Missing methods implementations
+  // Petty Cash Log methods
   async createPettyCashLog(log: any): Promise<any> {
-    return { id: Date.now(), ...log, createdAt: new Date() };
+    try {
+      const { pettyCashLog } = await import('@shared/schema');
+      const [result] = await db.insert(pettyCashLog).values(log).returning();
+      return result;
+    } catch (error) {
+      console.error('Error creating petty cash log:', error);
+      throw error;
+    }
   }
 
   async updatePettyCashLog(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+    try {
+      const { pettyCashLog } = await import('@shared/schema');
+      const [result] = await db.update(pettyCashLog)
+        .set({ ...updates, updatedAt: new Date() })
+        .where(eq(pettyCashLog.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error updating petty cash log:', error);
+      throw error;
+    }
   }
 
   async getPettyCashLogs(status?: string): Promise<any[]> {
-    return [];
+    try {
+      const { pettyCashLog } = await import('@shared/schema');
+      let query = db.select().from(pettyCashLog);
+      
+      if (status) {
+        query = query.where(eq(pettyCashLog.status, status as any));
+      }
+      
+      return await query.orderBy(desc(pettyCashLog.createdAt));
+    } catch (error) {
+      console.error('Error getting petty cash logs:', error);
+      return [];
+    }
   }
 
   async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
-    return null;
+    try {
+      const { pettyCashLog } = await import('@shared/schema');
+      const [result] = await db.select().from(pettyCashLog)
+        .where(eq(pettyCashLog.invoiceId, invoiceId));
+      return result || null;
+    } catch (error) {
+      console.error('Error getting petty cash log by invoice ID:', error);
+      return null;
+    }
   }
 
   async deleteAllProjects(): Promise<void> {
