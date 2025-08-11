@@ -7,6 +7,7 @@ import InvoiceUpload from "@/components/InvoiceUpload";
 
 import TopIssuesWidget from "@/components/TopIssuesWidget";
 import Sidebar from "@/components/Sidebar";
+import TopMenu from "@/components/TopMenu";
 
 
 export default function Dashboard() {
@@ -46,15 +47,16 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header />
-      
+      <TopMenu />
+
       <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <DashboardStats />
-        
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <InvoiceUpload />
           </div>
-          
+
           <div className="lg:col-span-1 space-y-6">
             <TopIssuesWidget />
             <Sidebar />
