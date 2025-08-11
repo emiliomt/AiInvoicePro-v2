@@ -6556,8 +6556,6 @@ async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, us
   }
 }
 
+  const server = createServer(app);
   return server;
 }
-
-// Get invoices that can be processed automatically (uploaded status)
-app.get('/api/invoices/processable', isAuthenticated, async (req: any, res) => {
