@@ -177,7 +177,7 @@ export class InvoiceProcessingService {
             processingStatus: 'failed',
             processedAt: new Date(),
           })
-          .where(eq(importedInvoice.id, importedInvoice.id));
+          .where(eq(importedInvoices.id, importedInvoice.id));
 
         errors.push(`${importedInvoice.originalFileName}: ${error.message}`);
         failed++;
@@ -347,7 +347,7 @@ export class InvoiceProcessingService {
             linkedInvoiceId: newInvoice.id,
             processedAt: new Date(),
           })
-          .where(eq(importedInvoice.id, importedInvoice.id));
+          .where(eq(importedInvoices.id, importedInvoice.id));
 
         console.log(`✅ Successfully processed ${importedInvoice.originalFileName} -> Invoice ID: ${newInvoice.id}`);
         processed++;
@@ -362,7 +362,7 @@ export class InvoiceProcessingService {
             processingStatus: 'failed',
             processedAt: new Date(),
           })
-          .where(eq(importedInvoice.id, importedInvoice.id));
+          .where(eq(importedInvoices.id, importedInvoice.id));
 
         errors.push(`${importedInvoice.originalFileName}: ${error.message}`);
         failed++;
@@ -448,13 +448,13 @@ export class InvoiceProcessingService {
       try {
         // Extract data using AI service
         const extractedData = await aiService.extractInvoiceData(invoice.ocrText || '', true);
-
+        
         // Update invoice with extracted data
         await storage.updateInvoice(invoiceId, {
           extractedData: extractedData,
           status: 'extracted'
         });
-
+        
         console.log(`✅ AI extraction completed for invoice ${invoiceId}`);
       } catch (extractionError: any) {
         console.error(`❌ AI extraction failed for invoice ${invoiceId}:`, extractionError);
@@ -540,60 +540,57 @@ export class InvoiceProcessingService {
       return false;
     }
 
-    // Step 4: Petty Cash Classification & Auto-Approval
-      console.log(`🏦 Step 4: Classifying petty cash for invoice ${invoiceId}`);
-      const amount = parseFloat(invoice.totalAmount || '0');
-      const thresholdSetting = await storage.getSetting('petty_cash_threshold');
-      const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 500000; // Default 500K COP
+    // Step 4: Check for petty cash auto-approval
+    if (invoice && invoice.extractedData) {
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'Checking petty cash criteria...');
 
-      const isPettyCash = amount > 0 && amount <= threshold;
-      let autoApprovedPettyCash = false;
+      try {
+        // Get petty cash threshold
+        const thresholdSetting = await storage.getSetting('petty_cash_threshold');
+        const threshold = thresholdSetting ? parseFloat(thresholdSetting.value) : 1000;
+        
+        const amount = parseFloat(invoice.totalAmount || "0");
+        const isPettyCash = amount <= threshold && amount > 0;
 
-      if (isPettyCash) {
-        console.log(`💰 Invoice ${invoiceId} qualifies as petty cash (${invoice.currency} ${amount} <= ${threshold}) - AUTO-APPROVING`);
-
-        // Check existing petty cash log
-        const existingPettyCashLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
-
-        if (existingPettyCashLog) {
-          // Update existing log and auto-approve
-          await storage.updatePettyCashLog(existingPettyCashLog.id, {
-            isPettyCash: true,
-            classificationMethod: 'AI',
-            confidenceScore: 1.0,
-            status: 'approved',
-            approvedAt: new Date(),
-            approvedBy: 'system_auto',
-            updatedAt: new Date()
-          });
-          autoApprovedPettyCash = true;
-          console.log(`✅ Updated and auto-approved existing petty cash log for invoice ${invoiceId}`);
-        } else {
-          // Create new petty cash log with auto-approval
-          await storage.createPettyCashLog({
-            invoiceId,
-            isPettyCash: true,
-            classificationMethod: 'AI',
-            confidenceScore: 1.0,
-            status: 'approved',
-            approvedAt: new Date(),
-            approvedBy: 'system_auto'
-          });
-          autoApprovedPettyCash = true;
-          console.log(`✅ Created and auto-approved petty cash log for invoice ${invoiceId}`);
+        if (isPettyCash) {
+          console.log(`💰 Invoice ${invoiceId} qualifies for petty cash (${amount} <= ${threshold})`);
+          
+          // Create or update petty cash log
+          const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+          
+          if (existingLog) {
+            await storage.updatePettyCashLog(existingLog.id, {
+              isPettyCash: true,
+              classificationMethod: 'automatic',
+              confidenceScore: 1.0,
+              status: 'approved',
+              costCenter: 'Petty Cash',
+              approvedBy: userId,
+              approvedAt: new Date(),
+              approvalNotes: 'Auto-approved during processing - meets petty cash criteria',
+              updatedAt: new Date()
+            });
+          } else {
+            await storage.createPettyCashLog({
+              invoiceId,
+              isPettyCash: true,
+              classificationMethod: 'automatic',
+              confidenceScore: 1.0,
+              status: 'approved',
+              costCenter: 'Petty Cash',
+              approvedBy: userId,
+              approvedAt: new Date(),
+              approvalNotes: 'Auto-approved during processing - meets petty cash criteria'
+            });
+          }
+          
+          console.log(`✅ Auto-approved petty cash for invoice ${invoiceId}`);
         }
-
-        // Update invoice status to processed since petty cash is auto-approved
-        await storage.updateInvoice(invoiceId, {
-          status: 'approved',
-          processingStatus: 'completed'
-        });
-        console.log(`✅ Updated invoice ${invoiceId} status to approved (petty cash auto-approved)`);
-
-      } else {
-        console.log(`💼 Invoice ${invoiceId} does NOT qualify as petty cash (${invoice.currency} ${amount} > ${threshold})`);
+      } catch (pettyCashError: any) {
+        console.error(`❌ Petty cash processing failed for invoice ${invoiceId}:`, pettyCashError);
+        // Continue with normal processing even if petty cash fails
       }
-
+    }
 
     // Step 5: Finalize invoice status
     // Set to approved if everything went well

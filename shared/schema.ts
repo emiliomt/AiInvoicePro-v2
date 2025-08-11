@@ -71,12 +71,6 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
   "matched",
 ]);
 
-// Processing mode enum
-export const processingModeEnum = pgEnum("processing_mode", [
-  "manual",
-  "automatic"
-]);
-
 // Approval status enum
 export const approvalStatusEnum = pgEnum("approval_status", [
   "pending",
@@ -113,8 +107,6 @@ export const invoices = pgTable("invoices", {
   uploadedAt: timestamp("uploaded_at").defaultNow(), // Track when invoice was uploaded
   // Processing status tracking
   processingStatus: varchar("processing_status", { length: 50 }).default("pending"), // extracted, classified, matched, validated, approved
-  // Processing mode for automatic vs manual workflows
-  processingMode: processingModeEnum("processing_mode").default("manual"),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -211,8 +203,6 @@ export const pettyCashLog = pgTable("petty_cash_log", {
   isPettyCash: boolean("is_petty_cash"), // true/false result of classification
   classificationMethod: varchar("classification_method", { length: 50 }), // 'AI', 'rule-based', 'manual'
   confidenceScore: decimal("confidence_score", { precision: 3, scale: 2 }), // 0-1 confidence score
-  // Auto-approval tracking
-  autoApproved: boolean("auto_approved").default(false),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 });
@@ -229,8 +219,7 @@ export const poStatusEnum = pgEnum("po_status", [
 export const matchStatusEnum = pgEnum("match_status", [
   "auto",
   "manual", 
-  "unresolved",
-  "auto_approved"
+  "unresolved"
 ]);
 
 

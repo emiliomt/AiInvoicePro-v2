@@ -11,8 +11,7 @@ import multer from "multer";
 import path from "path";
 import { z } from "zod";
 import { RequestHandler } from "express";
-import { getDb } from "./storage";
-import { invoices } from "@shared/schema";
+import { findBestProjectMatch } from "./services/aiService.js";
 import { projectMatcher } from "./projectMatcher.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
@@ -6311,251 +6310,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   }
 });
 
-// Enhanced automatic processing function that bypasses manual approval gates
-async function processInvoiceFullyAutomatic(invoice: any, fileBuffer: Buffer, userId: string): Promise<void> {
-  try {
-    console.log(`Starting fully automatic processing for invoice ${invoice.id}`);
-
-    // Step 1: OCR/AI Extraction with immediate save
-    await storage.updateInvoice(invoice.id, { 
-      status: 'processing',
-      processingMode: 'automatic',
-      processingStatus: 'extracting'
-    });
-
-    const ocrText = await processInvoiceOCR(fileBuffer, invoice.id);
-    if (!ocrText || ocrText.trim().length < 10) {
-      throw new Error("OCR did not extract sufficient text from the document");
-    }
-
-    // Extract structured data using AI or XML parser
-    let extractedData: any;
-    const isXmlContent = ocrText.trim().startsWith('<?xml') && 
-                        (ocrText.includes('<Invoice') || ocrText.includes('<CreditNote') || ocrText.includes('<AttachedDocument'));
-
-    if (isXmlContent) {
-      const { parseInvoiceXML } = await import('./services/xmlParser');
-      const xmlData = parseInvoiceXML(ocrText, false);
-      extractedData = {
-        vendorName: xmlData.vendorName,
-        invoiceNumber: xmlData.invoiceNumber,
-        invoiceDate: xmlData.invoiceDate,
-        dueDate: xmlData.dueDate,
-        totalAmount: xmlData.totalAmount,
-        taxAmount: xmlData.taxAmount,
-        subtotal: xmlData.subtotal,
-        currency: xmlData.currency || 'COP',
-        lineItems: xmlData.lineItems || []
-      };
-    } else {
-      extractedData = await extractInvoiceData(ocrText);
-    }
-
-    // Save extracted data immediately
-    await storage.updateInvoice(invoice.id, {
-      ocrText,
-      extractedData,
-      vendorName: extractedData.vendorName,
-      invoiceNumber: extractedData.invoiceNumber,
-      invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-      dueDate: extractedData.dueDate ? new Date(extractedData.dueDate) : null,
-      totalAmount: extractedData.totalAmount,
-      taxAmount: extractedData.taxAmount,
-      subtotal: extractedData.subtotal,
-      currency: extractedData.currency,
-      status: 'extracted',
-      processingStatus: 'extracted'
-    });
-
-    console.log(`Data extraction completed and saved for invoice ${invoice.id}`);
-
-    // Step 2: Auto Petty Cash Classification ($400,000 USD threshold)
-    const pettyCashThreshold = 400000; // $400,000 USD
-    const totalAmount = parseFloat(extractedData.totalAmount || '0');
-    const isPettyCash = totalAmount < pettyCashThreshold;
-    
-    const pettyCashResult = {
-      invoiceId: invoice.id,
-      isPettyCash,
-      classificationMethod: 'automatic',
-      confidenceScore: 0.95, // High confidence for threshold-based classification
-      autoApproved: true,
-      status: isPettyCash ? 'approved' : 'rejected'
-    };
-
-    await storage.createPettyCashLog(pettyCashResult);
-    await storage.updateInvoice(invoice.id, { processingStatus: 'classified' });
-    
-    console.log(`Petty cash classification completed for invoice ${invoice.id}: ${isPettyCash ? 'Approved' : 'Rejected'}`);
-
-    // Step 3: Auto Project Matching with confidence threshold  
-    try {
-      // Simple project matching based on existing approved invoices
-      const approvedInvoices = await storage.getInvoices();
-      const projectInvoices = approvedInvoices.filter(inv => 
-        inv.status === 'approved' && inv.projectName
-      );
-
-      const projectsByName = new Map();
-      for (const existingInvoice of projectInvoices) {
-        if (existingInvoice.projectName) {
-          if (!projectsByName.has(existingInvoice.projectName)) {
-            projectsByName.set(existingInvoice.projectName, { 
-              projectId: existingInvoice.projectName,
-              vendor: existingInvoice.vendorName,
-              totalAmount: parseFloat(existingInvoice.totalAmount?.toString() || '0'),
-              invoiceCount: 1
-            });
-          } else {
-            const existing = projectsByName.get(existingInvoice.projectName);
-            existing.invoiceCount++;
-            existing.totalAmount += parseFloat(existingInvoice.totalAmount?.toString() || '0');
-          }
-        }
-      }
-
-      const vendorName = extractedData.vendorName?.toLowerCase() || '';
-      const currentAmount = parseFloat(extractedData.totalAmount || '0');
-      
-      // Simple matching logic - can be enhanced
-      const projectMatches = [];
-      for (const [projectName, projectData] of projectsByName) {
-        let score = 0;
-        
-        // Vendor name matching
-        if (projectData.vendor && vendorName.includes(projectData.vendor.toLowerCase())) {
-          score += 60;
-        }
-        
-        // Amount similarity (within 20% difference)
-        const amountDiff = Math.abs(currentAmount - projectData.totalAmount) / Math.max(currentAmount, projectData.totalAmount);
-        if (amountDiff < 0.2) {
-          score += 30;
-        }
-        
-        // Project frequency (more invoices = higher probability)
-        score += Math.min(projectData.invoiceCount * 2, 10);
-        
-        if (score > 50) {
-          projectMatches.push({
-            projectId: projectName,
-            matchScore: score,
-            matchDetails: {
-              vendorMatch: vendorName.includes(projectData.vendor?.toLowerCase() || ''),
-              amountSimilarity: (1 - amountDiff) * 100,
-              invoiceCount: projectData.invoiceCount
-            }
-          });
-        }
-      }
-      
-      const sortedMatches = projectMatches.sort((a, b) => b.matchScore - a.matchScore);
-      if (sortedMatches && sortedMatches.length > 0) {
-        const bestMatch = sortedMatches[0];
-        
-        // Auto-approve if confidence > 80%
-        if (bestMatch.matchScore >= 80) {
-          const matchResult = {
-            invoiceId: invoice.id,
-            projectId: bestMatch.projectId,
-            matchScore: bestMatch.matchScore.toString(),
-            status: 'auto_approved' as const,
-            matchDetails: bestMatch.matchDetails,
-            isActive: true
-          };
-          
-          await storage.createInvoiceProjectMatch(matchResult);
-          
-          // Also create approved record for auto-approved matches
-          await storage.createApprovedInvoiceProject({
-            invoiceId: invoice.id,
-            projectId: bestMatch.projectId,
-            matchScore: bestMatch.matchScore,
-            matchDetails: bestMatch.matchDetails,
-            approvedBy: 'system-auto',
-            originalMatchId: null // Will be updated after match creation
-          });
-          
-          await storage.updateInvoice(invoice.id, { 
-            processingStatus: 'matched',
-            projectName: bestMatch.projectId
-          });
-          
-          console.log(`Auto-approved project match for invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
-        } else {
-          // Create match but flag for manual review
-          await storage.createInvoiceProjectMatch({
-            invoiceId: invoice.id,
-            projectId: bestMatch.projectId,
-            matchScore: bestMatch.matchScore.toString(),
-            status: 'manual' as const,
-            matchDetails: bestMatch.matchDetails,
-            isActive: true
-          });
-          
-          console.log(`Project match created for manual review - invoice ${invoice.id}: ${bestMatch.projectId} (confidence: ${bestMatch.matchScore}%)`);
-        }
-      } else {
-        console.log(`No project matches found for invoice ${invoice.id}`);
-      }
-    } catch (projectError) {
-      console.error(`Project matching failed for invoice ${invoice.id}:`, projectError);
-    }
-
-    // Step 4: Auto Validation with 85% score threshold
-    try {
-      const validationResult = await storage.validateInvoiceData({
-        vendorName: extractedData.vendorName,
-        invoiceNumber: extractedData.invoiceNumber,
-        totalAmount: totalAmount,
-        taxAmount: parseFloat(extractedData.taxAmount || '0'),
-        invoiceDate: extractedData.invoiceDate,
-        dueDate: extractedData.dueDate,
-        currency: extractedData.currency || 'USD'
-      });
-
-      const validationScore = validationResult.score || 0;
-      const autoApproveValidation = validationScore >= 0.85; // 85% threshold
-
-      await storage.updateInvoice(invoice.id, {
-        validationStatus: autoApproveValidation ? 'validated' : 'requires_review',
-        validationResults: validationResult,
-        validationScore: validationScore,
-        isValidated: autoApproveValidation,
-        validatedAt: autoApproveValidation ? new Date() : null,
-        processingStatus: autoApproveValidation ? 'validated' : 'requires_review'
-      });
-
-      console.log(`Validation completed for invoice ${invoice.id}: ${autoApproveValidation ? 'Auto-approved' : 'Flagged for review'} (score: ${validationScore})`);
-    } catch (validationError) {
-      console.error(`Validation failed for invoice ${invoice.id}:`, validationError);
-      await storage.updateInvoice(invoice.id, { 
-        validationStatus: 'error',
-        processingStatus: 'requires_review'
-      });
-    }
-
-    // Step 5: Final Processing Status
-    await storage.updateInvoice(invoice.id, { 
-      status: 'approved',
-      processingStatus: 'auto_processed'
-    });
-
-    console.log(`Fully automatic processing completed successfully for invoice ${invoice.id}`);
-
-  } catch (error) {
-    console.error(`Automatic processing failed for invoice ${invoice.id}:`, error);
-    
-    // Update status to show failure
-    await storage.updateInvoice(invoice.id, { 
-      status: 'rejected',
-      processingStatus: 'failed'
-    });
-    
-    throw error;
-  }
-}
-
 // Initiate automatic processing for selected invoices
 app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req: any, res) => {
   try {
@@ -6564,18 +6318,17 @@ app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req
       return res.status(401).json({ error: 'Unauthorized' });
     }
 
-    const { invoiceIds, source = 'manual', processingMode = 'automatic' } = req.body;
+    const { invoiceIds, source = 'manual' } = req.body;
 
     if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
       return res.status(400).json({ error: 'Invoice IDs are required' });
     }
 
-    console.log(`Starting automatic processing for ${invoiceIds.length} invoices in ${processingMode} mode`);
+    console.log(`Starting automatic processing for ${invoiceIds.length} invoices`);
 
     let successful = 0;
     let failed = 0;
     const errors: string[] = [];
-    const results = [];
 
     for (const invoiceId of invoiceIds) {
       try {
@@ -6583,108 +6336,73 @@ app.post('/api/invoices/initiate-automatic-process', isAuthenticated, async (req
         if (!invoice) {
           failed++;
           errors.push(`Invoice ${invoiceId} not found`);
-          results.push({ invoiceId, status: 'failed', error: 'Invoice not found' });
           continue;
         }
 
-        // Only process invoices that are in pending, extracted, or rejected status for automatic mode
-        if (processingMode === 'automatic' && !['pending', 'extracted', 'rejected'].includes(invoice.status || 'pending')) {
+        // Only process invoices that are in uploaded or failed status
+        if (invoice.status !== 'uploaded' && invoice.status !== 'failed') {
           failed++;
           errors.push(`Invoice ${invoiceId} is not in a processable state (current status: ${invoice.status})`);
-          results.push({ invoiceId, status: 'skipped', error: `Invalid status: ${invoice.status}` });
           continue;
         }
 
-        // For automatic mode, use the new fully automatic processing
-        if (processingMode === 'automatic') {
-          // Get file data from file URL or database
-          let fileBuffer: Buffer;
-          if (invoice.fileUrl) {
-            // Read file from URL/path if available
-            try {
-              const fs = await import('fs/promises');
-              fileBuffer = await fs.readFile(invoice.fileUrl);
-            } catch (error) {
-              console.error('Could not read file from URL, falling back to fileData');
-              fileBuffer = Buffer.from('', 'base64'); // Fallback to empty buffer
-            }
-          } else {
-            fileBuffer = Buffer.from('', 'base64'); // Default fallback
-          }
-          await processInvoiceFullyAutomatic(invoice, fileBuffer, user.claims.sub);
-          successful++;
-          results.push({ invoiceId, status: 'success', processingMode: 'automatic' });
-        } else {
-          // Legacy manual processing mode
-          await storage.updateInvoice(invoiceId, { status: 'processing', processingMode: 'manual' });
-          
-          // Get file data for manual processing too
-          let fileBuffer: Buffer;
-          if (invoice.fileUrl) {
-            try {
-              const fs = await import('fs/promises');
-              fileBuffer = await fs.readFile(invoice.fileUrl);
-            } catch (error) {
-              console.error('Could not read file from URL, using empty buffer');
-              fileBuffer = Buffer.from('', 'base64');
-            }
-          } else {
-            fileBuffer = Buffer.from('', 'base64');
-          }
-          
-          processInvoiceAsync(invoice, fileBuffer)
-            .then(async () => {
-              try {
-                const validationResult = await storage.validateInvoiceData({
-                  vendorName: invoice.vendorName,
-                  invoiceNumber: invoice.invoiceNumber,
-                  totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
-                  taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
-                  invoiceDate: invoice.invoiceDate,
-                  dueDate: invoice.dueDate,
-                  currency: invoice.currency || 'USD'
-                });
+        // Update status to processing
+        await storage.updateInvoice(invoiceId, { status: 'processing' });
 
-                const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
-                await storage.updateInvoice(invoiceId, {
-                  validationStatus,
-                  isValidated: validationResult.isValid,
-                  status: validationResult.isValid ? 'extracted' : 'rejected'
-                });
-              } catch (validationError) {
-                console.error(`Validation failed for invoice ${invoiceId}:`, validationError);
-                await storage.updateInvoice(invoiceId, { 
-                  validationStatus: 'pending',
-                  status: 'extracted'
-                });
-              }
-            })
-            .catch(error => {
-              console.error(`Async processing failed for invoice ${invoiceId}:`, error);
-            });
-          
-          successful++;
-          results.push({ invoiceId, status: 'success', processingMode: 'manual' });
-        }
+        // Process the invoice asynchronously with validation
+        processInvoiceAsync(invoice, Buffer.from(invoice.fileData || '', 'base64'))
+          .then(async () => {
+            // After successful processing, run validation
+            try {
+              console.log(`Running validation for invoice ${invoiceId}`);
+              const validationResult = await storage.validateInvoiceData({
+                vendorName: invoice.vendorName,
+                invoiceNumber: invoice.invoiceNumber,
+                totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+                taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+                invoiceDate: invoice.invoiceDate,
+                dueDate: invoice.dueDate,
+                currency: invoice.currency || 'USD'
+              });
+
+              const validationStatus = validationResult.isValid ? 'validated' : 'rejected';
+              await storage.updateInvoice(invoiceId, {
+                validationStatus,
+                isValidated: validationResult.isValid,
+                status: validationResult.isValid ? 'extracted' : 'rejected'
+              });
+
+              console.log(`Validation completed for invoice ${invoiceId}: ${validationStatus}`);
+            } catch (validationError) {
+              console.error(`Validation failed for invoice ${invoiceId}:`, validationError);
+              // Don't fail the entire process if validation fails
+              await storage.updateInvoice(invoiceId, { 
+                validationStatus: 'pending',
+                status: 'extracted'
+              });
+            }
+          })
+          .catch(error => {
+            console.error(`Async processing failed for invoice ${invoiceId}:`, error);
+          });
+
+        successful++;
       } catch (error) {
         failed++;
         const errorMessage = error instanceof Error ? error.message : 'Unknown error';
         errors.push(`Invoice ${invoiceId}: ${errorMessage}`);
-        results.push({ invoiceId, status: 'failed', error: errorMessage });
         console.error(`Failed to process invoice ${invoiceId}:`, error);
       }
     }
 
     res.json({
-      message: `Processing initiated for ${successful} invoices in ${processingMode} mode`,
+      message: `Automatic processing initiated for ${successful} invoices`,
       summary: {
         totalInvoices: invoiceIds.length,
         successful,
         failed,
-        processingMode,
         errors: errors.length > 0 ? errors : undefined
-      },
-      results
+      }
     });
 
   } catch (error) {
