@@ -539,6 +539,33 @@ export default function ProjectMatcher() {
     },
   });
 
+  // Repair project matches mutation
+  const repairProjectMatchesMutation = useMutation({
+    mutationFn: async () => {
+      const response = await fetch("/api/repair-project-matches", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!response.ok) throw new Error("Failed to repair project matches");
+      return response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/petty-cash"] });
+      toast({
+        title: "Repair Complete",
+        description: `Processed ${data.processedCount} invoices, matched ${data.matchedCount} projects`,
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Error",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
+
   return (
     <div className="min-h-screen bg-gray-50">
       <TopMenu />
@@ -627,7 +654,17 @@ export default function ProjectMatcher() {
         {/* Matching Configuration */}
         <Card className="mb-6">
           <CardHeader>
-            <CardTitle className="text-lg">Project Matching Configuration</CardTitle>
+            <div className="flex justify-between items-center">
+              <CardTitle className="text-lg">Project Matching Configuration</CardTitle>
+              <Button
+                onClick={() => repairProjectMatchesMutation.mutate()}
+                disabled={repairProjectMatchesMutation.isPending}
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                <Settings className="w-4 h-4 mr-2" />
+                {repairProjectMatchesMutation.isPending ? "Repairing..." : "Repair Project Matches"}
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
