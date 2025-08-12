@@ -147,6 +147,8 @@ export default function LineItemClassification() {
   const [filterDateTo, setFilterDateTo] = useState("");
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [processingSessionId, setProcessingSessionId] = useState<string>("");
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   // Keyword management state
   const [keywordCategories, setKeywordCategories] = useState<KeywordCategory[]>([]);
@@ -188,16 +190,43 @@ export default function LineItemClassification() {
     invoices: InvoiceForProcessing[];
     count: number;
   }>({
-    queryKey: ['/api/invoices/ready-for-line-item-classification', { filterProjectId, filterDateFrom, filterDateTo, filterStatus }],
+    queryKey: ['/api/invoices', { filterProjectId, filterDateFrom, filterDateTo, filterStatus }],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filterProjectId) params.append('projectId', filterProjectId);
+      if (filterProjectId && filterProjectId !== "all") params.append('projectId', filterProjectId);
       if (filterDateFrom) params.append('dateFrom', filterDateFrom);
       if (filterDateTo) params.append('dateTo', filterDateTo);
-      if (filterStatus) params.append('status', filterStatus);
+      if (filterStatus && filterStatus !== "all") params.append('status', filterStatus);
 
-      const response = await fetch(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
-      return response.json();
+      const response = await fetch(`/api/invoices?${params.toString()}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch invoices: ${response.statusText}`);
+      }
+      const data = await response.json();
+      
+      // Transform the data to match expected format
+      const transformedInvoices = data.map((invoice: any) => ({
+        id: invoice.id,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber || 'N/A',
+        vendorName: invoice.vendorName || 'Unknown',
+        projectId: invoice.projectId,
+        projectName: invoice.projectName,
+        totalAmount: parseFloat(invoice.totalAmount || '0'),
+        currency: invoice.currency || 'USD',
+        invoiceDate: invoice.invoiceDate,
+        status: invoice.status,
+        lineItemsExtracted: !!invoice.extractedData?.lineItems,
+        hasClassifications: false, // We'll need to check this separately
+        uploadedAt: invoice.createdAt,
+        lineItemsCount: invoice.extractedData?.lineItems?.length || 0,
+        processingStatus: invoice.processingStatus || 'pending'
+      }));
+
+      return {
+        invoices: transformedInvoices,
+        count: transformedInvoices.length
+      };
     },
     enabled: currentTab === 'process'
   });
@@ -394,7 +423,7 @@ export default function LineItemClassification() {
   const loadInvoices = async () => {
     try {
       setIsLoading(true);
-      let url = '/api/invoices/ready-for-classification';
+      let url = '/api/invoices';
       const params = new URLSearchParams();
 
       if (selectedProject && selectedProject !== "all") {
@@ -410,7 +439,27 @@ export default function LineItemClassification() {
         throw new Error('Failed to load invoices');
       }
       const data = await response.json();
-      setInvoices(data);
+      
+      // Transform data to match expected format
+      const transformedInvoices = data.map((invoice: any) => ({
+        id: invoice.id,
+        invoiceId: invoice.id,
+        invoiceNumber: invoice.invoiceNumber || 'N/A',
+        vendorName: invoice.vendorName || 'Unknown',
+        projectId: invoice.projectId,
+        projectName: invoice.projectName,
+        totalAmount: parseFloat(invoice.totalAmount || '0'),
+        currency: invoice.currency || 'USD',
+        invoiceDate: invoice.invoiceDate,
+        status: invoice.status,
+        lineItemsExtracted: !!invoice.extractedData?.lineItems,
+        hasClassifications: false,
+        uploadedAt: invoice.createdAt,
+        lineItemsCount: invoice.extractedData?.lineItems?.length || 0,
+        processingStatus: invoice.processingStatus || 'pending'
+      }));
+      
+      setInvoices(transformedInvoices);
     } catch (error) {
       console.error('Error loading invoices:', error);
       toast({
@@ -704,7 +753,7 @@ export default function LineItemClassification() {
     }
   };
 
-  const filteredInvoices = invoices.filter(invoice => {
+  const filteredInvoices = (invoicesData?.invoices || []).filter(invoice => {
     const matchesSearch = searchTerm === "" ||
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -889,10 +938,10 @@ export default function LineItemClassification() {
                           <TableHead className="w-12">
                             <input
                               type="checkbox"
-                              checked={selectedInvoices.length === invoices.length && invoices.length > 0}
+                              checked={selectedInvoices.length === filteredInvoices.length && filteredInvoices.length > 0}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedInvoices(invoices.map(inv => inv.invoiceId || inv.id).filter(id => id !== undefined));
+                                  setSelectedInvoices(filteredInvoices.map(inv => inv.invoiceId || inv.id).filter(id => id !== undefined));
                                 } else {
                                   setSelectedInvoices([]);
                                 }
