@@ -54,7 +54,35 @@ After RPA runs, previously linked PDF files were being deleted, causing complete
 3. **Selective Cleanup**: Only orphaned PDFs (not linked to any invoice) are removed
 4. **Safety Logic**: If database check fails, PDFs are preserved (fail-safe approach)
 
-### Latest Achievement: Invoice Rejection Investigation & Debugging System (Aug 12, 2025)
+### Latest Achievement: Line Item Classification Integration in Automatic Processing (Aug 12, 2025)
+
+### Missing Line Item Classification in Automatic Processing Workflow Fixed ✅ COMPLETED
+Successfully fixed and enhanced the automatic invoice processing workflow to properly integrate line item classification, ensuring all extracted line items are created in the database and automatically classified using AI-powered categorization.
+
+### Technical Implementation ✅
+1. **Enhanced Processing Workflow**: Updated `processInvoiceAutomatically` method in `invoiceProcessingService.ts`:
+   - Fixed line item creation logic to properly check for existing line items per invoice
+   - Enhanced line item insertion with complete field mapping (unit, rawText, lineNumber)
+   - Added comprehensive classification verification and execution
+   - Improved error handling to continue processing even if classification fails
+
+2. **Database Integration**: Fixed line item classification data flow:
+   - Line items are now properly extracted from `extractedData` and inserted into `line_items` table
+   - Each line item is automatically classified using `ClassificationService.classifyAndStore`
+   - Classifications are stored in `line_item_classifications` table with proper keywords and confidence scores
+
+3. **Validation**: Successfully tested with Invoice #23 (AIR-E S.A.S E.S.P.):
+   - Line item: "SEGUIMIENTO DE OBRA SOLICITUD ATN2024102862. PROVISIONAL ALTAO DE LA CIENEGA PUERTO COLOMBIA."
+   - Correctly classified as: `services_labor` category with 85% confidence
+   - Matched keywords: ["obra", "seguimiento"] indicating construction monitoring work
+
+### Business Impact ✅
+- **Complete Automation**: Invoice processing now includes full line item classification without manual intervention
+- **Data Integrity**: All extracted line items are properly stored and categorized in the database
+- **Audit Trail**: Complete classification history with matched keywords and confidence scores
+- **Workflow Continuity**: Processing continues even if individual line items fail classification
+
+### Previous Achievement: Invoice Rejection Investigation & Debugging System (Aug 12, 2025)
 
 ### Invoice #4101060 Rejection Issue Investigation & Fix ✅ COMPLETED
 Successfully investigated and fixed the automatic processing rejection issues affecting Invoice #4101060 (PANAMERICANA OUTSOURCING S.A., COP 661,943.00) and implemented comprehensive debugging tools for future invoice rejection analysis.

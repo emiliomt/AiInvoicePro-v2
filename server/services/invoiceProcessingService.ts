@@ -1,6 +1,6 @@
 import { eq, and } from 'drizzle-orm';
 import { getStorage, getDb } from '../storage.js';
-import { importedInvoices, invoices, invoiceImporterLogs, lineItems, pettyCashLog, invoiceProjectMatches, type Invoice } from '../../shared/schema.js';
+import { importedInvoices, invoices, invoiceImporterLogs, lineItems, lineItemClassifications, pettyCashLog, invoiceProjectMatches, type Invoice } from '../../shared/schema.js';
 import * as aiService from './aiService.js';
 import { storage } from '../storage.js';
 import { parseInvoiceXML } from './xmlParser.js';
@@ -507,34 +507,62 @@ export class InvoiceProcessingService {
 
       try {
         if ((invoice.extractedData as any).lineItems && (invoice.extractedData as any).lineItems.length > 0) {
-          for (const item of (invoice.extractedData as any).lineItems) {
-            // Insert line item if it doesn't exist
-            const db = await getDb();
-            const existingLineItem = await db.query.lineItems.findFirst({
-              where: (lt: any, { eq }: any) => eq(lt.invoiceId, invoiceId)
-            });
-
-            if (!existingLineItem) {
+          const db = await getDb();
+          let classifiedItemsCount = 0;
+          
+          // Check if any line items already exist for this invoice
+          const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+          
+          if (existingLineItems.length === 0) {
+            // No line items exist, create them from extracted data
+            console.log(`📝 Creating ${(invoice.extractedData as any).lineItems.length} line items for invoice ${invoiceId}`);
+            
+            for (const [index, item] of (invoice.extractedData as any).lineItems.entries()) {
               const [lineItem] = await db.insert(lineItems).values({
                 invoiceId: invoiceId,
                 description: item.description,
                 quantity: item.quantity || '1',
                 unitPrice: item.unitPrice || '0.00',
                 totalPrice: item.totalPrice || '0.00',
+                unit: item.unit || null,
+                rawText: item.rawText || item.description,
+                lineNumber: index + 1,
               }).returning();
 
               // Classify the line item after insertion
+              console.log(`🔍 Classifying line item ${lineItem.id}: "${item.description}"`);
               await ClassificationService.classifyAndStore(lineItem.id, userId);
+              classifiedItemsCount++;
+            }
+          } else {
+            // Line items exist, just classify them if not already classified
+            console.log(`📋 Found ${existingLineItems.length} existing line items for invoice ${invoiceId}, checking classifications`);
+            
+            for (const lineItem of existingLineItems) {
+              // Check if already classified
+              const existingClassification = await db.select()
+                .from(lineItemClassifications)
+                .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+                .limit(1);
+                
+              if (existingClassification.length === 0) {
+                console.log(`🔍 Classifying existing line item ${lineItem.id}: "${lineItem.description}"`);
+                await ClassificationService.classifyAndStore(lineItem.id, userId);
+                classifiedItemsCount++;
+              } else {
+                console.log(`✅ Line item ${lineItem.id} already classified as: ${existingClassification[0].category}`);
+              }
             }
           }
-          console.log(`✅ Line items classified for invoice ${invoiceId}`);
+          
+          console.log(`✅ Line item processing completed for invoice ${invoiceId}: ${classifiedItemsCount} items classified`);
         } else {
-          console.log(`ℹ️ No line items found for invoice ${invoiceId} to classify.`);
+          console.log(`ℹ️ No line items found in extracted data for invoice ${invoiceId} to classify.`);
         }
       } catch (classificationError: any) {
         console.error(`❌ Line item classification failed for invoice ${invoiceId}:`, classificationError);
-        await this.updateInvoiceStatus(invoiceId, 'rejected', `Line item classification failed: ${classificationError.message}`);
-        return false;
+        await this.updateInvoiceStatus(invoiceId, 'processing', `Line item classification failed, continuing: ${classificationError.message}`);
+        // Don't return false here, continue with processing
       }
     } else if (invoice && invoice.status === 'rejected') {
       console.log(`ℹ️ Skipping line item classification for invoice ${invoiceId} due to previous failure.`);
