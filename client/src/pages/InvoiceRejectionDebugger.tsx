@@ -43,7 +43,7 @@ interface RejectionDetails {
 }
 
 export default function InvoiceRejectionDebugger() {
-  const [invoiceId, setInvoiceId] = useState("4101060"); // Default to the problematic invoice
+  const [invoiceId, setInvoiceId] = useState("19"); // Default to the current problematic invoice (DI442)
   const [debugData, setDebugData] = useState<RejectionDetails | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
