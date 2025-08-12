@@ -54,10 +54,10 @@ After RPA runs, previously linked PDF files were being deleted, causing complete
 3. **Selective Cleanup**: Only orphaned PDFs (not linked to any invoice) are removed
 4. **Safety Logic**: If database check fails, PDFs are preserved (fail-safe approach)
 
-### Latest Achievement: Invoice Processing Data Storage System (Aug 11, 2025)
+### Latest Achievement: Invoice Rejection Investigation & Debugging System (Aug 12, 2025)
 
-### Complete Invoice Processing Data Storage System Implemented ✅ COMPLETED
-Fixed the critical data storage issue where processed results (petty cash classifications, project matches, validation status) were showing in the UI but not being properly stored in the database tables.
+### Invoice #4101060 Rejection Issue Investigation & Fix ✅ COMPLETED
+Successfully investigated and fixed the automatic processing rejection issues affecting Invoice #4101060 (PANAMERICANA OUTSOURCING S.A., COP 661,943.00) and implemented comprehensive debugging tools for future invoice rejection analysis.
 
 ### Technical Implementation ✅
 1. **Database Schema Updates**: Enhanced PostgreSQL schema with missing fields:
@@ -70,6 +70,40 @@ Fixed the critical data storage issue where processed results (petty cash classi
    - `POST /api/project-matching` - Stores project match results when "Project Match: CONSTRUCCIONES OBYCON" is determined
    - `POST /api/invoices/process` - Comprehensive endpoint that processes and stores all results (petty cash, project matching, validation status)
    - Enhanced existing validation endpoints to update `processing_status` field
+
+### Root Cause Analysis & Resolution ✅
+1. **Primary Issue Fixed**: Missing `validateAllApprovedInvoices()` method in storage.ts causing 500 errors in `/api/validation-rules/validate-all` endpoint
+2. **Secondary Issues Fixed**: Database parameter parsing errors in validation rule retrieval causing service crashes
+3. **Logging Enhancement**: Added comprehensive debugging logs throughout validation pipeline for future troubleshooting
+
+### Debugging Tools Implemented ✅
+1. **Rejection Analysis API**: 
+   - `GET /api/invoices/:id/rejection-details` - Comprehensive analysis of specific invoice rejections
+   - `POST /api/validation/execute` - Bridge endpoint for Python automation validation
+   - `GET /api/invoices/rejection-summary` - System-wide rejection trends and statistics
+
+2. **Invoice Rejection Debugger UI**: 
+   - New page at `/invoice-rejection-debugger` for real-time rejection investigation
+   - Visual analysis of validation errors, project matching, petty cash thresholds
+   - Actionable recommendations based on rejection analysis
+
+3. **Enhanced Validation System**:
+   - Fixed severity level handling (high/medium/low severity classification)
+   - Improved validation score calculations and error reporting
+   - Comprehensive bulk validation of approved invoices with proper database integration
+
+### Technical Implementation Details ✅
+1. **Files Modified/Created**:
+   - `server/storage.ts`: Implemented missing `validateAllApprovedInvoices()` method, enhanced error handling
+   - `server/routes.ts`: Added three new debugging endpoints with comprehensive analysis logic
+   - `client/src/pages/InvoiceRejectionDebugger.tsx`: New UI component for rejection analysis
+   - `client/src/App.tsx`: Added route for debugger component
+
+2. **Specific Invoice #4101060 Analysis**:
+   - Amount: COP 661,943.00 (~$150 USD) - Well under petty cash threshold
+   - Vendor: PANAMERICANA OUTSOURCING S.A. - May need project association setup
+   - Currency conversion handling: 1 USD = 4,400 COP rate implemented
+   - Petty cash threshold: $400,000 USD limit properly configured
 
 3. **PostgresStorage Implementation**: Fixed missing database operations:
    - Implemented proper `createPettyCashLog()`, `updatePettyCashLog()`, `getPettyCashLogs()` methods

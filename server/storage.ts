@@ -1375,7 +1375,14 @@ class PostgresStorage implements IStorage {
 
   async getValidationRule(id: number): Promise<ValidationRule | null> {
     try {
-      const [rule] = await db.select().from(validationRules).where(eq(validationRules.id, id));
+      // Ensure id is a valid number
+      const ruleId = parseInt(String(id));
+      if (isNaN(ruleId)) {
+        console.error('Invalid validation rule ID provided:', id);
+        return null;
+      }
+      
+      const [rule] = await db.select().from(validationRules).where(eq(validationRules.id, ruleId));
       return rule || null;
     } catch (error) {
       console.error('Database error fetching validation rule:', error);
@@ -1454,12 +1461,18 @@ class PostgresStorage implements IStorage {
               timestamp: new Date().toISOString()
             };
 
-            if (rule.severity === 'critical' || rule.severity === 'error') {
+            if (rule.severity === 'high' || rule.severity === 'critical') {
               violations.push(violation);
-              validationScore -= 0.2; // Reduce score for critical/error violations
-            } else if (rule.severity === 'warning') {
+              validationScore -= 0.2; // Reduce score for critical violations
+            } else if (rule.severity === 'medium') {
+              violations.push(violation);
+              validationScore -= 0.15; // Reduce score for medium violations
+            } else if (rule.severity === 'low') {
               warnings.push(violation);
-              validationScore -= 0.1; // Reduce score less for warnings
+              validationScore -= 0.1; // Reduce score less for low severity
+            } else {
+              warnings.push(violation);
+              validationScore -= 0.05; // Minimal reduction for other cases
             }
 
             console.log(`❌ Validation failed for rule ${rule.id} (${rule.fieldName}):`, {
@@ -1486,8 +1499,8 @@ class PostgresStorage implements IStorage {
         violations,
         warnings,
         totalRulesChecked: activeRules.length,
-        criticalViolations: violations.filter(v => v.severity === 'critical').length,
-        errorViolations: violations.filter(v => v.severity === 'error').length,
+        criticalViolations: violations.filter(v => v.severity === 'high' || v.severity === 'critical').length,
+        mediumViolations: violations.filter(v => v.severity === 'medium').length,
         warningCount: warnings.length,
         status: isValid ? 'passed' : 'failed',
         timestamp: new Date().toISOString()
@@ -1520,11 +1533,39 @@ class PostgresStorage implements IStorage {
         warnings: [],
         totalRulesChecked: 0,
         criticalViolations: 1,
-        errorViolations: 0,
+        mediumViolations: 0,
         warningCount: 0,
         status: 'system_error',
         timestamp: new Date().toISOString()
       };
+    }
+  }
+
+  // Enhanced method to get specific invoice with detailed analysis
+  async getInvoiceWithAnalysis(invoiceId: number): Promise<any> {
+    try {
+      const invoice = await this.getInvoice(invoiceId);
+      if (!invoice) return null;
+      
+      // Add analysis for debugging purposes
+      const analysis = {
+        hasValidVendor: !!invoice.vendorName,
+        hasValidInvoiceNumber: !!invoice.invoiceNumber,
+        hasValidAmount: !!(invoice.totalAmount && parseFloat(invoice.totalAmount.toString()) > 0),
+        hasValidDate: !!invoice.invoiceDate,
+        extractedFieldsCount: invoice.extractedData ? Object.keys(invoice.extractedData).length : 0,
+        processingHistory: {
+          uploadedAt: invoice.createdAt,
+          status: invoice.status,
+          validationStatus: invoice.validationStatus,
+          lastUpdated: invoice.updatedAt
+        }
+      };
+      
+      return { ...invoice, analysis };
+    } catch (error) {
+      console.error('Error getting invoice with analysis:', error);
+      throw error;
     }
   }
 
@@ -1685,14 +1726,130 @@ class PostgresStorage implements IStorage {
   }
 
   async validateAllApprovedInvoices(): Promise<any> {
-    return {
-      totalInvoices: 0,
-      verified: 0,
-      flagged: 0,
-      needsReview: 0,
-      pending: 0,
-      invoiceValidations: []
-    };
+    try {
+      console.log('🔍 Starting bulk validation of approved invoices...');
+      
+      // Get all approved invoices
+      const approvedInvoices = await db
+        .select()
+        .from(invoices)
+        .where(eq(invoices.status, 'approved'))
+        .orderBy(desc(invoices.createdAt));
+
+      console.log(`📋 Found ${approvedInvoices.length} approved invoices for validation`);
+
+      const invoiceValidations = [];
+      let verified = 0;
+      let flagged = 0;
+      let needsReview = 0;
+
+      for (const invoice of approvedInvoices) {
+        try {
+          // Validate each invoice
+          const validationResult = await this.validateInvoiceData({
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+            taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            currency: invoice.currency || 'USD',
+            extractedData: invoice.extractedData
+          });
+
+          const result = {
+            invoiceId: invoice.id,
+            fileName: invoice.fileName,
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: invoice.totalAmount,
+            isValid: validationResult.isValid,
+            validationScore: validationResult.validationScore,
+            violations: validationResult.violations,
+            warnings: validationResult.warnings,
+            status: validationResult.status,
+            timestamp: new Date().toISOString()
+          };
+
+          invoiceValidations.push(result);
+
+          if (validationResult.isValid) {
+            verified++;
+          } else if ((validationResult.criticalViolations || 0) > 0) {
+            flagged++;
+          } else {
+            needsReview++;
+          }
+
+          // Update validation status in database
+          await db.update(invoices)
+            .set({
+              validationStatus: validationResult.isValid ? 'validated' : 'failed',
+              validationResults: validationResult,
+              validationScore: validationResult.validationScore.toString(),
+              isValidated: true,
+              validatedAt: new Date(),
+              updatedAt: new Date()
+            })
+            .where(eq(invoices.id, invoice.id));
+
+        } catch (invoiceError) {
+          console.error(`Error validating invoice ${invoice.id}:`, invoiceError);
+          
+          invoiceValidations.push({
+            invoiceId: invoice.id,
+            fileName: invoice.fileName,
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            totalAmount: invoice.totalAmount,
+            isValid: false,
+            validationScore: 0,
+            violations: [{
+              ruleId: null,
+              fieldName: 'system',
+              severity: 'critical',
+              message: `Validation error: ${invoiceError instanceof Error ? invoiceError.message : 'Unknown error'}`,
+              timestamp: new Date().toISOString()
+            }],
+            warnings: [],
+            status: 'system_error',
+            timestamp: new Date().toISOString()
+          });
+          
+          flagged++;
+        }
+      }
+
+      const result = {
+        totalInvoices: approvedInvoices.length,
+        verified,
+        flagged,
+        needsReview,
+        pending: approvedInvoices.length - verified - flagged - needsReview,
+        invoiceValidations
+      };
+
+      console.log('🏁 Bulk validation completed:', {
+        total: result.totalInvoices,
+        verified: result.verified,
+        flagged: result.flagged,
+        needsReview: result.needsReview
+      });
+
+      return result;
+
+    } catch (error) {
+      console.error('❌ Error in validateAllApprovedInvoices:', error);
+      return {
+        totalInvoices: 0,
+        verified: 0,
+        flagged: 0,
+        needsReview: 0,
+        pending: 0,
+        invoiceValidations: [],
+        error: error instanceof Error ? error.message : 'Unknown error'
+      };
+    }
   }
 
   // Petty Cash Log methods

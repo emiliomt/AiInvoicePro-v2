@@ -2968,7 +2968,281 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(validationResults);
     } catch (error) {
       console.error("Error validating all approved invoices:", error);
-      res.status(500).json({ message: "Failed to validate approved invoices" });
+      res.status(500).json({ 
+        message: "Failed to validate approved invoices",
+        error: error instanceof Error ? error.message : 'Unknown error',
+        details: error instanceof Error ? error.stack : undefined
+      });
+    }
+  });
+
+  // DEBUG ENDPOINT: Get detailed rejection reasons for a specific invoice
+  app.get('/api/invoices/:id/rejection-details', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      console.log(`🔍 Debugging rejection for Invoice #${invoiceId} (${invoice.vendorName})`);
+
+      // Get detailed validation results
+      const validationResult = await storage.validateInvoiceData({
+        vendorName: invoice.vendorName,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: parseFloat(invoice.totalAmount?.toString() || '0'),
+        taxAmount: parseFloat(invoice.taxAmount?.toString() || '0'),
+        invoiceDate: invoice.invoiceDate,
+        dueDate: invoice.dueDate,
+        currency: invoice.currency || 'USD',
+        extractedData: invoice.extractedData
+      });
+
+      // Check petty cash threshold (COP 661,943.00 should be ~$150 USD)
+      const amount = parseFloat(invoice.totalAmount?.toString() || '0');
+      const currency = invoice.currency || 'USD';
+      const pettyCashThreshold = 400000; // $400,000 USD threshold
+      
+      let convertedAmount = amount;
+      if (currency === 'COP') {
+        // Approximate conversion: 1 USD = 4400 COP
+        convertedAmount = amount / 4400;
+      }
+
+      console.log(`💰 Amount check: ${currency} ${amount} = ~$${convertedAmount.toFixed(2)} USD (threshold: $${pettyCashThreshold})`);
+
+      // Check project matching for PANAMERICANA OUTSOURCING
+      let projectMatches = [];
+      try {
+        const projects = await storage.getProjects();
+        projectMatches = projects.filter(project => 
+          project.name?.toLowerCase().includes('panamericana') || 
+          project.name?.toLowerCase().includes('outsourcing')
+        );
+        console.log(`🏗️ Project matches found: ${projectMatches.length} projects`);
+      } catch (error) {
+        console.error('Error checking project matches:', error);
+      }
+
+      // Check extraction quality
+      const extractionIssues = [];
+      if (!invoice.vendorName) extractionIssues.push('Missing vendor name');
+      if (!invoice.invoiceNumber) extractionIssues.push('Missing invoice number');
+      if (!invoice.totalAmount || parseFloat(invoice.totalAmount.toString()) <= 0) extractionIssues.push('Invalid total amount');
+      if (!invoice.invoiceDate) extractionIssues.push('Missing invoice date');
+
+      console.log(`📄 Extraction issues: ${extractionIssues.length} issues found`);
+
+      const rejectionAnalysis = {
+        invoiceId: invoice.id,
+        vendorName: invoice.vendorName,
+        invoiceNumber: invoice.invoiceNumber,
+        totalAmount: invoice.totalAmount,
+        currency: invoice.currency,
+        fileName: invoice.fileName,
+        
+        // Rejection analysis
+        rejectionReason: !validationResult.isValid ? 'validation_failed' : 
+                        projectMatches.length === 0 ? 'project_match_failed' : 
+                        extractionIssues.length > 0 ? 'extraction_failed' : 'unknown',
+        
+        // Validation details
+        validationPassed: validationResult.isValid,
+        validationScore: validationResult.validationScore,
+        validationErrors: validationResult.violations,
+        
+        // Project matching details
+        projectMatchScore: projectMatches.length > 0 ? 85 : 0, // Mock confidence score
+        projectMatchesFound: projectMatches.length,
+        availableProjects: projectMatches.map(p => ({ id: p.id, name: p.name })),
+        
+        // Extraction details
+        extractionIssues,
+        extractionConfidence: extractionIssues.length === 0 ? 0.9 : 0.3,
+        
+        // Petty cash threshold check
+        thresholdCheck: {
+          originalAmount: amount,
+          originalCurrency: currency,
+          convertedAmountUSD: convertedAmount,
+          threshold: pettyCashThreshold,
+          passesThreshold: convertedAmount < pettyCashThreshold,
+          conversionRate: currency === 'COP' ? 4400 : 1
+        },
+        
+        // System status
+        timestamp: new Date().toISOString(),
+        processingStatus: invoice.processingStatus || 'pending'
+      };
+
+      console.log(`❌ Rejection analysis for Invoice #${invoiceId}:`, {
+        reason: rejectionAnalysis.rejectionReason,
+        validationPassed: rejectionAnalysis.validationPassed,
+        projectMatches: rejectionAnalysis.projectMatchesFound,
+        extractionIssues: rejectionAnalysis.extractionIssues.length,
+        thresholdPassed: rejectionAnalysis.thresholdCheck.passesThreshold
+      });
+
+      res.json(rejectionAnalysis);
+
+    } catch (error) {
+      console.error(`Error analyzing rejection for invoice ${req.params.id}:`, error);
+      res.status(500).json({ 
+        message: "Failed to analyze rejection details",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  // DEBUG ENDPOINT: Get validation execution details
+  app.post('/api/validation/execute', async (req, res) => {
+    try {
+      const { invoiceData, source } = req.body;
+      
+      console.log(`🔧 Validation execution called from ${source || 'unknown'}:`, {
+        vendor: invoiceData?.vendor_name || invoiceData?.vendorName,
+        invoiceNumber: invoiceData?.invoice_number || invoiceData?.invoiceNumber,
+        amount: invoiceData?.total_amount || invoiceData?.totalAmount
+      });
+
+      // Convert Python automation format to our format
+      const normalizedData = {
+        vendorName: invoiceData.vendor_name || invoiceData.vendorName,
+        invoiceNumber: invoiceData.invoice_number || invoiceData.invoiceNumber,
+        totalAmount: invoiceData.total_amount || invoiceData.totalAmount,
+        taxAmount: invoiceData.tax_amount || invoiceData.taxAmount,
+        invoiceDate: invoiceData.invoice_date || invoiceData.invoiceDate,
+        currency: invoiceData.currency || 'USD',
+        extractedData: invoiceData.extractedData || {}
+      };
+
+      const validationResult = await storage.validateInvoiceData(normalizedData);
+      
+      // Return in the format expected by Python automation
+      const response = {
+        isValid: validationResult.isValid,
+        violations: validationResult.violations,
+        score: validationResult.validationScore,
+        rulesChecked: validationResult.totalRulesChecked,
+        status: validationResult.status,
+        timestamp: validationResult.timestamp
+      };
+
+      console.log(`✅ Validation result: ${response.isValid ? 'PASSED' : 'FAILED'} (score: ${response.score}, violations: ${response.violations?.length || 0})`);
+
+      res.json(response);
+
+    } catch (error) {
+      console.error('❌ Validation execution error:', error);
+      res.status(500).json({
+        isValid: false,
+        violations: [{
+          fieldName: 'system',
+          severity: 'critical',
+          message: `Validation service error: ${error instanceof Error ? error.message : 'Unknown error'}`
+        }],
+        score: 0,
+        rulesChecked: 0,
+        status: 'error'
+      });
+    }
+  });
+
+  // SUMMARY ENDPOINT: Get rejection statistics and trends
+  app.get('/api/invoices/rejection-summary', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoices = await storage.getInvoicesByUserId(req.user.claims.sub);
+      
+      // Calculate rejection statistics
+      const rejectedInvoices = invoices.filter(inv => inv.status === 'rejected');
+      const totalInvoices = invoices.length;
+      const rejectionRate = totalInvoices > 0 ? (rejectedInvoices.length / totalInvoices * 100) : 0;
+      
+      // Group by rejection reasons (this would require analyzing validation results)
+      const rejectionReasons = {
+        validation_failed: 0,
+        project_match_failed: 0,
+        extraction_failed: 0,
+        threshold_exceeded: 0,
+        unknown: 0
+      };
+      
+      // Common problematic vendors
+      const problematicVendors = {};
+      
+      // Process rejected invoices for analysis
+      for (const invoice of rejectedInvoices) {
+        // Count vendor issues
+        const vendor = invoice.vendorName || 'Unknown Vendor';
+        problematicVendors[vendor] = (problematicVendors[vendor] || 0) + 1;
+        
+        // Analyze rejection reason (simplified logic)
+        if (!invoice.validationResults || (invoice.validationResults as any)?.violations?.length > 0) {
+          rejectionReasons.validation_failed++;
+        } else if (!invoice.projectName) {
+          rejectionReasons.project_match_failed++;
+        } else if (!invoice.vendorName || !invoice.invoiceNumber || !invoice.totalAmount) {
+          rejectionReasons.extraction_failed++;
+        } else {
+          rejectionReasons.unknown++;
+        }
+      }
+      
+      // Get top problematic vendors
+      const topProblematicVendors = Object.entries(problematicVendors)
+        .sort(([,a], [,b]) => (b as number) - (a as number))
+        .slice(0, 5)
+        .map(([vendor, count]) => ({ vendor, count }));
+      
+      // Recent rejection trends (last 30 days)
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      
+      const recentRejections = rejectedInvoices.filter(inv => 
+        inv.createdAt && new Date(inv.createdAt) > thirtyDaysAgo
+      );
+      
+      const summary = {
+        totalInvoices,
+        rejectedInvoices: rejectedInvoices.length,
+        rejectionRate: parseFloat(rejectionRate.toFixed(2)),
+        
+        rejectionReasons,
+        topProblematicVendors,
+        
+        recentTrends: {
+          last30Days: recentRejections.length,
+          averagePerDay: parseFloat((recentRejections.length / 30).toFixed(2))
+        },
+        
+        recommendations: [
+          rejectionReasons.validation_failed > rejectionReasons.project_match_failed ? 
+            "Review and optimize validation rules" : "Improve project matching logic",
+          topProblematicVendors.length > 0 ? 
+            `Focus on fixing issues with: ${topProblematicVendors[0].vendor}` : "No major vendor issues detected",
+          rejectionRate > 20 ? "High rejection rate - consider system review" : "Rejection rate is within acceptable range"
+        ],
+        
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('📊 Rejection summary generated:', {
+        totalInvoices: summary.totalInvoices,
+        rejectedInvoices: summary.rejectedInvoices,
+        rejectionRate: summary.rejectionRate + '%',
+        topIssue: Object.entries(rejectionReasons).sort(([,a], [,b]) => (b as number) - (a as number))[0]
+      });
+      
+      res.json(summary);
+      
+    } catch (error) {
+      console.error('Error generating rejection summary:', error);
+      res.status(500).json({
+        message: "Failed to generate rejection summary",
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
