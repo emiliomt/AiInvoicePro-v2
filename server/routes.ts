@@ -4143,6 +4143,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
+        // Handle companyId properly and fix array syntax
+        const actualCompanyId = companyId === 'default' ? null : companyId;
+        
         const query = db
           .select({
             id: invoices.id,
@@ -4156,17 +4159,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
           .where(
             and(
-              eq(invoices.companyId, companyId),
+              actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
               eq(invoiceProjectMatches.isActive, true),
-              sql`${invoices.id} = ANY(${invoiceIds})`
+              sql`${invoices.id} = ANY(ARRAY[${invoiceIds.join(',')}])`
             )
           );
 
         targetInvoices = await query;
       } else if (filters) {
         // Process based on filters
+        // Handle companyId properly - use null if it's "default"
+        const actualCompanyId = companyId === 'default' ? null : companyId;
+        
         const conditions = [
-          eq(invoices.companyId, companyId),
+          actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
           eq(invoiceProjectMatches.isActive, true),
           or(
             eq(invoices.status, 'extracted'),
