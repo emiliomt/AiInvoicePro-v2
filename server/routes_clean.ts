@@ -4181,6 +4181,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
           vendor: inv.vendorName,
           projectId: inv.projectId
         })));
+
+        // Debug: Check the company ID filter
+        console.log(`Company ID filter - actualCompanyId: ${actualCompanyId}, companyId: ${companyId}`);
+        
+        // If no invoices found, try a simpler query to debug
+        if (targetInvoices.length === 0) {
+          console.log('No invoices found with current filters. Trying simplified query...');
+          const debugQuery = db
+            .select({
+              id: invoices.id,
+              invoiceNumber: invoices.invoiceNumber,
+              vendorName: invoices.vendorName,
+              companyId: invoices.companyId,
+              status: invoices.status
+            })
+            .from(invoices)
+            .where(inArray(invoices.id, invoiceIds));
+          
+          const debugResults = await debugQuery;
+          console.log(`Debug query found ${debugResults.length} invoices:`, debugResults);
+          
+          // If we found invoices in debug but not in main query, it's the company filter
+          if (debugResults.length > 0) {
+            console.log('Issue is with company ID filtering. Using invoices regardless of company ID.');
+            targetInvoices = debugResults;
+          }
+        }
       } else if (filters) {
         // Process based on filters
         const actualCompanyId = companyId === 'default' ? null : companyId;

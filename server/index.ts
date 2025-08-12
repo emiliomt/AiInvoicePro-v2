@@ -1,5 +1,5 @@
 import express, { type Request, Response, NextFunction } from "express";
-import { registerRoutes } from "./routes";
+import { registerRoutes } from "./routes_clean";
 import { setupVite, serveStatic, log } from "./vite";
 import { progressTracker } from "./services/progressTracker";
 
