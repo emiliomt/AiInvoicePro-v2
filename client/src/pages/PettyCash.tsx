@@ -71,7 +71,10 @@ export default function PettyCash() {
       const approved = data.filter(log => log.status === "approved").length;
       const rejected = data.filter(log => log.status === "rejected").length;
       const assigned = data.filter(log => log.costCenter && log.costCenter !== "").length;
-      const totalValue = data.reduce((sum, log) => sum + parseFloat(log.invoice.totalAmount || "0"), 0);
+      const totalValue = data.reduce((sum, log) => {
+        const amount = log.invoice?.totalAmount;
+        return sum + parseFloat(amount || "0");
+      }, 0);
 
       return {
         total: data.length,

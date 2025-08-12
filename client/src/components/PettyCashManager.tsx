@@ -323,13 +323,13 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false, filte
                       <TableRow key={log.id}>
                         <TableCell>
                           <div>
-                            <p className="font-medium">{log.invoice.vendorName || "Unknown Vendor"}</p>
-                            <p className="text-xs text-gray-500">{log.invoice.fileName}</p>
+                            <p className="font-medium">{log.invoice?.vendorName || "Unknown Vendor"}</p>
+                            <p className="text-xs text-gray-500">{log.invoice?.fileName || "Unknown File"}</p>
                           </div>
                         </TableCell>
-                        <TableCell>{log.invoice.invoiceNumber || "—"}</TableCell>
+                        <TableCell>{log.invoice?.invoiceNumber || "—"}</TableCell>
                         <TableCell>
-                          <span className="font-medium">${log.invoice.totalAmount}</span>
+                          <span className="font-medium">${log.invoice?.totalAmount || "0.00"}</span>
                         </TableCell>
                         <TableCell>
                           <span className="text-sm">{log.projectId || "—"}</span>
@@ -431,9 +431,9 @@ export default function PettyCashManager({ invoiceId, showAllLogs = false, filte
                   <CardContent className="pt-4">
                     <div className="flex justify-between items-start mb-3">
                       <div>
-                        <h4 className="font-medium">{log.invoice.vendorName || "Unknown Vendor"}</h4>
+                        <h4 className="font-medium">{log.invoice?.vendorName || "Unknown Vendor"}</h4>
                         <p className="text-sm text-gray-600">
-                          Invoice #{log.invoice.invoiceNumber} • ${log.invoice.totalAmount}
+                          Invoice #{log.invoice?.invoiceNumber || "N/A"} • ${log.invoice?.totalAmount || "0.00"}
                         </p>
                         <p className="text-xs text-gray-500">
                           Project: {log.projectId || "Unassigned"} • Cost Center: {log.costCenter || "Unassigned"}
