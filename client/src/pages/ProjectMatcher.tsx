@@ -14,7 +14,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { useToast } from "@/hooks/use-toast";
-import TopMenu from "@/components/TopMenu";
 import { 
   Search, 
   Target, 
@@ -541,8 +540,6 @@ export default function ProjectMatcher() {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      <TopMenu />
-
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-gray-900">Project Matcher</h1>
