@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -158,6 +158,13 @@ export default function LineItemClassification() {
   const [isKeywordLoading, setIsKeywordLoading] = useState(false);
   const [projects, setProjects] = useState<Array<{id: number, name: string}>>([]);
   const [selectedProject, setSelectedProject] = useState<string>("");
+  
+  // Additional missing state variables
+  const [isLoading, setIsLoading] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [invoices, setInvoices] = useState<InvoiceForProcessing[]>([]);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [classificationResults, setClassificationResults] = useState<any[]>([]);
 
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
