@@ -22,8 +22,9 @@ import { invoiceProcessingService } from "./services/invoiceProcessingService.js
 import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
 import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
-import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
+import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices, classificationKeywords } from "@shared/schema";
 import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { progressTracker } from "./services/progressTracker.js";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -4014,13 +4015,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Create progress tracking session
       const { ProgressTracker } = await import('./services/progressTracker');
-      ProgressTracker.createSession(sessionId, userId, totalInvoices);
+      progressTracker.createSession(sessionId, userId, totalInvoices);
 
       // Start the processing (don't await to make it non-blocking)
       processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
         .catch(error => {
           console.error('Background invoice processing failed:', error);
-          ProgressTracker.errorSession(sessionId, error.message);
+          progressTracker.errorSession(sessionId, error.message);
         });
 
       res.json({ 
@@ -4041,7 +4042,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).claims.sub;
       
       const { ProgressTracker } = await import('./services/progressTracker');
-      const session = ProgressTracker.getSession(sessionId);
+      const session = progressTracker.getSession(sessionId);
       
       if (!session) {
         return res.status(404).json({ message: 'Session not found' });
@@ -4065,7 +4066,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).claims.sub;
       
       const { ProgressTracker } = await import('./services/progressTracker');
-      const sessions = ProgressTracker.getUserSessions(userId);
+      const sessions = progressTracker.getUserSessions(userId);
       
       res.json(sessions);
     } catch (error) {
@@ -4230,7 +4231,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const { ProgressTracker } = await import('./services/progressTracker');
 
       // Step 1: Initializing Classification
-      ProgressTracker.updateStep(sessionId, 0, 'active');
+      progressTracker.updateStep(sessionId, 0, 'active');
       await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate setup time
 
       // Get invoices to process
@@ -4331,9 +4332,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Processing ${targetInvoices.length} invoices for line item classification`);
       
       // Step 2: Complete initialization and start extraction
-      ProgressTracker.updateStep(sessionId, 0, 'completed');
-      ProgressTracker.updateStep(sessionId, 1, 'active');
-      ProgressTracker.updateMetrics(sessionId, { totalInvoices: targetInvoices.length, totalItems: totalLineItems });
+      progressTracker.updateStep(sessionId, 0, 'completed');
+      progressTracker.updateStep(sessionId, 1, 'active');
+      progressTracker.updateMetrics(sessionId, { totalInvoices: targetInvoices.length, totalItems: totalLineItems });
 
       let processedCount = 0;
       let successCount = 0;
@@ -4342,21 +4343,21 @@ export async function registerRoutes(app: Express): Promise<Server> {
       let processedItems = 0;
 
       // Load keyword categories once for the entire process
-      ProgressTracker.updateStep(sessionId, 1, 'completed');
-      ProgressTracker.updateStep(sessionId, 2, 'active');
+      progressTracker.updateStep(sessionId, 1, 'completed');
+      progressTracker.updateStep(sessionId, 2, 'active');
       
-      const keywordCategoryData = await db.select().from(keywordCategories);
+      const keywordCategoryData = await db.select().from(classificationKeywords);
       console.log(`Loaded ${keywordCategoryData.length} keyword categories for classification`);
       
-      ProgressTracker.updateStep(sessionId, 2, 'completed');
-      ProgressTracker.updateStep(sessionId, 3, 'active');
+      progressTracker.updateStep(sessionId, 2, 'completed');
+      progressTracker.updateStep(sessionId, 3, 'active');
 
       for (const invoice of targetInvoices) {
         try {
           console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
           
           // Update progress for current invoice
-          ProgressTracker.updateMetrics(sessionId, { 
+          progressTracker.updateMetrics(sessionId, { 
             processedInvoices: processedCount + 1 
           });
 
@@ -4451,7 +4452,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               processedItems++;
               
               // Update progress for each line item processed
-              ProgressTracker.updateMetrics(sessionId, { 
+              progressTracker.updateMetrics(sessionId, { 
                 processedItems,
                 successRate: Math.round((processedItems / totalLineItems) * 100)
               });
@@ -4461,7 +4462,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               processedItems++;
               
               // Update progress even for failed items
-              ProgressTracker.updateMetrics(sessionId, { 
+              progressTracker.updateMetrics(sessionId, { 
                 processedItems,
                 successRate: Math.round((processedItems / totalLineItems) * 100)
               });
@@ -4504,11 +4505,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log(`Invoice processing completed - Session: ${sessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
       
       // Step 4: Complete classification phase and move to saving results
-      ProgressTracker.updateStep(sessionId, 3, 'completed');
-      ProgressTracker.updateStep(sessionId, 4, 'active');
+      progressTracker.updateStep(sessionId, 3, 'completed');
+      progressTracker.updateStep(sessionId, 4, 'active');
       
       // Update final metrics
-      ProgressTracker.updateMetrics(sessionId, { 
+      progressTracker.updateMetrics(sessionId, { 
         processedInvoices: processedCount,
         processedItems,
         successRate: totalLineItems > 0 ? Math.round((processedItems / totalLineItems) * 100) : 100
@@ -4518,11 +4519,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
       await new Promise(resolve => setTimeout(resolve, 2000));
       
       // Step 5: Complete saving and finish
-      ProgressTracker.updateStep(sessionId, 4, 'completed');
-      ProgressTracker.updateStep(sessionId, 5, 'active');
+      progressTracker.updateStep(sessionId, 4, 'completed');
+      progressTracker.updateStep(sessionId, 5, 'active');
       
       // Complete the session with final results
-      ProgressTracker.completeSession(sessionId, {
+      progressTracker.completeSession(sessionId, {
         summary: `Processed ${processedCount} invoices with ${processedItems} line items`,
         processedInvoices: processedCount,
         successfulInvoices: successCount,
@@ -4535,7 +4536,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error(`Error in invoice processing session ${sessionId}:`, error);
       
       // Handle errors in progress tracking
-      ProgressTracker.handleError(sessionId, error instanceof Error ? error.message : 'Unknown error occurred');
+      progressTracker.handleError(sessionId, error instanceof Error ? error.message : 'Unknown error occurred');
     }
   }
 
