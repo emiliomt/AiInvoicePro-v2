@@ -168,6 +168,11 @@ export default function LineItemClassification() {
   const [invoices, setInvoices] = useState<InvoiceForProcessing[]>([]);
   const [searchTerm, setSearchTerm] = useState("");
   const [classificationResults, setClassificationResults] = useState<any[]>([]);
+  
+  // AI keyword suggestions state
+  const [aiSuggestions, setAiSuggestions] = useState<string[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
+  const [suggestionSource, setSuggestionSource] = useState<'ai' | 'fallback' | null>(null);
 
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
@@ -571,6 +576,8 @@ export default function LineItemClassification() {
       setIsKeywordModalOpen(false);
       setEditingKeyword(null);
       setNewKeyword({ category: '', subcategory: '', keywords: '', description: '' });
+      setAiSuggestions([]);
+      setSuggestionSource(null);
       loadKeywordCategories();
 
     } catch (error) {
@@ -591,6 +598,8 @@ export default function LineItemClassification() {
       keywords: keyword.keywords.join(', '),
       description: keyword.description || '',
     });
+    setAiSuggestions([]);
+    setSuggestionSource(null);
     setIsKeywordModalOpen(true);
   };
 
@@ -622,6 +631,76 @@ export default function LineItemClassification() {
         description: "Failed to delete keyword category",
         variant: "destructive",
       });
+    }
+  };
+
+  // AI keyword suggestions function
+  const getAISuggestions = async () => {
+    if (!newKeyword.category.trim()) {
+      toast({
+        title: "Category Required",
+        description: "Please enter a category before getting AI suggestions",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsLoadingSuggestions(true);
+    setAiSuggestions([]);
+    setSuggestionSource(null);
+
+    try {
+      const existingKeywords = newKeyword.keywords ? newKeyword.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
+      
+      const response = await fetch('/api/ai/suggest-keywords', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          category: newKeyword.category,
+          subcategory: newKeyword.subcategory || null,
+          business_context: 'Colombian construction and procurement',
+          language: 'Spanish',
+          existing_keywords: existingKeywords,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get keyword suggestions');
+      }
+
+      const data = await response.json();
+      setAiSuggestions(data.suggestions || []);
+      setSuggestionSource(data.source || 'ai');
+
+      toast({
+        title: "Suggestions Generated",
+        description: `Got ${data.suggestions?.length || 0} keyword suggestions from ${data.source === 'ai' ? 'AI' : 'fallback'}`,
+      });
+
+    } catch (error) {
+      console.error('Error getting AI suggestions:', error);
+      toast({
+        title: "Error",
+        description: "Failed to get keyword suggestions. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoadingSuggestions(false);
+    }
+  };
+
+  // Add selected suggestion to keywords
+  const addSuggestionToKeywords = (suggestion: string) => {
+    const currentKeywords = newKeyword.keywords ? newKeyword.keywords.split(',').map(k => k.trim()).filter(k => k) : [];
+    
+    if (!currentKeywords.includes(suggestion)) {
+      const updatedKeywords = [...currentKeywords, suggestion].join(', ');
+      setNewKeyword({...newKeyword, keywords: updatedKeywords});
+      
+      // Remove from suggestions to avoid duplication
+      setAiSuggestions(prev => prev.filter(s => s !== suggestion));
     }
   };
 
@@ -914,6 +993,8 @@ export default function LineItemClassification() {
                       <Button onClick={() => {
                         setEditingKeyword(null);
                         setNewKeyword({ category: '', subcategory: '', keywords: '', description: '' });
+                        setAiSuggestions([]);
+                        setSuggestionSource(null);
                       }}>
                         <Plus className="h-4 w-4 mr-2" />
                         Add Keywords
@@ -955,6 +1036,62 @@ export default function LineItemClassification() {
                             placeholder="cement, concrete, steel, lumber, paint"
                             rows={3}
                           />
+                        </div>
+
+                        {/* AI Keyword Suggestions Section */}
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between">
+                            <Label className="text-sm font-medium">AI Keyword Suggestions</Label>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="sm"
+                              onClick={getAISuggestions}
+                              disabled={isLoadingSuggestions || !newKeyword.category.trim()}
+                            >
+                              {isLoadingSuggestions ? (
+                                <>
+                                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                                  Generating...
+                                </>
+                              ) : (
+                                <>
+                                  <Sparkles className="h-4 w-4 mr-2" />
+                                  Get Suggestions
+                                </>
+                              )}
+                            </Button>
+                          </div>
+                          
+                          {aiSuggestions.length > 0 && (
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                                <Bot className="h-3 w-3" />
+                                {suggestionSource === 'ai' ? 'AI-generated suggestions' : 'Fallback suggestions'} 
+                                - Click to add to keywords
+                              </div>
+                              <div className="flex flex-wrap gap-1 max-h-32 overflow-y-auto p-2 border rounded-md bg-muted/50">
+                                {aiSuggestions.map((suggestion, index) => (
+                                  <Badge
+                                    key={index}
+                                    variant="secondary"
+                                    className="cursor-pointer hover:bg-primary hover:text-primary-foreground transition-colors"
+                                    onClick={() => addSuggestionToKeywords(suggestion)}
+                                  >
+                                    {suggestion}
+                                    <Plus className="h-3 w-3 ml-1" />
+                                  </Badge>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                          
+                          {isLoadingSuggestions && (
+                            <div className="flex items-center justify-center py-4 text-sm text-muted-foreground">
+                              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                              Generating keyword suggestions...
+                            </div>
+                          )}
                         </div>
                         <div>
                           <Label htmlFor="description">Description</Label>

@@ -2252,6 +2252,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices/:id', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
+      
+      if (isNaN(invoiceId)) {
+        return res.status(400).json({ message: "Invalid invoice ID" });
+      }
+      
       const invoice = await storage.getInvoice(invoiceId);
 
       if (!invoice) {
@@ -9343,6 +9348,162 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     } catch (error) {
       console.error('Error serving PDF:', error);
       res.status(500).json({ error: 'Failed to serve PDF file' });
+    }
+  });
+
+  // Helper function to create AI prompts for keyword suggestions
+  function createKeywordSuggestionsPrompt(category: string, subcategory?: string, businessContext?: string, language?: string, existingKeywords?: string[]): string {
+    const contextInfo = businessContext || 'general business operations';
+    const lang = language || 'Spanish';
+    const subcatInfo = subcategory ? ` and subcategory '${subcategory}'` : '';
+    const existingInfo = existingKeywords && existingKeywords.length > 0 ? ` Consider these existing keywords: ${existingKeywords.join(', ')}` : '';
+
+    const categoryPrompts: Record<string, string> = {
+      'materials_supplies': 'construction materials, supplies, consumables, raw materials, hardware, and related items commonly found in Colombian construction invoices',
+      'equipment_tools': 'tools, machinery, equipment, vehicles, instruments, and hardware used in construction and business operations',
+      'services_labor': 'professional services, labor, consulting, maintenance, installation, and service-related terms',
+      'utilities_facilities': 'utilities, facility costs, building services, public services, and operational overhead expenses',
+      'food_beverages': 'food, beverages, catering, restaurant services, and meal-related expenses',
+      'transportation_logistics': 'transportation, shipping, logistics, fuel, vehicle-related expenses, and delivery services',
+      'technology_software': 'technology, software, IT equipment, digital services, and tech-related expenses',
+      'marketing_advertising': 'marketing, advertising, promotional materials, design services, and brand-related expenses'
+    };
+
+    const specificPrompt = categoryPrompts[category] || 'general business expenses and procurement items';
+
+    return `You are an expert in ${contextInfo} procurement and invoice processing. Generate a comprehensive list of keywords in ${lang} for the category '${category}'${subcatInfo}. Focus on terms that would commonly appear in invoices from Colombian vendors. 
+
+Generate keywords for: ${specificPrompt}
+
+Provide 20-30 relevant keywords separated by commas. Include materials, products, services, and related terms that would appear on actual invoices.${existingInfo}
+
+Only return the keywords, separated by commas, without any additional text or explanations.`;
+  }
+
+  // Helper function to provide fallback keywords when AI is unavailable
+  function getFallbackKeywords(category: string, subcategory?: string): string[] {
+    const fallbackCategories: Record<string, string[]> = {
+      'materials_supplies': [
+        'cemento', 'concreto', 'ladrillos', 'arena', 'grava', 'varilla', 'hierro', 'acero',
+        'pintura', 'thinner', 'soldadura', 'tornillos', 'clavos', 'tuercas', 'pegamento',
+        'sellador', 'impermeabilizante', 'cable', 'tubería', 'válvulas', 'conexiones'
+      ],
+      'equipment_tools': [
+        'taladro', 'martillo', 'sierra', 'nivel', 'destornillador', 'alicate', 'llave',
+        'escalera', 'andamio', 'carretilla', 'pala', 'manguera', 'compresor', 'generador',
+        'soldador', 'pulidora', 'cortadora', 'mezcladora', 'vibrador', 'equipo de seguridad'
+      ],
+      'services_labor': [
+        'mano de obra', 'instalación', 'mantenimiento', 'reparación', 'consultoría',
+        'capacitación', 'servicio técnico', 'asesoría', 'diseño', 'supervisión',
+        'limpieza', 'seguridad', 'transporte', 'logística', 'almacenamiento'
+      ],
+      'utilities_facilities': [
+        'electricidad', 'agua', 'gas', 'internet', 'teléfono', 'alarma', 'aire acondicionado',
+        'calefacción', 'ventilación', 'iluminación', 'combustible', 'energía', 'servicios públicos'
+      ],
+      'food_beverages': [
+        'alimentación', 'bebidas', 'catering', 'restaurante', 'café', 'agua', 'almuerzo',
+        'desayuno', 'cena', 'refrigerio', 'comida', 'bebida', 'servicio de alimentación'
+      ],
+      'transportation_logistics': [
+        'transporte', 'envío', 'flete', 'combustible', 'gasolina', 'diesel', 'peaje',
+        'parqueadero', 'vehículo', 'camión', 'logística', 'distribución', 'entrega'
+      ],
+      'technology_software': [
+        'software', 'hardware', 'computador', 'impresora', 'internet', 'hosting',
+        'dominio', 'licencia', 'sistema', 'aplicación', 'tecnología', 'equipo informático'
+      ],
+      'marketing_advertising': [
+        'publicidad', 'marketing', 'diseño', 'impresión', 'promoción', 'campaña',
+        'branding', 'logotipo', 'página web', 'redes sociales', 'evento', 'merchandising'
+      ]
+    };
+
+    return fallbackCategories[category] || [
+      'suministros', 'materiales', 'servicios', 'productos', 'equipos', 'herramientas',
+      'mantenimiento', 'reparación', 'instalación', 'transporte', 'combustible', 'energía'
+    ];
+  }
+
+  // AI-powered keyword suggestions endpoint
+  app.post('/api/ai/suggest-keywords', isAuthenticated, async (req: any, res) => {
+    try {
+      const { category, subcategory, business_context, language, existing_keywords } = req.body;
+
+      if (!category) {
+        return res.status(400).json({ error: 'Category is required' });
+      }
+
+      // Check if OpenAI API key is available
+      const openaiApiKey = process.env.OPENAI_API_KEY;
+      if (!openaiApiKey) {
+        // Provide fallback suggestions based on category
+        const fallbackSuggestions = getFallbackKeywords(category, subcategory);
+        return res.json({
+          suggestions: fallbackSuggestions,
+          category_context: `Fallback suggestions for ${category}`,
+          confidence: 0.7,
+          source: 'fallback'
+        });
+      }
+
+      // Create AI prompt based on category and context
+      const prompt = createKeywordSuggestionsPrompt(category, subcategory, business_context, language, existing_keywords);
+
+      try {
+        const { Configuration, OpenAIApi } = await import('openai');
+        const configuration = new Configuration({
+          apiKey: openaiApiKey,
+        });
+        const openai = new OpenAIApi(configuration);
+
+        const completion = await openai.createChatCompletion({
+          model: 'gpt-4o-mini',
+          messages: [
+            {
+              role: 'user',
+              content: prompt
+            }
+          ],
+          temperature: 0.3,
+          max_tokens: 500,
+        });
+
+        const aiResponse = completion.data.choices[0]?.message?.content;
+        if (!aiResponse) {
+          throw new Error('No response from AI');
+        }
+
+        // Parse the AI response - expecting comma-separated keywords
+        const suggestions = aiResponse
+          .split(',')
+          .map(keyword => keyword.trim())
+          .filter(keyword => keyword.length > 0 && keyword.length < 50)
+          .slice(0, 30); // Limit to 30 suggestions
+
+        res.json({
+          suggestions,
+          category_context: `AI-generated suggestions for ${category} in ${business_context || 'general business'} context`,
+          confidence: 0.95,
+          source: 'ai'
+        });
+
+      } catch (aiError) {
+        console.error('OpenAI API error:', aiError);
+        // Fallback to predefined suggestions if AI fails
+        const fallbackSuggestions = getFallbackKeywords(category, subcategory);
+        res.json({
+          suggestions: fallbackSuggestions,
+          category_context: `Fallback suggestions for ${category} (AI unavailable)`,
+          confidence: 0.7,
+          source: 'fallback'
+        });
+      }
+
+    } catch (error) {
+      console.error('Error generating keyword suggestions:', error);
+      res.status(500).json({ error: 'Failed to generate keyword suggestions' });
     }
   });
 
