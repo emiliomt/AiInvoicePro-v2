@@ -4293,13 +4293,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
             const lineItemData = lineItemsData[i];
 
             try {
+              // Get database instance
+              const db = await getDb();
+              
               // Check if line item already exists in database
-              let existingLineItem = await db.query.lineItems.findFirst({
-                where: (li, { eq, and }) => and(
-                  eq(li.invoiceId, invoice.id),
-                  eq(li.lineItemIndex, i)
-                )
-              });
+              const existingLineItemResult = await db.select()
+                .from(lineItems)
+                .where(and(
+                  eq(lineItems.invoiceId, invoice.id),
+                  eq(lineItems.lineItemIndex, i)
+                ))
+                .limit(1);
+              
+              let existingLineItem = existingLineItemResult[0] || null;
 
               // Create line item if it doesn't exist
               if (!existingLineItem) {
@@ -4317,9 +4323,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
               }
 
               // Check if classification already exists
-              const existingClassification = await db.query.lineItemClassifications.findFirst({
-                where: (lic, { eq }) => eq(lic.lineItemId, existingLineItem.id)
-              });
+              const existingClassificationResult = await db.select()
+                .from(lineItemClassifications)
+                .where(eq(lineItemClassifications.lineItemId, existingLineItem.id))
+                .limit(1);
+              
+              const existingClassification = existingClassificationResult[0] || null;
 
               if (existingClassification) {
                 console.log(`Line item ${existingLineItem.id} already classified, skipping`);
