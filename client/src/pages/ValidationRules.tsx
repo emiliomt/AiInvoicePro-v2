@@ -67,6 +67,15 @@ const SEVERITY_OPTIONS = [
 export default function ValidationRules() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
+  const [formData, setFormData] = useState({
+    name: '',
+    description: '',
+    fieldName: '',
+    ruleType: '',
+    ruleValue: '',
+    severity: 'medium',
+    errorMessage: ''
+  });
   const [isAddingKeywordCategory, setIsAddingKeywordCategory] = useState(false);
   const [newKeywordCategory, setNewKeywordCategory] = useState({
     category: '',
@@ -201,7 +210,7 @@ export default function ValidationRules() {
       description: rule.description || "",
       fieldName: rule.fieldName,
       ruleType: rule.ruleType,
-      ruleValue: rule.ruleValue || rule.ruleData || "",
+      ruleValue: rule.ruleValue || "",
       severity: rule.severity,
       errorMessage: rule.errorMessage || "",
     });
@@ -652,7 +661,7 @@ export default function ValidationRules() {
                     <div>
                       <span className="font-medium text-gray-700">Validation:</span>
                       <p className="text-gray-900">
-                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || rule.ruleData || '')}
+                        {getRuleTypeDescription(rule.ruleType, rule.ruleValue || '')}
                       </p>
                     </div>
                   </div>
