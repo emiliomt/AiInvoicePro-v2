@@ -160,7 +160,7 @@ export default function LineItemClassification() {
   });
   const [isKeywordLoading, setIsKeywordLoading] = useState(false);
   const [projects, setProjects] = useState<Array<{id: number, name: string}>>([]);
-  const [selectedProject, setSelectedProject] = useState<string>("");
+  const [selectedProject, setSelectedProject] = useState<string>("all");
   
   // Additional missing state variables
   const [isLoading, setIsLoading] = useState(false);
@@ -392,7 +392,7 @@ export default function LineItemClassification() {
       let url = '/api/invoices/ready-for-classification';
       const params = new URLSearchParams();
 
-      if (selectedProject) {
+      if (selectedProject && selectedProject !== "all") {
         params.append('projectId', selectedProject);
       }
 
@@ -739,7 +739,7 @@ export default function LineItemClassification() {
                           <SelectValue placeholder="All Projects" />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="">All Projects</SelectItem>
+                          <SelectItem value="all">All Projects</SelectItem>
                           {projects.map((project) => (
                             <SelectItem key={project.id} value={project.id.toString()}>
                               {project.name}
