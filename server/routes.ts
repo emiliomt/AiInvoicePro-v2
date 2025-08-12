@@ -9859,6 +9859,51 @@ Only return the keywords, separated by commas, without any additional text or ex
     }
   });
 
+  // Invoice statistics endpoint for project matcher dashboard
+  app.get('/api/invoices/stats', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return res.status(401).json({ message: 'User not found' });
+      }
+
+      // Get counts from database
+      const invoices = await storage.getInvoicesByUserId(userId);
+      const projects = await storage.getProjects();
+      
+      // Count active project matches
+      let totalMatches = 0;
+      let unmatchedInvoices = 0;
+      
+      for (const invoice of invoices) {
+        const matches = await storage.getInvoiceProjectMatches(invoice.id);
+        const hasActiveMatch = matches.some(match => match.isActive);
+        
+        if (hasActiveMatch) {
+          totalMatches++;
+        } else {
+          unmatchedInvoices++;
+        }
+      }
+
+      res.json({
+        totalInvoices: invoices.length,
+        totalProjects: projects?.length || 0,
+        totalMatches,
+        unmatchedInvoices
+      });
+      
+    } catch (error) {
+      console.error('Error fetching invoice stats:', error);
+      res.status(500).json({ 
+        message: 'Failed to fetch invoice statistics',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
   // Manual project matching endpoint for specific invoices
   app.post('/api/invoices/:id/match-project', isAuthenticated, async (req: any, res) => {
     try {

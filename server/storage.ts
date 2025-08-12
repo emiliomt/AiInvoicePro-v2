@@ -235,6 +235,7 @@ export interface IStorage {
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
   getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]>;
   deleteLineItemsByInvoiceId(invoiceId: number): Promise<void>;
+  deleteLineItemClassificationsByLineItemId(lineItemId: number): Promise<void>;
 
   // Approvals
   createApproval(approval: InsertApproval): Promise<Approval>;
@@ -265,6 +266,10 @@ export interface IStorage {
   // Invoice-Project Matches
   createInvoiceProjectMatch(match: InsertInvoiceProjectMatch): Promise<InvoiceProjectMatch>;
   getInvoiceProjectMatchesByInvoiceId(invoiceId: number): Promise<InvoiceProjectMatch[]>;
+  insertInvoiceProjectMatch(match: InsertInvoiceProjectMatch): Promise<InvoiceProjectMatch>;
+  getInvoiceProjectMatches(invoiceId: number): Promise<InvoiceProjectMatch[]>;
+  deleteInvoiceProjectMatch(id: number): Promise<void>;
+  getInvoiceById(id: number): Promise<Invoice | null>;
 
   // ERP Connections
   createErpConnection(connection: InsertErpConnection): Promise<ErpConnection>;
@@ -516,6 +521,10 @@ class PostgresStorage implements IStorage {
     await db.delete(lineItems).where(eq(lineItems.invoiceId, invoiceId));
   }
 
+  async deleteLineItemClassificationsByLineItemId(lineItemId: number): Promise<void> {
+    await db.delete(lineItemClassifications).where(eq(lineItemClassifications.lineItemId, lineItemId));
+  }
+
   // Approvals
   async createApproval(approval: InsertApproval): Promise<Approval> {
     const [result] = await db.insert(approvals).values(approval).returning();
@@ -637,6 +646,25 @@ class PostgresStorage implements IStorage {
 
   async getInvoiceProjectMatchesByInvoiceId(invoiceId: number): Promise<InvoiceProjectMatch[]> {
     return await db.select().from(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, invoiceId));
+  }
+
+  // Additional invoice project match methods
+  async insertInvoiceProjectMatch(match: InsertInvoiceProjectMatch): Promise<InvoiceProjectMatch> {
+    const [result] = await db.insert(invoiceProjectMatches).values(match).returning();
+    return result;
+  }
+
+  async getInvoiceProjectMatches(invoiceId: number): Promise<InvoiceProjectMatch[]> {
+    return await db.select().from(invoiceProjectMatches).where(eq(invoiceProjectMatches.invoiceId, invoiceId));
+  }
+
+  async deleteInvoiceProjectMatch(id: number): Promise<void> {
+    await db.delete(invoiceProjectMatches).where(eq(invoiceProjectMatches.id, id));
+  }
+
+  async getInvoiceById(id: number): Promise<Invoice | null> {
+    const [result] = await db.select().from(invoices).where(eq(invoices.id, id));
+    return result || null;
   }
 
   // ERP Connections
@@ -1946,7 +1974,11 @@ class PostgresStorage implements IStorage {
   }
 
   async updateInvoiceProjectMatch(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+    const [result] = await db.update(invoiceProjectMatches)
+      .set({ ...updates, updatedAt: new Date() })
+      .where(eq(invoiceProjectMatches.id, id))
+      .returning();
+    return result;
   }
 
   async setActiveProjectMatch(invoiceId: number, projectId: number): Promise<void> {
