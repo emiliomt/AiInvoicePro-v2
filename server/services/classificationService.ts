@@ -5,7 +5,7 @@ import type { InsertClassificationKeyword, InsertLineItemClassification, LineIte
 
 export interface ClassificationResult {
   category: string;
-  matchedKeyword: string | null;
+  matchedKeywords: string[] | null;
   confidence: number;
   isManualOverride: boolean;
 }
@@ -191,7 +191,7 @@ export class ClassificationService {
 
     return {
       category: bestCategory,
-      matchedKeyword: matchedKeywords.length > 0 ? matchedKeywords[0] : null,
+      matchedKeywords: matchedKeywords.length > 0 ? matchedKeywords : null,
       confidence,
       isManualOverride: false
     };
@@ -326,7 +326,7 @@ export class ClassificationService {
         .set({
           category: category as any,
           isManualOverride: true,
-          matchedKeyword: 'manual override',
+          matchedKeywords: ['manual override'],
           confidence: '1.00',
           classifiedAt: new Date(),
           classifiedBy: userId
@@ -337,7 +337,7 @@ export class ClassificationService {
         lineItemId,
         category: category as any,
         isManualOverride: true,
-        matchedKeyword: 'manual override',
+        matchedKeywords: ['manual override'],
         confidence: '1.00',
         classifiedBy: userId
       });
@@ -406,7 +406,7 @@ Respond with JSON in this format:
 
       return {
         category: aiResult.category || 'consumable_materials',
-        matchedKeyword: aiResult.matchedKeywords?.[0] || null,
+        matchedKeywords: aiResult.matchedKeywords || null,
         confidence: parseFloat(aiResult.confidence || '0.8'),
         isManualOverride: false
       };
@@ -420,6 +420,7 @@ Respond with JSON in this format:
 
   // Classify and store with AI option
   static async classifyAndStoreWithAI(lineItemId: number, useAI: boolean = false, userId?: string): Promise<void> {
+    const db = await getDb();
     // Get line item
     const lineItem = await db
       .select()
