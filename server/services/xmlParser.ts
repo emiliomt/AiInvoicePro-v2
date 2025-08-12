@@ -316,10 +316,10 @@ function validateColombianNIT(nit: string): string | null {
   const match = cleanNIT.match(nitPattern);
 
   if (!match) {
-    // Try without check digit and add dash
+    // Try without check digit
     const numericOnly = cleanNIT.replace(/[^\d]/g, '');
     if (numericOnly.length >= 8 && numericOnly.length <= 12) {
-      return numericOnly + '-'; // Return without check digit, will be validated elsewhere
+      return numericOnly; // Return normalized format without dash or check digit
     }
     return null;
   }
@@ -347,13 +347,9 @@ function validateColombianNIT(nit: string): string | null {
     calculatedCheckDigit = 11 - remainder;
   }
 
-  // Return formatted NIT if valid, otherwise return original for flexibility
-  if (calculatedCheckDigit.toString() === checkDigit) {
-    return `${baseNumber}-${checkDigit}`;
-  }
-
-  // Return with dash even if check digit doesn't match (some systems may have different validation)
-  return `${baseNumber}-${checkDigit}`;
+  // Return normalized format without dash to match validation expectations
+  // This ensures compatibility with validation rules that expect format like "860527800"
+  return baseNumber;
 }
 
 function extractPartyInfo(xmlContent: string, partyType: 'supplier' | 'customer'): {
