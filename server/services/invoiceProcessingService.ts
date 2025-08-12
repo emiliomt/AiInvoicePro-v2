@@ -500,72 +500,96 @@ export class InvoiceProcessingService {
       }
     }
 
-    // Step 3: Classify line items if not already done and validation passed or was skipped
-    // If validation failed, we should still attempt to classify line items to identify issues
+    // Step 3: Create and classify line items
     if (invoice && invoice.extractedData && invoice.status !== 'rejected') {
-      await this.updateInvoiceStatus(invoiceId, 'processing', 'Classifying line items...');
+      await this.updateInvoiceStatus(invoiceId, 'processing', 'Processing line items...');
 
       try {
-        if ((invoice.extractedData as any).lineItems && (invoice.extractedData as any).lineItems.length > 0) {
-          const db = await getDb();
-          let classifiedItemsCount = 0;
-          
-          // Check if any line items already exist for this invoice
-          const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
-          
-          if (existingLineItems.length === 0) {
-            // No line items exist, create them from extracted data
-            console.log(`📝 Creating ${(invoice.extractedData as any).lineItems.length} line items for invoice ${invoiceId}`);
+        const db = await getDb();
+        const extractedData = invoice.extractedData as any;
+        
+        // Check if any line items already exist for this invoice
+        const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+        
+        let lineItemsToProcess: any[] = [];
+        
+        if (existingLineItems.length === 0) {
+          // Create line items from extracted data if available
+          if (extractedData.lineItems && extractedData.lineItems.length > 0) {
+            console.log(`📝 Creating ${extractedData.lineItems.length} line items from extracted data for invoice ${invoiceId}`);
             
-            for (const [index, item] of (invoice.extractedData as any).lineItems.entries()) {
+            for (const [index, item] of extractedData.lineItems.entries()) {
               const [lineItem] = await db.insert(lineItems).values({
                 invoiceId: invoiceId,
-                description: item.description,
+                description: item.description || item.item || 'Unknown item',
                 quantity: item.quantity || '1',
-                unitPrice: item.unitPrice || '0.00',
-                totalPrice: item.totalPrice || '0.00',
+                unitPrice: item.unitPrice || item.price || '0.00',
+                totalPrice: item.totalPrice || item.total || '0.00',
                 unit: item.unit || null,
                 rawText: item.rawText || item.description,
                 lineNumber: index + 1,
               }).returning();
-
-              // Classify the line item after insertion
-              console.log(`🔍 Classifying line item ${lineItem.id}: "${item.description}"`);
-              await ClassificationService.classifyAndStore(lineItem.id, userId);
-              classifiedItemsCount++;
+              
+              lineItemsToProcess.push(lineItem);
             }
           } else {
-            // Line items exist, just classify them if not already classified
-            console.log(`📋 Found ${existingLineItems.length} existing line items for invoice ${invoiceId}, checking classifications`);
+            // Create a default line item from invoice summary if no detailed line items
+            console.log(`📝 Creating default line item for invoice ${invoiceId} - no detailed line items found`);
             
-            for (const lineItem of existingLineItems) {
-              // Check if already classified
-              const existingClassification = await db.select()
-                .from(lineItemClassifications)
-                .where(eq(lineItemClassifications.lineItemId, lineItem.id))
-                .limit(1);
-                
-              if (existingClassification.length === 0) {
-                console.log(`🔍 Classifying existing line item ${lineItem.id}: "${lineItem.description}"`);
-                await ClassificationService.classifyAndStore(lineItem.id, userId);
-                classifiedItemsCount++;
-              } else {
-                console.log(`✅ Line item ${lineItem.id} already classified as: ${existingClassification[0].category}`);
-              }
-            }
+            const description = extractedData.descriptionSummary || 
+                              extractedData.concept || 
+                              `Service from ${invoice.vendorName || 'Unknown Vendor'}`;
+                              
+            const [lineItem] = await db.insert(lineItems).values({
+              invoiceId: invoiceId,
+              description: description,
+              quantity: '1',
+              unitPrice: invoice.totalAmount || '0.00',
+              totalPrice: invoice.totalAmount || '0.00',
+              unit: 'service',
+              rawText: description,
+              lineNumber: 1,
+            }).returning();
+            
+            lineItemsToProcess.push(lineItem);
           }
-          
-          console.log(`✅ Line item processing completed for invoice ${invoiceId}: ${classifiedItemsCount} items classified`);
         } else {
-          console.log(`ℹ️ No line items found in extracted data for invoice ${invoiceId} to classify.`);
+          console.log(`📋 Found ${existingLineItems.length} existing line items for invoice ${invoiceId}`);
+          lineItemsToProcess = existingLineItems;
         }
+        
+        // Now classify all line items
+        let classifiedItemsCount = 0;
+        for (const lineItem of lineItemsToProcess) {
+          try {
+            // Check if already classified
+            const existingClassification = await db.select()
+              .from(lineItemClassifications)
+              .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+              .limit(1);
+              
+            if (existingClassification.length === 0) {
+              console.log(`🔍 Classifying line item ${lineItem.id}: "${lineItem.description}"`);
+              await ClassificationService.classifyAndStore(lineItem.id, userId);
+              classifiedItemsCount++;
+            } else {
+              console.log(`✅ Line item ${lineItem.id} already classified as: ${existingClassification[0].category}`);
+              classifiedItemsCount++;
+            }
+          } catch (itemError: any) {
+            console.error(`❌ Failed to classify line item ${lineItem.id}:`, itemError);
+          }
+        }
+        
+        console.log(`✅ Line item processing completed for invoice ${invoiceId}: ${lineItemsToProcess.length} items processed, ${classifiedItemsCount} classified`);
+        
       } catch (classificationError: any) {
-        console.error(`❌ Line item classification failed for invoice ${invoiceId}:`, classificationError);
-        await this.updateInvoiceStatus(invoiceId, 'processing', `Line item classification failed, continuing: ${classificationError.message}`);
+        console.error(`❌ Line item processing failed for invoice ${invoiceId}:`, classificationError);
+        await this.updateInvoiceStatus(invoiceId, 'processing', `Line item processing failed, continuing: ${classificationError.message}`);
         // Don't return false here, continue with processing
       }
     } else if (invoice && invoice.status === 'rejected') {
-      console.log(`ℹ️ Skipping line item classification for invoice ${invoiceId} due to previous failure.`);
+      console.log(`ℹ️ Skipping line item processing for invoice ${invoiceId} due to previous failure.`);
       return false;
     }
 

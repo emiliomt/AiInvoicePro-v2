@@ -1,8 +1,8 @@
 
 import { getStorage, getDb } from "../storage";
-import { classificationKeywords, lineItemClassifications, lineItems } from "@shared/schema";
+import { classificationKeywords, lineItemClassifications, lineItems } from "../../shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
-import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "@shared/schema";
+import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "../../shared/schema";
 
 export interface ClassificationResult {
   category: string;
@@ -83,6 +83,7 @@ export class ClassificationService {
 
   // Get all keywords for a category
   static async getKeywordsByCategory(category: string, userId?: string): Promise<string[]> {
+    const db = await getDb();
     const conditions = [eq(classificationKeywords.category, category as any)];
     
     if (userId) {
@@ -107,6 +108,7 @@ export class ClassificationService {
 
   // Classify a line item
   static async classifyLineItem(lineItem: LineItem, userId?: string): Promise<ClassificationResult> {
+    const db = await getDb();
     const description = lineItem.description.toLowerCase();
     
     // Get all keywords
@@ -122,28 +124,58 @@ export class ClassificationService {
           : eq(classificationKeywords.isDefault, true)
       );
 
-    // Score each category
+    // Score each category with modern business categories
     const categoryScores: Record<string, { score: number; matchedKeywords: string[] }> = {
-      consumable_materials: { score: 0, matchedKeywords: [] },
-      non_consumable_materials: { score: 0, matchedKeywords: [] },
-      labor: { score: 0, matchedKeywords: [] },
-      tools_equipment: { score: 0, matchedKeywords: [] }
+      materials_supplies: { score: 0, matchedKeywords: [] },
+      equipment_tools: { score: 0, matchedKeywords: [] },
+      services_labor: { score: 0, matchedKeywords: [] },
+      utilities_facilities: { score: 0, matchedKeywords: [] },
+      other: { score: 0, matchedKeywords: [] }
     };
 
-    // Check for keyword matches
+    // Enhanced keyword matching with context
     for (const keywordEntry of allKeywords) {
       const keyword = keywordEntry.keyword.toLowerCase();
       if (description.includes(keyword)) {
-        const category = keywordEntry.category;
-        // Weight longer keywords higher
-        const weight = keyword.length > 3 ? 2 : 1;
-        categoryScores[category].score += weight;
-        categoryScores[category].matchedKeywords.push(keyword);
+        // Map old categories to new ones
+        let mappedCategory = keywordEntry.category;
+        if (keywordEntry.category === 'consumable_materials') mappedCategory = 'materials_supplies';
+        if (keywordEntry.category === 'non_consumable_materials') mappedCategory = 'equipment_tools';
+        if (keywordEntry.category === 'labor') mappedCategory = 'services_labor';
+        if (keywordEntry.category === 'tools_equipment') mappedCategory = 'equipment_tools';
+        
+        // Ensure category exists in our scoring system
+        if (!categoryScores[mappedCategory]) {
+          categoryScores[mappedCategory] = { score: 0, matchedKeywords: [] };
+        }
+        
+        // Weight longer keywords higher and exact matches even higher
+        let weight = keyword.length > 4 ? 3 : 2;
+        if (description === keyword) weight = 5; // Exact match gets highest weight
+        
+        categoryScores[mappedCategory].score += weight;
+        categoryScores[mappedCategory].matchedKeywords.push(keyword);
       }
     }
 
+    // Enhanced context-based classification for common patterns
+    if (description.includes('labor') || description.includes('service') || description.includes('consulting')) {
+      categoryScores.services_labor.score += 3;
+      categoryScores.services_labor.matchedKeywords.push('context: service terms');
+    }
+    
+    if (description.includes('equipment') || description.includes('machine') || description.includes('tool')) {
+      categoryScores.equipment_tools.score += 3;
+      categoryScores.equipment_tools.matchedKeywords.push('context: equipment terms');
+    }
+    
+    if (description.includes('material') || description.includes('supply') || description.includes('cement') || description.includes('steel')) {
+      categoryScores.materials_supplies.score += 3;
+      categoryScores.materials_supplies.matchedKeywords.push('context: material terms');
+    }
+
     // Find best category
-    let bestCategory = 'consumable_materials';
+    let bestCategory = 'services_labor'; // Default to services for unmatched items
     let bestScore = 0;
     let matchedKeywords: string[] = [];
 
@@ -156,7 +188,7 @@ export class ClassificationService {
     }
 
     // Calculate confidence based on score and number of matches
-    const confidence = Math.min(bestScore / 10, 1); // Cap at 1.0
+    const confidence = Math.min(bestScore / 8, 1); // Adjusted for new scoring
 
     return {
       category: bestCategory,
@@ -168,6 +200,8 @@ export class ClassificationService {
 
   // Classify and store classification for line item
   static async classifyAndStore(lineItemId: number, userId?: string): Promise<void> {
+    const db = await getDb();
+    
     // Get line item
     const lineItem = await db
       .select()
@@ -217,6 +251,7 @@ export class ClassificationService {
 
   // Bulk classify line items for an invoice
   static async classifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
+    const db = await getDb();
     const invoiceLineItems = await db
       .select()
       .from(lineItems)
@@ -229,6 +264,7 @@ export class ClassificationService {
 
   // Add custom keyword
   static async addCustomKeyword(category: string, keyword: string, userId: string): Promise<void> {
+    const db = await getDb();
     await db.insert(classificationKeywords).values({
       category: category as any,
       keyword: keyword.toLowerCase().trim(),
@@ -239,6 +275,7 @@ export class ClassificationService {
 
   // Remove custom keyword
   static async removeCustomKeyword(keywordId: number, userId: string): Promise<void> {
+    const db = await getDb();
     await db
       .delete(classificationKeywords)
       .where(
@@ -252,6 +289,7 @@ export class ClassificationService {
 
   // Get user's custom keywords
   static async getUserKeywords(userId: string): Promise<Record<string, { id: number; keyword: string }[]>> {
+    const db = await getDb();
     const keywords = await db
       .select()
       .from(classificationKeywords)
