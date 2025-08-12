@@ -262,7 +262,7 @@ export class ProgressTracker {
   static cleanup() {
     const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
     
-    for (const [sessionId, session] of this.sessions.entries()) {
+    for (const [sessionId, session] of Array.from(this.sessions.entries())) {
       if (session.startTime.getTime() < cutoff) {
         this.sessions.delete(sessionId);
         this.websockets.delete(sessionId);
