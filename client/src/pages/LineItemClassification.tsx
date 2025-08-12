@@ -191,15 +191,12 @@ export default function LineItemClassification() {
     queryKey: ['/api/invoices/ready-for-line-item-classification', { filterProjectId, filterDateFrom, filterDateTo, filterStatus }],
     queryFn: async () => {
       const params = new URLSearchParams();
-      if (filterProjectId && filterProjectId !== "all") params.append('projectId', filterProjectId);
+      if (filterProjectId) params.append('projectId', filterProjectId);
       if (filterDateFrom) params.append('dateFrom', filterDateFrom);
       if (filterDateTo) params.append('dateTo', filterDateTo);
-      if (filterStatus && filterStatus !== "all") params.append('status', filterStatus);
+      if (filterStatus) params.append('status', filterStatus);
 
       const response = await fetch(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch invoices');
-      }
       return response.json();
     },
     enabled: currentTab === 'process'

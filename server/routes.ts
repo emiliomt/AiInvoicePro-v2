@@ -3911,25 +3911,36 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'User not found' });
       }
 
-      // Get all invoices for the user
+      // Use a simplified approach by getting invoices that have been matched to projects
+      // and have extracted data with line items
       const invoices = await storage.getInvoicesByUserId(userId);
       
       // Filter invoices that:
-      // 1. Have been extracted/approved/verified/matched (including project-matched invoices)
-      // 2. Have extracted data with line items OR are project-matched (we can extract line items later)
+      // 1. Have been extracted/approved/verified
+      // 2. Have extracted data with line items
+      // 3. Are matched to projects (have project matches)
       const filteredInvoices = invoices.filter(invoice => {
-        // Status check - include 'matched' status for project-matched invoices
-        const validStatuses = ['extracted', 'approved', 'verified', 'matched'];
-        if (!validStatuses.includes(invoice.status || '')) {
+        // Status check
+        if (!['extracted', 'approved', 'verified'].includes(invoice.status || '')) {
+          return false;
+        }
+        
+        // Check if invoice has line items in extracted data
+        const hasLineItems = invoice.extractedData && 
+                            typeof invoice.extractedData === 'object' && 
+                            'lineItems' in invoice.extractedData &&
+                            Array.isArray(invoice.extractedData.lineItems) &&
+                            invoice.extractedData.lineItems.length > 0;
+        
+        if (!hasLineItems) {
           return false;
         }
 
-        // Apply status filter if provided
+        // Apply filters if provided
         if (status && invoice.status !== status) {
           return false;
         }
 
-        // Apply date filters if provided
         if (dateFrom && invoice.invoiceDate && invoice.invoiceDate < new Date(dateFrom)) {
           return false;
         }
@@ -3950,17 +3961,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const matches = await storage.getInvoiceProjectMatches(invoice.id);
           const activeMatch = matches.find(match => match.isActive);
           
-          // Check if invoice has line items in extracted data
-          const hasLineItems = invoice.extractedData && 
-                              typeof invoice.extractedData === 'object' && 
-                              'lineItems' in invoice.extractedData &&
-                              Array.isArray(invoice.extractedData.lineItems) &&
-                              invoice.extractedData.lineItems.length > 0;
-          
-          // Include invoices that either have line items OR are project-matched (we can extract line items during processing)
-          if (activeMatch || hasLineItems) {
+          if (activeMatch) {
             // Apply project filter if specified
-            if (projectId && activeMatch?.projectId !== projectId) {
+            if (projectId && activeMatch.projectId !== projectId) {
               continue;
             }
             
@@ -3972,39 +3975,31 @@ export async function registerRoutes(app: Express): Promise<Server> {
               currency: invoice.currency,
               invoiceDate: invoice.invoiceDate,
               status: invoice.status,
-              projectId: activeMatch?.projectId || null,
-              matchScore: activeMatch?.matchScore || 0,
-              lineItemsExtracted: hasLineItems,
-              hasClassifications: false, // We'll check this properly later
+              projectId: activeMatch.projectId,
+              matchScore: activeMatch.matchScore,
+              lineItemsExtracted: true,
+              hasClassifications: false, // We'll assume false for simplicity
               lineItemsCount: invoice.extractedData?.lineItems?.length || 0
             });
           }
         } catch (matchError) {
           console.log(`Could not get project matches for invoice ${invoice.id}:`, matchError);
-          // Include invoice without project info if projectId filter is not specified and it has line items
+          // Include invoice without project info if projectId filter is not specified
           if (!projectId) {
-            const hasLineItems = invoice.extractedData && 
-                                typeof invoice.extractedData === 'object' && 
-                                'lineItems' in invoice.extractedData &&
-                                Array.isArray(invoice.extractedData.lineItems) &&
-                                invoice.extractedData.lineItems.length > 0;
-            
-            if (hasLineItems) {
-              invoicesWithProjectInfo.push({
-                id: invoice.id,
-                invoiceNumber: invoice.invoiceNumber,
-                vendorName: invoice.vendorName,
-                totalAmount: invoice.totalAmount,
-                currency: invoice.currency,
-                invoiceDate: invoice.invoiceDate,
-                status: invoice.status,
-                projectId: null,
-                matchScore: 0,
-                lineItemsExtracted: true,
-                hasClassifications: false,
-                lineItemsCount: invoice.extractedData?.lineItems?.length || 0
-              });
-            }
+            invoicesWithProjectInfo.push({
+              id: invoice.id,
+              invoiceNumber: invoice.invoiceNumber,
+              vendorName: invoice.vendorName,
+              totalAmount: invoice.totalAmount,
+              currency: invoice.currency,
+              invoiceDate: invoice.invoiceDate,
+              status: invoice.status,
+              projectId: null,
+              matchScore: 0,
+              lineItemsExtracted: true,
+              hasClassifications: false,
+              lineItemsCount: invoice.extractedData?.lineItems?.length || 0
+            });
           }
         }
       }
@@ -9757,216 +9752,6 @@ Only return the keywords, separated by commas, without any additional text or ex
     } catch (error) {
       console.error('Error generating keyword suggestions:', error);
       res.status(500).json({ error: 'Failed to generate keyword suggestions' });
-    }
-  });
-
-  // Project matching repair endpoint - Fix the broken data pipeline
-  app.post('/api/repair-project-matches', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(401).json({ message: 'User not found' });
-      }
-
-      console.log('🔧 Starting project matching repair for all invoices...');
-      
-      // Get all invoices that need project matching
-      const invoices = await storage.getInvoicesByUserId(userId);
-      const projects = await storage.getProjects();
-      
-      if (!projects || projects.length === 0) {
-        return res.status(400).json({ message: 'No projects found. Please create projects first.' });
-      }
-
-      console.log(`Found ${invoices.length} invoices and ${projects.length} projects`);
-      
-      const { ProjectMatcherService } = await import('./projectMatcher');
-      const matcher = new ProjectMatcherService();
-      
-      let processedCount = 0;
-      let matchedCount = 0;
-      const matchResults = [];
-      
-      for (const invoice of invoices) {
-        try {
-          // Skip if already has active project matches
-          const existingMatches = await storage.getInvoiceProjectMatches(invoice.id);
-          if (existingMatches.some(match => match.isActive)) {
-            console.log(`Invoice ${invoice.id} already has active project match, skipping`);
-            continue;
-          }
-          
-          // Perform project matching
-          const matches = await matcher.matchInvoiceWithProjects(invoice, projects);
-          
-          if (matches && matches.length > 0) {
-            const bestMatch = matches[0]; // Highest scoring match
-            
-            // Only create match if score is reasonable (>30)
-            if (bestMatch.matchScore > 30) {
-              await storage.insertInvoiceProjectMatch({
-                invoiceId: invoice.id,
-                projectId: bestMatch.project.projectId,
-                matchScore: bestMatch.matchScore.toString(),
-                status: bestMatch.matchScore > 80 ? 'auto' : 'manual', // High confidence = auto, lower = manual review
-                matchDetails: bestMatch.matchDetails,
-                isActive: true
-              });
-              
-              matchedCount++;
-              matchResults.push({
-                invoiceId: invoice.id,
-                invoiceNumber: invoice.invoiceNumber,
-                vendorName: invoice.vendorName,
-                projectId: bestMatch.project.projectId,
-                projectName: bestMatch.project.name,
-                matchScore: bestMatch.matchScore,
-                status: bestMatch.matchScore > 80 ? 'auto' : 'manual'
-              });
-              
-              console.log(`✅ Matched invoice ${invoice.id} (${invoice.invoiceNumber}) to project ${bestMatch.project.projectId} with score ${bestMatch.matchScore}`);
-            } else {
-              console.log(`⚠️ Low match score (${bestMatch.matchScore}) for invoice ${invoice.id}, not creating match`);
-            }
-          } else {
-            console.log(`❌ No matches found for invoice ${invoice.id}`);
-          }
-          
-          processedCount++;
-          
-        } catch (error) {
-          console.error(`Error matching invoice ${invoice.id}:`, error);
-        }
-      }
-      
-      console.log(`🎯 Project matching repair completed: ${processedCount} processed, ${matchedCount} matched`);
-      
-      res.json({
-        message: 'Project matching repair completed',
-        processedCount,
-        matchedCount,
-        matches: matchResults
-      });
-      
-    } catch (error) {
-      console.error('Error in project matching repair:', error);
-      res.status(500).json({ 
-        message: 'Failed to repair project matches',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Invoice statistics endpoint for project matcher dashboard
-  app.get('/api/invoices/stats', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
-      const user = await storage.getUser(userId);
-      
-      if (!user) {
-        return res.status(401).json({ message: 'User not found' });
-      }
-
-      // Get counts from database
-      const invoices = await storage.getInvoicesByUserId(userId);
-      const projects = await storage.getProjects();
-      
-      // Count active project matches
-      let totalMatches = 0;
-      let unmatchedInvoices = 0;
-      
-      for (const invoice of invoices) {
-        const matches = await storage.getInvoiceProjectMatches(invoice.id);
-        const hasActiveMatch = matches.some(match => match.isActive);
-        
-        if (hasActiveMatch) {
-          totalMatches++;
-        } else {
-          unmatchedInvoices++;
-        }
-      }
-
-      res.json({
-        totalInvoices: invoices.length,
-        totalProjects: projects?.length || 0,
-        totalMatches,
-        unmatchedInvoices
-      });
-      
-    } catch (error) {
-      console.error('Error fetching invoice stats:', error);
-      res.status(500).json({ 
-        message: 'Failed to fetch invoice statistics',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Manual project matching endpoint for specific invoices
-  app.post('/api/invoices/:id/match-project', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
-      const invoiceId = parseInt(req.params.id);
-      const { forceMatch } = req.body;
-      
-      const user = await storage.getUser(userId);
-      if (!user) {
-        return res.status(401).json({ message: 'User not found' });
-      }
-
-      const invoice = await storage.getInvoiceById(invoiceId);
-      if (!invoice) {
-        return res.status(404).json({ message: 'Invoice not found' });
-      }
-
-      const projects = await storage.getProjects();
-      if (!projects || projects.length === 0) {
-        return res.status(400).json({ message: 'No projects available for matching' });
-      }
-
-      // Clear existing matches if forceMatch is true
-      if (forceMatch) {
-        const existingMatches = await storage.getInvoiceProjectMatches(invoiceId);
-        for (const match of existingMatches) {
-          await storage.updateInvoiceProjectMatch(match.id, { isActive: false });
-        }
-      }
-
-      const { ProjectMatcherService } = await import('./projectMatcher');
-      const matcher = new ProjectMatcherService();
-      
-      const matches = await matcher.matchInvoiceWithProjects(invoice, projects);
-      
-      if (!matches || matches.length === 0) {
-        return res.json({
-          message: 'No suitable project matches found',
-          matches: []
-        });
-      }
-
-      // Return all matches for user selection
-      const matchResults = matches.map(match => ({
-        projectId: match.project.projectId,
-        projectName: match.project.name,
-        matchScore: match.matchScore,
-        matchDetails: match.matchDetails,
-        recommended: match.matchScore > 60
-      }));
-
-      res.json({
-        message: `Found ${matches.length} potential project matches`,
-        matches: matchResults,
-        bestMatch: matchResults[0]
-      });
-      
-    } catch (error) {
-      console.error('Error matching invoice to project:', error);
-      res.status(500).json({ 
-        message: 'Failed to match invoice to project',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
     }
   });
 
