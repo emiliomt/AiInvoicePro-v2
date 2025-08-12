@@ -2147,6 +2147,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
         doc.pipe(res);
 
         // Add content to the PDF
+
+
+  // Manual petty cash classification endpoint
+  app.post('/api/petty-cash/manual-classify/:invoiceId', isAuthenticated, async (req, res) => {
+    try {
+      const invoiceId = parseInt(req.params.invoiceId);
+      const { force = false } = req.body;
+
+      // Get the invoice
+      const invoice = await storage.getInvoice(invoiceId);
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
+      }
+
+      // Check if petty cash log already exists
+      const existingLog = await storage.getPettyCashLogByInvoiceId(invoiceId);
+      
+      if (existingLog && !force) {
+        return res.status(400).json({ 
+          message: "Invoice already classified. Use force=true to override.",
+          existingStatus: existingLog.isPettyCash 
+        });
+      }
+
+      if (existingLog) {
+        // Update existing log
+        const updatedLog = await storage.updatePettyCashLog(existingLog.id, {
+          isPettyCash: true,
+          classificationMethod: 'manual',
+          confidenceScore: 1.0,
+          status: 'pending_approval',
+          updatedAt: new Date()
+        });
+        
+        console.log(`✅ Manually classified invoice ${invoiceId} as petty cash (updated)`);
+        res.json({ 
+          message: "Invoice manually classified as petty cash", 
+          log: updatedLog,
+          action: 'updated'
+        });
+      } else {
+        // Create new petty cash log
+        const newLog = await storage.createPettyCashLog({
+          invoiceId,
+          isPettyCash: true,
+          classificationMethod: 'manual',
+          confidenceScore: 1.0,
+          status: 'pending_approval'
+        });
+        
+        console.log(`✅ Manually classified invoice ${invoiceId} as petty cash (new)`);
+        res.json({ 
+          message: "Invoice manually classified as petty cash", 
+          log: newLog,
+          action: 'created'
+        });
+      }
+
+      // Update invoice status to approved if it was rejected
+      if (invoice.status === 'rejected') {
+        await storage.updateInvoice(invoiceId, {
+          status: 'approved'
+        });
+        console.log(`✅ Updated invoice ${invoiceId} status from rejected to approved`);
+      }
+
+    } catch (error) {
+      console.error("Error manually classifying petty cash:", error);
+      res.status(500).json({ message: "Failed to classify invoice as petty cash" });
+    }
+  });
+
         doc.fontSize(20).text('Invoice Preview Demo', 100, 100);
         doc.fontSize(14).text(`File: ${invoice.fileName}`, 100, 140);
         doc.text(`Invoice ID: ${invoice.id}`, 100, 160);

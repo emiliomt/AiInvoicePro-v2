@@ -584,8 +584,8 @@ export class InvoiceProcessingService {
       // Convert to number if it's a string
       const amount = typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount;
       
-      // Define petty cash threshold (configurable)
-      const PETTY_CASH_THRESHOLD = 1000; // $1000 USD or equivalent
+      // Define petty cash threshold (configurable) - adjusted for COP
+      const PETTY_CASH_THRESHOLD = 200000; // 200,000 COP (approximately $50 USD)
       
       const isPettyCash = amount <= PETTY_CASH_THRESHOLD;
       
