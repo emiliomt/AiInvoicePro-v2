@@ -44,6 +44,7 @@ interface VendorContext {
 
 interface InvoiceForProcessing {
   id: number;
+  invoiceId?: number;
   invoiceNumber: string;
   vendorName: string;
   totalAmount: string;
@@ -51,9 +52,11 @@ interface InvoiceForProcessing {
   invoiceDate: string;
   status: string;
   projectId: string;
+  projectName?: string;
   matchScore: string;
   lineItemsExtracted: boolean;
   hasClassifications: boolean;
+  uploadedAt?: string;
   lineItemsCount: number;
 }
 
@@ -169,7 +172,10 @@ export default function LineItemClassification() {
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['/api/classification/categories'],
-    queryFn: () => apiRequest('/api/classification/categories'),
+    queryFn: async () => {
+      const response = await fetch('/api/classification/categories');
+      return response.json();
+    }
   });
 
   // Fetch invoices ready for line item classification
@@ -185,21 +191,25 @@ export default function LineItemClassification() {
       if (filterDateTo) params.append('dateTo', filterDateTo);
       if (filterStatus) params.append('status', filterStatus);
 
-      return apiRequest(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
+      const response = await fetch(`/api/invoices/ready-for-line-item-classification?${params.toString()}`);
+      return response.json();
     },
     enabled: currentTab === 'process'
   });
 
   // Single item classification mutation
   const classifyMutation = useMutation({
-    mutationFn: (data: { lineItem: LineItem; vendorContext: VendorContext }) =>
-      apiRequest('/api/classification/classify', {
+    mutationFn: async (data: { lineItem: LineItem; vendorContext: VendorContext }) => {
+      const response = await fetch('/api/classification/classify', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...data.lineItem,
           vendorContext: data.vendorContext
         })
-      }),
+      });
+      return response.json();
+    },
     onSuccess: (result) => {
       toast({
         title: "Classification Complete",
@@ -217,14 +227,17 @@ export default function LineItemClassification() {
 
   // Batch classification mutation
   const batchClassifyMutation = useMutation({
-    mutationFn: (data: { lineItems: LineItem[]; vendorContext: VendorContext }) =>
-      apiRequest('/api/classification/batch', {
+    mutationFn: async (data: { lineItems: LineItem[]; vendorContext: VendorContext }) => {
+      const response = await fetch('/api/classification/batch', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lineItems: data.lineItems,
           vendorContext: data.vendorContext
         })
-      }),
+      });
+      return response.json();
+    },
     onSuccess: (results) => {
       toast({
         title: "Batch Classification Complete",
@@ -242,11 +255,14 @@ export default function LineItemClassification() {
 
   // Process invoices mutation
   const processInvoicesMutation = useMutation({
-    mutationFn: (data: { invoiceIds: number[]; filters?: any }) =>
-      apiRequest('/api/process-invoices-line-items', {
+    mutationFn: async (data: { invoiceIds: number[]; filters?: any }) => {
+      const response = await fetch('/api/process-invoices-line-items', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data)
-      }),
+      });
+      return response.json();
+    },
     onSuccess: (result) => {
       setProcessingSessionId(result.sessionId);
       toast({
@@ -265,7 +281,13 @@ export default function LineItemClassification() {
 
   // Test classification mutation
   const testMutation = useMutation({
-    mutationFn: () => apiRequest('/api/classification/test', { method: 'POST' }),
+    mutationFn: async () => {
+      const response = await fetch('/api/classification/test', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      return response.json();
+    },
     onSuccess: (results) => {
       toast({
         title: "Test Complete",
@@ -607,7 +629,7 @@ export default function LineItemClassification() {
     const matchesSearch = searchTerm === "" ||
       invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
       invoice.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      invoice.projectName.toLowerCase().includes(searchTerm.toLowerCase());
+      (invoice.projectName || "").toLowerCase().includes(searchTerm.toLowerCase());
 
     const matchesStatus = filterStatus === "all" ||
       (filterStatus === "classified" && invoice.hasClassifications) ||
@@ -791,7 +813,7 @@ export default function LineItemClassification() {
                               checked={selectedInvoices.length === invoices.length && invoices.length > 0}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedInvoices(invoices.map(inv => inv.invoiceId));
+                                  setSelectedInvoices(invoices.map(inv => inv.invoiceId || inv.id).filter(id => id !== undefined));
                                 } else {
                                   setSelectedInvoices([]);
                                 }
@@ -823,16 +845,18 @@ export default function LineItemClassification() {
                       </TableHeader>
                       <TableBody>
                         {filteredInvoices.map((invoice) => (
-                          <TableRow key={invoice.invoiceId} className="hover:bg-gray-50">
+                          <TableRow key={invoice.invoiceId || invoice.id} className="hover:bg-gray-50">
                             <TableCell className="px-6 py-4 whitespace-nowrap">
                               <input
                                 type="checkbox"
-                                checked={selectedInvoices.includes(invoice.invoiceId)}
+                                checked={selectedInvoices.includes(invoice.invoiceId || invoice.id)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setSelectedInvoices([...selectedInvoices, invoice.invoiceId]);
+                                    const invoiceId = invoice.invoiceId || invoice.id;
+                                    setSelectedInvoices([...selectedInvoices, invoiceId]);
                                   } else {
-                                    setSelectedInvoices(selectedInvoices.filter(id => id !== invoice.invoiceId));
+                                    const invoiceId = invoice.invoiceId || invoice.id;
+                                    setSelectedInvoices(selectedInvoices.filter(id => id !== invoiceId));
                                   }
                                 }}
                                 className="rounded border-gray-300"
@@ -845,7 +869,7 @@ export default function LineItemClassification() {
                               {invoice.vendorName}
                             </TableCell>
                             <TableCell className="px-6 py-4 whitespace-nowrap">
-                              {invoice.projectName}
+                              {invoice.projectName || 'N/A'}
                             </TableCell>
                             <TableCell className="px-6 py-4 whitespace-nowrap">
                               ${invoice.totalAmount.toLocaleString()}
@@ -859,7 +883,7 @@ export default function LineItemClassification() {
                               </Badge>
                             </TableCell>
                             <TableCell className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                              {new Date(invoice.uploadedAt).toLocaleDateString()}
+                              {invoice.uploadedAt ? new Date(invoice.uploadedAt).toLocaleDateString() : 'N/A'}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -1042,12 +1066,12 @@ export default function LineItemClassification() {
                   </div>
                 ) : categories ? (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {Object.entries(categories).map(([category, description]: [string, string]) => (
+                    {Object.entries(categories).map(([category, description]) => (
                       <div key={category} className="border rounded p-3 space-y-2">
                         <Badge className={getCategoryColor(category)}>
                           {category.replace('_', ' ').toUpperCase()}
                         </Badge>
-                        <p className="text-sm text-muted-foreground">{description}</p>
+                        <p className="text-sm text-muted-foreground">{String(description)}</p>
                       </div>
                     ))}
                   </div>
