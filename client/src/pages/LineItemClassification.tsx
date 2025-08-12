@@ -1,10 +1,8 @@
-import { useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { useState, useEffect } from "react";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
@@ -13,9 +11,11 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Progress } from "@/components/ui/progress";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useToast } from "@/hooks/use-toast";
-import { Loader2, Brain, Tag, FileText, TrendingUp, Download, Upload, RefreshCcw, FileCheck, CheckCircle, Play, Plus, Trash2, Target, Bot, Sparkles } from "lucide-react";
+import { Loader2, Brain, Tag, FileText, TrendingUp, Download, Upload, RefreshCcw, FileCheck, CheckCircle, Play, Plus, Trash2, Target, Bot, Sparkles, Edit, Database } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import Header from "@/components/Header";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 
 interface LineItem {
   description: string;
@@ -65,29 +65,52 @@ interface ProcessingProgress {
 }
 
 interface Invoice {
-  id: number;
-  invoiceNumber: string | null;
-  vendorName: string | null;
-  totalAmount: string | null;
-  status: string;
-  createdAt: string;
-  projectId: string | null;
+  invoiceId: number;
+  invoiceNumber: string;
+  vendorName: string;
+  projectId: number;
+  projectName: string;
+  totalAmount: number;
+  lineItemsCount: number;
+  processingStatus: string;
+  uploadedAt: string;
+  hasClassifications: boolean;
 }
 
 interface ClassificationResult {
-  invoiceId: number;
-  invoiceNumber: string | null;
-  vendorName: string | null;
-  totalAmount: string | null;
-  processedAt: string;
-  lineItems: {
-    description: string;
-    category: string;
-    amount: string;
-    confidence: number;
-  }[];
+  lineItem: string;
+  category: string;
+  subcategory?: string;
+  confidence: number;
+  matchedKeywords: string[];
+  status: 'classified' | 'unclassified' | 'manual';
 }
 
+interface ClassificationBatch {
+  id: string;
+  invoiceId: number;
+  results: ClassificationResult[];
+  processedAt: string;
+  totalItems: number;
+  classifiedItems: number;
+}
+
+interface KeywordCategory {
+  id: number;
+  category: string;
+  subcategory?: string;
+  keywords: string[];
+  description?: string;
+  createdAt: string;
+  isActive: boolean;
+}
+
+interface NewKeywordCategory {
+  category: string;
+  subcategory: string;
+  keywords: string;
+  description: string;
+}
 
 export default function LineItemClassification() {
   const { toast } = useToast();
@@ -106,7 +129,7 @@ export default function LineItemClassification() {
   const [vendorContext, setVendorContext] = useState<VendorContext>({
     vendorName: "",
     industry: "",
-    businessType: ""
+    businessType: "",
   });
 
   const [batchItems, setBatchItems] = useState<LineItem[]>([]);
@@ -118,8 +141,22 @@ export default function LineItemClassification() {
   const [filterProjectId, setFilterProjectId] = useState("");
   const [filterDateFrom, setFilterDateFrom] = useState("");
   const [filterDateTo, setFilterDateTo] = useState("");
-  const [filterStatus, setFilterStatus] = useState("");
+  const [filterStatus, setFilterStatus] = useState<string>("all");
   const [processingSessionId, setProcessingSessionId] = useState<string>("");
+
+  // Keyword management state
+  const [keywordCategories, setKeywordCategories] = useState<KeywordCategory[]>([]);
+  const [isKeywordModalOpen, setIsKeywordModalOpen] = useState(false);
+  const [editingKeyword, setEditingKeyword] = useState<KeywordCategory | null>(null);
+  const [newKeyword, setNewKeyword] = useState<NewKeywordCategory>({
+    category: '',
+    subcategory: '',
+    keywords: '',
+    description: ''
+  });
+  const [isKeywordLoading, setIsKeywordLoading] = useState(false);
+  const [projects, setProjects] = useState<Array<{id: number, name: string}>>([]);
+  const [selectedProject, setSelectedProject] = useState<string>("");
 
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
@@ -190,7 +227,7 @@ export default function LineItemClassification() {
       toast({
         title: "Batch Classification Failed",
         description: "Unable to classify items. Please try again.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   });
@@ -213,7 +250,7 @@ export default function LineItemClassification() {
       toast({
         title: "Processing Failed",
         description: "Unable to start invoice processing. Please try again.",
-        variant: "destructive"
+        variant: "destructive",
       });
     }
   });
@@ -234,7 +271,7 @@ export default function LineItemClassification() {
       toast({
         title: "Missing Description",
         description: "Please enter a line item description",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -247,7 +284,7 @@ export default function LineItemClassification() {
       toast({
         title: "No Items to Classify",
         description: "Please add items to the batch first",
-        variant: "destructive"
+        variant: "destructive",
       });
       return;
     }
@@ -319,35 +356,257 @@ export default function LineItemClassification() {
     }
   };
 
-  // Placeholder states and functions for Process Invoices and Results tabs
-  const [projectId, setProjectId] = useState("");
-  const [dateFrom, setDateFrom] = useState("");
-  const [dateTo, setDateTo] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [filteredInvoices, setFilteredInvoices] = useState<Invoice[]>([]);
-  const [processingLoading, setProcessingLoading] = useState(false);
-  const [classificationResults, setClassificationResults] = useState<ClassificationResult[]>([]);
+  const loadInvoices = async () => {
+    try {
+      setIsLoading(true);
+      let url = '/api/invoices/ready-for-classification';
+      const params = new URLSearchParams();
 
-  const refreshInvoices = () => {
-    // Placeholder for API call to refresh invoices
-    console.log("Refreshing invoices...");
+      if (selectedProject) {
+        params.append('projectId', selectedProject);
+      }
+
+      if (params.toString()) {
+        url += `?${params.toString()}`;
+      }
+
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error('Failed to load invoices');
+      }
+      const data = await response.json();
+      setInvoices(data);
+    } catch (error) {
+      console.error('Error loading invoices:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load invoices for classification",
+        variant: "destructive",
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const processSpecificInvoice = (id: number) => {
-    // Placeholder for API call to process a specific invoice
-    console.log(`Processing invoice ${id}...`);
-    toast({ title: "Processing Invoice", description: `Initiated processing for invoice ${id}.` });
+  const loadProjects = async () => {
+    try {
+      const response = await fetch('/api/projects');
+      if (response.ok) {
+        const data = await response.json();
+        setProjects(data);
+      }
+    } catch (error) {
+      console.error('Error loading projects:', error);
+    }
   };
 
-  const processAllFiltered = () => {
-    // Placeholder for API call to process all filtered invoices
-    setProcessingLoading(true);
-    console.log("Processing all filtered invoices...");
-    setTimeout(() => {
-      setProcessingLoading(false);
-      toast({ title: "Processing Invoices", description: "All filtered invoices have been submitted for processing." });
-    }, 2000);
+  const loadKeywordCategories = async () => {
+    try {
+      setIsKeywordLoading(true);
+      const response = await fetch('/api/classification-keywords');
+      if (!response.ok) {
+        throw new Error('Failed to load keyword categories');
+      }
+      const data = await response.json();
+      setKeywordCategories(data);
+    } catch (error) {
+      console.error('Error loading keyword categories:', error);
+      toast({
+        title: "Error",
+        description: "Failed to load keyword categories",
+        variant: "destructive",
+      });
+    } finally {
+      setIsKeywordLoading(false);
+    }
   };
+
+  useEffect(() => {
+    loadInvoices();
+    loadProjects();
+    loadKeywordCategories();
+  }, []);
+
+  useEffect(() => {
+    loadInvoices();
+  }, [selectedProject]);
+
+
+  const processSelectedInvoices = async () => {
+    if (selectedInvoices.length === 0) {
+      toast({
+        title: "No Selection",
+        description: "Please select invoices to process",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      for (const invoiceId of selectedInvoices) {
+        const response = await fetch('/api/classify-line-items', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ invoiceId }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`Failed to process invoice ${invoiceId}`);
+        }
+
+        const result = await response.json();
+
+        // Add to results
+        const newBatch: ClassificationBatch = {
+          id: `batch-${Date.now()}-${invoiceId}`,
+          invoiceId,
+          results: result.classifications || [],
+          processedAt: new Date().toISOString(),
+          totalItems: result.totalItems || 0,
+          classifiedItems: result.classifiedItems || 0,
+        };
+
+        setClassificationResults(prev => [newBatch, ...prev]);
+      }
+
+      toast({
+        title: "Success",
+        description: `Processed ${selectedInvoices.length} invoice(s) successfully`,
+      });
+
+      setSelectedInvoices([]);
+      loadInvoices(); // Reload to update hasClassifications status
+
+    } catch (error) {
+      console.error('Error processing invoices:', error);
+      toast({
+        title: "Error",
+        description: "Failed to process some invoices",
+        variant: "destructive",
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const saveKeywordCategory = async () => {
+    try {
+      const keywordsArray = newKeyword.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
+      if (!newKeyword.category || keywordsArray.length === 0) {
+        toast({
+          title: "Validation Error",
+          description: "Category and at least one keyword are required",
+          variant: "destructive",
+        });
+        return;
+      }
+
+      const url = editingKeyword
+        ? `/api/classification-keywords/${editingKeyword.id}`
+        : '/api/classification-keywords';
+
+      const method = editingKeyword ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          category: newKeyword.category,
+          subcategory: newKeyword.subcategory || null,
+          keywords: keywordsArray,
+          description: newKeyword.description || null,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.message || 'Failed to save keyword category');
+      }
+
+      toast({
+        title: "Success",
+        description: editingKeyword ? "Keyword category updated successfully" : "Keyword category created successfully",
+      });
+
+      setIsKeywordModalOpen(false);
+      setEditingKeyword(null);
+      setNewKeyword({ category: '', subcategory: '', keywords: '', description: '' });
+      loadKeywordCategories();
+
+    } catch (error) {
+      console.error('Error saving keyword category:', error);
+      toast({
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to save keyword category",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const editKeywordCategory = (keyword: KeywordCategory) => {
+    setEditingKeyword(keyword);
+    setNewKeyword({
+      category: keyword.category,
+      subcategory: keyword.subcategory || '',
+      keywords: keyword.keywords.join(', '),
+      description: keyword.description || '',
+    });
+    setIsKeywordModalOpen(true);
+  };
+
+  const deleteKeywordCategory = async (id: number) => {
+    if (!confirm('Are you sure you want to delete this keyword category?')) {
+      return;
+    }
+
+    try {
+      const response = await fetch(`/api/classification-keywords/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to delete keyword category');
+      }
+
+      toast({
+        title: "Success",
+        description: "Keyword category deleted successfully",
+      });
+
+      loadKeywordCategories();
+
+    } catch (error) {
+      console.error('Error deleting keyword category:', error);
+      toast({
+        title: "Error",
+        description: "Failed to delete keyword category",
+        variant: "destructive",
+      });
+    }
+  };
+
+  const filteredInvoices = invoices.filter(invoice => {
+    const matchesSearch = searchTerm === "" ||
+      invoice.invoiceNumber.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.vendorName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      invoice.projectName.toLowerCase().includes(searchTerm.toLowerCase());
+
+    const matchesStatus = filterStatus === "all" ||
+      (filterStatus === "classified" && invoice.hasClassifications) ||
+      (filterStatus === "unclassified" && !invoice.hasClassifications);
+
+    return matchesSearch && matchesStatus;
+  });
 
 
   return (
@@ -375,8 +634,9 @@ export default function LineItemClassification() {
         </div>
 
         <Tabs value={currentTab} onValueChange={setCurrentTab} className="space-y-6">
-          <TabsList className="grid w-full grid-cols-2">
+          <TabsList className="grid w-full grid-cols-3">
             <TabsTrigger value="process">Process Invoices</TabsTrigger>
+            <TabsTrigger value="keywords">Manage Keywords</TabsTrigger>
             <TabsTrigger value="results">Results & History</TabsTrigger>
           </TabsList>
 
@@ -422,71 +682,59 @@ export default function LineItemClassification() {
           </Card>
 
           {/* Process Invoices Content */}
-          <TabsContent value="process" className="space-y-6">
-            <Card className="bg-white shadow-sm border border-gray-200">
+          <TabsContent value="process">
+            <Card>
               <CardHeader>
-                <CardTitle className="text-xl font-semibold text-gray-900">Process Invoices for Line Item Classification</CardTitle>
-                <p className="text-gray-600">Process invoices from the InvoiceProjectMatches table to automatically extract and classify their line items</p>
+                <CardTitle className="flex items-center gap-2">
+                  <FileText className="h-5 w-5" />
+                  Select Invoices to Process
+                </CardTitle>
               </CardHeader>
               <CardContent>
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
-                  <div>
-                    <Label htmlFor="project-id" className="text-sm font-medium text-gray-700">
-                      Project ID
-                    </Label>
-                    <Input
-                      id="project-id"
-                      value={filterProjectId}
-                      onChange={(e) => setFilterProjectId(e.target.value)}
-                      placeholder="Enter project ID"
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="date-from" className="text-sm font-medium text-gray-700">
-                      Date From
-                    </Label>
-                    <Input
-                      id="date-from"
-                      type="date"
-                      value={filterDateFrom}
-                      onChange={(e) => setFilterDateFrom(e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="date-to" className="text-sm font-medium text-gray-700">
-                      Date To
-                    </Label>
-                    <Input
-                      id="date-to"
-                      type="date"
-                      value={filterDateTo}
-                      onChange={(e) => setFilterDateTo(e.target.value)}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="status-filter" className="text-sm font-medium text-gray-700">
-                      Status
-                    </Label>
-                    <select
-                      id="status-filter"
-                      value={filterStatus}
-                      onChange={(e) => setFilterStatus(e.target.value)}
-                      className="mt-1 block w-full rounded-md border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-500 focus:outline-none focus:ring-1 focus:ring-primary-500"
-                    >
-                      <option value="">All Statuses</option>
-                      <option value="pending">Pending</option>
-                      <option value="processing">Processing</option>
-                      <option value="approved">Approved</option>
-                      <option value="rejected">Rejected</option>
-                      <option value="extracted">Extracted</option>
-                    </select>
+                <div className="space-y-4">
+                  <div className="flex gap-4">
+                    <div className="flex-1">
+                      <Label htmlFor="search">Search Invoices</Label>
+                      <Input
+                        id="search"
+                        placeholder="Search by invoice number or vendor..."
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                      />
+                    </div>
+                    <div className="w-48">
+                      <Label htmlFor="project-filter">Filter by Project</Label>
+                      <Select value={selectedProject} onValueChange={setSelectedProject}>
+                        <SelectTrigger>
+                          <SelectValue placeholder="All Projects" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="">All Projects</SelectItem>
+                          {projects.map((project) => (
+                            <SelectItem key={project.id} value={project.id.toString()}>
+                              {project.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="w-48">
+                      <Label htmlFor="status-filter">Classification Status</Label>
+                      <Select value={filterStatus} onValueChange={setFilterStatus}>
+                        <SelectTrigger>
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="all">All Invoices</SelectItem>
+                          <SelectItem value="classified">Already Classified</SelectItem>
+                          <SelectItem value="unclassified">Not Classified</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="flex space-x-4 mb-6">
+                <div className="flex space-x-4 my-6">
                   <Button
                     onClick={() => refetchInvoices()}
                     variant="outline"
@@ -524,7 +772,7 @@ export default function LineItemClassification() {
                     <Loader2 className="h-6 w-6 animate-spin" />
                     <span className="ml-2">Loading invoices...</span>
                   </div>
-                ) : invoicesData?.invoices && invoicesData.invoices.length > 0 ? (
+                ) : filteredInvoices.length > 0 ? (
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -532,90 +780,78 @@ export default function LineItemClassification() {
                           <TableHead className="w-12">
                             <input
                               type="checkbox"
-                              checked={selectedInvoices.length === invoicesData.invoices.length && invoicesData.invoices.length > 0}
+                              checked={selectedInvoices.length === invoices.length && invoices.length > 0}
                               onChange={(e) => {
                                 if (e.target.checked) {
-                                  setSelectedInvoices(invoicesData.invoices.map(inv => inv.id));
+                                  setSelectedInvoices(invoices.map(inv => inv.invoiceId));
                                 } else {
                                   setSelectedInvoices([]);
                                 }
                               }}
                             />
                           </TableHead>
-                          <TableHead>Invoice #</TableHead>
-                          <TableHead>Vendor</TableHead>
-                          <TableHead>Amount</TableHead>
-                          <TableHead>Date</TableHead>
-                          <TableHead>Project</TableHead>
-                          <TableHead>Status</TableHead>
-                          <TableHead>Line Items</TableHead>
-                          <TableHead>Classifications</TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Invoice Number
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Vendor
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Project
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Amount
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Line Items
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Classification Status
+                          </TableHead>
+                          <TableHead className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                            Date
+                          </TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {invoicesData.invoices.map((invoice) => (
-                          <TableRow key={invoice.id}>
-                            <TableCell>
+                        {filteredInvoices.map((invoice) => (
+                          <TableRow key={invoice.invoiceId} className="hover:bg-gray-50">
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
                               <input
                                 type="checkbox"
-                                checked={selectedInvoices.includes(invoice.id)}
+                                checked={selectedInvoices.includes(invoice.invoiceId)}
                                 onChange={(e) => {
                                   if (e.target.checked) {
-                                    setSelectedInvoices(prev => [...prev, invoice.id]);
+                                    setSelectedInvoices([...selectedInvoices, invoice.invoiceId]);
                                   } else {
-                                    setSelectedInvoices(prev => prev.filter(id => id !== invoice.id));
+                                    setSelectedInvoices(selectedInvoices.filter(id => id !== invoice.invoiceId));
                                   }
                                 }}
+                                className="rounded border-gray-300"
                               />
                             </TableCell>
-                            <TableCell className="font-medium">
+                            <TableCell className="px-6 py-4 whitespace-nowrap font-medium">
                               {invoice.invoiceNumber}
                             </TableCell>
-                            <TableCell>{invoice.vendorName}</TableCell>
-                            <TableCell>
-                              {invoice.currency} {invoice.totalAmount}
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                              {invoice.vendorName}
                             </TableCell>
-                            <TableCell>
-                              {new Date(invoice.invoiceDate).toLocaleDateString()}
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                              {invoice.projectName}
                             </TableCell>
-                            <TableCell>
-                              <Badge variant="outline">{invoice.projectId}</Badge>
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                              ${invoice.totalAmount.toLocaleString()}
                             </TableCell>
-                            <TableCell>
-                              <Badge
-                                className={
-                                  invoice.status === 'verified' ? 'bg-green-100 text-green-800' :
-                                  invoice.status === 'approved' ? 'bg-blue-100 text-blue-800' :
-                                  'bg-yellow-100 text-yellow-800'
-                                }
-                              >
-                                {invoice.status}
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                              {invoice.lineItemsCount}
+                            </TableCell>
+                            <TableCell className="px-6 py-4 whitespace-nowrap">
+                              <Badge variant={invoice.hasClassifications ? 'default' : 'secondary'}>
+                                {invoice.hasClassifications ? 'Classified' : 'Not Classified'}
                               </Badge>
                             </TableCell>
-                            <TableCell>
-                              <div className="flex items-center space-x-2">
-                                {invoice.lineItemsExtracted ? (
-                                  <Badge className="bg-green-100 text-green-800">
-                                    {invoice.lineItemsCount} items
-                                  </Badge>
-                                ) : (
-                                  <Badge className="bg-gray-100 text-gray-800">
-                                    OCR only
-                                  </Badge>
-                                )}
-                              </div>
-                            </TableCell>
-                            <TableCell>
-                              {invoice.hasClassifications ? (
-                                <Badge className="bg-blue-100 text-blue-800">
-                                  <CheckCircle className="h-3 w-3 mr-1" />
-                                  Classified
-                                </Badge>
-                              ) : (
-                                <Badge className="bg-orange-100 text-orange-800">
-                                  Pending
-                                </Badge>
-                              )}
+                            <TableCell className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                              {new Date(invoice.uploadedAt).toLocaleDateString()}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -633,7 +869,156 @@ export default function LineItemClassification() {
             </Card>
           </TabsContent>
 
-          <TabsContent value="results" className="space-y-6">
+          <TabsContent value="keywords">
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Database className="h-5 w-5" />
+                    Classification Keywords
+                  </div>
+                  <Dialog open={isKeywordModalOpen} onOpenChange={setIsKeywordModalOpen}>
+                    <DialogTrigger asChild>
+                      <Button onClick={() => {
+                        setEditingKeyword(null);
+                        setNewKeyword({ category: '', subcategory: '', keywords: '', description: '' });
+                      }}>
+                        <Plus className="h-4 w-4 mr-2" />
+                        Add Keywords
+                      </Button>
+                    </DialogTrigger>
+                    <DialogContent className="max-w-2xl">
+                      <DialogHeader>
+                        <DialogTitle>
+                          {editingKeyword ? 'Edit Keyword Category' : 'Add New Keyword Category'}
+                        </DialogTitle>
+                      </DialogHeader>
+                      <div className="space-y-4">
+                        <div className="grid grid-cols-2 gap-4">
+                          <div>
+                            <Label htmlFor="category">Category *</Label>
+                            <Input
+                              id="category"
+                              value={newKeyword.category}
+                              onChange={(e) => setNewKeyword({...newKeyword, category: e.target.value})}
+                              placeholder="e.g., materials_supplies"
+                            />
+                          </div>
+                          <div>
+                            <Label htmlFor="subcategory">Subcategory</Label>
+                            <Input
+                              id="subcategory"
+                              value={newKeyword.subcategory}
+                              onChange={(e) => setNewKeyword({...newKeyword, subcategory: e.target.value})}
+                              placeholder="e.g., construction"
+                            />
+                          </div>
+                        </div>
+                        <div>
+                          <Label htmlFor="keywords">Keywords * (comma-separated)</Label>
+                          <Textarea
+                            id="keywords"
+                            value={newKeyword.keywords}
+                            onChange={(e) => setNewKeyword({...newKeyword, keywords: e.target.value})}
+                            placeholder="cement, concrete, steel, lumber, paint"
+                            rows={3}
+                          />
+                        </div>
+                        <div>
+                          <Label htmlFor="description">Description</Label>
+                          <Textarea
+                            id="description"
+                            value={newKeyword.description}
+                            onChange={(e) => setNewKeyword({...newKeyword, description: e.target.value})}
+                            placeholder="Description of this keyword category"
+                            rows={2}
+                          />
+                        </div>
+                        <div className="flex gap-2 justify-end">
+                          <Button variant="outline" onClick={() => setIsKeywordModalOpen(false)}>
+                            Cancel
+                          </Button>
+                          <Button onClick={saveKeywordCategory}>
+                            {editingKeyword ? 'Update' : 'Create'}
+                          </Button>
+                        </div>
+                      </div>
+                    </DialogContent>
+                  </Dialog>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {isKeywordLoading ? (
+                  <div className="flex items-center justify-center py-8">
+                    <Loader2 className="h-8 w-8 animate-spin" />
+                    <span className="ml-2">Loading keywords...</span>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {keywordCategories.length === 0 ? (
+                      <div className="text-center py-8 text-gray-500">
+                        <Database className="h-12 w-12 mx-auto mb-4 text-gray-300" />
+                        <p>No keyword categories found</p>
+                        <p className="text-sm">Add some keywords to start classifying line items</p>
+                      </div>
+                    ) : (
+                      <Table>
+                        <TableHeader>
+                          <TableRow>
+                            <TableHead>Category</TableHead>
+                            <TableHead>Subcategory</TableHead>
+                            <TableHead>Keywords Count</TableHead>
+                            <TableHead>Description</TableHead>
+                            <TableHead>Actions</TableHead>
+                          </TableRow>
+                        </TableHeader>
+                        <TableBody>
+                          {keywordCategories.map((keyword) => (
+                            <TableRow key={keyword.id}>
+                              <TableCell className="font-medium">
+                                {keyword.category.replace(/_/g, ' ').toUpperCase()}
+                              </TableCell>
+                              <TableCell>
+                                {keyword.subcategory ? keyword.subcategory.replace(/_/g, ' ') : '-'}
+                              </TableCell>
+                              <TableCell>
+                                <Badge variant="secondary">
+                                  {keyword.keywords.length} keywords
+                                </Badge>
+                              </TableCell>
+                              <TableCell className="max-w-xs truncate">
+                                {keyword.description || '-'}
+                              </TableCell>
+                              <TableCell>
+                                <div className="flex gap-2">
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => editKeywordCategory(keyword)}
+                                  >
+                                    <Edit className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() => deleteKeywordCategory(keyword.id)}
+                                  >
+                                    <Trash2 className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              </TableCell>
+                            </TableRow>
+                          ))}
+                        </TableBody>
+                      </Table>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+
+          <TabsContent value="results">
             <Card>
               <CardHeader>
                 <CardTitle>Available Categories</CardTitle>

@@ -10,6 +10,8 @@ import {
   integer,
   boolean,
   pgEnum,
+  createInsertSchema,
+  createSelectSchema
 } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
@@ -74,7 +76,7 @@ export const invoiceStatusEnum = pgEnum("invoice_status", [
 // Approval status enum
 export const approvalStatusEnum = pgEnum("approval_status", [
   "pending",
-  "approved", 
+  "approved",
   "rejected",
 ]);
 
@@ -141,7 +143,7 @@ export const approvals = pgTable("approvals", {
 // Validation rule severity enum
 export const validationSeverityEnum = pgEnum("validation_severity", [
   "low",
-  "medium", 
+  "medium",
   "high",
   "critical",
 ]);
@@ -184,7 +186,7 @@ export const settings = pgTable("settings", {
 // Petty cash status enum
 export const pettyCashStatusEnum = pgEnum("petty_cash_status", [
   "pending_approval",
-  "approved", 
+  "approved",
   "rejected"
 ]);
 
@@ -218,7 +220,7 @@ export const poStatusEnum = pgEnum("po_status", [
 // Match status enum
 export const matchStatusEnum = pgEnum("match_status", [
   "auto",
-  "manual", 
+  "manual",
   "unresolved"
 ]);
 
@@ -480,17 +482,17 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   description: text("description"),
   fileTypes: fileTypeEnum("file_types").default("both"),
   scheduleType: scheduleTypeEnum("schedule_type").default("once"),
-  
+
   // Enhanced scheduling fields
   scheduleConfig: jsonb("schedule_config"), // Comprehensive schedule configuration object
   timezone: varchar("timezone", { length: 50 }).default("UTC"),
   startDate: timestamp("start_date"),
   endDate: timestamp("end_date"),
-  
+
   // Legacy fields for backward compatibility
-  scheduleTime: varchar("schedule_time", { length: 50 }), 
+  scheduleTime: varchar("schedule_time", { length: 50 }),
   scheduleDay: varchar("schedule_day", { length: 20 }),
-  
+
   // Python RPA specific fields
   erpUrl: varchar("erp_url", { length: 500 }),
   erpUsername: varchar("erp_username", { length: 255 }),
@@ -792,7 +794,7 @@ export const classificationCategoryEnum = pgEnum("classification_category", [
   "other",                    // Items that don't fit into standard business categories
   // Legacy categories for backward compatibility
   "consumable_materials",
-  "non_consumable_materials", 
+  "non_consumable_materials",
   "labor",
   "tools_equipment"
 ]);
@@ -1144,3 +1146,22 @@ export const batchClassifySchema = z.object({
 
 export type ClassifyLineItemRequest = z.infer<typeof classifyLineItemSchema>;
 export type BatchClassifyRequest = z.infer<typeof batchClassifySchema>;
+
+// Classification keywords schema and table definition added
+export const validationRulesSchema = createInsertSchema(validationRules);
+export const validationRulesSelectSchema = createSelectSchema(validationRules);
+
+export const classificationKeywords = pgTable("classification_keywords", {
+  id: serial("id").primaryKey(),
+  category: varchar("category", { length: 100 }).notNull(),
+  subcategory: varchar("subcategory", { length: 100 }),
+  keywords: jsonb("keywords").notNull(),
+  description: text("description"),
+  createdBy: varchar("created_by", { length: 255 }),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+  isActive: boolean("is_active").default(true),
+});
+
+export const classificationKeywordsSchema = createInsertSchema(classificationKeywords);
+export const classificationKeywordsSelectSchema = createSelectSchema(classificationKeywords);
