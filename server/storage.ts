@@ -1589,14 +1589,16 @@ class PostgresStorage implements IStorage {
         };
 
       case 'enum':
-        // For enum rules, check if the value matches exactly
-        const enumValid = fieldValue === rule.ruleValue;
+        // For enum rules, check if the value is in the list of allowed values
+        // Support both single values and comma-separated multiple values
+        const allowedValues = rule.ruleValue.split(',').map((v: string) => v.trim());
+        const enumValid = allowedValues.includes(String(fieldValue));
         return {
           isValid: enumValid,
           actualValue: fieldValue,
           message: enumValid 
-            ? `Field value matches required value` 
-            : `Field ${rule.fieldName} must be "${rule.ruleValue}" but got "${fieldValue}"`
+            ? `Field value matches allowed values` 
+            : `Field ${rule.fieldName} must be one of [${allowedValues.join(', ')}] but got "${fieldValue}"`
         };
 
       case 'regex':
