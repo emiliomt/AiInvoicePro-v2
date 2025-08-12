@@ -3999,9 +3999,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Process invoices for line item classification
   app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
     try {
-      const { invoiceIds, filters } = req.body;
+      console.log('Full request body:', JSON.stringify(req.body, null, 2));
+      const { invoiceIds, vendorContext, filters } = req.body;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
+      
+      console.log('Invoice IDs to process:', invoiceIds);
+      console.log('Vendor context:', vendorContext);
+      
+      // Validate input
+      if (!invoiceIds || !Array.isArray(invoiceIds)) {
+        return res.status(400).json({ error: 'invoiceIds must be an array' });
+      }
+      
+      if (invoiceIds.length === 0 && !filters) {
+        return res.status(400).json({ error: 'Either invoiceIds or filters must be provided' });
+      }
 
       if (!user) {
         return res.status(401).json({ message: 'User not found' });

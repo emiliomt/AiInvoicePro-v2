@@ -294,7 +294,7 @@ export default function LineItemClassification() {
 
   // Process invoices mutation
   const processInvoicesMutation = useMutation({
-    mutationFn: async (data: { invoiceIds: number[]; filters?: any }) => {
+    mutationFn: async (data: { invoiceIds: number[]; vendorContext?: VendorContext; filters?: any }) => {
       const response = await fetch('/api/process-invoices-line-items', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -911,10 +911,14 @@ export default function LineItemClassification() {
                   <Button
                     onClick={() => {
                       if (selectedInvoices.length > 0) {
-                        processInvoicesMutation.mutate({ invoiceIds: selectedInvoices });
+                        processInvoicesMutation.mutate({ 
+                          invoiceIds: selectedInvoices,
+                          vendorContext: vendorContext
+                        });
                       } else {
                         processInvoicesMutation.mutate({
                           invoiceIds: [],
+                          vendorContext: vendorContext,
                           filters: { filterProjectId, filterDateFrom, filterDateTo, filterStatus }
                         });
                       }
