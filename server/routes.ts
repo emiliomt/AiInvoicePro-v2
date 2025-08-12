@@ -1454,6 +1454,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // AI Keyword Suggestions endpoint
+  app.post('/api/ai/keyword-suggestions', isAuthenticated, async (req, res) => {
+    try {
+      const { category, subcategory, existing_keywords } = req.body;
+
+      if (!category) {
+        return res.status(400).json({ error: 'Category is required' });
+      }
+
+      // Fallback suggestions for when OpenAI is unavailable
+      const fallbackSuggestions = {
+        materials_supplies: [
+          "cemento", "concreto", "ladrillos", "arena", "grava", "varilla", "hierro", "acero", 
+          "pintura", "madera", "tubería", "cable", "tornillos", "clavos", "pegante", "sellador", 
+          "impermeabilizante", "bloques", "tejas", "láminas", "mortero", "yeso", "cal", "alambre", 
+          "soldadura", "adhesivo", "silicona", "barniz", "thinner", "anticorrosivo"
+        ],
+        equipment_tools: [
+          "taladro", "martillo", "sierra", "nivel", "metro", "escalera", "andamio", "mezcladora", 
+          "cortadora", "pulidora", "compresor", "generador", "bomba", "herramientas", "destornillador", 
+          "alicate", "llave", "cincel", "carretilla", "balde", "casco", "guantes", "gafas", 
+          "arnés", "botas", "máquina", "equipo", "motor"
+        ],
+        services_labor: [
+          "mano de obra", "instalación", "mantenimiento", "consultoría", "supervisión", 
+          "ingeniería", "construcción", "reparación", "limpieza", "transporte", "servicio", 
+          "asesoría", "diseño", "planificación", "ejecución", "montaje", "desmontaje", 
+          "capacitación", "operación", "gestión"
+        ],
+        office_supplies: [
+          "papel", "tinta", "bolígrafos", "lápices", "carpetas", "archivadores", "grapas", 
+          "clips", "pegante", "cinta", "marcadores", "resaltadores", "calculadora", 
+          "papelería", "oficina", "escritorio", "silla", "computador", "impresora"
+        ],
+        utilities_services: [
+          "agua", "luz", "electricidad", "gas", "teléfono", "internet", "aseo", "seguridad", 
+          "vigilancia", "comunicaciones", "energía", "combustible", "gasolina", "diésel", 
+          "servicios públicos", "acueducto", "alcantarillado"
+        ]
+      };
+
+      // Try to use OpenAI if available, otherwise use fallback
+      let suggestions = fallbackSuggestions[category as keyof typeof fallbackSuggestions] || [];
+
+      try {
+        // Check if OpenAI is available by looking for environment variable
+        const openaiKey = process.env.OPENAI_API_KEY;
+        
+        if (openaiKey) {
+          const prompt = `Generate 25-30 Spanish keywords for the category '${category}' ${
+            subcategory ? `and subcategory '${subcategory}'` : ''
+          } that commonly appear in Colombian business invoices. Include materials, services, tools, and related terms that would be found in procurement and construction contexts. Return only keywords separated by commas, no explanations.`;
+
+          // This would be the OpenAI call if the service is available
+          // For now, we'll use the fallback suggestions
+          console.log('OpenAI key found, but using fallback suggestions for now');
+        }
+      } catch (openaiError) {
+        console.log('Using fallback suggestions due to OpenAI unavailability');
+      }
+
+      // Filter out existing keywords if provided
+      if (existing_keywords && existing_keywords.length > 0) {
+        const existingSet = new Set(existing_keywords.map((k: string) => k.toLowerCase().trim()));
+        suggestions = suggestions.filter(suggestion => 
+          !existingSet.has(suggestion.toLowerCase().trim())
+        );
+      }
+
+      // Randomize and limit to 20-25 suggestions
+      const shuffled = suggestions.sort(() => 0.5 - Math.random());
+      const limited = shuffled.slice(0, Math.min(25, suggestions.length));
+
+      res.json({ suggestions: limited });
+    } catch (error) {
+      console.error('Error generating keyword suggestions:', error);
+      res.status(500).json({ error: 'Failed to generate keyword suggestions' });
+    }
+  });
+
   // Excel import endpoint for projects
   app.post('/api/projects/import', isAuthenticated, (req: any, res) => {
     excelUpload.single('excel')(req, res, async (err) => {

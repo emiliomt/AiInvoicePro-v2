@@ -28,6 +28,15 @@ interface ValidationRule {
   updatedAt: string;
 }
 
+// Interface for Keyword Category (added for the new feature)
+interface KeywordCategory {
+  id: number;
+  category: string;
+  subcategory?: string;
+  keywords: string[];
+  description?: string;
+}
+
 const FIELD_OPTIONS = [
   { value: "vendorName", label: "Vendor Name" },
   { value: "invoiceNumber", label: "Invoice Number" },
@@ -58,15 +67,19 @@ const SEVERITY_OPTIONS = [
 export default function ValidationRules() {
   const [isDialogOpen, setIsDialogOpen] = useState(false);
   const [editingRule, setEditingRule] = useState<ValidationRule | null>(null);
-  const [formData, setFormData] = useState({
-    name: "",
-    description: "",
-    fieldName: "",
-    ruleType: "",
-    ruleValue: "",
-    severity: "medium" as "low" | "medium" | "high" | "critical",
-    errorMessage: "",
+  const [isAddingKeywordCategory, setIsAddingKeywordCategory] = useState(false);
+  const [newKeywordCategory, setNewKeywordCategory] = useState({
+    category: '',
+    subcategory: '',
+    keywords: '',
+    description: ''
   });
+  const [keywordSuggestions, setKeywordSuggestions] = useState<string[]>([]);
+  const [loadingSuggestions, setLoadingSuggestions] = useState(false);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Placeholder for keyword categories state, assuming it will be managed elsewhere or added later
+  const [keywordCategories, setKeywordCategories] = useState<KeywordCategory[]>([]);
 
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -80,7 +93,7 @@ export default function ValidationRules() {
   const saveRuleMutation = useMutation({
     mutationFn: async (ruleData: any) => {
       console.log('Saving rule data:', ruleData);
-      
+
       if (editingRule) {
         const response = await apiRequest('PUT', `/api/validation-rules/${editingRule.id}`, ruleData);
         if (!response.ok) {
@@ -103,17 +116,17 @@ export default function ValidationRules() {
         title: editingRule ? "Rule Updated" : "Rule Created",
         description: `Validation rule has been ${editingRule ? "updated" : "created"} successfully.`,
       });
-      
+
       // Force refresh the rules list
       queryClient.invalidateQueries({ queryKey: ["/api/validation-rules"] });
       queryClient.refetchQueries({ queryKey: ["/api/validation-rules"] });
-      
+
       setIsDialogOpen(false);
       resetForm();
     },
     onError: (error: Error) => {
       console.error('Error saving rule:', error);
-      
+
       if (isUnauthorizedError(error)) {
         toast({
           title: "Unauthorized",
@@ -261,6 +274,113 @@ export default function ValidationRules() {
         return ruleValue;
     }
   };
+
+  // Handlers for AI Keyword Suggestions
+  const handleAddKeywordCategory = () => {
+    if (!newKeywordCategory.category || !newKeywordCategory.keywords) {
+      alert('Please fill in category and keywords');
+      return;
+    }
+
+    const keywordArray = newKeywordCategory.keywords
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    const category: KeywordCategory = {
+      id: Date.now(),
+      category: newKeywordCategory.category,
+      subcategory: newKeywordCategory.subcategory || undefined,
+      keywords: keywordArray,
+      description: newKeywordCategory.description || undefined,
+    };
+
+    setKeywordCategories([...keywordCategories, category]);
+    setNewKeywordCategory({
+      category: '',
+      subcategory: '',
+      keywords: '',
+      description: ''
+    });
+    setKeywordSuggestions([]);
+    setShowSuggestions(false);
+    setIsAddingKeywordCategory(false);
+  };
+
+  const getAIKeywordSuggestions = async () => {
+    if (!newKeywordCategory.category.trim()) {
+      alert('Please enter a category first');
+      return;
+    }
+
+    setLoadingSuggestions(true);
+    try {
+      const existingKeywords = newKeywordCategory.keywords
+        .split(',')
+        .map(k => k.trim())
+        .filter(k => k.length > 0);
+
+      const response = await fetch('/api/ai/keyword-suggestions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          category: newKeywordCategory.category.toLowerCase().replace(/\s+/g, '_'),
+          subcategory: newKeywordCategory.subcategory,
+          existing_keywords: existingKeywords
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to get suggestions');
+      }
+
+      const data = await response.json();
+      setKeywordSuggestions(data.suggestions || []);
+      setShowSuggestions(true);
+    } catch (error) {
+      console.error('Error getting keyword suggestions:', error);
+      alert('Failed to get AI suggestions. Please try again.');
+    } finally {
+      setLoadingSuggestions(false);
+    }
+  };
+
+  const addKeywordFromSuggestion = (keyword: string) => {
+    const currentKeywords = newKeywordCategory.keywords
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    if (!currentKeywords.includes(keyword)) {
+      const newKeywords = currentKeywords.length > 0 
+        ? `${newKeywordCategory.keywords.trim()}, ${keyword}`
+        : keyword;
+
+      setNewKeywordCategory({
+        ...newKeywordCategory,
+        keywords: newKeywords
+      });
+
+      // Remove the added keyword from suggestions
+      setKeywordSuggestions(prev => prev.filter(s => s !== keyword));
+    }
+  };
+
+  const resetNewKeywordCategory = () => {
+    setNewKeywordCategory({
+      category: '',
+      subcategory: '',
+      keywords: '',
+      description: ''
+    });
+    setKeywordSuggestions([]);
+    setShowSuggestions(false);
+    setLoadingSuggestions(false);
+    setIsAddingKeywordCategory(false);
+  };
+
 
   return (
     <div className="min-h-screen bg-gray-50">
@@ -565,6 +685,142 @@ export default function ValidationRules() {
           )}
         </div>
       </main>
+
+      {/* Keyword Category Modal (Placeholder for new functionality) */}
+      <Dialog open={isAddingKeywordCategory} onOpenChange={setIsAddingKeywordCategory}>
+        <DialogTrigger asChild>
+          <Button 
+            onClick={() => {
+              setIsAddingKeywordCategory(true);
+              resetNewKeywordCategory();
+            }}
+            className="bg-green-600 hover:bg-green-700 ml-4" // Example button to open keyword modal
+          >
+            <Plus className="w-4 h-4 mr-2" />
+            Add Keyword Category
+          </Button>
+        </DialogTrigger>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Add New Keyword Category</DialogTitle>
+          </DialogHeader>
+          <form onSubmit={(e) => { e.preventDefault(); handleAddKeywordCategory(); }} className="space-y-4">
+            <div className="space-y-4">
+              <div>
+                <Label htmlFor="category">Category *</Label>
+                <Input
+                  id="category"
+                  value={newKeywordCategory.category}
+                  onChange={(e) => setNewKeywordCategory({
+                    ...newKeywordCategory,
+                    category: e.target.value
+                  })}
+                  placeholder="e.g., materials_supplies"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="subcategory">Subcategory</Label>
+                <Input
+                  id="subcategory"
+                  value={newKeywordCategory.subcategory}
+                  onChange={(e) => setNewKeywordCategory({
+                    ...newKeywordCategory,
+                    subcategory: e.target.value
+                  })}
+                  placeholder="e.g., construction"
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="keywords">Keywords *</Label>
+                <textarea
+                  id="keywords"
+                  className="w-full p-2 border rounded-md min-h-[100px]"
+                  value={newKeywordCategory.keywords}
+                  onChange={(e) => setNewKeywordCategory({
+                    ...newKeywordCategory,
+                    keywords: e.target.value
+                  })}
+                  placeholder="Enter keywords separated by commas"
+                />
+
+                <div className="mt-2">
+                  <Button 
+                    type="button"
+                    variant="outline" 
+                    onClick={getAIKeywordSuggestions}
+                    disabled={loadingSuggestions || !newKeywordCategory.category.trim()}
+                    className="w-full sm:w-auto"
+                  >
+                    {loadingSuggestions ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-gray-900 mr-2"></div>
+                        Generating...
+                      </>
+                    ) : (
+                      <>🤖 Get AI Suggestions</>
+                    )}
+                  </Button>
+                </div>
+
+                {showSuggestions && keywordSuggestions.length > 0 && (
+                  <div className="mt-4 p-4 bg-gray-50 rounded-md">
+                    <Label className="text-sm font-medium text-gray-700 mb-2 block">
+                      Suggested Keywords (click to add):
+                    </Label>
+                    <div className="flex flex-wrap gap-2">
+                      {keywordSuggestions.map((keyword, index) => (
+                        <Badge
+                          key={`${keyword}-${index}`}
+                          variant="secondary"
+                          className="cursor-pointer hover:bg-blue-100 hover:text-blue-800 transition-colors"
+                          onClick={() => addKeywordFromSuggestion(keyword)}
+                        >
+                          + {keyword}
+                        </Badge>
+                      ))}
+                    </div>
+                    {keywordSuggestions.length === 0 && (
+                      <p className="text-sm text-gray-500 mt-2">All suggestions have been added!</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div>
+                <Label htmlFor="description">Description</Label>
+                <textarea
+                  id="description"
+                  className="w-full p-2 border rounded-md"
+                  value={newKeywordCategory.description}
+                  onChange={(e) => setNewKeywordCategory({
+                    ...newKeywordCategory,
+                    description: e.target.value
+                  })}
+                  placeholder="Optional description"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end space-x-3 pt-4">
+              <Button 
+                type="button" 
+                variant="outline" 
+                onClick={resetNewKeywordCategory}
+              >
+                Cancel
+              </Button>
+              <Button 
+                type="submit" 
+                className="bg-green-600 hover:bg-green-700"
+              >
+                Add Category
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
