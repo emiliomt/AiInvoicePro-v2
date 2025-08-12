@@ -3998,9 +3998,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Process invoices for line item classification
   app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
     try {
-      const { invoiceIds, filters } = req.body;
+      const { invoiceIds, filters, vendorContext } = req.body;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
+
+      // Debug logging
+      console.log('Full request body:', JSON.stringify(req.body, null, 2));
+      console.log('Invoice IDs to process:', invoiceIds);
+      console.log('Vendor context:', vendorContext);
 
       if (!user) {
         return res.status(401).json({ message: 'User not found' });
@@ -4145,6 +4150,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         // Process specific invoices
         const actualCompanyId = companyId === 'default' ? null : companyId;
         
+        // First, let's debug what invoices we're looking for
+        console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
+        
         const query = db
           .select({
             id: invoices.id,
@@ -4155,16 +4163,24 @@ export async function registerRoutes(app: Express): Promise<Server> {
             projectId: invoiceProjectMatches.projectId
           })
           .from(invoices)
-          .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+          .leftJoin(invoiceProjectMatches, and(
+            eq(invoices.id, invoiceProjectMatches.invoiceId),
+            eq(invoiceProjectMatches.isActive, true)
+          ))
           .where(
             and(
               actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
-              eq(invoiceProjectMatches.isActive, true),
               inArray(invoices.id, invoiceIds)
             )
           );
 
         targetInvoices = await query;
+        console.log(`Found ${targetInvoices.length} invoices in database:`, targetInvoices.map(inv => ({ 
+          id: inv.id, 
+          number: inv.invoiceNumber, 
+          vendor: inv.vendorName,
+          projectId: inv.projectId
+        })));
       } else if (filters) {
         // Process based on filters
         const actualCompanyId = companyId === 'default' ? null : companyId;
