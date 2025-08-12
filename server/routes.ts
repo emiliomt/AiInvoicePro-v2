@@ -3911,36 +3911,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'User not found' });
       }
 
-      // Use a simplified approach by getting invoices that have been matched to projects
-      // and have extracted data with line items
+      // Get all invoices for the user
       const invoices = await storage.getInvoicesByUserId(userId);
       
       // Filter invoices that:
-      // 1. Have been extracted/approved/verified
-      // 2. Have extracted data with line items
-      // 3. Are matched to projects (have project matches)
+      // 1. Have been extracted/approved/verified/matched (including project-matched invoices)
+      // 2. Have extracted data with line items OR are project-matched (we can extract line items later)
       const filteredInvoices = invoices.filter(invoice => {
-        // Status check
-        if (!['extracted', 'approved', 'verified'].includes(invoice.status || '')) {
-          return false;
-        }
-        
-        // Check if invoice has line items in extracted data
-        const hasLineItems = invoice.extractedData && 
-                            typeof invoice.extractedData === 'object' && 
-                            'lineItems' in invoice.extractedData &&
-                            Array.isArray(invoice.extractedData.lineItems) &&
-                            invoice.extractedData.lineItems.length > 0;
-        
-        if (!hasLineItems) {
+        // Status check - include 'matched' status for project-matched invoices
+        const validStatuses = ['extracted', 'approved', 'verified', 'matched'];
+        if (!validStatuses.includes(invoice.status || '')) {
           return false;
         }
 
-        // Apply filters if provided
+        // Apply status filter if provided
         if (status && invoice.status !== status) {
           return false;
         }
 
+        // Apply date filters if provided
         if (dateFrom && invoice.invoiceDate && invoice.invoiceDate < new Date(dateFrom)) {
           return false;
         }
@@ -3961,9 +3950,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
           const matches = await storage.getInvoiceProjectMatches(invoice.id);
           const activeMatch = matches.find(match => match.isActive);
           
-          if (activeMatch) {
+          // Check if invoice has line items in extracted data
+          const hasLineItems = invoice.extractedData && 
+                              typeof invoice.extractedData === 'object' && 
+                              'lineItems' in invoice.extractedData &&
+                              Array.isArray(invoice.extractedData.lineItems) &&
+                              invoice.extractedData.lineItems.length > 0;
+          
+          // Include invoices that either have line items OR are project-matched (we can extract line items during processing)
+          if (activeMatch || hasLineItems) {
             // Apply project filter if specified
-            if (projectId && activeMatch.projectId !== projectId) {
+            if (projectId && activeMatch?.projectId !== projectId) {
               continue;
             }
             
@@ -3975,31 +3972,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
               currency: invoice.currency,
               invoiceDate: invoice.invoiceDate,
               status: invoice.status,
-              projectId: activeMatch.projectId,
-              matchScore: activeMatch.matchScore,
-              lineItemsExtracted: true,
-              hasClassifications: false, // We'll assume false for simplicity
+              projectId: activeMatch?.projectId || null,
+              matchScore: activeMatch?.matchScore || 0,
+              lineItemsExtracted: hasLineItems,
+              hasClassifications: false, // We'll check this properly later
               lineItemsCount: invoice.extractedData?.lineItems?.length || 0
             });
           }
         } catch (matchError) {
           console.log(`Could not get project matches for invoice ${invoice.id}:`, matchError);
-          // Include invoice without project info if projectId filter is not specified
+          // Include invoice without project info if projectId filter is not specified and it has line items
           if (!projectId) {
-            invoicesWithProjectInfo.push({
-              id: invoice.id,
-              invoiceNumber: invoice.invoiceNumber,
-              vendorName: invoice.vendorName,
-              totalAmount: invoice.totalAmount,
-              currency: invoice.currency,
-              invoiceDate: invoice.invoiceDate,
-              status: invoice.status,
-              projectId: null,
-              matchScore: 0,
-              lineItemsExtracted: true,
-              hasClassifications: false,
-              lineItemsCount: invoice.extractedData?.lineItems?.length || 0
-            });
+            const hasLineItems = invoice.extractedData && 
+                                typeof invoice.extractedData === 'object' && 
+                                'lineItems' in invoice.extractedData &&
+                                Array.isArray(invoice.extractedData.lineItems) &&
+                                invoice.extractedData.lineItems.length > 0;
+            
+            if (hasLineItems) {
+              invoicesWithProjectInfo.push({
+                id: invoice.id,
+                invoiceNumber: invoice.invoiceNumber,
+                vendorName: invoice.vendorName,
+                totalAmount: invoice.totalAmount,
+                currency: invoice.currency,
+                invoiceDate: invoice.invoiceDate,
+                status: invoice.status,
+                projectId: null,
+                matchScore: 0,
+                lineItemsExtracted: true,
+                hasClassifications: false,
+                lineItemsCount: invoice.extractedData?.lineItems?.length || 0
+              });
+            }
           }
         }
       }
