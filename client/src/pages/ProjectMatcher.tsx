@@ -6,6 +6,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Loader2, Wrench, CheckCircle, AlertTriangle, Database } from 'lucide-react';
 import { apiRequest, queryClient } from '@/lib/queryClient';
+import Header from '@/components/Header';
 
 interface ProjectMatchResult {
   invoiceId: number;
@@ -67,7 +68,9 @@ export default function ProjectMatcher() {
   }
 
   return (
-    <div className="container mx-auto p-6">
+    <div>
+      <Header />
+      <div className="container mx-auto p-6">
       <div className="mb-6">
         <h1 className="text-3xl font-bold mb-2">Project Matching Repair</h1>
         <p className="text-muted-foreground">
@@ -255,6 +258,7 @@ export default function ProjectMatcher() {
           </CardContent>
         </Card>
       )}
+      </div>
     </div>
   );
 }
