@@ -1,4 +1,3 @@
-
 import { getStorage, getDb } from "../storage";
 import { classificationKeywords, lineItemClassifications, lineItems } from "../../shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
@@ -44,7 +43,7 @@ const DEFAULT_KEYWORDS = {
 };
 
 export class ClassificationService {
-  
+
   // Initialize default keywords in database
   static async initializeDefaultKeywords(): Promise<void> {
     try {
@@ -62,7 +61,7 @@ export class ClassificationService {
 
       // Insert default keywords
       const defaultKeywordEntries: InsertClassificationKeyword[] = [];
-      
+
       for (const [category, keywords] of Object.entries(DEFAULT_KEYWORDS)) {
         for (const keyword of keywords) {
           defaultKeywordEntries.push({
@@ -85,7 +84,7 @@ export class ClassificationService {
   static async getKeywordsByCategory(category: string, userId?: string): Promise<string[]> {
     const db = await getDb();
     const conditions = [eq(classificationKeywords.category, category as any)];
-    
+
     if (userId) {
       const userCondition = or(
         eq(classificationKeywords.isDefault, true),
@@ -110,7 +109,7 @@ export class ClassificationService {
   static async classifyLineItem(lineItem: LineItem, userId?: string): Promise<ClassificationResult> {
     const db = await getDb();
     const description = lineItem.description.toLowerCase();
-    
+
     // Get all keywords
     const allKeywords = await db
       .select()
@@ -143,16 +142,16 @@ export class ClassificationService {
         if (keywordEntry.category === 'non_consumable_materials') mappedCategory = 'equipment_tools';
         if (keywordEntry.category === 'labor') mappedCategory = 'services_labor';
         if (keywordEntry.category === 'tools_equipment') mappedCategory = 'equipment_tools';
-        
+
         // Ensure category exists in our scoring system
         if (!categoryScores[mappedCategory]) {
           categoryScores[mappedCategory] = { score: 0, matchedKeywords: [] };
         }
-        
+
         // Weight longer keywords higher and exact matches even higher
         let weight = keyword.length > 4 ? 3 : 2;
         if (description === keyword) weight = 5; // Exact match gets highest weight
-        
+
         categoryScores[mappedCategory].score += weight;
         categoryScores[mappedCategory].matchedKeywords.push(keyword);
       }
@@ -163,12 +162,12 @@ export class ClassificationService {
       categoryScores.services_labor.score += 3;
       categoryScores.services_labor.matchedKeywords.push('context: service terms');
     }
-    
+
     if (description.includes('equipment') || description.includes('machine') || description.includes('tool')) {
       categoryScores.equipment_tools.score += 3;
       categoryScores.equipment_tools.matchedKeywords.push('context: equipment terms');
     }
-    
+
     if (description.includes('material') || description.includes('supply') || description.includes('cement') || description.includes('steel')) {
       categoryScores.materials_supplies.score += 3;
       categoryScores.materials_supplies.matchedKeywords.push('context: material terms');
@@ -201,7 +200,7 @@ export class ClassificationService {
   // Classify and store classification for line item
   static async classifyAndStore(lineItemId: number, userId?: string): Promise<void> {
     const db = await getDb();
-    
+
     // Get line item
     const lineItem = await db
       .select()
@@ -229,7 +228,7 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeyword: classification.matchedKeyword || 'unknown',
+            matchedKeyword: classification.matchedKeyword || null,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -241,7 +240,7 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeyword: classification.matchedKeyword || 'unknown',
+        matchedKeyword: classification.matchedKeyword || null,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -314,6 +313,7 @@ export class ClassificationService {
 
   // Manual override classification
   static async manualOverride(lineItemId: number, category: string, userId: string): Promise<void> {
+    const db = await getDb();
     const existingClassification = await db
       .select()
       .from(lineItemClassifications)
@@ -346,8 +346,9 @@ export class ClassificationService {
 
   // Re-classify all line items when keywords are updated
   static async reclassifyAllLineItems(userId?: string): Promise<void> {
+    const db = await getDb();
     const allLineItems = await db.select().from(lineItems);
-    
+
     for (const lineItem of allLineItems) {
       await this.classifyAndStore(lineItem.id, userId);
     }
@@ -357,7 +358,7 @@ export class ClassificationService {
   static async classifyLineItemWithAI(lineItem: LineItem, userId?: string): Promise<ClassificationResult> {
     try {
       const { extractInvoiceData } = await import('./aiService');
-      
+
       // Create a focused prompt for line item classification
       const classificationPrompt = `Classify this invoice line item into one of these categories:
 1. consumable_materials - Materials that are used up during construction/operations (cement, sand, fuel, etc.)
@@ -402,10 +403,10 @@ Respond with JSON in this format:
       });
 
       const aiResult = JSON.parse(response.choices[0].message.content || '{}');
-      
+
       return {
         category: aiResult.category || 'consumable_materials',
-        matchedKeyword: aiResult.matchedKeywords?.[0] || 'AI Classification',
+        matchedKeyword: aiResult.matchedKeywords?.[0] || null,
         confidence: parseFloat(aiResult.confidence || '0.8'),
         isManualOverride: false
       };
@@ -448,7 +449,7 @@ Respond with JSON in this format:
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeyword: classification.matchedKeyword || 'unknown',
+            matchedKeyword: classification.matchedKeyword || null,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -460,7 +461,7 @@ Respond with JSON in this format:
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeyword: classification.matchedKeyword || 'unknown',
+        matchedKeyword: classification.matchedKeyword || null,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -470,6 +471,7 @@ Respond with JSON in this format:
 
   // Bulk AI classify line items for an invoice
   static async aiClassifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
+    const db = await getDb();
     const invoiceLineItems = await db
       .select()
       .from(lineItems)
