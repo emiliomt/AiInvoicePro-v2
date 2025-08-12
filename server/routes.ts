@@ -3499,8 +3499,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.json([]);
       }
       
-      const keywords = await storage.getClassificationKeywords(userId);
-      res.json(keywords || []);
+      const keywords = await storage.getClassificationKeywords();
+      
+      // Group keywords by category and subcategory
+      const grouped = keywords.reduce((acc: any[], keyword) => {
+        const existingCategory = acc.find(cat => 
+          cat.category === keyword.category && 
+          (cat.subcategory || '') === (keyword.subcategory || '')
+        );
+        
+        if (existingCategory) {
+          existingCategory.keywords.push(keyword.keyword);
+        } else {
+          acc.push({
+            id: keyword.id,
+            category: keyword.category,
+            subcategory: keyword.subcategory || '',
+            keywords: [keyword.keyword],
+            description: `Keywords for ${keyword.category}${keyword.subcategory ? ' - ' + keyword.subcategory : ''}`,
+            createdAt: keyword.createdAt,
+            isActive: true
+          });
+        }
+        
+        return acc;
+      }, []);
+      
+      res.json(grouped || []);
     } catch (error) {
       console.error("Error fetching classification keywords:", error);
       // Return empty array instead of error to prevent UI breaking
@@ -3511,24 +3536,45 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      const { category, keyword } = req.body;
+      const { category, subcategory, keywords, description } = req.body;
 
-      if (!category || !keyword) {
-        return res.status(400).json({ message: "Category and keyword are required" });
+      if (!category || !keywords) {
+        return res.status(400).json({ message: "Category and keywords are required" });
       }
 
-      const keywordData = {
-        category,
-        keyword: keyword.toLowerCase().trim(),
-        isDefault: false,
-        userId
-      };
+      // Parse keywords if it's a string
+      const keywordArray = typeof keywords === 'string' 
+        ? keywords.split(',').map(k => k.trim()).filter(k => k) 
+        : keywords;
 
-      const result = await storage.addClassificationKeyword(keywordData);
-      res.json(result);
+      // Add each keyword individually
+      const results = [];
+      for (const keyword of keywordArray) {
+        if (keyword.trim()) {
+          const keywordData = {
+            category,
+            subcategory: subcategory || null,
+            keyword: keyword.toLowerCase().trim(),
+            isDefault: false,
+            userId
+          };
+          
+          try {
+            const result = await storage.addClassificationKeyword(keywordData);
+            results.push(result);
+          } catch (error) {
+            console.error(`Error adding keyword "${keyword}":`, error);
+          }
+        }
+      }
+
+      res.json({ 
+        message: `Added ${results.length} keywords to ${category}`,
+        results 
+      });
     } catch (error) {
-      console.error("Error adding classification keyword:", error);
-      res.status(500).json({ message: "Failed to add classification keyword" });
+      console.error("Error adding classification keywords:", error);
+      res.status(500).json({ message: "Failed to add classification keywords" });
     }
   });
 

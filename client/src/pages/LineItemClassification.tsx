@@ -438,7 +438,7 @@ export default function LineItemClassification() {
   const loadKeywordCategories = async () => {
     try {
       setIsKeywordLoading(true);
-      const response = await fetch('/api/classification-keywords');
+      const response = await fetch('/api/classification/keywords');
       if (!response.ok) {
         throw new Error('Failed to load keyword categories');
       }
@@ -545,8 +545,8 @@ export default function LineItemClassification() {
       }
 
       const url = editingKeyword
-        ? `/api/classification-keywords/${editingKeyword.id}`
-        : '/api/classification-keywords';
+        ? `/api/classification/keywords/${editingKeyword.id}`
+        : '/api/classification/keywords';
 
       const method = editingKeyword ? 'PUT' : 'POST';
 
@@ -609,7 +609,7 @@ export default function LineItemClassification() {
     }
 
     try {
-      const response = await fetch(`/api/classification-keywords/${id}`, {
+      const response = await fetch(`/api/classification/keywords/${id}`, {
         method: 'DELETE',
       });
 

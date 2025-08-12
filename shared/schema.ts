@@ -801,6 +801,7 @@ export const classificationCategoryEnum = pgEnum("classification_category", [
 export const classificationKeywords = pgTable("classification_keywords", {
   id: serial("id").primaryKey(),
   category: classificationCategoryEnum("category").notNull(),
+  subcategory: varchar("subcategory", { length: 255 }), // Optional subcategory for more specific grouping
   keyword: varchar("keyword", { length: 255 }).notNull(),
   isDefault: boolean("is_default").default(false),
   userId: varchar("user_id"), // null for system defaults, user ID for custom keywords
