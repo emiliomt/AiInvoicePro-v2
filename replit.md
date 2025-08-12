@@ -1,7 +1,7 @@
 # Invoice Procurement Platform - AI-Powered Automation
 
 ## Overview
-This project is an advanced AI-powered invoice procurement platform designed to streamline multilingual financial document processing. It focuses on intelligent automation, enhanced security, and robust data extraction capabilities, aiming to deliver a comprehensive solution for efficient invoice management. The platform's core purpose is to automate and secure the handling of diverse financial documents, improving efficiency and data accuracy for businesses.
+This project is an advanced AI-powered invoice procurement platform designed to streamline multilingual financial document processing. Its core purpose is to automate and secure the handling of diverse financial documents, improving efficiency and data accuracy for businesses through intelligent automation, enhanced security, and robust data extraction capabilities.
 
 ## User Preferences
 - Focus on business logic accuracy over UI polish
@@ -13,21 +13,23 @@ This project is an advanced AI-powered invoice procurement platform designed to 
 The platform is built with a microservices-oriented approach, emphasizing modularity and scalability.
 
 **Technical Implementations & Feature Specifications:**
-- **Invoice Processing:** Leverages AI for multi-language invoice processing and adaptive parsing. OCR (Tesseract.js) and AI extraction (OpenAI) are used for data extraction.
-- **Data Extraction:** Robust logic for extracting critical fields like buyer tax ID from various XML formats, including those embedded in CDATA sections.
-- **Duplicate Prevention:** A robust duplicate invoice detection system is implemented, normalizing invoice numbers, vendor names, and optionally validating total amounts. This system performs checks *before* file download to optimize resource usage.
-- **Validation System:** A real-time, rule-based validation engine retrieves active rules from a database. It supports various rule types (`required`, `enum`, `regex`, `range`, `format`), handles nested field paths, provides detailed violation reporting with severity levels, and returns structured validation results with scores. Validation results are stored in JSONB format in the database.
-- **RPA Automation:** The Robotic Process Automation (RPA) system ensures session isolation for accurate file counting by clearing download directories at the start of each run and tracking only files downloaded during the current session.
+- **Invoice Processing:** Leverages AI for multi-language invoice processing and adaptive parsing, utilizing OCR (Tesseract.js) and AI extraction (OpenAI).
+- **Data Extraction:** Robust logic for extracting critical fields, including from complex XML formats.
+- **Duplicate Prevention:** Implemented a robust duplicate invoice detection system that normalizes invoice numbers and vendor names, performing checks before file download.
+- **Validation System:** A real-time, rule-based validation engine supports various rule types (`required`, `enum`, `regex`, `range`, `format`), handles nested field paths, provides detailed violation reporting, and returns structured validation results stored in JSONB format.
+- **RPA Automation:** Ensures session isolation for accurate file counting by clearing download directories at the start of each run and tracking only current session downloads. Includes smart PDF preservation to prevent data loss.
 - **Security:** Comprehensive security protocols are integrated at the backend.
 - **File Matching:** Advanced token-based file matching for PDF and XML invoices.
-- **Bulk Classification:** Comprehensive system for processing multiple invoices simultaneously with AI-powered line item classification, real-time progress tracking, and detailed analytics.
+- **Bulk Classification:** Processes multiple invoices simultaneously with AI-powered line item classification, real-time progress tracking, and detailed analytics.
+- **Global Progress Tracking:** Implements global progress tracking across all invoice pages for a smoother user experience, including estimated totals and dynamic refinement.
+- **Invoice Rejection Debugging:** Comprehensive tools for analyzing and debugging invoice rejections, including API endpoints for detailed analysis and a dedicated UI.
 
 **System Design Choices:**
 - **Frontend:** React with TypeScript, utilizing Tailwind CSS and shadcn/ui components for a modern and efficient user interface.
 - **Backend:** Express.js with TypeScript for a robust and scalable server-side.
-- **Database:** PostgreSQL with Drizzle ORM for data storage and management. Invoice data includes fields for validation status, results, score, and timestamps.
+- **Database:** PostgreSQL with Drizzle ORM for data storage and management, including fields for validation status, results, score, and timestamps.
 - **Authentication:** Integrated with Replit Auth for secure user authentication.
-- **UI/UX Decisions:** While the focus is on business logic, the choice of React, Tailwind CSS, and shadcn/ui suggests a modern, component-based design approach with an emphasis on functional and clean aesthetics. The Invoice Verification dashboard is a key UI component for displaying real-time validation status.
+- **UI/UX Decisions:** Focuses on a modern, component-based design with an emphasis on functional and clean aesthetics, exemplified by the Invoice Verification dashboard.
 
 ## External Dependencies
 - **Replit Auth:** For user authentication.
@@ -37,179 +39,3 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **Express.js:** Backend framework.
 - **React:** Frontend library.
 - **Playwright:** For browser automation.
-
-## Current Issue: PDF Data Loss Prevention Fixed (Aug 8, 2025)
-
-### Critical Issue Identified & Fixed ✅ RESOLVED
-After RPA runs, previously linked PDF files were being deleted, causing complete data loss when skipped invoices lose their PDF references.
-
-### Root Cause Analysis
-1. **Critical Bug**: `clear_download_directories()` function was clearing ALL PDF files at start of each RPA run
-2. **Data Loss Impact**: Previously processed and linked PDFs were being deleted, breaking database references
-3. **User Impact**: Skipped invoices lost their PDF links permanently after subsequent RPA runs
-
-### Solution Implemented ✅
-1. **Smart PDF Preservation**: Modified `clear_download_directories()` to check database before deleting PDFs
-2. **Database Link Verification**: PDFs referenced by existing invoices are now preserved during cleanup
-3. **Selective Cleanup**: Only orphaned PDFs (not linked to any invoice) are removed
-4. **Safety Logic**: If database check fails, PDFs are preserved (fail-safe approach)
-
-### Latest Achievement: Line Item Classification Integration in Automatic Processing (Aug 12, 2025)
-
-### Missing Line Item Classification in Automatic Processing Workflow Fixed ✅ COMPLETED
-Successfully fixed and enhanced the automatic invoice processing workflow to properly integrate line item classification, ensuring all extracted line items are created in the database and automatically classified using AI-powered categorization.
-
-### Technical Implementation ✅
-1. **Enhanced Processing Workflow**: Updated `processInvoiceAutomatically` method in `invoiceProcessingService.ts`:
-   - Fixed line item creation logic to properly check for existing line items per invoice
-   - Enhanced line item insertion with complete field mapping (unit, rawText, lineNumber)
-   - Added comprehensive classification verification and execution
-   - Improved error handling to continue processing even if classification fails
-
-2. **Database Integration**: Fixed line item classification data flow:
-   - Line items are now properly extracted from `extractedData` and inserted into `line_items` table
-   - Each line item is automatically classified using `ClassificationService.classifyAndStore`
-   - Classifications are stored in `line_item_classifications` table with proper keywords and confidence scores
-
-3. **Validation**: Successfully tested with Invoice #23 (AIR-E S.A.S E.S.P.):
-   - Line item: "SEGUIMIENTO DE OBRA SOLICITUD ATN2024102862. PROVISIONAL ALTAO DE LA CIENEGA PUERTO COLOMBIA."
-   - Correctly classified as: `services_labor` category with 85% confidence
-   - Matched keywords: ["obra", "seguimiento"] indicating construction monitoring work
-
-### Business Impact ✅
-- **Complete Automation**: Invoice processing now includes full line item classification without manual intervention
-- **Data Integrity**: All extracted line items are properly stored and categorized in the database
-- **Audit Trail**: Complete classification history with matched keywords and confidence scores
-- **Workflow Continuity**: Processing continues even if individual line items fail classification
-
-### Previous Achievement: Invoice Rejection Investigation & Debugging System (Aug 12, 2025)
-
-### Invoice #4101060 Rejection Issue Investigation & Fix ✅ COMPLETED
-Successfully investigated and fixed the automatic processing rejection issues affecting Invoice #4101060 (PANAMERICANA OUTSOURCING S.A., COP 661,943.00) and implemented comprehensive debugging tools for future invoice rejection analysis.
-
-### Technical Implementation ✅
-1. **Database Schema Updates**: Enhanced PostgreSQL schema with missing fields:
-   - Added `is_petty_cash`, `classification_method`, `confidence_score` to `petty_cash_log` table
-   - Added `processing_status` field to `invoices` table for tracking processing pipeline stages
-   - Updated database columns successfully with SQL ALTER TABLE commands
-
-2. **API Endpoints for Data Storage**: Created comprehensive endpoints for storing all processing results:
-   - `POST /api/petty-cash/classify` - Stores petty cash classification results with confidence scores
-   - `POST /api/project-matching` - Stores project match results when "Project Match: CONSTRUCCIONES OBYCON" is determined
-   - `POST /api/invoices/process` - Comprehensive endpoint that processes and stores all results (petty cash, project matching, validation status)
-   - Enhanced existing validation endpoints to update `processing_status` field
-
-### Root Cause Analysis & Resolution ✅
-1. **Primary Issue Fixed**: Missing `validateAllApprovedInvoices()` method in storage.ts causing 500 errors in `/api/validation-rules/validate-all` endpoint
-2. **Secondary Issues Fixed**: Database parameter parsing errors in validation rule retrieval causing service crashes
-3. **Logging Enhancement**: Added comprehensive debugging logs throughout validation pipeline for future troubleshooting
-
-### Debugging Tools Implemented ✅
-1. **Rejection Analysis API**: 
-   - `GET /api/invoices/:id/rejection-details` - Comprehensive analysis of specific invoice rejections
-   - `POST /api/validation/execute` - Bridge endpoint for Python automation validation
-   - `GET /api/invoices/rejection-summary` - System-wide rejection trends and statistics
-
-2. **Invoice Rejection Debugger UI**: 
-   - New page at `/invoice-rejection-debugger` for real-time rejection investigation
-   - Visual analysis of validation errors, project matching, petty cash thresholds
-   - Actionable recommendations based on rejection analysis
-
-3. **Enhanced Validation System**:
-   - Fixed severity level handling (high/medium/low severity classification)
-   - Improved validation score calculations and error reporting
-   - Comprehensive bulk validation of approved invoices with proper database integration
-
-### Technical Implementation Details ✅
-1. **Files Modified/Created**:
-   - `server/storage.ts`: Implemented missing `validateAllApprovedInvoices()` method, enhanced error handling
-   - `server/routes.ts`: Added three new debugging endpoints with comprehensive analysis logic
-   - `client/src/pages/InvoiceRejectionDebugger.tsx`: New UI component for rejection analysis
-   - `client/src/App.tsx`: Added route for debugger component
-
-2. **Specific Invoice #4101060 Analysis**:
-   - Amount: COP 661,943.00 (~$150 USD) - Well under petty cash threshold
-   - Vendor: PANAMERICANA OUTSOURCING S.A. - May need project association setup
-   - Currency conversion handling: 1 USD = 4,400 COP rate implemented
-   - Petty cash threshold: $400,000 USD limit properly configured
-
-3. **PostgresStorage Implementation**: Fixed missing database operations:
-   - Implemented proper `createPettyCashLog()`, `updatePettyCashLog()`, `getPettyCashLogs()` methods
-   - Added database operations using Drizzle ORM for consistent data handling
-   - Integrated error handling and transaction management
-
-4. **Processing Status Tracking**: Implemented comprehensive processing pipeline tracking:
-   - `pending` -> `extracted` -> `classified` -> `matched` -> `validated` -> `processed`
-   - Each processing step updates the invoice status in the database
-   - Real-time status updates for monitoring processing progress
-
-### Data Integrity Verification ✅
-Successfully tested database operations:
-- Petty cash classification data properly stored with invoice_id=1005, is_petty_cash=true, confidence_score=0.92
-- Processing status correctly updated from 'pending' to 'classified'
-- Database schema supports all required fields for complete processing result storage
-
-### Previous Achievement: Bulk Invoice Classification System (Aug 11, 2025)
-
-### Comprehensive Bulk Classification System Implemented ✅ COMPLETED
-Created a complete bulk invoice line item classification system that replaces single-item processing with efficient batch operations.
-
-### Technical Implementation
-1. **Backend Services**: Built comprehensive `BulkClassificationService` with:
-   - Batch processing capabilities for multiple invoices simultaneously
-   - AI integration using existing `ClassificationService` infrastructure
-   - Real-time progress tracking with session isolation
-   - Smart invoice filtering by project, date range, and status
-   - Automatic line item extraction from OCR data when unavailable
-   - Database optimization with batch operations and transaction management
-
-2. **API Endpoints**: Added complete REST API for bulk operations:
-   - `/api/invoices/ready-for-classification` - Get invoices ready for processing
-   - `/api/classify-bulk-invoices` - Start bulk classification process  
-   - `/api/classify-bulk-invoices/progress/:sessionId` - Real-time progress tracking
-   - `/api/classification-results` - Paginated results with filters
-   - `/api/classification-summary` - Analytics and statistics
-   - `/api/classification/categories` - Available classification categories
-
-3. **Frontend Interface**: Professional React interface with:
-   - Multi-tab design (Classify, Results, Analytics)
-   - Advanced filtering by project ID and date ranges
-   - Real-time progress monitoring with detailed statistics
-   - Invoice selection with batch operations
-   - Comprehensive results view with pagination
-   - Category breakdown and confidence analytics
-   - Integration with existing design system and navigation
-
-4. **Database Extensions**: Extended schema with bulk processing support:
-   - Enhanced classification tracking and progress management
-   - Session-based processing for concurrent user support
-   - Optimized queries for large-scale invoice processing
-
-### Business Impact
-- **Efficiency**: Process hundreds of invoices simultaneously vs. single-item approach
-- **Scalability**: Handle enterprise-level invoice volumes with concurrent processing
-- **Analytics**: Comprehensive reporting on classification performance and accuracy
-- **User Experience**: Intuitive interface with real-time feedback and progress tracking
-- **Integration**: Seamless integration with existing AI classification infrastructure
-
-## Previous Task: Global Progress Tracking Implementation (Aug 8, 2025)
-
-### Enhancement Implemented ✅ COMPLETED  
-Implementing global progress tracking across all invoice pages instead of per-page progress for smoother user experience.
-
-### Technical Implementation
-1. **Global Progress Structure**: Added `global_progress` tracking with estimated totals and global index counter
-2. **Invoice Estimation Logic**: Implemented `estimate_total_invoices()` method that:
-   - Analyzes first page invoice count
-   - Attempts to detect pagination info from UI elements  
-   - Creates conservative estimates when pagination info unavailable
-3. **Dynamic Refinement**: Added `refine_total_estimate()` to improve accuracy using actual page samples
-4. **Global Index Tracking**: Updated main processing loop to increment `global_index` for every invoice (skip, success, failure)
-5. **Progress Calculation**: Modified `_output_download_progress()` to use global ratio mapping to 30-90% range
-
-### Previous Issues Successfully Resolved
-1. **PDF Data Loss Prevention Fixed**: Modified `clear_download_directories()` to preserve linked PDFs
-2. **PDF Directory Structure Fixed**: Corrected nested path construction (`uploads/pdfs/pdfs/` → `uploads/pdfs/`)
-3. **Session Isolation Working**: RPA correctly reports session-specific file counts  
-4. **Download System Enhanced**: Comprehensive Chrome configuration and error handling
-5. **Database Linking Operational**: PDFs properly linked to invoices with correct metadata
