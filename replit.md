@@ -23,6 +23,7 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **Bulk Classification:** Processes multiple invoices simultaneously with AI-powered line item classification, real-time progress tracking, and detailed analytics.
 - **Global Progress Tracking:** Implements global progress tracking across all invoice pages for a smoother user experience, including estimated totals and dynamic refinement.
 - **Invoice Rejection Debugging:** Comprehensive tools for analyzing and debugging invoice rejections, including API endpoints for detailed analysis and a dedicated UI.
+- **Line Item Classification Integration:** Automatic processing workflow includes comprehensive line item classification at Step 3, creating line items from extracted data and automatically classifying them using AI-powered categorization with proper error handling and database storage.
 
 **System Design Choices:**
 - **Frontend:** React with TypeScript, utilizing Tailwind CSS and shadcn/ui components for a modern and efficient user interface.

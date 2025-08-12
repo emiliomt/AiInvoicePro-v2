@@ -9,11 +9,9 @@ import {
   decimal,
   integer,
   boolean,
-  pgEnum,
-  createInsertSchema,
-  createSelectSchema
+  pgEnum
 } from "drizzle-orm/pg-core";
-import { createInsertSchema } from "drizzle-zod";
+import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
 
@@ -1147,21 +1145,6 @@ export const batchClassifySchema = z.object({
 export type ClassifyLineItemRequest = z.infer<typeof classifyLineItemSchema>;
 export type BatchClassifyRequest = z.infer<typeof batchClassifySchema>;
 
-// Classification keywords schema and table definition added
+// Validation rules schemas  
 export const validationRulesSchema = createInsertSchema(validationRules);
 export const validationRulesSelectSchema = createSelectSchema(validationRules);
-
-export const classificationKeywords = pgTable("classification_keywords", {
-  id: serial("id").primaryKey(),
-  category: varchar("category", { length: 100 }).notNull(),
-  subcategory: varchar("subcategory", { length: 100 }),
-  keywords: jsonb("keywords").notNull(),
-  description: text("description"),
-  createdBy: varchar("created_by", { length: 255 }),
-  createdAt: timestamp("created_at").defaultNow(),
-  updatedAt: timestamp("updated_at").defaultNow(),
-  isActive: boolean("is_active").default(true),
-});
-
-export const classificationKeywordsSchema = createInsertSchema(classificationKeywords);
-export const classificationKeywordsSelectSchema = createSelectSchema(classificationKeywords);
