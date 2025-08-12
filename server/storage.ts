@@ -440,7 +440,23 @@ class PostgresStorage implements IStorage {
       await dbClient.end();
     }
 
-    // Delete related line items
+    // Delete related records (must follow foreign key dependency order)
+    
+    // First, get all line item IDs for this invoice
+    const lineItemsToDelete = await db
+      .select({ id: lineItems.id })
+      .from(lineItems)
+      .where(eq(lineItems.invoiceId, id));
+    
+    const lineItemIds = lineItemsToDelete.map(item => item.id);
+    
+    // Delete line item classifications first (they reference line_items)
+    if (lineItemIds.length > 0) {
+      await db.delete(lineItemClassifications).where(inArray(lineItemClassifications.lineItemId, lineItemIds));
+      console.log(`🗑️ Deleted line item classifications for ${lineItemIds.length} line items`);
+    }
+    
+    // Now safe to delete line items
     await db.delete(lineItems).where(eq(lineItems.invoiceId, id));
     // Delete feedback logs
     await db.delete(feedbackLogs).where(eq(feedbackLogs.invoiceId, id));
@@ -1082,7 +1098,23 @@ class PostgresStorage implements IStorage {
           await dbClient.end();
         }
 
-        // Delete related records
+        // Delete related records (must follow foreign key dependency order)
+        
+        // First, get all line item IDs for these invoices
+        const lineItemsToDelete = await db
+          .select({ id: lineItems.id })
+          .from(lineItems)
+          .where(inArray(lineItems.invoiceId, invoiceIds));
+        
+        const lineItemIds = lineItemsToDelete.map(item => item.id);
+        
+        // Delete line item classifications first (they reference line_items)
+        if (lineItemIds.length > 0) {
+          await db.delete(lineItemClassifications).where(inArray(lineItemClassifications.lineItemId, lineItemIds));
+          console.log(`🗑️ Deleted line item classifications for ${lineItemIds.length} line items`);
+        }
+        
+        // Now safe to delete line items
         await db.delete(lineItems).where(inArray(lineItems.invoiceId, invoiceIds));
         await db.delete(feedbackLogs).where(inArray(feedbackLogs.invoiceId, invoiceIds));
         await db.delete(approvals).where(inArray(approvals.invoiceId, invoiceIds));
