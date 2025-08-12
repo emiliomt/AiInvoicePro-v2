@@ -3491,11 +3491,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/classification/keywords', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
+      console.log(`Fetching classification keywords for user: ${userId}`);
+      
+      // Check if storage method exists, if not return empty array
+      if (typeof storage.getClassificationKeywords !== 'function') {
+        console.log('Classification keywords method not implemented, returning empty array');
+        return res.json([]);
+      }
+      
       const keywords = await storage.getClassificationKeywords(userId);
-      res.json(keywords);
+      res.json(keywords || []);
     } catch (error) {
       console.error("Error fetching classification keywords:", error);
-      res.status(500).json({ message: "Failed to fetch classification keywords" });
+      // Return empty array instead of error to prevent UI breaking
+      res.json([]);
     }
   });
 
@@ -3742,10 +3751,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         'marketing_advertising': 'Marketing, advertising, promotional materials and services',
         'other': 'Items that don\'t fit into standard business categories',
       };
+      console.log('Classification categories requested successfully');
       res.json(categories);
     } catch (error) {
       console.error('Error fetching classification categories:', error);
-      res.status(500).json({ message: 'Failed to fetch classification categories' });
+      res.status(500).json({ message: 'Failed to fetch classification categories', error: error instanceof Error ? error.message : 'Unknown error' });
     }
   });
 

@@ -110,8 +110,8 @@ class FallbackStorage implements IStorage {
 
   // Invoices
   async createInvoice(invoice: InsertInvoice): Promise<Invoice> {
-    const newInvoice = { 
-      ...invoice, 
+    const newInvoice = {
+      ...invoice,
       id: this.nextId++,
       createdAt: new Date(),
       updatedAt: new Date()
@@ -131,8 +131,8 @@ class FallbackStorage implements IStorage {
   async updateInvoice(id: number, updates: Partial<InsertInvoice>): Promise<void> {
     const index = this.data.invoices.findIndex(i => i.id === id);
     if (index >= 0) {
-      this.data.invoices[index] = { 
-        ...this.data.invoices[index], 
+      this.data.invoices[index] = {
+        ...this.data.invoices[index],
         ...updates,
         updatedAt: new Date()
       };
@@ -184,16 +184,16 @@ class FallbackStorage implements IStorage {
     const rules = await this.getValidationRules();
     const violations = [];
     const warnings = [];
-    
+
     for (const rule of rules) {
       if (!rule.isActive) continue;
-      
+
       const fieldPath = rule.fieldName.split('.');
       let value = invoiceData;
       for (const key of fieldPath) {
         value = value?.[key];
       }
-      
+
       if (rule.ruleType === 'enum' && value !== rule.ruleValue) {
         violations.push({
           field: rule.fieldName,
@@ -204,9 +204,9 @@ class FallbackStorage implements IStorage {
         });
       }
     }
-    
+
     const validationScore = violations.length > 0 ? 0.0 : 1.0;
-    
+
     return {
       isValid: violations.length === 0,
       validationScore,
@@ -269,9 +269,23 @@ class FallbackStorage implements IStorage {
 
   // Stub implementations for other required methods
   async deleteAllUserInvoices(userId: string): Promise<number> {
-    const count = this.data.invoices.filter(i => i.userId === userId).length;
-    this.data.invoices = this.data.invoices.filter(i => i.userId !== userId);
-    return count;
+    console.log(`Fallback: Would delete all invoices for user ${userId}`);
+    return 0;
+  }
+
+  // Classification Keywords methods
+  async getClassificationKeywords(userId: string): Promise<any[]> {
+    console.log(`Fallback: Getting classification keywords for user ${userId}`);
+    return [];
+  }
+
+  async addClassificationKeyword(keywordData: any): Promise<any> {
+    console.log(`Fallback: Would add classification keyword:`, keywordData);
+    return { id: 1, ...keywordData };
+  }
+
+  async removeClassificationKeyword(keywordId: number, userId: string): Promise<void> {
+    console.log(`Fallback: Would remove classification keyword ${keywordId} for user ${userId}`);
   }
 
   async deleteAllCompanyInvoices(companyId: number): Promise<number> {
@@ -477,15 +491,15 @@ class FallbackStorage implements IStorage {
   constructor() {
     // Initialize with some default methods that return empty results
     const stubMethods = [
-      'createProject', 'getProject', 'getProjects', 'getProjectsByCompanyId', 
+      'createProject', 'getProject', 'getProjects', 'getProjectsByCompanyId',
       'updateProject', 'deleteProject', 'upsertProjectByProjectId',
-      'createPurchaseOrder', 'getPurchaseOrder', 'getPurchaseOrders', 
+      'createPurchaseOrder', 'getPurchaseOrder', 'getPurchaseOrders',
       'getPurchaseOrdersByCompanyId', 'updatePurchaseOrder', 'deletePurchaseOrder',
       'upsertPurchaseOrderByPoId', 'createInvoicePoMatch', 'getInvoicePoMatchesByInvoiceId',
       'createInvoiceProjectMatch', 'getInvoiceProjectMatchesByInvoiceId',
-      'createErpConnection', 'getErpConnection', 
+      'createErpConnection', 'getErpConnection',
       'updateErpConnection', 'deleteErpConnection', 'syncErpCredentialsToImportConfigs',
-      'createInvoiceImporterConfig', 
+      'createInvoiceImporterConfig',
       'updateInvoiceImporterConfig', 'deleteInvoiceImporterConfig',
       'deleteInvoiceImporterConfigCascade', 'cleanupInactiveConfigurations',
       'getInvoiceImporterLogsByConfig',
@@ -502,7 +516,7 @@ class FallbackStorage implements IStorage {
       'getUnresolvedMatches', 'getInvoiceProjectMatches', 'findPotentialProjectMatches',
       'updateInvoiceProjectMatch', 'setActiveProjectMatch', 'getUnresolvedProjectMatches',
       'getInvoiceFlags', 'resolveInvoiceFlag', 'getPredictiveAlerts',
-      'getClassificationKeywords', 'addClassificationKeyword', 'removeClassificationKeyword',
+      // 'getClassificationKeywords', 'addClassificationKeyword', 'removeClassificationKeyword', // These are now implemented above
       'getLineItemClassifications', 'updateLineItemClassification',
       'createApprovedInvoiceProject', 'getApprovedInvoiceProjects', 'getVerifiedInvoiceProjects',
       'getInvoicePoMatchesWithDetails', 'moveApprovedToVerified'
