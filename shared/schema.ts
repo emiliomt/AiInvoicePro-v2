@@ -1146,6 +1146,6 @@ export const batchClassifySchema = z.object({
 export type ClassifyLineItemRequest = z.infer<typeof classifyLineItemSchema>;
 export type BatchClassifyRequest = z.infer<typeof batchClassifySchema>;
 
-// Validation rules schemas  
+// Validation rules schemas
 export const validationRulesSchema = createInsertSchema(validationRules);
 export const validationRulesSelectSchema = createSelectSchema(validationRules);
