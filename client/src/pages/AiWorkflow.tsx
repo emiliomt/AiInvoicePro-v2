@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { ProgressTracker } from '@/components/ProgressTracker';
+// import { ProgressTracker } from '@/components/ProgressTracker';
 import { Bot, Play, Clock, CheckCircle, XCircle, Eye, Download, Trash2, Plus } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { apiRequest } from '@/lib/queryClient';
@@ -348,12 +348,15 @@ export default function AiWorkflow() {
               <CardTitle>Task Progress</CardTitle>
             </CardHeader>
             <CardContent>
-              <ProgressTracker
+              {/* <ProgressTracker
                 userId={user?.id || ''}
                 taskId={activeTaskId}
                 onComplete={handleProgressComplete}
                 onError={handleProgressError}
-              />
+              /> */}
+              <div className="text-center py-4 text-muted-foreground">
+                Progress tracking temporarily disabled
+              </div>
             </CardContent>
           </Card>
         )}

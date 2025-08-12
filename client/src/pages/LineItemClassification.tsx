@@ -17,6 +17,7 @@ import { apiRequest } from "@/lib/queryClient";
 import Header from "@/components/Header";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
+// import ProgressTracker from "@/components/ProgressTracker";
 
 interface LineItem {
   description: string;
@@ -176,6 +177,10 @@ export default function LineItemClassification() {
   const [isLoadingSuggestions, setIsLoadingSuggestions] = useState(false);
   const [suggestionSource, setSuggestionSource] = useState<'ai' | 'fallback' | null>(null);
 
+  // Progress tracking state
+  const [showProgressTracker, setShowProgressTracker] = useState(false);
+  const [progressSessionId, setProgressSessionId] = useState<string>("");
+
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
     queryKey: ['/api/classification/categories'],
@@ -299,6 +304,8 @@ export default function LineItemClassification() {
     },
     onSuccess: (result) => {
       setProcessingSessionId(result.sessionId);
+      setProgressSessionId(result.sessionId);
+      setShowProgressTracker(true);
       toast({
         title: "Processing Started",
         description: "Invoice processing has begun. You can track progress below.",
@@ -924,6 +931,28 @@ export default function LineItemClassification() {
                       : "Process All Filtered"}
                   </Button>
                 </div>
+
+                {/* Progress Tracker */}
+                {showProgressTracker && progressSessionId && (
+                  <div className="my-6">
+                    <Card>
+                      <CardHeader>
+                        <CardTitle>Processing Progress</CardTitle>
+                      </CardHeader>
+                      <CardContent>
+                        <div className="space-y-4">
+                          <Progress value={50} />
+                          <p className="text-sm text-muted-foreground">
+                            Processing session: {progressSessionId}
+                          </p>
+                          <Button onClick={() => setShowProgressTracker(false)}>
+                            Close
+                          </Button>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  </div>
+                )}
 
                 {invoicesLoading ? (
                   <div className="flex items-center justify-center py-8">

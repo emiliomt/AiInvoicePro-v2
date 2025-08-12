@@ -11,7 +11,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from 
 import { AlertTriangle, Calendar, Download, Eye, FileText, Play, Plus, Settings, Loader2, Trash2, Terminal, Activity, Clock, CheckCircle, XCircle, Pause, Zap, Edit3, RotateCcw, TimerIcon, Database } from 'lucide-react';
 import { useToast } from '../hooks/use-toast';
 import Header from '@/components/Header';
-import { ProgressTracker } from '../components/ProgressTracker';
+// import { ProgressTracker } from '../components/ProgressTracker';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from '../components/ui/progress';

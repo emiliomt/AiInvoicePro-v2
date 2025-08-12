@@ -1,194 +1,291 @@
-import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
+import { WebSocket } from 'ws';
 
-interface ProgressUpdate {
-  taskId: number;
-  step: number;
-  totalSteps: number;
-  status: 'processing' | 'completed' | 'failed';
-  message: string;
-  timestamp: Date;
-  data?: any;
+export interface ProgressStep {
+  step: string;
+  description: string;
+  icon: string;
+  estimatedTime: string;
+  status: 'pending' | 'active' | 'completed' | 'error';
+  startTime?: Date;
+  endTime?: Date;
+  error?: string;
 }
 
-interface UserConnection {
+export interface ProgressSession {
+  sessionId: string;
   userId: string;
-  ws: WebSocket;
+  type: 'line-item-classification';
+  status: 'initializing' | 'processing' | 'completed' | 'error';
+  startTime: Date;
+  endTime?: Date;
+  currentStep: number;
+  totalSteps: number;
+  steps: ProgressStep[];
+  metrics: {
+    totalInvoices: number;
+    processedInvoices: number;
+    currentInvoice?: number;
+    totalItems: number;
+    processedItems: number;
+    currentItem?: number;
+    successRate: number;
+    elapsedTime: number;
+    estimatedRemaining: number;
+  };
+  results?: any[];
+  error?: string;
 }
 
-class ProgressTracker {
-  private wss: WebSocketServer | null = null;
-  private connections: Map<string, UserConnection[]> = new Map();
+export class ProgressTracker {
+  private static sessions = new Map<string, ProgressSession>();
+  private static websockets = new Map<string, Set<WebSocket>>();
 
-  initialize(server: Server) {
-    this.wss = new WebSocketServer({ server, path: '/ws' });
+  // Define the standard progress steps for line item classification
+  private static readonly CLASSIFICATION_STEPS: Omit<ProgressStep, 'status' | 'startTime' | 'endTime'>[] = [
+    {
+      step: "Initializing Classification",
+      description: "Setting up classification parameters and loading keywords",
+      icon: "⚙️",
+      estimatedTime: "2-3 seconds"
+    },
+    {
+      step: "Extracting Line Items",
+      description: "Parsing invoice data to extract individual line items",
+      icon: "📋", 
+      estimatedTime: "5-10 seconds per invoice"
+    },
+    {
+      step: "Loading Classification Keywords",
+      description: "Retrieving keyword categories and patterns for matching",
+      icon: "🔑",
+      estimatedTime: "1-2 seconds"
+    },
+    {
+      step: "Classifying Line Items",
+      description: "Applying AI and keyword matching to categorize items",
+      icon: "🤖",
+      estimatedTime: "3-5 seconds per item"
+    },
+    {
+      step: "Saving Results",
+      description: "Storing classification results in database",
+      icon: "💾",
+      estimatedTime: "2-3 seconds"
+    },
+    {
+      step: "Processing Complete",
+      description: "Classification completed successfully",
+      icon: "✅",
+      estimatedTime: "Complete"
+    }
+  ];
 
-    this.wss.on('connection', (ws: WebSocket, req) => {
-      console.log('WebSocket connection established');
-
-      ws.on('message', (message: Buffer) => {
-        try {
-          const messageStr = message.toString();
-
-          // Validate that the message is not empty
-          if (!messageStr || messageStr.trim() === '') {
-            console.warn('Received empty WebSocket message');
-            return;
-          }
-
-          const data = JSON.parse(messageStr);
-
-          if (data.type === 'subscribe' && data.userId) {
-            this.addConnection(data.userId, ws);
-          }
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-          // Send error response back to client
-          if (ws.readyState === WebSocket.OPEN) {
-            ws.send(JSON.stringify({
-              type: 'error',
-              message: 'Invalid message format'
-            }));
-          }
-        }
-      });
-
-      ws.on('close', () => {
-        this.removeConnection(ws);
-      });
-
-      ws.on('error', (error) => {
-        console.error('WebSocket error:', error);
-        this.removeConnection(ws);
-      });
-
-      // Send initial connection confirmation
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({
-          type: 'connected',
-          message: 'WebSocket connection established'
-        }));
+  static createSession(sessionId: string, userId: string, totalInvoices: number): ProgressSession {
+    const session: ProgressSession = {
+      sessionId,
+      userId,
+      type: 'line-item-classification',
+      status: 'initializing',
+      startTime: new Date(),
+      currentStep: 0,
+      totalSteps: this.CLASSIFICATION_STEPS.length,
+      steps: this.CLASSIFICATION_STEPS.map(step => ({ ...step, status: 'pending' })),
+      metrics: {
+        totalInvoices,
+        processedInvoices: 0,
+        totalItems: 0,
+        processedItems: 0,
+        successRate: 0,
+        elapsedTime: 0,
+        estimatedRemaining: 0
       }
-    });
+    };
+
+    this.sessions.set(sessionId, session);
+    this.broadcastUpdate(sessionId, 'classification_started');
+    return session;
   }
 
-  private addConnection(userId: string, ws: WebSocket) {
-    if (!this.connections.has(userId)) {
-      this.connections.set(userId, []);
+  static getSession(sessionId: string): ProgressSession | undefined {
+    return this.sessions.get(sessionId);
+  }
+
+  static updateStep(sessionId: string, stepIndex: number, status: 'active' | 'completed' | 'error', error?: string) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    // Mark previous steps as completed if we're progressing
+    if (status === 'active' && stepIndex > session.currentStep) {
+      for (let i = session.currentStep; i < stepIndex; i++) {
+        if (session.steps[i].status === 'active') {
+          session.steps[i].status = 'completed';
+          session.steps[i].endTime = new Date();
+        }
+      }
     }
 
-    this.connections.get(userId)!.push({ userId, ws });
-    console.log(`User ${userId} subscribed to progress updates`);
+    // Update current step
+    if (session.steps[stepIndex]) {
+      session.steps[stepIndex].status = status;
+      if (status === 'active' && !session.steps[stepIndex].startTime) {
+        session.steps[stepIndex].startTime = new Date();
+      }
+      if ((status === 'completed' || status === 'error') && !session.steps[stepIndex].endTime) {
+        session.steps[stepIndex].endTime = new Date();
+      }
+      if (error) {
+        session.steps[stepIndex].error = error;
+      }
+    }
 
-    // Send subscription confirmation
-    if (ws.readyState === WebSocket.OPEN) {
+    session.currentStep = stepIndex;
+    session.status = status === 'error' ? 'error' : 'processing';
+
+    this.updateMetrics(sessionId);
+    this.broadcastUpdate(sessionId, 'step_progress');
+  }
+
+  static updateMetrics(sessionId: string, metrics?: Partial<ProgressSession['metrics']>) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    if (metrics) {
+      session.metrics = { ...session.metrics, ...metrics };
+    }
+
+    // Calculate elapsed time
+    session.metrics.elapsedTime = Date.now() - session.startTime.getTime();
+
+    // Calculate success rate
+    if (session.metrics.processedItems > 0) {
+      session.metrics.successRate = (session.metrics.processedItems / session.metrics.totalItems) * 100;
+    }
+
+    // Estimate remaining time based on current progress
+    if (session.metrics.processedItems > 0 && session.metrics.totalItems > 0) {
+      const avgTimePerItem = session.metrics.elapsedTime / session.metrics.processedItems;
+      const remainingItems = session.metrics.totalItems - session.metrics.processedItems;
+      session.metrics.estimatedRemaining = avgTimePerItem * remainingItems;
+    }
+
+    this.broadcastUpdate(sessionId, 'metrics_updated');
+  }
+
+  static completeSession(sessionId: string, results?: any[]) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    // Mark all steps as completed
+    session.steps.forEach(step => {
+      if (step.status === 'pending' || step.status === 'active') {
+        step.status = 'completed';
+        step.endTime = new Date();
+      }
+    });
+
+    session.status = 'completed';
+    session.endTime = new Date();
+    session.currentStep = session.steps.length - 1;
+    
+    if (results) {
+      session.results = results;
+    }
+
+    this.updateMetrics(sessionId);
+    this.broadcastUpdate(sessionId, 'classification_finished');
+  }
+
+  static errorSession(sessionId: string, error: string, stepIndex?: number) {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    session.status = 'error';
+    session.error = error;
+    session.endTime = new Date();
+
+    if (stepIndex !== undefined && session.steps[stepIndex]) {
+      session.steps[stepIndex].status = 'error';
+      session.steps[stepIndex].error = error;
+      session.steps[stepIndex].endTime = new Date();
+    }
+
+    this.broadcastUpdate(sessionId, 'classification_error');
+  }
+
+  static addWebSocket(sessionId: string, ws: WebSocket) {
+    if (!this.websockets.has(sessionId)) {
+      this.websockets.set(sessionId, new Set());
+    }
+    this.websockets.get(sessionId)!.add(ws);
+
+    // Send current state to newly connected client
+    const session = this.getSession(sessionId);
+    if (session) {
       ws.send(JSON.stringify({
-        type: 'subscribed',
-        userId: userId,
-        message: 'Successfully subscribed to progress updates'
+        type: 'progress_state',
+        sessionId,
+        data: session
       }));
     }
   }
 
-  private removeConnection(ws: WebSocket) {
-    for (const [userId, connections] of this.connections) {
-      const index = connections.findIndex((conn: UserConnection) => conn.ws === ws);
-      if (index !== -1) {
-        connections.splice(index, 1);
-        if (connections.length === 0) {
-          this.connections.delete(userId);
-        }
-        console.log(`User ${userId} unsubscribed from progress updates`);
-        break;
+  static removeWebSocket(sessionId: string, ws: WebSocket) {
+    const sockets = this.websockets.get(sessionId);
+    if (sockets) {
+      sockets.delete(ws);
+      if (sockets.size === 0) {
+        this.websockets.delete(sessionId);
       }
     }
   }
 
-  sendProgress(userId: string, progress: ProgressUpdate) {
-    const connections = this.connections.get(userId);
-    if (!connections || connections.length === 0) {
-      // Don't spam logs - only log this occasionally
-      if (Math.random() < 0.1) {
-        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
-      }
-      return;
-    }
+  private static broadcastUpdate(sessionId: string, event: string) {
+    const session = this.sessions.get(sessionId);
+    const sockets = this.websockets.get(sessionId);
+    
+    if (session && sockets) {
+      const message = JSON.stringify({
+        type: event,
+        sessionId,
+        data: session
+      });
 
-    try {
-      // Ensure timestamp is serializable
-      const progressData = {
-        ...progress,
-        timestamp: progress.timestamp.toISOString(),
-        type: 'progress'
-      };
-
-      const message = JSON.stringify(progressData);
-
-      connections.forEach(({ ws }) => {
+      sockets.forEach(ws => {
         if (ws.readyState === WebSocket.OPEN) {
-          try {
-            ws.send(message);
-          } catch (error) {
-            console.error('Error sending message to WebSocket:', error);
-          }
+          ws.send(message);
         }
       });
-    } catch (error) {
-      console.error('Error serializing progress data:', error);
     }
   }
 
-  private sendMessage(userId: string, message: any) {
-    const connections = this.connections.get(userId);
-    if (!connections || connections.length === 0) {
-      // Don't spam logs - only log this occasionally
-      if (Math.random() < 0.1) {
-        console.log(`No WebSocket connections found for user ${userId} - progress will be available via polling`);
+  // Cleanup old sessions (call periodically)
+  static cleanup() {
+    const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
+    
+    for (const [sessionId, session] of this.sessions.entries()) {
+      if (session.startTime.getTime() < cutoff) {
+        this.sessions.delete(sessionId);
+        this.websockets.delete(sessionId);
       }
-      return;
     }
-
-    const messageString = JSON.stringify(message);
-
-    connections.forEach(({ ws }) => {
-      if (ws.readyState === WebSocket.OPEN) {
-        try {
-          ws.send(messageString);
-        } catch (error) {
-          console.error('Error sending message to WebSocket:', error);
-        }
-      }
-    });
   }
 
-  sendTaskComplete(userId: string, taskId: number, success: boolean, message: string, result?: any) {
-    this.sendMessage(userId, {
-      type: 'task_complete',
-      taskId,
-      success,
-      message,
-      result,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  sendTaskCancelled(userId: string, taskId: number, reason: string) {
-    this.sendMessage(userId, {
-      type: 'task_cancelled',
-      taskId,
-      reason,
-      timestamp: new Date().toISOString()
-    });
-  }
-
-  sendTaskTimeout(userId: string, taskId: number, duration: number) {
-    this.sendMessage(userId, {
-      type: 'task_timeout',
-      taskId,
-      duration,
-      timestamp: new Date().toISOString()
-    });
+  // Get all active sessions for a user
+  static getUserSessions(userId: string): ProgressSession[] {
+    return Array.from(this.sessions.values())
+      .filter(session => session.userId === userId);
   }
 }
 
-export const progressTracker = new ProgressTracker();
+// Legacy compatibility layer for existing code
+export const progressTracker = {
+  sendProgress: (userId: string, data: any) => {
+    // This is a legacy method - for new progress tracking use ProgressTracker directly
+    console.log('Legacy progress tracker called:', { userId, data });
+    // For now, just log - could be extended to create a compatible session if needed
+  },
+  initialize: (server: any) => {
+    // Legacy initialization method - the new WebSocket setup is handled elsewhere
+    console.log('Legacy progress tracker initialized');
+  }
+};

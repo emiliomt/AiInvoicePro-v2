@@ -23,7 +23,7 @@ import { lineItemClassificationService } from "./services/lineItemClassification
 import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
-import { and, or, eq, gte, lte, desc, sql } from "drizzle-orm";
+import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -4143,6 +4143,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
+        const actualCompanyId = companyId === 'default' ? null : companyId;
+        
         const query = db
           .select({
             id: invoices.id,
@@ -4156,17 +4158,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
           .where(
             and(
-              eq(invoices.companyId, companyId),
+              actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
               eq(invoiceProjectMatches.isActive, true),
-              sql`${invoices.id} = ANY(${invoiceIds})`
+              inArray(invoices.id, invoiceIds)
             )
           );
 
         targetInvoices = await query;
       } else if (filters) {
         // Process based on filters
+        const actualCompanyId = companyId === 'default' ? null : companyId;
+        
         const conditions = [
-          eq(invoices.companyId, companyId),
+          actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
           eq(invoiceProjectMatches.isActive, true),
           or(
             eq(invoices.status, 'extracted'),

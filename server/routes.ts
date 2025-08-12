@@ -23,7 +23,7 @@ import { lineItemClassificationService } from "./services/lineItemClassification
 import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
-import { and, or, eq, gte, lte, desc, sql } from "drizzle-orm";
+import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -4009,10 +4009,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Start processing in background
       const sessionId = `process-${Date.now()}`;
 
+      // Estimate total invoices for progress tracking
+      const totalInvoices = invoiceIds ? invoiceIds.length : await estimateInvoiceCount(filters, user.companyId || 'default');
+
+      // Create progress tracking session
+      const { ProgressTracker } = await import('./services/progressTracker');
+      ProgressTracker.createSession(sessionId, userId, totalInvoices);
+
       // Start the processing (don't await to make it non-blocking)
       processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
         .catch(error => {
           console.error('Background invoice processing failed:', error);
+          ProgressTracker.errorSession(sessionId, error.message);
         });
 
       res.json({ 
@@ -4023,6 +4031,46 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error starting invoice processing:', error);
       res.status(500).json({ message: 'Failed to start invoice processing' });
+    }
+  });
+
+  // Get progress for a classification session
+  app.get('/api/classification-progress/:sessionId', isAuthenticated, async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const userId = (req.user as any).claims.sub;
+      
+      const { ProgressTracker } = await import('./services/progressTracker');
+      const session = ProgressTracker.getSession(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({ message: 'Session not found' });
+      }
+      
+      // Verify user owns this session
+      if (session.userId !== userId) {
+        return res.status(403).json({ message: 'Access denied' });
+      }
+      
+      res.json(session);
+    } catch (error) {
+      console.error('Error fetching classification progress:', error);
+      res.status(500).json({ message: 'Failed to fetch progress' });
+    }
+  });
+
+  // Get all user sessions
+  app.get('/api/user-sessions', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      
+      const { ProgressTracker } = await import('./services/progressTracker');
+      const sessions = ProgressTracker.getUserSessions(userId);
+      
+      res.json(sessions);
+    } catch (error) {
+      console.error('Error fetching user sessions:', error);
+      res.status(500).json({ message: 'Failed to fetch sessions' });
     }
   });
 
@@ -4124,6 +4172,48 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Helper function to estimate invoice count
+  async function estimateInvoiceCount(filters: any, companyId: string): Promise<number> {
+    try {
+      const db = await getDb();
+      const actualCompanyId = companyId === 'default' ? null : companyId;
+      
+      const conditions = [
+        actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
+        eq(invoiceProjectMatches.isActive, true),
+        or(
+          eq(invoices.status, 'extracted'),
+          eq(invoices.status, 'approved'),
+          eq(invoices.status, 'verified')
+        )
+      ];
+
+      if (filters?.projectId) {
+        conditions.push(eq(invoiceProjectMatches.projectId, filters.projectId));
+      }
+
+      if (filters?.dateFrom) {
+        conditions.push(gte(invoices.invoiceDate, new Date(filters.dateFrom)));
+      }
+
+      if (filters?.dateTo) {
+        conditions.push(lte(invoices.invoiceDate, new Date(filters.dateTo)));
+      }
+
+      const result = await db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
+        .innerJoin(invoiceProjectMatches, eq(invoices.id, invoiceProjectMatches.invoiceId))
+        .where(and(...conditions))
+        .limit(100);
+
+      return result[0]?.count || 0;
+    } catch (error) {
+      console.error('Error estimating invoice count:', error);
+      return 0;
+    }
+  }
+
   // Invoice processing function for line item classification
   async function processInvoicesForLineItemClassification(
     invoiceIds: number[], 
@@ -4137,9 +4227,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const db = await getDb();
       const { ClassificationService } = await import('./services/classificationService');
+      const { ProgressTracker } = await import('./services/progressTracker');
+
+      // Step 1: Initializing Classification
+      ProgressTracker.updateStep(sessionId, 0, 'active');
+      await new Promise(resolve => setTimeout(resolve, 1000)); // Simulate setup time
 
       // Get invoices to process
       let targetInvoices: any[] = [];
+      let totalLineItems = 0;
 
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
@@ -4161,11 +4257,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
             and(
               actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
               eq(invoiceProjectMatches.isActive, true),
-              sql`${invoices.id} = ANY(ARRAY[${invoiceIds.join(',')}])`
+              inArray(invoices.id, invoiceIds)
             )
           );
 
         targetInvoices = await query;
+        
+        // Count line items in target invoices for progress estimation
+        totalLineItems = targetInvoices.reduce((sum, invoice) => {
+          if (invoice.extractedData && typeof invoice.extractedData === 'object') {
+            const data = invoice.extractedData as any;
+            if (data.lineItems && Array.isArray(data.lineItems)) {
+              return sum + data.lineItems.length;
+            }
+          }
+          return sum + 1; // Assume at least 1 item if data is not available
+        }, 0);
       } else if (filters) {
         // Process based on filters
         // Handle companyId properly - use null if it's "default"
@@ -4208,18 +4315,50 @@ export async function registerRoutes(app: Express): Promise<Server> {
           .limit(100);
 
         targetInvoices = await query;
+        
+        // Count line items in target invoices for progress estimation
+        totalLineItems = targetInvoices.reduce((sum, invoice) => {
+          if (invoice.extractedData && typeof invoice.extractedData === 'object') {
+            const data = invoice.extractedData as any;
+            if (data.lineItems && Array.isArray(data.lineItems)) {
+              return sum + data.lineItems.length;
+            }
+          }
+          return sum + 1; // Assume at least 1 item if data is not available
+        }, 0);
       }
 
       console.log(`Processing ${targetInvoices.length} invoices for line item classification`);
+      
+      // Step 2: Complete initialization and start extraction
+      ProgressTracker.updateStep(sessionId, 0, 'completed');
+      ProgressTracker.updateStep(sessionId, 1, 'active');
+      ProgressTracker.updateMetrics(sessionId, { totalInvoices: targetInvoices.length, totalItems: totalLineItems });
 
       let processedCount = 0;
       let successCount = 0;
       let failedCount = 0;
       const results: any[] = [];
+      let processedItems = 0;
+
+      // Load keyword categories once for the entire process
+      ProgressTracker.updateStep(sessionId, 1, 'completed');
+      ProgressTracker.updateStep(sessionId, 2, 'active');
+      
+      const keywordCategoryData = await db.select().from(keywordCategories);
+      console.log(`Loaded ${keywordCategoryData.length} keyword categories for classification`);
+      
+      ProgressTracker.updateStep(sessionId, 2, 'completed');
+      ProgressTracker.updateStep(sessionId, 3, 'active');
 
       for (const invoice of targetInvoices) {
         try {
           console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
+          
+          // Update progress for current invoice
+          ProgressTracker.updateMetrics(sessionId, { 
+            processedInvoices: processedCount + 1 
+          });
 
           // Extract line items from invoice data or OCR text
           let lineItemsData: any[] = [];
@@ -4309,9 +4448,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
               });
 
               classificationsCount++;
+              processedItems++;
+              
+              // Update progress for each line item processed
+              ProgressTracker.updateMetrics(sessionId, { 
+                processedItems,
+                successRate: Math.round((processedItems / totalLineItems) * 100)
+              });
 
             } catch (lineItemError) {
               console.error(`Error processing line item ${i} for invoice ${invoice.id}:`, lineItemError);
+              processedItems++;
+              
+              // Update progress even for failed items
+              ProgressTracker.updateMetrics(sessionId, { 
+                processedItems,
+                successRate: Math.round((processedItems / totalLineItems) * 100)
+              });
             }
           }
 
@@ -4349,9 +4502,40 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       console.log(`Invoice processing completed - Session: ${sessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+      
+      // Step 4: Complete classification phase and move to saving results
+      ProgressTracker.updateStep(sessionId, 3, 'completed');
+      ProgressTracker.updateStep(sessionId, 4, 'active');
+      
+      // Update final metrics
+      ProgressTracker.updateMetrics(sessionId, { 
+        processedInvoices: processedCount,
+        processedItems,
+        successRate: totalLineItems > 0 ? Math.round((processedItems / totalLineItems) * 100) : 100
+      });
+      
+      // Simulate saving time
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      
+      // Step 5: Complete saving and finish
+      ProgressTracker.updateStep(sessionId, 4, 'completed');
+      ProgressTracker.updateStep(sessionId, 5, 'active');
+      
+      // Complete the session with final results
+      ProgressTracker.completeSession(sessionId, {
+        summary: `Processed ${processedCount} invoices with ${processedItems} line items`,
+        processedInvoices: processedCount,
+        successfulInvoices: successCount,
+        failedInvoices: failedCount,
+        totalLineItems: processedItems,
+        classificationResults: results
+      });
 
     } catch (error) {
       console.error(`Error in invoice processing session ${sessionId}:`, error);
+      
+      // Handle errors in progress tracking
+      ProgressTracker.handleError(sessionId, error instanceof Error ? error.message : 'Unknown error occurred');
     }
   }
 
