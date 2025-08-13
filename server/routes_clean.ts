@@ -1742,7 +1742,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
               console.log(`Completed background processing for invoice ${invoice.id}`);
             } catch (error) {
               console.error(`Failed to process invoice ${invoice.id}:`, error);
-
               // Update invoice with error status
               try {
                 await storage.updateInvoice(invoice.id, {
@@ -3275,60 +3274,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // DEBUG ENDPOINT: Get validation execution details
-  app.post('/api/validation/execute', async (req, res) => {
-    try {
-      const { invoiceData, source } = req.body;
-
-      console.log(`🔧 Validation execution called from ${source || 'unknown'}:`, {
-        vendor: invoiceData?.vendor_name || invoiceData?.vendorName,
-        invoiceNumber: invoiceData?.invoice_number || invoiceData?.invoiceNumber,
-        amount: invoiceData?.total_amount || invoiceData?.totalAmount
-      });
-
-      // Convert Python automation format to our format
-      const normalizedData = {
-        vendorName: invoiceData.vendor_name || invoiceData.vendorName,
-        invoiceNumber: invoiceData.invoice_number || invoiceData.invoiceNumber,
-        totalAmount: invoiceData.total_amount || invoiceData.totalAmount,
-        taxAmount: invoiceData.tax_amount || invoiceData.taxAmount,
-        invoiceDate: invoiceData.invoice_date || invoiceData.invoiceDate,
-        currency: invoiceData.currency || 'USD',
-        extractedData: invoiceData.extractedData || {}
-      };
-
-      const validationResult = await storage.validateInvoiceData(normalizedData);
-
-      // Return in the format expected by Python automation
-      const response = {
-        isValid: validationResult.isValid,
-        violations: validationResult.violations,
-        score: validationResult.validationScore,
-        rulesChecked: validationResult.totalRulesChecked,
-        status: validationResult.status,
-        timestamp: validationResult.timestamp
-      };
-
-      console.log(`✅ Validation result: ${response.isValid ? 'PASSED' : 'FAILED'} (score: ${response.score}, violations: ${response.violations?.length || 0})`);
-
-      res.json(response);
-
-    } catch (error) {
-      console.error('❌ Validation execution error:', error);
-      res.status(500).json({
-        isValid: false,
-        violations: [{
-          fieldName: 'system',
-          severity: 'critical',
-          message: `Validation service error: ${error instanceof Error ? error.message : 'Unknown error'}`
-        }],
-        score: 0,
-        rulesChecked: 0,
-        status: 'error'
-      });
-    }
-  });
-
   // SUMMARY ENDPOINT: Get rejection statistics and trends
   app.get('/api/invoices/rejection-summary', isAuthenticated, async (req: any, res) => {
     try {
@@ -3627,6 +3572,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         if (keyword.trim()) {
           const keywordData = {
             category,
+            subcategory: keyword.subcategory || null,
             keyword: keyword.toLowerCase().trim(),
             isDefault: false,
             userId
@@ -3773,7 +3719,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: invoice.status,
               projectId: activeMatch.projectId,
               matchScore: activeMatch.matchScore,
-              extractedData: invoice.extractedData
+              extractedData: invoice.extractedData,
+              lineItemsExtracted: true,
+              hasClassifications: false, // We'll assume false for simplicity
+              lineItemsCount: invoice.extractedData?.lineItems?.length || 0
             });
           } else if (!projectId) {
             // Include invoices without project matches if no project filter is applied
@@ -3787,7 +3736,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: invoice.status,
               projectId: null,
               matchScore: 0,
-              extractedData: invoice.extractedData
+              extractedData: invoice.extractedData,
+              lineItemsExtracted: true,
+              hasClassifications: false,
+              lineItemsCount: invoice.extractedData?.lineItems?.length || 0
             });
           }
         } catch (matchError) {
@@ -3804,7 +3756,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
               status: invoice.status,
               projectId: null,
               matchScore: 0,
-              extractedData: invoice.extractedData
+              extractedData: invoice.extractedData,
+              lineItemsExtracted: true,
+              hasClassifications: false,
+              lineItemsCount: invoice.extractedData?.lineItems?.length || 0
             });
           }
         }
@@ -4049,7 +4004,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
         invoices: invoicesWithProjectInfo,
         count: invoicesWithProjectInfo.length
       });
-
     } catch (error) {
       console.error('Error fetching invoices ready for classification:', error);
       res.status(500).json({ 
@@ -4119,7 +4073,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             SELECT ipm.project_id FROM ${invoiceProjectMatches} ipm 
             WHERE ipm.invoice_id = ${lineItems.invoiceId} AND ipm.is_active = true 
             LIMIT 1
-          )`,
+          )`.as('projectId'),
           lineItemDescription: lineItems.description,
           category: lineItemClassifications.category,
           subcategory: lineItemClassifications.subcategory,
@@ -4477,7 +4431,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   async function extractLineItemsFromOcrText(ocrText: string): Promise<any[]> {
     const lineItems: any[] = [];
 
-    // Simple parsing logic - can be enhanced with AI or more sophisticated parsing
+    // Simple parsing logic - can be enhanced with regex patterns
     const lines = ocrText.split('\n');
     let currentItem: any = {};
 
@@ -5221,7 +5175,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Safely destructure password (might be undefined)
-      const { password: _, ...safeConnection } = connection || {};
+      const { password, ...safeConnection } = connection || {};
       res.json(safeConnection);
     } catch (error) {
       console.error(`❌ Failed to update ERP connection ${req.params.id}:`, error);
