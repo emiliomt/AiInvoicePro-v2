@@ -4296,12 +4296,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
               // Get database instance
               const db = await getDb();
               
+              console.log(`Checking for existing line item: invoice ${invoice.id}, line ${i}`);
+              
               // Check if line item already exists in database
               const existingLineItemResult = await db.select()
                 .from(lineItems)
                 .where(and(
                   eq(lineItems.invoiceId, invoice.id),
-                  eq(lineItems.lineItemIndex, i)
+                  eq(lineItems.lineNumber, i)
                 ))
                 .limit(1);
               
@@ -4311,13 +4313,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
               if (!existingLineItem) {
                 const [newLineItem] = await db.insert(lineItems).values({
                   invoiceId: invoice.id,
-                  lineItemIndex: i,
+                  lineNumber: i,
                   description: lineItemData.description || lineItemData.item || 'Unknown item',
-                  quantity: parseFloat(lineItemData.quantity) || null,
-                  unitPrice: parseFloat(lineItemData.unitPrice) || parseFloat(lineItemData.price) || null,
-                  totalPrice: parseFloat(lineItemData.totalPrice) || parseFloat(lineItemData.total) || null,
+                  quantity: lineItemData.quantity ? lineItemData.quantity.toString() : null,
+                  unitPrice: lineItemData.unitPrice ? lineItemData.unitPrice.toString() : (lineItemData.price ? lineItemData.price.toString() : null),
+                  totalPrice: lineItemData.totalPrice ? lineItemData.totalPrice.toString() : (lineItemData.total ? lineItemData.total.toString() : null),
                   unit: lineItemData.unit || null,
-                  originalText: JSON.stringify(lineItemData)
+                  rawText: JSON.stringify(lineItemData)
                 }).returning();
                 existingLineItem = newLineItem;
               }
