@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw } from "lucide-react";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,6 +29,17 @@ import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
 import ExtractionFeedbackModal from "@/components/ExtractionFeedbackModal";
 import { Progress } from "@/components/ui/progress";
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+
+// Utility functions for classification status
+const getClassificationStatus = (hasClassifications: boolean): string => {
+  return hasClassifications ? 'classified' : 'unclassified';
+};
+
+const getClassificationLabel = (hasClassifications: boolean): string => {
+  return hasClassifications ? 'Classified' : 'Not Classified';
+};
 
 interface Invoice {
   id: number;
@@ -48,6 +59,8 @@ interface Invoice {
     confidenceScore?: string;
     [key: string]: any;
   };
+  hasClassifications: boolean; // Assuming this property exists based on usage
+  projectName?: string; // Assuming this property exists based on usage
 }
 
 interface LinkedFile {
@@ -121,6 +134,8 @@ export default function Invoices() {
   const [showProcessingStatus, setShowProcessingStatus] = useState(false);
   const [processingComplete, setProcessingComplete] = useState<{show: boolean, success: boolean, message: string}>({show: false, success: false, message: ''});
   const [processing, setProcessing] = useState({ show: false, message: '', progress: 0, total: 0, processed: 0 }); // State for the processing bar
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classificationFilter, setClassificationFilter] = useState('all');
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -238,6 +253,7 @@ export default function Invoices() {
       case "pending": return "bg-yellow-100 text-yellow-800";
       case "failed": return "bg-red-100 text-red-800";
       case "draft": return "bg-gray-100 text-gray-800";
+      case "approved": return "bg-blue-100 text-blue-800"; // Added case for approved status
       default: return "bg-gray-100 text-gray-800";
     }
   };
@@ -801,6 +817,27 @@ export default function Invoices() {
     }
   };
 
+  const filteredInvoices = useMemo(() => {
+    if (!invoices) return [];
+
+    return invoices.filter(invoice => {
+      // Search filter
+      const matchesSearch = searchTerm === '' || 
+        invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        invoice.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
+
+      // Classification filter
+      let matchesClassification = true;
+      if (classificationFilter !== 'all') {
+        const status = getClassificationStatus(invoice.hasClassifications);
+        matchesClassification = status === classificationFilter;
+      }
+
+      return matchesSearch && matchesClassification;
+    });
+  }, [invoices, searchTerm, classificationFilter]);
+
   if (isLoading) {
     return (
       <div className="min-h-screen bg-gray-50">
@@ -905,6 +942,34 @@ export default function Invoices() {
                   </Button>
             </div>
           </div>
+          {/* Filter and Search Bar */}
+          <div className="mt-6 flex items-center justify-between space-x-4">
+            <div className="flex-1 flex items-center space-x-2">
+              <Input
+                type="text"
+                placeholder="Search invoices..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="max-w-lg"
+              />
+              <Filter className="h-4 w-4 text-gray-500" />
+              <Select value={classificationFilter} onValueChange={setClassificationFilter}>
+                <SelectTrigger className="w-48">
+                  <SelectValue placeholder="Filter by classification" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">All Invoices</SelectItem>
+                  <SelectItem value="classified">Already Classified</SelectItem>
+                  <SelectItem value="unclassified">Not Classified</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {selectedInvoices.length > 0 && (
+              <Button variant="outline" size="sm" onClick={handleBatchProcess} className="text-blue-600 border-blue-300">
+                Batch Process ({selectedInvoices.length})
+              </Button>
+            )}
+          </div>
         </div>
 
         {/* Processing Progress Display */}
@@ -994,7 +1059,7 @@ export default function Invoices() {
             </Card>
           )}
 
-          {!error && invoices.length === 0 && !isLoading ? (
+          {!error && filteredInvoices.length === 0 && !isLoading ? (
             <Card>
               <CardContent className="py-12 text-center">
                 <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
@@ -1014,7 +1079,7 @@ export default function Invoices() {
                 </Button>
               </CardContent>
             </Card>
-          ) : !error && invoices.length > 0 ? (
+          ) : !error && filteredInvoices.length > 0 ? (
             <div>
               {/* Select All Option */}
               <Card className="mb-4">
@@ -1049,7 +1114,7 @@ export default function Invoices() {
               </Card>
 
               <div className="grid gap-6">
-              {invoices.map((invoice) => {
+              {filteredInvoices.map((invoice) => {
                 if (!invoice || !invoice.id) {
                   console.warn('Invalid invoice data:', invoice);
                   return null;
@@ -1090,7 +1155,7 @@ export default function Invoices() {
                                 <div className="flex items-center space-x-1 text-purple-600 text-xs">
                                   <span>RPA</span>
                                   {linkedFilesMap[invoice.id] ? (
-                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'} links)</span>
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'})</span>
                                   ) : (
                                     <span>(loading...)</span>
                                   )}
@@ -1275,11 +1340,11 @@ export default function Invoices() {
                                 {(() => {
                                   const validationResults = (invoice.extractedData as any)?.validationResults;
                                   const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
-                                  
+
                                   // If approved status, assume validation passed
                                   const hasValidation = validationResults || invoice.status === 'approved';
                                   const isValid = validationResults?.isValid || invoice.status === 'approved';
-                                  
+
                                   if (hasValidation) {
                                     return (
                                       <Badge
@@ -1305,7 +1370,7 @@ export default function Invoices() {
                                       </Badge>
                                     );
                                   }
-                                  
+
                                   return (
                                     <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
                                       <AlertTriangle className="w-3 h-3 mr-1" />
@@ -1488,9 +1553,11 @@ export default function Invoices() {
                       <label className="text-sm font-medium text-gray-700">Status</label>
                       <div className="mt-1">
                         <Badge className={getStatusColor(selectedInvoice.status)}>
-                          {selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
+                          {selectedInvoice.status === 'approved' && selectedInvoice.userId === 'rpa-system' ? 'Auto Approved' : 
+                           selectedInvoice.status === 'approved' ? 'Manually Approved' : 
+                           selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                         </Badge>
-</div>
+                      </div>
                     </div>
                     <div>
                       <label className="text-sm font-medium text-gray-700">Upload Date</label>
