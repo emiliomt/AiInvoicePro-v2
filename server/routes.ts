@@ -1407,7 +1407,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/flags/:flagId/resolve", isAuthenticated, async (req: any, res) => {
     try {
       const flagId = parseInt(req.params.flagId);
-      const userId = req.user?.claims?.sub || req.user?.id;
+      const userId = req.user?.claims?.sub || req.user?.id || "unknown";
       const flag = await storage.resolveInvoiceFlag(flagId, userId);
       res.json(flag);
     } catch (error) {
@@ -2494,62 +2494,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user's invoices
-        app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
-          try {
-            const userId = (req.user as any).claims.sub;
-
-            // Get base invoices
-            const invoices = await storage.getInvoices(userId);
-
-            // Add classification status for each invoice
-            const invoicesWithStatus = await Promise.all(
-              invoices.map(async (invoice) => {
-                try {
-                  // Count classifications for this invoice
-                  const classificationsResult = await db
-                    .select({ count: sql`count(*)` })
-                    .from(lineItemClassifications)
-                    .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
-                    .where(eq(lineItems.invoiceId, invoice.id));
-
-                  // Count total line items for this invoice
-                  const lineItemsResult = await db
-                    .select({ count: sql`count(*)` })
-                    .from(lineItems)
-                    .where(eq(lineItems.invoiceId, invoice.id));
-
-                  const classificationCount = Number(classificationsResult[0]?.count || 0);
-                  const lineItemsCount = Number(lineItemsResult[0]?.count || 0);
-
-                  return {
-                    ...invoice,
-                    classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
-                    classifiedLineItems: classificationCount,
-                    totalLineItems: lineItemsCount,
-                    lineItemsCount: lineItemsCount
-                  };
-                } catch (error) {
-                  console.error(`Error calculating status for invoice ${invoice.id}:`, error);
-                  return {
-                    ...invoice,
-                    classificationStatus: 'Not Classified',
-                    classifiedLineItems: 0,
-                    totalLineItems: 0,
-                    lineItemsCount: 0
-                  };
-                }
-              })
-            );
-
-            res.json(invoicesWithStatus);
-          } catch (error) {
-            console.error("Error fetching invoices with classification status:", error);
-            res.status(500).json({ message: "Failed to fetch invoices" });
-          }
-        });
-      }
-
+  // Get user's invoices with classification status
+  app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
       const includeMatches = req.query.includeMatches === 'true';
       const db = await getDb();
 
@@ -2558,7 +2506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-        
+
         // Add classification status for each invoice
         const invoicesWithClassificationStatus = await Promise.all(
           (invoices || []).map(async (invoice) => {
@@ -2569,16 +2517,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .from(lineItemClassifications)
                 .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               // Count total line items
               const lineItemsCount = await db
                 .select({ count: sql`count(*)` })
                 .from(lineItems)
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               const classificationCount = Number(classifications[0]?.count || 0);
               const totalLineItems = Number(lineItemsCount[0]?.count || 0);
-              
+
               return {
                 ...invoice,
                 classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
@@ -2599,7 +2547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           })
         );
-        
+
         res.json(invoicesWithClassificationStatus);
       }
     } catch (error) {
@@ -5060,7 +5008,11 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
 
         // Find PDFs linked to this main invoice
         const linkedPDFQuery = `
-          SELECT original_file_name, file_path, file_type, base_file_name
+          SELECT 
+            original_file_name,
+            file_path,
+            file_type,
+            base_file_name
           FROM imported_invoices 
           WHERE linked_invoice_id = $1 
           AND file_type = 'pdf'
