@@ -4304,6 +4304,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
                   eq(lineItems.lineItemIndex, i)
                 ))
                 .limit(1);
+                .where(and(
+                  eq(lineItems.invoiceId, invoice.id),
+                  eq(lineItems.lineItemIndex, i)
+                ))
+                .limit(1);
               
               let existingLineItem = existingLineItemResult[0] || null;
 
