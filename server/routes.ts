@@ -2178,7 +2178,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         } catch (error) {
           console.error(`❌ Invoice ${invoiceId} processing failed:`, error);
           // Update invoice status to failed
-          await storage.updateInvoice(invoiceId, { 
+          await storage.updateInvoice(invoice.id, { 
             status: "pending",
             extractedData: { error: error instanceof Error ? error.message : "Processing failed" }
           });
@@ -2506,7 +2506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-        
+
         // Add classification status for each invoice
         const invoicesWithClassificationStatus = await Promise.all(
           (invoices || []).map(async (invoice) => {
@@ -2517,22 +2517,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .from(lineItemClassifications)
                 .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               // Count total line items
               const lineItemsCount = await db
                 .select({ count: sql`count(*)` })
                 .from(lineItems)
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               const classificationCount = Number(classifications[0]?.count || 0);
               const totalLineItems = Number(lineItemsCount[0]?.count || 0);
-              
+
               return {
                 ...invoice,
                 classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
                 classifiedLineItems: classificationCount,
                 totalLineItems: totalLineItems,
-                lineItemsCount: totalLineItems
+                lineItemsCount: totalLineItems, // For UI compatibility
               };
             } catch (error) {
               console.error(`Error calculating classification status for invoice ${invoice.id}:`, error);
@@ -2542,12 +2542,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 classificationStatus: 'Not Classified',
                 classifiedLineItems: 0,
                 totalLineItems: 0,
-                lineItemsCount: 0
+                lineItemsCount: 0,
               };
             }
           })
         );
-        
+
         res.json(invoicesWithClassificationStatus);
       }
     } catch (error) {
@@ -3014,7 +3014,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.error('Error calling LearningTracker.recordFeedback:', error);
       }
 
-      // 🇨🇴 NEW: Clear cache for Colombian invoices to force re-extraction with new rules
+      // 🇨🇴 NEW: Clear cache and force Colombian re-extraction
       if (isColombianInvoice && invoice.ocrText) {
         clearColombianInvoiceCache(invoice.ocrText);
       }
@@ -4942,7 +4942,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     const newExtractedData = await extractInvoiceData(invoice.ocrText, true);
 
     // Update the invoice with new extraction
-    await storage.updateInvoice(invoiceId, {
+    await storage.updateInvoice(invoice.id, {
       extractedData: newExtractedData,
       totalAmount: newExtractedData.totalAmount,
       taxAmount: newExtractedData.taxAmount,
