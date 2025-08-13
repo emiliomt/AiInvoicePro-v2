@@ -2795,7 +2795,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Submit positive feedback for AI extraction
+  // Positive feedback for AI extraction
   app.post('/api/invoices/:id/positive-feedback', isAuthenticated, async (req: any, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
@@ -3657,7 +3657,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all invoices for the user
       let invoices = await storage.getInvoicesByUserId(userId);
 
-      // Filter invoices that are ready for classification (extracted, approved, or verified)
+      // Filter invoices that:
+      // 1. Have been extracted/approved/verified
+      // 2. Have extracted data with line items
+      // 3. Are matched to projects (have project matches)
       const filteredInvoices = invoices.filter(invoice => {
         // Status check - must be processed invoices
         if (!['extracted', 'approved', 'verified'].includes(invoice.status || '')) {
@@ -4149,10 +4152,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
         const actualCompanyId = companyId === 'default' ? null : companyId;
-        
+
         // First, let's debug what invoices we're looking for
         console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
-        
+
         const query = db
           .select({
             id: invoices.id,
@@ -4184,7 +4187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
         // Debug: Check the company ID filter
         console.log(`Company ID filter - actualCompanyId: ${actualCompanyId}, companyId: ${companyId}`);
-        
+
         // If no invoices found, try a simpler query to debug
         if (targetInvoices.length === 0) {
           console.log('No invoices found with current filters. Trying simplified query...');
@@ -4198,10 +4201,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
             })
             .from(invoices)
             .where(inArray(invoices.id, invoiceIds));
-          
+
           const debugResults = await debugQuery;
           console.log(`Debug query found ${debugResults.length} invoices:`, debugResults);
-          
+
           // If we found invoices in debug but not in main query, it's the company filter
           if (debugResults.length > 0) {
             console.log('Issue is with company ID filtering. Using invoices regardless of company ID.');
@@ -4211,7 +4214,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       } else if (filters) {
         // Process based on filters
         const actualCompanyId = companyId === 'default' ? null : companyId;
-        
+
         const conditions = [
           actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
           eq(invoiceProjectMatches.isActive, true),
@@ -4295,9 +4298,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
             try {
               // Get database instance
               const db = await getDb();
-              
+
               console.log(`Checking for existing line item: invoice ${invoice.id}, line ${i}`);
-              
+
               // Check if line item already exists in database - EMERGENCY BYPASS
               // const existingLineItemResult = await db.select()
               //   .from(lineItems)
@@ -4307,7 +4310,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               //   ))
               //   .limit(1);
               const existingLineItemResult = []; // EMERGENCY BYPASS - Skip existing check for now
-              
+
               let existingLineItem = existingLineItemResult[0] || null;
 
               // Create line item if it doesn't exist
@@ -4331,7 +4334,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               //   .where(eq(lineItemClassifications.lineItemId, existingLineItem.id))
               //   .limit(1);
               const existingClassificationResult = []; // EMERGENCY BYPASS - Skip existing check for now
-              
+
               const existingClassification = existingClassificationResult[0] || null;
 
               if (existingClassification) {
@@ -4357,7 +4360,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 subcategory: classificationResult.subcategory,
                 matchedKeywords: classificationResult.matchedKeywords || [],
                 confidence: classificationResult.confidence?.toString() || '0',
-                method: classificationResult.method as any,
+                method: classificationResult.method as any || 'ai', // Added default 'ai' if not provided
                 reasoning: classificationResult.reasoning,
                 classifiedBy: userId
               });
@@ -5214,25 +5217,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Decrypt password
       const decryptedPassword = Buffer.from(connection.password, 'base64').toString();
 
-      const testResult = await erpAutomationService.testConnection({
+      const connectionData = {
         id: connection.id,
         name: connection.name,
         baseUrl: connection.baseUrl,
         username: connection.username,
         password: decryptedPassword,
-      });
+      };
 
-      if (testResult.success) {
-        await storage.updateErpConnection(connectionId, { lastUsed: new Date() });
-      }
+      // Run comprehensive diagnostics
+      const diagnostics = {
+        connectionTest: await erpAutomationService.testConnection(connectionData),
+        timestamp: new Date().toISOString(),
+        connectionInfo: {
+          name: connection.name,
+          baseUrl: connection.baseUrl,
+          username: connection.username,
+          lastUsed: connection.lastUsed,
+          isActive: connection.isActive
+        }
+      };
 
-      res.json(testResult);
+      res.json(diagnostics);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ 
-        success: false,
         error: errorMessage,
-        message: `Connection test failed: ${errorMessage}`
+        message: 'Diagnostic test failed'
       });
     }
   });
@@ -5671,7 +5682,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(400).json({ error: 'XML sources array is required' });
       }
 
-      constuserId = (user as any).claims.sub;
+      const userId = (user as any).claims.sub;
 
       // Validate XML sources format
       for (const source of xmlSources) {
@@ -5801,7 +5812,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const configs = await storage.getInvoiceImporterConfigsByUser((user as any).claims.sub);
+      const configs = await storage.getInvoiceImporterConfigs((user as any).claims.sub);
       res.json(configs);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -6478,7 +6489,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
 
       const userId = (req.user as any).claims.sub;
 
-      // Get the invoice to verify access
+      // Verify invoice access
       const invoice = await storage.getInvoice(invoiceId);
       if (!invoice) {
         return res.status(404).json({ error: 'Invoice not found' });
