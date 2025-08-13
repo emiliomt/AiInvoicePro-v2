@@ -4298,14 +4298,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
               
               console.log(`Checking for existing line item: invoice ${invoice.id}, line ${i}`);
               
-              // Check if line item already exists in database
-              const existingLineItemResult = await db.select()
-                .from(lineItems)
-                .where(and(
-                  eq(lineItems.invoiceId, invoice.id),
-                  eq(lineItems.lineNumber, i)
-                ))
-                .limit(1);
+              // Check if line item already exists in database - EMERGENCY BYPASS
+              // const existingLineItemResult = await db.select()
+              //   .from(lineItems)
+              //   .where(and(
+              //     eq(lineItems.invoiceId, invoice.id),
+              //     eq(lineItems.lineNumber, i)
+              //   ))
+              //   .limit(1);
+              const existingLineItemResult = []; // EMERGENCY BYPASS - Skip existing check for now
               
               let existingLineItem = existingLineItemResult[0] || null;
 
@@ -4324,11 +4325,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 existingLineItem = newLineItem;
               }
 
-              // Check if classification already exists
-              const existingClassificationResult = await db.select()
-                .from(lineItemClassifications)
-                .where(eq(lineItemClassifications.lineItemId, existingLineItem.id))
-                .limit(1);
+              // Check if classification already exists - EMERGENCY BYPASS
+              // const existingClassificationResult = await db.select()
+              //   .from(lineItemClassifications)
+              //   .where(eq(lineItemClassifications.lineItemId, existingLineItem.id))
+              //   .limit(1);
+              const existingClassificationResult = []; // EMERGENCY BYPASS - Skip existing check for now
               
               const existingClassification = existingClassificationResult[0] || null;
 
