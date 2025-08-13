@@ -2505,50 +2505,93 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
-        const invoices = await storage.getInvoicesByUserId(userId);
-
-        // Add classification status for each invoice
-        const invoicesWithClassificationStatus = await Promise.all(
-          (invoices || []).map(async (invoice) => {
-            try {
-              // Count classifications for this invoice
-              const classifications = await db
-                .select({ count: sql`count(*)` })
-                .from(lineItemClassifications)
-                .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
-                .where(eq(lineItems.invoiceId, invoice.id));
-
-              // Count total line items
-              const lineItemsCount = await db
-                .select({ count: sql`count(*)` })
-                .from(lineItems)
-                .where(eq(lineItems.invoiceId, invoice.id));
-
-              const classificationCount = Number(classifications[0]?.count || 0);
-              const totalLineItems = Number(lineItemsCount[0]?.count || 0);
-
-              return {
-                ...invoice,
-                classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
-                classifiedLineItems: classificationCount,
-                totalLineItems: totalLineItems,
-                lineItemsCount: totalLineItems, // For UI compatibility
-              };
-            } catch (error) {
-              console.error(`Error calculating classification status for invoice ${invoice.id}:`, error);
-              // Return invoice without classification data if calculation fails
-              return {
-                ...invoice,
-                classificationStatus: 'Not Classified',
-                classifiedLineItems: 0,
-                totalLineItems: 0,
-                lineItemsCount: 0,
-              };
-            }
+        // Get invoices with classification status in a single query for better performance
+        const invoicesWithClassificationStatus = await db
+          .select({
+            id: invoices.id,
+            userId: invoices.userId,
+            companyId: invoices.companyId,
+            fileName: invoices.fileName,
+            fileUrl: invoices.fileUrl,
+            status: invoices.status,
+            vendorName: invoices.vendorName,
+            invoiceNumber: invoices.invoiceNumber,
+            invoiceDate: invoices.invoiceDate,
+            dueDate: invoices.dueDate,
+            totalAmount: invoices.totalAmount,
+            taxAmount: invoices.taxAmount,
+            subtotal: invoices.subtotal,
+            currency: invoices.currency,
+            ocrText: invoices.ocrText,
+            extractedData: invoices.extractedData,
+            projectName: invoices.projectName,
+            confidenceScore: invoices.confidenceScore,
+            validationStatus: invoices.validationStatus,
+            validationResults: invoices.validationResults,
+            validationScore: invoices.validationScore,
+            isValidated: invoices.isValidated,
+            validatedAt: invoices.validatedAt,
+            uploadedAt: invoices.uploadedAt,
+            processingStatus: invoices.processingStatus,
+            createdAt: invoices.createdAt,
+            updatedAt: invoices.updatedAt,
+            classificationCount: sql<number>`(
+              SELECT COUNT(*)::int 
+              FROM ${lineItemClassifications} lic
+              JOIN ${lineItems} li ON lic.line_item_id = li.id
+              WHERE li.invoice_id = ${invoices.id}
+            )`.as('classificationCount'),
+            totalLineItemsCount: sql<number>`(
+              SELECT COUNT(*)::int 
+              FROM ${lineItems} li 
+              WHERE li.invoice_id = ${invoices.id}
+            )`.as('totalLineItemsCount')
           })
-        );
+          .from(invoices)
+          .where(eq(invoices.userId, userId))
+          .orderBy(desc(invoices.createdAt));
 
-        res.json(invoicesWithClassificationStatus);
+        // Transform the results to include classification status
+        const transformedInvoices = invoicesWithClassificationStatus.map(invoice => {
+          const classificationCount = invoice.classificationCount || 0;
+          const totalLineItems = invoice.totalLineItemsCount || 0;
+
+          return {
+            id: invoice.id,
+            userId: invoice.userId,
+            companyId: invoice.companyId,
+            fileName: invoice.fileName,
+            fileUrl: invoice.fileUrl,
+            status: invoice.status,
+            vendorName: invoice.vendorName,
+            invoiceNumber: invoice.invoiceNumber,
+            invoiceDate: invoice.invoiceDate,
+            dueDate: invoice.dueDate,
+            totalAmount: invoice.totalAmount,
+            taxAmount: invoice.taxAmount,
+            subtotal: invoice.subtotal,
+            currency: invoice.currency,
+            ocrText: invoice.ocrText,
+            extractedData: invoice.extractedData,
+            projectName: invoice.projectName,
+            confidenceScore: invoice.confidenceScore,
+            validationStatus: invoice.validationStatus,
+            validationResults: invoice.validationResults,
+            validationScore: invoice.validationScore,
+            isValidated: invoice.isValidated,
+            validatedAt: invoice.validatedAt,
+            uploadedAt: invoice.uploadedAt,
+            processingStatus: invoice.processingStatus,
+            createdAt: invoice.createdAt,
+            updatedAt: invoice.updatedAt,
+            classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
+            classifiedLineItems: classificationCount,
+            totalLineItems: totalLineItems,
+            lineItemsCount: totalLineItems // For UI compatibility
+          };
+        });
+
+        res.json(transformedInvoices);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
