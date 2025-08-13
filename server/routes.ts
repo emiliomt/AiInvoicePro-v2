@@ -2536,13 +2536,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
             createdAt: invoices.createdAt,
             updatedAt: invoices.updatedAt,
             classificationCount: sql<number>`(
-              SELECT COUNT(*)::int 
+              SELECT COALESCE(COUNT(lic.id), 0)::int 
               FROM ${lineItemClassifications} lic
-              JOIN ${lineItems} li ON lic.line_item_id = li.id
+              INNER JOIN ${lineItems} li ON lic.line_item_id = li.id
               WHERE li.invoice_id = ${invoices.id}
             )`.as('classificationCount'),
             totalLineItemsCount: sql<number>`(
-              SELECT COUNT(*)::int 
+              SELECT COALESCE(COUNT(li.id), 0)::int 
               FROM ${lineItems} li 
               WHERE li.invoice_id = ${invoices.id}
             )`.as('totalLineItemsCount')
@@ -2555,6 +2555,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const transformedInvoices = invoicesWithClassificationStatus.map(invoice => {
           const classificationCount = invoice.classificationCount || 0;
           const totalLineItems = invoice.totalLineItemsCount || 0;
+
+          // Debug logging for classification status
+          if (invoice.invoiceNumber) {
+            console.log(`Invoice ${invoice.invoiceNumber}: ${classificationCount} classifications out of ${totalLineItems} line items`);
+          }
 
           return {
             id: invoice.id,
