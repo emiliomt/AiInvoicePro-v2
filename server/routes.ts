@@ -2589,7 +2589,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             processingStatus: invoice.processingStatus,
             createdAt: invoice.createdAt,
             updatedAt: invoice.updatedAt,
-            classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
+            classificationStatus: classificationCount > 0 ? 'classified' : 'unclassified',
             classifiedLineItems: classificationCount,
             totalLineItems: totalLineItems,
             lineItemsCount: totalLineItems // For UI compatibility
