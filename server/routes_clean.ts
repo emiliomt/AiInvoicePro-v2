@@ -2288,18 +2288,61 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user's invoices
+  // Get user's invoices with classification status
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
       const includeMatches = req.query.includeMatches === 'true';
+      const db = await getDb();
 
       if (includeMatches) {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-        res.json(invoices || []);
+        
+        // Add classification status for each invoice
+        const invoicesWithClassificationStatus = await Promise.all(
+          (invoices || []).map(async (invoice) => {
+            try {
+              // Count classifications for this invoice
+              const classifications = await db
+                .select({ count: sql`count(*)` })
+                .from(lineItemClassifications)
+                .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+                .where(eq(lineItems.invoiceId, invoice.id));
+              
+              // Count total line items
+              const lineItemsCount = await db
+                .select({ count: sql`count(*)` })
+                .from(lineItems)
+                .where(eq(lineItems.invoiceId, invoice.id));
+              
+              const classificationCount = Number(classifications[0]?.count || 0);
+              const totalLineItems = Number(lineItemsCount[0]?.count || 0);
+              
+              return {
+                ...invoice,
+                classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
+                classifiedLineItems: classificationCount,
+                totalLineItems: totalLineItems,
+                lineItemsCount: totalLineItems
+              };
+            } catch (error) {
+              console.error(`Error calculating classification status for invoice ${invoice.id}:`, error);
+              // Return invoice without classification data if calculation fails
+              return {
+                ...invoice,
+                classificationStatus: 'Not Classified',
+                classifiedLineItems: 0,
+                totalLineItems: 0,
+                lineItemsCount: 0
+              };
+            }
+          })
+        );
+        
+        res.json(invoicesWithClassificationStatus);
       }
     } catch (error) {
       console.error("Error fetching invoices:", error);
