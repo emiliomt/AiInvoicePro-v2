@@ -1,3 +1,6 @@
+import { sql } from "drizzle-orm";
+import { lineItems, lineItemClassifications } from "../shared/schema";
+import { eq } from "drizzle-orm";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage, getDb } from "./storage";
@@ -2287,12 +2290,70 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Get user's invoices
-  app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
+        // DIRECT FIX: Replace the GET /api/invoices endpoint
+        // Open server/routes.ts or server/routes_clean.ts and find the line that looks like:
+        // app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
 
-      if (!userId) {
-        return res.status(401).json({ message: "User ID not found" });
+        // REPLACE the entire endpoint with this:
+
+        app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
+          try {
+            const userId = (req.user as any).claims.sub;
+
+            // Get base invoices
+            const invoices = await storage.getInvoices(userId);
+
+            // Add classification status for each invoice
+            const invoicesWithStatus = await Promise.all(
+              invoices.map(async (invoice) => {
+                try {
+                  // Count classifications for this invoice
+                  const classificationsResult = await db
+                    .select({ count: sql`count(*)` })
+                    .from(lineItemClassifications)
+                    .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+                    .where(eq(lineItems.invoiceId, invoice.id));
+
+                  // Count total line items for this invoice
+                  const lineItemsResult = await db
+                    .select({ count: sql`count(*)` })
+                    .from(lineItems)
+                    .where(eq(lineItems.invoiceId, invoice.id));
+
+                  const classificationCount = Number(classificationsResult[0]?.count || 0);
+                  const lineItemsCount = Number(lineItemsResult[0]?.count || 0);
+
+                  return {
+                    ...invoice,
+                    classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
+                    classifiedLineItems: classificationCount,
+                    totalLineItems: lineItemsCount,
+                    lineItemsCount: lineItemsCount
+                  };
+                } catch (error) {
+                  console.error(`Error calculating status for invoice ${invoice.id}:`, error);
+                  return {
+                    ...invoice,
+                    classificationStatus: 'Not Classified',
+                    classifiedLineItems: 0,
+                    totalLineItems: 0,
+                    lineItemsCount: 0
+                  };
+                }
+              })
+            );
+
+            res.json(invoicesWithStatus);
+          } catch (error) {
+            console.error("Error fetching invoices with classification status:", error);
+            res.status(500).json({ message: "Failed to fetch invoices" });
+          }
+        });
+
+        // MAKE SURE THESE IMPORTS ARE AT THE TOP OF THE FILE:
+        import { sql } from "drizzle-orm";
+        import { lineItems, lineItemClassifications } from "../shared/schema";
+        import { eq } from "drizzle-orm";
       }
 
       const includeMatches = req.query.includeMatches === 'true';
