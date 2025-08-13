@@ -2506,7 +2506,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-
+        
         // Add classification status for each invoice
         const invoicesWithClassificationStatus = await Promise.all(
           (invoices || []).map(async (invoice) => {
@@ -2517,16 +2517,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .from(lineItemClassifications)
                 .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
                 .where(eq(lineItems.invoiceId, invoice.id));
-
+              
               // Count total line items
               const lineItemsCount = await db
                 .select({ count: sql`count(*)` })
                 .from(lineItems)
                 .where(eq(lineItems.invoiceId, invoice.id));
-
+              
               const classificationCount = Number(classifications[0]?.count || 0);
               const totalLineItems = Number(lineItemsCount[0]?.count || 0);
-
+              
               return {
                 ...invoice,
                 classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
@@ -2547,7 +2547,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           })
         );
-
+        
         res.json(invoicesWithClassificationStatus);
       }
     } catch (error) {
