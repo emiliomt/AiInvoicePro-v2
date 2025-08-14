@@ -1497,6 +1497,42 @@ class PostgresStorage implements IStorage {
         projectMatches: result.matches || []
       }));
     } catch (error) {
+
+
+  async getClassifiedLineItemCount(invoiceId: number): Promise<number> {
+    try {
+      const classifications = await this.db.select({ count: sql`count(*)` })
+        .from(lineItemClassifications)
+        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+        .where(eq(lineItems.invoiceId, invoiceId));
+      
+      return Number(classifications[0]?.count || 0);
+    } catch (error) {
+      console.error('Error getting classified line item count:', error);
+      return 0;
+    }
+  }
+
+  async deleteLineItemClassifications(lineItemId: number): Promise<void> {
+    try {
+      await this.db.delete(lineItemClassifications)
+        .where(eq(lineItemClassifications.lineItemId, lineItemId));
+    } catch (error) {
+      console.error('Error deleting line item classifications:', error);
+      throw error;
+    }
+  }
+
+  async deleteLineItem(lineItemId: number): Promise<void> {
+    try {
+      await this.db.delete(lineItems)
+        .where(eq(lineItems.id, lineItemId));
+    } catch (error) {
+      console.error('Error deleting line item:', error);
+      throw error;
+    }
+  }
+
       console.error('Error in getCompanyInvoicesWithProjectMatches:', error);
       throw error;
     }

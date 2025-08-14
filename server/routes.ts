@@ -289,17 +289,16 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   }
 }
 
-// Corrected processing function for line item classification
-  async function processInvoiceLineItemsFixed(invoiceIds: number[], progressId: string, userId: string) {
+// Fixed processing function for line item classification
+  async function processInvoiceLineItemsFIXED(invoiceIds: number[], progressId: string, userId: string) {
     console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
     
     let processedCount = 0;
     let successCount = 0;
     let failedCount = 0;
-    const totalInvoices = invoiceIds.length;
+    const totalInvoices = invoiceIds.length; // ✅ FIX: Store total for progress calculation
     
     try {
-      // Get all invoices
       const invoices = await Promise.all(
         invoiceIds.map(async (id: number) => {
           const invoice = await storage.getInvoice(id);
@@ -307,7 +306,6 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         })
       );
 
-      // Filter out null invoices
       const validInvoices = invoices.filter(inv => inv !== null);
       
       console.log(`Found ${validInvoices.length} invoices in database:`, 
@@ -323,7 +321,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         try {
           console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber || 'N/A'}`);
           
-          // Progress update with correct format
+          // ✅ FIX: Progress update with correct calculation
           const currentPercentage = Math.round((processedCount / totalInvoices) * 100);
           console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Processing invoice ${invoice.invoiceNumber || invoice.id} (${currentPercentage}%)`);
           
@@ -332,7 +330,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           console.log(`Found ${existingLineItems.length} existing line items in database`);
           
           if (existingLineItems.length > 0) {
-            // ✅ FIX 1: Remove duplicates BEFORE processing
+            // ✅ FIX: Remove duplicates BEFORE processing
             const uniqueItems = removeDuplicateLineItems(existingLineItems);
             if (uniqueItems.length < existingLineItems.length) {
               console.log(`🧹 Removing ${existingLineItems.length - uniqueItems.length} duplicate line items from invoice ${invoice.id}`);
@@ -351,7 +349,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
             
             console.log(`✅ Successfully processed invoice ${invoice.id}: ${uniqueItems.length} items, ${finalCount} classified`);
             
-            // ✅ FIX 2: Update status to "classified" instead of "extracted"
+            // ✅ FIX: Update status to "classified" instead of "extracted"
             await storage.updateInvoice(invoice.id, { 
               status: 'classified',
               processingStatus: 'classified',
@@ -368,7 +366,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           
           processedCount++;
           
-          // ✅ FIX 3: Progress update with correct calculation
+          // ✅ FIX: Progress update with correct calculation
           const finalPercentage = Math.round((processedCount / totalInvoices) * 100);
           console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Completed ${processedCount}/${totalInvoices} (${finalPercentage}%)`);
           
@@ -379,12 +377,12 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         }
       }
       
-      // ✅ FIX 4: Completion message with correct format
+      // ✅ FIX: Completion with correct format
       console.log(`✅ Progress session completed: ${progressId}`);
       console.log(`Invoice processing completed - Session: ${progressId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
       
     } catch (error) {
-      console.error(`❌ Error in processInvoiceLineItemsFixed:`, error);
+      console.error(`❌ Error in processInvoiceLineItemsFIXED:`, error);
       throw error;
     }
   }
@@ -2395,27 +2393,23 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      // Extract data from request body
       const { invoiceIds, vendorContext } = req.body;
       
       console.log('Full request body:', req.body);
       console.log('Invoice IDs to process:', invoiceIds);
       console.log('Vendor context:', vendorContext);
 
-      // Validate request body
       if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
         return res.status(400).json({ 
           error: 'Invalid request: invoiceIds array is required and must not be empty' 
         });
       }
 
-      // Generate progress session ID
       const progressId = `process-${Date.now()}`;
       
       console.log(`Starting invoice processing for line item classification - Session: ${progressId}`);
       console.log(`📊 Progress session created: ${progressId} - Classification - ${invoiceIds.length} invoices`);
 
-      // Return immediate response
       res.json({
         message: `Invoice processing initiated for ${invoiceIds.length} invoices`,
         progressId,
@@ -2425,10 +2419,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // Start processing asynchronously with the CORRECTED function
+      // ✅ FIX: Start processing with the CORRECTED function
       setImmediate(async () => {
         try {
-          await processInvoiceLineItemsFixed(invoiceIds, progressId, user.claims.sub);
+          await processInvoiceLineItemsFIXED(invoiceIds, progressId, user.claims.sub);
         } catch (error) {
           console.error(`❌ Line item processing failed for progress ID ${progressId}:`, error);
         }
@@ -2503,6 +2497,42 @@ export async function registerRoutes(app: Express): Promise<Server> {
           await processInvoiceAsync(invoice, fileBuffer);
 
           console.log(`Manual processing completed for invoice ${invoiceId}`);
+
+
+  // Helper functions for duplicate removal
+  function removeDuplicateLineItems(lineItems: any[]): any[] {
+    const seen = new Set();
+    const unique = [];
+    
+    for (const item of lineItems) {
+      const key = `${item.description?.trim()?.toLowerCase()}-${item.quantity}-${item.unitPrice}-${item.totalPrice}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(item);
+      }
+    }
+    
+    return unique;
+  }
+
+  async function removeDuplicatesFromDatabase(invoiceId: number, uniqueLineItems: any[]): Promise<void> {
+    try {
+      const allLineItems = await storage.getLineItemsByInvoiceId(invoiceId);
+      const uniqueIds = uniqueLineItems.map(item => item.id);
+      const duplicateItems = allLineItems.filter(item => !uniqueIds.includes(item.id));
+      
+      for (const duplicate of duplicateItems) {
+        await storage.deleteLineItemClassifications(duplicate.id);
+        await storage.deleteLineItem(duplicate.id);
+      }
+      
+      console.log(`🗑️ Removed ${duplicateItems.length} duplicate line items from database for invoice ${invoiceId}`);
+    } catch (error) {
+      console.error(`❌ Error removing duplicates for invoice ${invoiceId}:`, error);
+    }
+  }
+
         } catch (error: any) {
           console.error(`Manual processing failed for invoice ${invoiceId}:`, error);
           await storage.updateInvoice(invoiceId, {
