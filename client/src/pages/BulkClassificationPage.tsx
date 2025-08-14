@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardHeader, CardTitle, CardContent } from "@/components/ui/card";
@@ -11,7 +10,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Checkbox } from "@/components/ui/checkbox";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { AlertTriangle, CheckCircle, Clock, FileText, Zap, Filter, RefreshCw, Loader2, Play, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle, Clock, FileText, Zap, Filter, RefreshCw, Loader2, Play, XCircle, Activity } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { apiRequest } from "@/lib/queryClient";
 
@@ -117,7 +116,7 @@ export default function BulkClassificationPage() {
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPage, setResultsPage] = useState(1);
   const [isProcessing, setIsProcessing] = useState(false);
-  
+
   // Enhanced progress state
   const [progressSession, setProgressSession] = useState<ProgressSession | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
@@ -220,7 +219,7 @@ export default function BulkClassificationPage() {
       try {
         const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
         const wsUrl = `${protocol}//${window.location.host}/ws`;
-        
+
         wsRef.current = new WebSocket(wsUrl);
 
         wsRef.current.onopen = () => {
@@ -285,9 +284,9 @@ export default function BulkClassificationPage() {
           endTime: new Date().toISOString(),
           results: message.data.results
         } : null);
-        
+
         setIsProcessing(false);
-        
+
         toast({
           title: "Processing Complete!",
           description: `Successfully processed classification`,
@@ -296,7 +295,7 @@ export default function BulkClassificationPage() {
         // Refresh data
         refetchInvoices();
         refetchResults();
-        
+
         // Hide progress after 10 seconds
         setTimeout(() => {
           setProgressSession(null);
@@ -311,9 +310,9 @@ export default function BulkClassificationPage() {
           endTime: new Date().toISOString(),
           error: message.data.error
         } : null);
-        
+
         setIsProcessing(false);
-        
+
         toast({
           title: "Processing Error",
           description: message.data.error,
@@ -407,13 +406,13 @@ export default function BulkClassificationPage() {
         endTime: new Date().toISOString(),
         error: error instanceof Error ? error.message : 'Unknown error'
       } : null);
-      
+
       toast({
         title: "Processing Failed",
         description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
       });
-      
+
       setIsProcessing(false);
     }
   };
@@ -486,14 +485,14 @@ export default function BulkClassificationPage() {
                   {progressSession.sessionId}
                 </Badge>
               </CardTitle>
-              
+
               <div className="flex items-center gap-2 text-sm text-gray-600">
                 <Clock className="h-4 w-4" />
                 {formatDuration(progressSession.metrics.elapsedTime)}
               </div>
             </div>
           </CardHeader>
-          
+
           <CardContent className="space-y-4">
             {/* Overall Progress */}
             <div className="space-y-2">
