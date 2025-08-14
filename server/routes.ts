@@ -274,7 +274,6 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   } catch (error) {
     console.error(`Error processing invoice ${invoice.id}:`, error);
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
     try {
       await storage.updateInvoice(invoice.id, { 
         status: "rejected",
@@ -453,6 +452,10 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       console.log(`Processing ${itemsToClassify.length} line items for classification`);
 
       // Classify each line item
+      let classifiedItemsCount = 0;
+      let totalProcessed = 0; // Track total items processed for progress updates
+      const totalLineItems = itemsToClassify.length;
+
       for (let i = 0; i < itemsToClassify.length; i++) {
         const item = itemsToClassify[i];
         console.log(`Classifying item ${i + 1}/${itemsToClassify.length}: "${item.description}"`);
@@ -476,6 +479,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           if (existingClassification.length === 0) {
             // Classify using the classification service
             await ClassificationService.classifyAndStore(item.id, 'line-item-classifier');
+            classifiedItemsCount++;
             console.log(`Successfully classified item ${item.id}: "${item.description}"`);
           } else {
             console.log(`Item ${item.id} already classified as: ${existingClassification[0].category}`);
@@ -484,9 +488,31 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           console.error(`Failed to classify item ${item.id}:`, classifyError);
           // Continue with other items even if one fails
         }
+        totalProcessed++;
       }
 
-      console.log(`Completed line item processing for invoice ${invoice.invoiceNumber || invoice.id}`);
+      console.log(`✅ Line item processing completed for invoice ${invoice.invoiceNumber || invoice.id}: ${itemsToClassify.length} items processed, ${classifiedItemsCount} classified`);
+
+      // Update invoice status to classified after line item processing
+      await db.update(invoices).set({
+        status: 'classified',
+        processingStatus: 'classified', 
+        updatedAt: new Date()
+      }).where(eq(invoices.id, invoice.id));
+
+      console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
+
+      // Update progress metrics with line item details
+      progressTracker.updateSession(sessionId, {
+        totalItems: totalLineItems,
+        processedItems: totalProcessed, // This might need refinement if partial processing occurs
+      });
+
+      // Move to next step if extraction and classification are done
+      progressTracker.updateSession(sessionId, {
+        currentStep: 'Performing Petty Cash Analysis',
+        progress: 70 + (totalLineItems > 0 ? (classifiedItemsCount / totalLineItems) * 20 : 0)
+      });
 
     } catch (error) {
       console.error(`Error processing line items for invoice ${invoice.id}:`, error);
@@ -2163,12 +2189,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Check if file exists
       const fs = await import('fs');
-      if (!invoice.fileUrl || !fs.default.existsSync(invoice.fileUrl)) {
+      if (!invoice.fileUrl || !fs.existsSync(invoice.fileUrl)) {
         return res.status(400).json({ message: "Invoice file not found on disk" });
       }
 
       // Read file buffer
-      const fileBuffer = fs.default.readFileSync(invoice.fileUrl);
+      const fileBuffer = fs.readFileSync(invoice.fileUrl);
 
       // Process asynchronously
       setImmediate(async () => {
@@ -2862,7 +2888,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
     }
 
-    // Create specific ASOMA vendor learning pattern
+    // Create specific ASOMA vendor pattern
     if (correctedData.vendorName?.includes('ASOMA')) {
       await storage.storeLearningInsight({
         field: 'vendor_pattern',
@@ -3773,7 +3799,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         console.log(`🔐 Password encryption for connection ${connectionId}:`);
         console.log(`🔐 Original password: ${originalPassword}`);
         console.log(`🔐 Encrypted password: ${data.password}`);
-        console.log(`🔐 Encrypted length: ${data.password.length}`);
+        console.log(`🔐 Encrypted password length: ${data.password.length}`);
       }
 
       const connection = await storage.updateErpConnection(connectionId, data);
