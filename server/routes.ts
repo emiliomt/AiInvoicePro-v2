@@ -289,81 +289,81 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   }
 }
 
-// Fixed processing function for line item classification
-  async function processInvoiceLineItemsFIXED(invoiceIds: number[], progressId: string, userId: string) {
-    console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
+// Enhanced processing function for line item classification
+  async function processInvoiceLineItemsEnhanced(invoiceIds: number[], progressId: string, userId: string) {
+    console.log(`Starting bulk classification for ${invoiceIds.length} invoices with session: ${progressId}`);
     
     let processedCount = 0;
     let successCount = 0;
     let failedCount = 0;
-    const totalInvoices = invoiceIds.length; // ✅ FIX: Store total for progress calculation
+    const totalInvoices = invoiceIds.length;
     
     try {
+      // Fetch all invoices in parallel
       const invoices = await Promise.all(
         invoiceIds.map(async (id: number) => {
-          const invoice = await storage.getInvoice(id);
-          return invoice;
+          try {
+            return await storage.getInvoice(id);
+          } catch (error) {
+            console.error(`Failed to fetch invoice ${id}:`, error);
+            return null;
+          }
         })
       );
 
       const validInvoices = invoices.filter(inv => inv !== null);
       
-      console.log(`Found ${validInvoices.length} invoices in database:`, 
-        validInvoices.map(inv => ({
-          id: inv.id,
-          number: inv.invoiceNumber || 'N/A',
-          vendor: inv.vendorName || 'Unknown',
-          projectId: inv.projectName
-        }))
-      );
+      console.log(`Found ${validInvoices.length} valid invoices for processing`);
 
+      // Process each invoice using the ClassificationService
       for (const invoice of validInvoices) {
         try {
-          console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber || 'N/A'}`);
+          const startTime = Date.now();
+          console.log(`\n🔄 Processing invoice ${invoice.id} (${invoice.invoiceNumber || 'No Number'})`);
           
-          // ✅ FIX: Progress update with correct calculation
+          // Update progress
           const currentPercentage = Math.round((processedCount / totalInvoices) * 100);
-          console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Processing invoice ${invoice.invoiceNumber || invoice.id} (${currentPercentage}%)`);
+          console.log(`📈 Progress: ${processedCount}/${totalInvoices} (${currentPercentage}%)`);
           
-          // Get existing line items
-          let existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
-          console.log(`Found ${existingLineItems.length} existing line items in database`);
+          // Check if invoice has line items
+          const lineItems = await storage.getLineItemsByInvoiceId(invoice.id);
           
-          if (existingLineItems.length > 0) {
-            // ✅ FIX: Use ClassificationService which handles duplicate removal AND status update
-            const { ClassificationService } = await import('./services/classificationService');
-            await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
-            
-            // Get final count after processing and duplicate removal
-            const finalLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
-            const finalCount = await storage.getClassifiedLineItemCount(invoice.id);
-            
-            console.log(`✅ Successfully processed invoice ${invoice.id}: ${finalLineItems.length} unique items, ${finalCount} classified`);
-            
-            successCount++;
-          } else {
-            console.warn(`⚠️ No line items found for invoice ${invoice.id}, skipping`);
+          if (lineItems.length === 0) {
+            console.log(`⚠️ No line items found for invoice ${invoice.id}, skipping`);
+            processedCount++;
+            continue;
           }
+
+          console.log(`📋 Found ${lineItems.length} line items to classify`);
           
-          processedCount++;
+          // Use ClassificationService which handles everything properly
+          const { ClassificationService } = await import('./services/classificationService');
+          await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
           
-          // ✅ FIX: Progress update with correct calculation
-          const finalPercentage = Math.round((processedCount / totalInvoices) * 100);
-          console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Completed ${processedCount}/${totalInvoices} (${finalPercentage}%)`);
+          // Verify results
+          const finalLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
+          const classifiedCount = await storage.getClassifiedLineItemCount(invoice.id);
+          
+          const processingTime = Date.now() - startTime;
+          console.log(`✅ Invoice ${invoice.id} completed in ${processingTime}ms:`);
+          console.log(`   📊 ${finalLineItems.length} unique line items, ${classifiedCount} classified`);
+          
+          successCount++;
           
         } catch (error) {
-          console.error(`❌ Error processing invoice ${invoice.id}:`, error);
-          processedCount++;
+          console.error(`❌ Failed to process invoice ${invoice.id}:`, error);
           failedCount++;
         }
+        
+        processedCount++;
       }
       
-      // ✅ FIX: Completion with correct format
-      console.log(`✅ Progress session completed: ${progressId}`);
-      console.log(`Invoice processing completed - Session: ${progressId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+      console.log(`\n🎉 Bulk classification completed for session ${progressId}:`);
+      console.log(`   📊 Total: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+      console.log(`   ✅ Success rate: ${Math.round((successCount / processedCount) * 100)}%`);
       
     } catch (error) {
-      console.error(`❌ Error in processInvoiceLineItemsFIXED:`, error);
+      console.error(`❌ Critical error in bulk classification session ${progressId}:`, error);
       throw error;
     }
   }
@@ -2400,10 +2400,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         }
       });
 
-      // ✅ FIX: Start processing with the CORRECTED function
+      // Start enhanced processing with proper error handling
       setImmediate(async () => {
         try {
-          await processInvoiceLineItemsFIXED(invoiceIds, progressId, user.claims.sub);
+          await processInvoiceLineItemsEnhanced(invoiceIds, progressId, user.claims.sub);
         } catch (error) {
           console.error(`❌ Line item processing failed for progress ID ${progressId}:`, error);
         }
