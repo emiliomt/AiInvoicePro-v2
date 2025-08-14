@@ -5977,7 +5977,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           duration: session.endTime 
             ? session.endTime.getTime() - session.startTime.getTime()
             : Date.now() - session.startTime.getTime()
-        }
+        }))
       });
     } catch (error) {
       console.error('Error fetching progress sessions:', error);
