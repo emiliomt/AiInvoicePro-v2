@@ -5893,7 +5893,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ 
         error: errorMessage,
-        message: 'Failed tofetch progress data
+        message: 'Failed to fetch progress data'
       });
     }
   });
