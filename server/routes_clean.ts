@@ -363,7 +363,11 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
     for (const item of itemsToClassify) {
       try {
         // Check if already classified
-        const existingClassification = await db.select()
+        const existingClassification = await db.select({
+          id: lineItemClassifications.id,
+          category: lineItemClassifications.category,
+          method: lineItemClassifications.method
+        })
           .from(lineItemClassifications)
           .where(eq(lineItemClassifications.lineItemId, item.id))
           .limit(1);

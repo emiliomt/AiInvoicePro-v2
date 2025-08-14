@@ -228,7 +228,7 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeywords: classification.matchedKeywords || ['unknown'],
+            matchedKeywords: classification.matchedKeywords || null,
             method: 'keyword', // ✅ Add method field
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
@@ -241,7 +241,7 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeywords: classification.matchedKeywords || ['unknown'],
+        matchedKeywords: classification.matchedKeywords || null,
         method: 'keyword', // ✅ Add method field
         confidence: classification.confidence.toString(),
         isManualOverride: false,
@@ -515,7 +515,7 @@ Respond with JSON in this format:
       }
     }
 
-    // ✅ FIX: Update the invoice status to "classified" after processing all line items
+    // ✅ Update the invoice status to "classified" after processing all line items
     try {
       const storage = await getStorage();
       await storage.updateInvoice(invoiceId, { 
