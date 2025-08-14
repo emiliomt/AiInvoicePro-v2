@@ -289,7 +289,149 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   }
 }
 
-// Background processing function with comprehensive logging
+// Corrected processing function for line item classification
+  async function processInvoiceLineItemsFixed(invoiceIds: number[], progressId: string, userId: string) {
+    console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
+    
+    let processedCount = 0;
+    let successCount = 0;
+    let failedCount = 0;
+    const totalInvoices = invoiceIds.length;
+    
+    try {
+      // Get all invoices
+      const invoices = await Promise.all(
+        invoiceIds.map(async (id: number) => {
+          const invoice = await storage.getInvoice(id);
+          return invoice;
+        })
+      );
+
+      // Filter out null invoices
+      const validInvoices = invoices.filter(inv => inv !== null);
+      
+      console.log(`Found ${validInvoices.length} invoices in database:`, 
+        validInvoices.map(inv => ({
+          id: inv.id,
+          number: inv.invoiceNumber || 'N/A',
+          vendor: inv.vendorName || 'Unknown',
+          projectId: inv.projectName
+        }))
+      );
+
+      for (const invoice of validInvoices) {
+        try {
+          console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber || 'N/A'}`);
+          
+          // Progress update with correct format
+          const currentPercentage = Math.round((processedCount / totalInvoices) * 100);
+          console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Processing invoice ${invoice.invoiceNumber || invoice.id} (${currentPercentage}%)`);
+          
+          // Get existing line items
+          const existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
+          console.log(`Found ${existingLineItems.length} existing line items in database`);
+          
+          if (existingLineItems.length > 0) {
+            // ✅ FIX 1: Remove duplicates BEFORE processing
+            const uniqueItems = removeDuplicateLineItems(existingLineItems);
+            if (uniqueItems.length < existingLineItems.length) {
+              console.log(`🧹 Removing ${existingLineItems.length - uniqueItems.length} duplicate line items from invoice ${invoice.id}`);
+              await removeDuplicatesFromDatabase(invoice.id, uniqueItems);
+            }
+            
+            console.log(`Using existing ${uniqueItems.length} line items for classification`);
+            console.log(`Processing ${uniqueItems.length} line items for classification`);
+            
+            // Process classification
+            const { ClassificationService } = await import('./services/classificationService');
+            await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
+            
+            // Get final count after processing
+            const finalCount = await storage.getClassifiedLineItemCount(invoice.id);
+            
+            console.log(`✅ Successfully processed invoice ${invoice.id}: ${uniqueItems.length} items, ${finalCount} classified`);
+            
+            // ✅ FIX 2: Update status to "classified" instead of "extracted"
+            await storage.updateInvoice(invoice.id, { 
+              status: 'classified',
+              processingStatus: 'classified',
+              updatedAt: new Date()
+            });
+            
+            console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
+            console.log(`✅ Successfully processed invoice ${invoice.id}`);
+            
+            successCount++;
+          } else {
+            console.warn(`⚠️ No line items found for invoice ${invoice.id}, skipping`);
+          }
+          
+          processedCount++;
+          
+          // ✅ FIX 3: Progress update with correct calculation
+          const finalPercentage = Math.round((processedCount / totalInvoices) * 100);
+          console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Completed ${processedCount}/${totalInvoices} (${finalPercentage}%)`);
+          
+        } catch (error) {
+          console.error(`❌ Error processing invoice ${invoice.id}:`, error);
+          processedCount++;
+          failedCount++;
+        }
+      }
+      
+      // ✅ FIX 4: Completion message with correct format
+      console.log(`✅ Progress session completed: ${progressId}`);
+      console.log(`Invoice processing completed - Session: ${progressId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+      
+    } catch (error) {
+      console.error(`❌ Error in processInvoiceLineItemsFixed:`, error);
+      throw error;
+    }
+  }
+
+  // Duplicate removal helper functions
+  function removeDuplicateLineItems(lineItems: any[]): any[] {
+    const seen = new Set();
+    const unique = [];
+    
+    for (const item of lineItems) {
+      // Create a unique key based on description, quantity, unit price, and total price
+      const key = `${item.description?.trim()?.toLowerCase()}-${item.quantity}-${item.unitPrice}-${item.totalPrice}`;
+      
+      if (!seen.has(key)) {
+        seen.add(key);
+        unique.push(item);
+      }
+    }
+    
+    return unique;
+  }
+
+  async function removeDuplicatesFromDatabase(invoiceId: number, uniqueLineItems: any[]): Promise<void> {
+    try {
+      // Get all line items for this invoice
+      const allLineItems = await storage.getLineItemsByInvoiceId(invoiceId);
+      
+      // Get IDs of unique items to keep
+      const uniqueIds = uniqueLineItems.map(item => item.id);
+      
+      // Delete duplicate line items
+      const duplicateItems = allLineItems.filter(item => !uniqueIds.includes(item.id));
+      
+      for (const duplicate of duplicateItems) {
+        // First delete any classifications for this line item
+        await storage.deleteLineItemClassifications(duplicate.id);
+        // Then delete the line item itself
+        await storage.deleteLineItem(duplicate.id);
+      }
+      
+      console.log(`🗑️ Removed ${duplicateItems.length} duplicate line items from database for invoice ${invoiceId}`);
+    } catch (error) {
+      console.error(`❌ Error removing duplicates for invoice ${invoiceId}:`, error);
+    }
+  }
+
+  // Background processing function with comprehensive logging
   async function processInvoicesInBackground(sessionId: string, invoiceIds: number[], vendorContext: any) {
     console.log('=== BACKGROUND PROCESSING STARTED ===');
     console.log('Session ID:', sessionId);
@@ -2241,6 +2383,62 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ 
         message: 'Failed to process imported invoices',
         error: error.message 
+      });
+    }
+  });
+
+  // Process invoices for line item classification endpoint
+  app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      // Extract data from request body
+      const { invoiceIds, vendorContext } = req.body;
+      
+      console.log('Full request body:', req.body);
+      console.log('Invoice IDs to process:', invoiceIds);
+      console.log('Vendor context:', vendorContext);
+
+      // Validate request body
+      if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return res.status(400).json({ 
+          error: 'Invalid request: invoiceIds array is required and must not be empty' 
+        });
+      }
+
+      // Generate progress session ID
+      const progressId = `process-${Date.now()}`;
+      
+      console.log(`Starting invoice processing for line item classification - Session: ${progressId}`);
+      console.log(`📊 Progress session created: ${progressId} - Classification - ${invoiceIds.length} invoices`);
+
+      // Return immediate response
+      res.json({
+        message: `Invoice processing initiated for ${invoiceIds.length} invoices`,
+        progressId,
+        summary: {
+          totalInvoices: invoiceIds.length,
+          source: 'manual'
+        }
+      });
+
+      // Start processing asynchronously with the CORRECTED function
+      setImmediate(async () => {
+        try {
+          await processInvoiceLineItemsFixed(invoiceIds, progressId, user.claims.sub);
+        } catch (error) {
+          console.error(`❌ Line item processing failed for progress ID ${progressId}:`, error);
+        }
+      });
+
+    } catch (error) {
+      console.error('Error initiating line item processing:', error);
+      res.status(500).json({ 
+        error: 'Failed to initiate line item processing',
+        details: error instanceof Error ? error.message : 'Unknown error'
       });
     }
   });

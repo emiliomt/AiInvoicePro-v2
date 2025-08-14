@@ -1,11 +1,11 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { sql, eq, desc, and, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
-import { 
-  invoices, 
-  lineItems, 
-  approvals, 
-  companies, 
+import { sql, eq, desc, and, or, ilike, isNull, inArray, getTableColumns, gte } from 'drizzle-orm';
+import {
+  invoices,
+  lineItems,
+  approvals,
+  companies,
   users,
   projects,
   purchaseOrders,
@@ -201,6 +201,8 @@ export interface IStorage {
   getLineItemClassificationsByInvoice(invoiceId: number): Promise<LineItemClassification[]>;
   createLineItemClassification(data: InsertLineItemClassification): Promise<LineItemClassification>;
   updateLineItemClassification(id: number, updates: Partial<InsertLineItemClassification>): Promise<LineItemClassification>;
+  deleteLineItem(lineItemId: number): Promise<void>;
+  deleteLineItemClassifications(lineItemId: number): Promise<void>;
   createApprovedInvoiceProject(data: any): Promise<any>;
   getApprovedInvoiceProjects(): Promise<any[]>;
   getVerifiedInvoiceProjects(): Promise<any[]>;
@@ -215,7 +217,7 @@ export interface IStorage {
   getImportLogsWithDetails(): Promise<any[]>;
   getUsersByCompany(companyId: number): Promise<User[]>;
 
-  // Users  
+  // Users
   upsertUser(user: UpsertUser): Promise<User>;
   getUser(id: string): Promise<User | null>;
   getUsers(): Promise<User[]>;
@@ -411,8 +413,8 @@ class PostgresStorage implements IStorage {
 
       // First, get the linked files so we can delete the physical files
       const linkedFilesQuery = `
-        SELECT file_path, original_file_name 
-        FROM imported_invoices 
+        SELECT file_path, original_file_name
+        FROM imported_invoices
         WHERE linked_invoice_id = $1
       `;
       const linkedFiles = await dbClient.query(linkedFilesQuery, [id]);
@@ -581,7 +583,7 @@ class PostgresStorage implements IStorage {
       return;
     }
     await db.update(invoices)
-      .set({ 
+      .set({
         classificationStatus: status || 'classified',
         updatedAt: new Date()
       })
@@ -1174,8 +1176,8 @@ class PostgresStorage implements IStorage {
 
           // Get linked files that will be deleted so we can remove physical files
           const linkedFilesQuery = `
-            SELECT file_path, original_file_name 
-            FROM imported_invoices 
+            SELECT file_path, original_file_name
+            FROM imported_invoices
             WHERE linked_invoice_id = ANY($1)
           `;
           const linkedFiles = await dbClient.query(linkedFilesQuery, [invoiceIds]);
@@ -1344,8 +1346,8 @@ class PostgresStorage implements IStorage {
         // Return default settings if not found
         const defaultSettings: Record<string, any> = {
           petty_cash_threshold: { key, value: '1000', description: 'Petty cash threshold amount' },
-          user_preferences: { 
-            key, 
+          user_preferences: {
+            key,
             value: JSON.stringify({
               fullName: '',
               department: '',
@@ -1737,8 +1739,8 @@ class PostgresStorage implements IStorage {
         return {
           isValid: enumValid,
           actualValue: fieldValue,
-          message: enumValid 
-            ? 'Field value matches allowed values' 
+          message: enumValid
+            ? 'Field value matches allowed values'
             : `Field ${rule.fieldName} must be one of [${allowedValues.join(', ')}] but got "${fieldValue}"`
         };
 
@@ -1756,8 +1758,8 @@ class PostgresStorage implements IStorage {
           return {
             isValid: regexValid,
             actualValue: fieldValue,
-            message: regexValid 
-              ? 'Field matches required pattern' 
+            message: regexValid
+              ? 'Field matches required pattern'
               : `Field ${rule.fieldName} does not match required pattern: ${rule.ruleValue}`
           };
         } catch (regexError) {
@@ -1785,8 +1787,8 @@ class PostgresStorage implements IStorage {
           return {
             isValid: rangeValid,
             actualValue: fieldValue,
-            message: rangeValid 
-              ? `Value is within range ${min}-${max}` 
+            message: rangeValid
+              ? `Value is within range ${min}-${max}`
               : `Field ${rule.fieldName} value ${numValue} is outside allowed range ${min}-${max}`
           };
         } catch (rangeError) {
@@ -2220,6 +2222,14 @@ class PostgresStorage implements IStorage {
     return result;
   }
 
+  async deleteLineItem(lineItemId: number): Promise<void> {
+    await db.delete(lineItems).where(eq(lineItems.id, lineItemId));
+  }
+
+  async deleteLineItemClassifications(lineItemId: number): Promise<void> {
+    await db.delete(lineItemClassifications).where(eq(lineItemClassifications.lineItemId, lineItemId));
+  }
+
   async createApprovedInvoiceProject(data: any): Promise<any> {
     return { id: Date.now(), ...data, createdAt: new Date() };
   }
@@ -2271,10 +2281,10 @@ class PostgresStorage implements IStorage {
         startTime: invoiceImporterLogs.startedAt,
         endTime: invoiceImporterLogs.completedAt,
         duration: sql<number>`
-          CASE 
-            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL 
+          CASE
+            WHEN ${invoiceImporterLogs.completedAt} IS NOT NULL AND ${invoiceImporterLogs.startedAt} IS NOT NULL
             THEN EXTRACT(EPOCH FROM (${invoiceImporterLogs.completedAt} - ${invoiceImporterLogs.startedAt}))
-            ELSE NULL 
+            ELSE NULL
           END
         `,
         status: invoiceImporterLogs.status,
@@ -2288,7 +2298,7 @@ class PostgresStorage implements IStorage {
         errorMessage: invoiceImporterLogs.errorMessage,
         createdAt: invoiceImporterLogs.createdAt,
         triggeredBy: sql<string>`
-          CASE 
+          CASE
             WHEN ${invoiceImporterConfigs.scheduleType} = 'manual' THEN 'Manual'
             ELSE 'Scheduled'
           END
