@@ -3933,7 +3933,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
 
             // Update progress
-            ProgressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
+            ProgressTracker.updateProgress(processSessionId, processedCount, invoices.length, `Processing invoice ${invoice.invoiceNumber}`);
 
             // Process the invoice line items
             const result = await processInvoiceLineItems(invoice, vendorContext, user.claims.sub);
@@ -3955,7 +3955,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           processedCount++;
-          ProgressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
+          ProgressTracker.updateProgress(processSessionId, processedCount, invoices.length, `Completed ${processedCount}/${invoices.length}`);
         }
 
         // Complete the progress session
