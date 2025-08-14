@@ -228,7 +228,7 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeyword: classification.matchedKeywords?.[0] || 'unknown',
+            matchedKeywords: classification.matchedKeywords || ['unknown'],
             method: 'keyword', // ✅ Add method field
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
@@ -241,7 +241,7 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeyword: classification.matchedKeywords?.[0] || 'unknown',
+        matchedKeywords: classification.matchedKeywords || ['unknown'],
         method: 'keyword', // ✅ Add method field
         confidence: classification.confidence.toString(),
         isManualOverride: false,
