@@ -1497,7 +1497,10 @@ class PostgresStorage implements IStorage {
         projectMatches: result.matches || []
       }));
     } catch (error) {
-
+      console.error('Error in getCompanyInvoicesWithProjectMatches:', error);
+      throw error;
+    }
+  }
 
   async getClassifiedLineItemCount(invoiceId: number): Promise<number> {
     try {
@@ -1529,11 +1532,6 @@ class PostgresStorage implements IStorage {
         .where(eq(lineItems.id, lineItemId));
     } catch (error) {
       console.error('Error deleting line item:', error);
-      throw error;
-    }
-  }
-
-      console.error('Error in getCompanyInvoicesWithProjectMatches:', error);
       throw error;
     }
   }
