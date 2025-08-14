@@ -825,9 +825,10 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
   subcategory: varchar("subcategory", { length: 255 }),
+  matchedKeyword: varchar("matched_keyword", { length: 255 }), // Legacy single keyword field
   matchedKeywords: text("matched_keywords").array(), // Array of matched keywords
   confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
-  method: classificationMethodEnum("method").notNull(),
+  method: varchar("method", { length: 100 }).notNull().default("keyword-matching"), // Method as varchar
   reasoning: text("reasoning"), // AI explanation for classification
   vendorContext: text("vendor_context"), // Vendor-specific context
   isUserVerified: boolean("is_user_verified").default(false),
@@ -835,6 +836,8 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   originalText: text("original_text"), // Store original line item text
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
 });
 
 export const feedbackLogsRelations = relations(feedbackLogs, ({ one }) => ({
