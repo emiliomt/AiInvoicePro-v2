@@ -2340,3 +2340,26 @@ export async function getDatabaseStats(): Promise<any> {
     };
   }
 }
+
+export async function createLineItem(lineItemData: any) {
+  try {
+    const db = await getDb();
+    const result = await db.insert(lineItems).values({
+      invoiceId: lineItemData.invoiceId,
+      lineNumber: lineItemData.lineIndex,
+      description: lineItemData.description,
+      quantity: lineItemData.quantity?.toString(),
+      unitPrice: lineItemData.unitPrice?.toString(),
+      totalPrice: lineItemData.amount?.toString(),
+      unit: lineItemData.unit,
+      rawText: JSON.stringify(lineItemData)
+    }).returning();
+    
+    return result[0];
+  } catch (error) {
+    console.error('Error creating line item:', error);
+    throw error;
+  }
+}
+
+// End of PostgresStorage class implementation
