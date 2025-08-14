@@ -115,7 +115,7 @@ export class ClassificationService {
       .select()
       .from(classificationKeywords)
       .where(
-        userId 
+        userId
           ? or(
               eq(classificationKeywords.isDefault, true),
               eq(classificationKeywords.userId, userId)
@@ -391,7 +391,7 @@ Respond with JSON in this format:
 }`;
 
       const OpenAI = (await import('openai')).default;
-      const openai = new OpenAI({ 
+      const openai = new OpenAI({
         apiKey: process.env.OPENAI_API_KEY || process.env.OPENAI_API_KEY_ENV_VAR || ""
       });
 
@@ -442,7 +442,7 @@ Respond with JSON in this format:
       throw new Error('Line item not found');
     }
 
-    const classification = useAI 
+    const classification = useAI
       ? await this.classifyLineItemWithAI(lineItem[0], userId)
       : await this.classifyLineItem(lineItem[0], userId);
 
