@@ -325,39 +325,28 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           const currentPercentage = Math.round((processedCount / totalInvoices) * 100);
           console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Processing invoice ${invoice.invoiceNumber || invoice.id} (${currentPercentage}%)`);
           
-          // Get existing line items
-          const existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
+          // Get existing line items AFTER duplicate removal
+          let existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
           console.log(`Found ${existingLineItems.length} existing line items in database`);
           
           if (existingLineItems.length > 0) {
-            // ✅ FIX: Remove duplicates BEFORE processing
-            const uniqueItems = removeDuplicateLineItems(existingLineItems);
-            if (uniqueItems.length < existingLineItems.length) {
-              console.log(`🧹 Removing ${existingLineItems.length - uniqueItems.length} duplicate line items from invoice ${invoice.id}`);
-              await removeDuplicatesFromDatabase(invoice.id, uniqueItems);
-            }
+            // ✅ FIX: Remove duplicates BEFORE processing using storage method
+            await storage.removeDuplicateLineItems(invoice.id);
             
-            console.log(`Using existing ${uniqueItems.length} line items for classification`);
-            console.log(`Processing ${uniqueItems.length} line items for classification`);
+            // Get the cleaned line items after duplicate removal
+            existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
             
-            // Process classification
+            console.log(`Using ${existingLineItems.length} unique line items for classification`);
+            console.log(`Processing ${existingLineItems.length} line items for classification`);
+            
+            // Process classification using the service that updates status correctly
             const { ClassificationService } = await import('./services/classificationService');
             await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
             
             // Get final count after processing
             const finalCount = await storage.getClassifiedLineItemCount(invoice.id);
             
-            console.log(`✅ Successfully processed invoice ${invoice.id}: ${uniqueItems.length} items, ${finalCount} classified`);
-            
-            // ✅ FIX: Update status to "classified" instead of "extracted"
-            await storage.updateInvoice(invoice.id, { 
-              status: 'classified',
-              processingStatus: 'classified',
-              updatedAt: new Date()
-            });
-            
-            console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
-            console.log(`✅ Successfully processed invoice ${invoice.id}`);
+            console.log(`✅ Successfully processed invoice ${invoice.id}: ${existingLineItems.length} items, ${finalCount} classified`);
             
             successCount++;
           } else {
