@@ -37,6 +37,7 @@ import { applyColombianRules, clearColombianInvoiceCache } from './services/colo
 import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { ProgressTracker } from './services/progressTracker';
+import * as progressTracker from './services/progressTracker'; // Import for progress tracking functions
 
 // Configure multer for file uploads
 const upload = multer({
@@ -908,7 +909,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               items: extractedData.lineItems || [],
               ocrText: ocrText,
               fileName: fileName,
-              uploadedBy: req.user?.id || "anonymous",
+              uploadedBy: req.user.id || "anonymous",
             }, userId);
 
             processedPOs.push(newPurchaseOrder);
@@ -2929,8 +2930,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         message: isColombianInvoice 
           ? "🇨🇴 Colombian invoice corrections applied! The AI is learning Colombian format patterns."
           : "The AI is learning from your corrections!",
-        feedbackId: feedbackLog.id,
-        colombianInvoice: isColombianInvoice
+        feedbackId: feedbackLog.id
       });
 
     } catch (error) {
@@ -3865,232 +3865,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Process invoices for line item classification with enhanced progress tracking
   app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
     try {
-      const userId = (req.user as any).claims.sub;
-      const { invoiceIds, vendorContext, sessionId } = req.body;
-
-      console.log('Full request body:', JSON.stringify(req.body, null, 2));
-      console.log('Invoice IDs to process:', invoiceIds);
-      console.log('Vendor context:', vendorContext);
-
-      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
-        return res.status(400).json({ message: "Invoice IDs are required" });
-      }
-
-      // Generate sessionId if not provided
-      const processSessionId = sessionId || `process-${Date.now()}`;
-      console.log(`Starting invoice processing for line item classification - Session: ${processSessionId}`);
-
-      // Initialize progress tracking using ProgressTracker class
-      const progressSession = ProgressTracker.createSession(
-        processSessionId,
-        userId,
-        invoiceIds.length,
-        `Classification - ${invoiceIds.length} invoices`
-      );
-
-      // Initialize counters
-      let processedCount = 0;
-      let successCount = 0;
-      let failedCount = 0;
-      const errors: string[] = [];
-
-      try {
-        // Fetch invoices with proper error handling
-        console.log('Attempting to fetch invoices with IDs:', invoiceIds.join(', '));
-        const invoices = await storage.getInvoicesByIds(invoiceIds, userId);
-
-        if (!invoices || invoices.length === 0) {
-          ProgressTracker.errorSession(processSessionId, "No invoices found for the provided IDs");
-          return res.status(404).json({ message: "No invoices found for the provided IDs" });
-        }
-
-        console.log(`Found ${invoices.length} invoices in database:`, 
-          invoices.map(inv => ({ id: inv.id, number: inv.invoiceNumber, vendor: inv.vendorName, projectId: inv.projectId }))
-        );
-
-        // Update progress to extracting line items step
-        ProgressTracker.updateStep(processSessionId, 1, 'active', 'Extracting Line Items');
-
-        // Process each invoice with proper transaction handling
-        for (const invoice of invoices) {
-          try {
-            console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
-
-            // Update progress
-            ProgressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
-
-            // Process the invoice line items
-            const result = await processInvoiceLineItems(invoice, vendorContext, userId);
-
-            if (result.success) {
-              successCount++;
-              console.log(`✅ Successfully processed invoice ${invoice.id}`);
-            } else {
-              failedCount++;
-              errors.push(`Invoice ${invoice.id}: ${result.error}`);
-              console.log(`❌ Failed to process invoice ${invoice.id}: ${result.error}`);
-            }
-
-          } catch (invoiceError) {
-            failedCount++;
-            const errorMsg = invoiceError instanceof Error ? invoiceError.message : 'Unknown error';
-            errors.push(`Invoice ${invoice.id}: ${errorMsg}`);
-            console.error(`Error processing invoice ${invoice.id}:`, invoiceError);
-          }
-
-          processedCount++;
-          ProgressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
-        }
-
-        // Complete the progress session
-        const results = {
-          message: "Invoice processing completed",
-          sessionId: processSessionId,
-          stats: {
-            total: invoiceIds.length,
-            processed: processedCount,
-            successful: successCount,
-            failed: failedCount
-          },
-          errors: errors.length > 0 ? errors : undefined
-        };
-
-        ProgressTracker.completeSession(processSessionId, results);
-
-        console.log(`Invoice processing completed - Session: ${processSessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
-
-        if (errors.length > 0) {
-          console.log('Processing errors:', errors);
-        }
-
-        res.json({
-          message: 'Invoice processing completed successfully',
-          sessionId: processSessionId,
-          results
-        });
-
-      } catch (fetchError) {
-        console.error('Error fetching invoices:', fetchError);
-        ProgressTracker.errorSession(processSessionId, fetchError instanceof Error ? fetchError.message : 'Unknown error');
-        res.status(500).json({ 
-          message: 'Failed to fetch invoices for processing',
-          error: fetchError instanceof Error ? fetchError.message : 'Unknown error'
-        });
-      }
-
-    } catch (error) {
-      console.error('Error starting invoice processing:', error);
-      const errorSessionId = req.body.sessionId || `error-${Date.now()}`;
-      ProgressTracker.errorSession(errorSessionId, error instanceof Error ? error.message : 'Unknown error');
-      res.status(500).json({ 
-        message: 'Failed to start invoice processing',
-        error: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  // Get line item classification results with pagination
-  app.get('/api/line-item-classification-results', isAuthenticated, async (req: any, res) => {
-    try {
-      const page = parseInt(req.query.page as string) || 1;
-      const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
-      const { projectId, dateFrom, dateTo, category } = req.query;
-      const userId = (req.user as any).claims.sub;
-      const user = await storage.getUser(userId);
-
+      const user = req.user;
       if (!user) {
-        return res.status(401).json({ message: 'User not found' });
+        return res.status(401).json({ error: 'Unauthorized' });
       }
 
-      const db = await getDb();
-      let query = db
-        .select({
-          id: lineItemClassifications.id,
-          invoiceId: lineItems.invoiceId,
-          invoiceNumber: invoices.invoiceNumber,
-          vendorName: invoices.vendorName,
-          projectId: sql<string>`(
-            SELECT ipm.project_id FROM ${invoiceProjectMatches} ipm 
-            WHERE ipm.invoice_id = ${lineItems.invoiceId} AND ipm.is_active = true 
-            LIMIT 1
-          )`.as('projectId'),
-          lineItemDescription: lineItems.description,
-          category: lineItemClassifications.category,
-          subcategory: lineItemClassifications.subcategory,
-          confidence: lineItemClassifications.confidence,
-          method: lineItemClassifications.method,
-          reasoning: lineItemClassifications.reasoning,
-          matchedKeywords: lineItemClassifications.matchedKeywords,
-          classifiedAt: lineItemClassifications.classifiedAt,
-          isUserVerified: lineItemClassifications.isUserVerified
-        })
-        .from(lineItemClassifications)
-        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
-        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
-        .where(eq(invoices.companyId, user.companyId || 'default'));
-
-      // Apply filters
-      const conditions = [eq(invoices.companyId, user.companyId || 'default')];
-
-      if (projectId) {
-        conditions.push(sql`EXISTS (
-          SELECT 1 FROM ${invoiceProjectMatches} ipm 
-          WHERE ipm.invoice_id = ${lineItems.invoiceId} 
-          AND ipm.project_id = ${projectId}
-          AND ipm.is_active = true
-        )`);
-      }
-
-      if (dateFrom) {
-        conditions.push(gte(lineItemClassifications.classifiedAt, new Date(dateFrom)));
-      }
-
-      if (dateTo) {
-        conditions.push(lte(lineItemClassifications.classifiedAt, new Date(dateTo)));
-      }
-
-      if (category) {
-        conditions.push(eq(lineItemClassifications.category, category));
-      }
-
-      if (conditions.length > 1) {
-        query = query.where(and(...conditions));
-      }
-
-      const results = await query
-        .orderBy(desc(lineItemClassifications.classifiedAt))
-        .limit(limit)
-        .offset((page - 1) * limit);
-
-      // Get total count for pagination
-      const countQuery = db
-        .select({ count: sql<number>`count(*)` })
-        .from(lineItemClassifications)
-        .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
-        .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
-        .where(conditions.length > 1 ? and(...conditions) : conditions[0]);
-
-      const [{ count }] = await countQuery;
-
-      res.json({
-        results,
-        pagination: {
-          page,
-          limit,
-          total: count,
-          pages: Math.ceil(count / limit)
-        }
-      });
-    } catch (error) {
-      console.error('Error fetching line item classification results:', error);
-      res.status(500).json({ message: 'Failed to fetch classification results' });
-    }
-  });
-
-  // Process invoices for line item classification with enhanced progress tracking
-  app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
-    try {
-      const userId = (req.user as any).claims.sub;
       const { invoiceIds, vendorContext, sessionId } = req.body;
 
       console.log('Full request body:', JSON.stringify(req.body, null, 2));
@@ -4108,7 +3887,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Initialize progress tracking using ProgressTracker class
       const progressSession = ProgressTracker.createSession(
         processSessionId,
-        userId,
+        user.claims.sub,
         invoiceIds.length,
         `Classification - ${invoiceIds.length} invoices`
       );
@@ -4122,7 +3901,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       try {
         // Fetch invoices with proper error handling
         console.log('Attempting to fetch invoices with IDs:', invoiceIds.join(', '));
-        const invoices = await storage.getInvoicesByIds(invoiceIds, userId);
+        const invoices = await storage.getInvoicesByIds(invoiceIds, user.claims.sub);
 
         if (!invoices || invoices.length === 0) {
           ProgressTracker.errorSession(processSessionId, "No invoices found for the provided IDs");
@@ -4145,7 +3924,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             ProgressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
 
             // Process the invoice line items
-            const result = await processInvoiceLineItems(invoice, vendorContext, userId);
+            const result = await processInvoiceLineItems(invoice, vendorContext, user.claims.sub);
 
             if (result.success) {
               successCount++;
@@ -6114,7 +5893,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ 
         error: errorMessage,
-        message: 'Failed to fetch progress data'
+        message: 'Failed tofetch progress data
       });
     }
   });
