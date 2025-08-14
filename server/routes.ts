@@ -27,7 +27,7 @@ import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices, classificationKeywords, invoicesTable, lineItemsTable, lineItemClassificationsTable } from "@shared/schema";
 import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
-import { progressTracker } from "./services/progressTracker.js";
+import { progressTracker, ProgressTracker } from "./services/progressTracker.js";
 import { ClassificationService } from "./services/classificationService.js";
 
 // Configure multer for file uploads
@@ -344,15 +344,9 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         const invoice = fetchedInvoices[i];
         console.log(`Processing invoice ${i + 1}/${fetchedInvoices.length}: ${invoice.invoiceNumber || invoice.id}`);
 
-        progressTracker.updateSession(sessionId, {
-          currentStep: `Processing invoice ${invoice.invoiceNumber || invoice.id} (${i + 1}/${fetchedInvoices.length})`,
-          currentInvoice: {
-            id: invoice.id,
-            invoiceNumber: invoice.invoiceNumber,
-            vendorName: invoice.vendorName
-          },
-          progress: 20 + (i / fetchedInvoices.length) * 70
-        });
+        // Update step progress
+        ProgressTracker.updateStep(sessionId, 3, 'active'); // Classifying step
+        ProgressTracker.updateProgress(sessionId, i, fetchedInvoices.length, `Processing invoice ${invoice.invoiceNumber || invoice.id} (${i + 1}/${fetchedInvoices.length})`);
 
         try {
           // Process line items for this invoice
@@ -503,10 +497,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
 
       // Update progress metrics with line item details
-      progressTracker.updateSession(sessionId, {
-        totalItems: totalLineItems,
-        processedItems: totalProcessed, // This might need refinement if partial processing occurs
-      });
+      ProgressTracker.updateProgress(sessionId, totalProcessed, totalLineItems, `Processed ${totalProcessed}/${totalLineItems} line items`);
 
       // Move to next step if extraction and classification are done
       progressTracker.updateSession(sessionId, {
