@@ -228,6 +228,7 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
+            method: 'keyword',
             matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
@@ -240,6 +241,7 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
+        method: 'keyword',
         matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
@@ -326,6 +328,7 @@ export class ClassificationService {
         .set({
           category: category as any,
           isManualOverride: true,
+          method: 'manual',
           matchedKeywords: ['manual override'],
           confidence: '1.00',
           classifiedAt: new Date(),
@@ -337,6 +340,7 @@ export class ClassificationService {
         lineItemId,
         category: category as any,
         isManualOverride: true,
+        method: 'manual',
         matchedKeywords: ['manual override'],
         confidence: '1.00',
         classifiedBy: userId
@@ -450,6 +454,7 @@ Respond with JSON in this format:
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
+            method: useAI ? 'ai' : 'keyword',
             matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
@@ -462,6 +467,7 @@ Respond with JSON in this format:
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
+        method: useAI ? 'ai' : 'keyword',
         matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
