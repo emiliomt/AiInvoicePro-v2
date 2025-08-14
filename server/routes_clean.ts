@@ -27,7 +27,7 @@ import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
 import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
-import { ProgressTracker } from './progressTracker'; // Assuming ProgressTracker is in './progressTracker'
+import { ProgressTracker } from './services/progressTracker';
 import { InvoiceProcessingService } from './services/invoiceProcessingService'; // Assuming InvoiceProcessingService is in './services/invoiceProcessingService'
 
 // Configure multer for file uploads
