@@ -253,6 +253,12 @@ export class ClassificationService {
   // Bulk classify line items for an invoice
   static async classifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
+    const storage = await getStorage();
+    
+    // Remove duplicates first
+    await storage.removeDuplicateLineItems(invoiceId);
+    
+    // Get line items after duplicate removal
     const invoiceLineItems = await db
       .select()
       .from(lineItems)
@@ -261,9 +267,11 @@ export class ClassificationService {
     console.log(`🏷️ Starting classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
 
     // Process each line item
+    let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
         await this.classifyAndStore(lineItem.id, userId);
+        processed++;
       } catch (error) {
         console.error(`❌ Failed to classify line item ${lineItem.id}:`, error);
         // Continue with other items even if one fails
@@ -499,6 +507,12 @@ Respond with JSON in this format:
   // Bulk AI classify line items for an invoice
   static async aiClassifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
+    const storage = await getStorage();
+    
+    // Remove duplicates first
+    await storage.removeDuplicateLineItems(invoiceId);
+    
+    // Get line items after duplicate removal
     const invoiceLineItems = await db
       .select()
       .from(lineItems)
@@ -507,9 +521,11 @@ Respond with JSON in this format:
     console.log(`🏷️ Starting AI classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
 
     // Process each line item
+    let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
         await this.classifyAndStoreWithAI(lineItem.id, true, userId);
+        processed++;
       } catch (error) {
         console.error(`❌ Failed to AI classify line item ${lineItem.id}:`, error);
         // Continue with other items even if one fails

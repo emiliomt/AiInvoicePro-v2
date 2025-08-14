@@ -1,6 +1,6 @@
 import { drizzle } from "drizzle-orm/neon-http";
 import { neon } from "@neondatabase/serverless";
-import { sql, eq, desc, gte, and, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
+import { sql, eq, desc, and, or, ilike, isNull, inArray, getTableColumns } from 'drizzle-orm';
 import { 
   invoices, 
   lineItems, 
@@ -237,6 +237,8 @@ export interface IStorage {
   getLineItemByInvoiceAndIndex(invoiceId: number, lineIndex: number): Promise<LineItem | null>;
   deleteLineItemsByInvoiceId(invoiceId: number): Promise<void>;
   updateInvoiceClassificationStatus(invoiceId: number, status?: string): Promise<void>;
+  getClassifiedLineItemCount(invoiceId: number): Promise<number>;
+  removeDuplicateLineItems(invoiceId: number): Promise<void>;
 
   // Approvals
   createApproval(approval: InsertApproval): Promise<Approval>;
@@ -512,7 +514,7 @@ class PostgresStorage implements IStorage {
     if (invoiceIds.length === 0) {
       return [];
     }
-    
+
     return await db
       .select()
       .from(invoices)
@@ -556,7 +558,7 @@ class PostgresStorage implements IStorage {
       .from(lineItemClassifications)
       .where(eq(lineItemClassifications.lineItemId, lineItemId))
       .limit(1);
-    
+
     return result.length > 0 ? result[0] : null;
   }
 
@@ -588,6 +590,55 @@ class PostgresStorage implements IStorage {
 
   async deleteLineItemsByInvoiceId(invoiceId: number): Promise<void> {
     await db.delete(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+  }
+
+  async getClassifiedLineItemCount(invoiceId: number): Promise<number> {
+    const db = await getDb();
+    const result = await db
+      .select({ count: sql<number>`count(*)` })
+      .from(lineItemClassifications)
+      .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
+      .where(eq(lineItems.invoiceId, invoiceId));
+
+    return result[0]?.count || 0;
+  }
+
+  async removeDuplicateLineItems(invoiceId: number): Promise<void> {
+    const db = await getDb();
+
+    // Get all line items for the invoice
+    const allLineItems = await db
+      .select()
+      .from(lineItems)
+      .where(eq(lineItems.invoiceId, invoiceId));
+
+    // Find duplicates based on description, quantity, unitPrice, totalPrice
+    const uniqueItems = new Map();
+    const duplicateIds: number[] = [];
+
+    for (const item of allLineItems) {
+      const key = `${item.description}-${item.quantity}-${item.unitPrice}-${item.totalPrice}`;
+
+      if (uniqueItems.has(key)) {
+        duplicateIds.push(item.id);
+      } else {
+        uniqueItems.set(key, item);
+      }
+    }
+
+    // Remove duplicate classifications first
+    if (duplicateIds.length > 0) {
+      await db
+        .delete(lineItemClassifications)
+        .where(inArray(lineItemClassifications.lineItemId, duplicateIds));
+
+      // Remove duplicate line items
+      await db
+        .delete(lineItems)
+        .where(inArray(lineItems.id, duplicateIds));
+
+      console.log(`🧹 Removed ${duplicateIds.length} duplicate line items from invoice ${invoiceId}`);
+    }
   }
 
   // Approvals

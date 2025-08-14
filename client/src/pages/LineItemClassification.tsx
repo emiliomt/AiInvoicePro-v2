@@ -299,30 +299,35 @@ export default function LineItemClassification() {
 
   // Single item classification mutation
   const classifyMutation = useMutation({
-    mutationFn: async (data: {
-      lineItem: LineItem;
-      vendorContext: VendorContext;
-    }) => {
-      const response = await fetch("/api/classification/classify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...data.lineItem,
-          vendorContext: data.vendorContext,
-        }),
+    mutationFn: async ({ invoiceId, useAI }: { invoiceId: number; useAI: boolean }) => {
+      const endpoint = useAI ? '/api/ai-classify-invoice-line-items' : '/api/classify-invoice-line-items';
+      const res = await fetch(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ invoiceId }),
       });
-      return response.json();
+
+      if (!res.ok) {
+        throw new Error('Failed to classify line items');
+      }
+
+      return res.json();
     },
-    onSuccess: (result) => {
+    onSuccess: () => {
+      // Invalidate queries to refresh UI
+      queryClient.invalidateQueries({ queryKey: ['/api/invoices'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/line-items'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/line-item-classifications'] });
+
       toast({
-        title: "Classification Complete",
-        description: `Classified as ${result.category} with ${(result.confidence * 100).toFixed(1)}% confidence`,
+        title: "Success",
+        description: "Line items classified successfully",
       });
     },
     onError: (error) => {
       toast({
-        title: "Classification Failed",
-        description: "Unable to classify line item. Please try again.",
+        title: "Error",
+        description: error.message,
         variant: "destructive",
       });
     },

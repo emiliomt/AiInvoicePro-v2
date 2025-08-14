@@ -1,4 +1,3 @@
-
 import { WebSocket } from 'ws';
 
 export interface ProgressStep {
@@ -55,7 +54,7 @@ export class ProgressTracker {
     {
       step: "Extracting Line Items",
       description: "Parsing invoice data to extract individual line items",
-      icon: "📋", 
+      icon: "📋",
       estimatedTime: "5-10 seconds per invoice"
     },
     {
@@ -108,7 +107,7 @@ export class ProgressTracker {
 
     this.sessions.set(sessionId, session);
     this.broadcastUpdate(sessionId, 'classification_started');
-    
+
     console.log(`📊 Progress session created: ${sessionId} - ${session.title}`);
     return session;
   }
@@ -152,7 +151,7 @@ export class ProgressTracker {
     this.broadcastUpdate(sessionId, 'step_progress');
   }
 
-  static updateProgress(sessionId: string, current: number, message?: string): void {
+  static updateProgress(sessionId: string, current: number, total?: number, message?: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
 
@@ -161,11 +160,16 @@ export class ProgressTracker {
       processedItems: current
     });
 
+    // Update total items if provided
+    if (total !== undefined) {
+      session.metrics.totalItems = total;
+    }
+
     // Calculate percentage
-    const percentage = session.metrics.totalItems > 0 
+    const percentage = session.metrics.totalItems > 0
       ? Math.round((current / session.metrics.totalItems) * 100)
       : 0;
-    
+
     this.broadcastUpdate(sessionId, 'progress_update', {
       current,
       total: session.metrics.totalItems,
@@ -217,7 +221,7 @@ export class ProgressTracker {
     session.status = 'completed';
     session.endTime = new Date();
     session.currentStep = session.steps.length - 1;
-    
+
     if (results) {
       session.results = results;
     }
@@ -279,7 +283,7 @@ export class ProgressTracker {
         sessionId,
         data: {
           ...session,
-          percentage: session.metrics.totalItems > 0 
+          percentage: session.metrics.totalItems > 0
             ? Math.round((session.metrics.processedItems / session.metrics.totalItems) * 100)
             : 0
         }
@@ -300,14 +304,14 @@ export class ProgressTracker {
   // Get recent completed sessions for a user
   static getRecentCompletedSessions(userId: string, includeCompleted: boolean = true): ProgressSession[] {
     const sessions: ProgressSession[] = [];
-    
+
     // Add active sessions
     for (const session of this.sessions.values()) {
       if (session.userId === userId) {
         sessions.push(session);
       }
     }
-    
+
     // Add completed sessions if requested
     if (includeCompleted) {
       for (const session of this.completedSessions.values()) {
@@ -316,14 +320,14 @@ export class ProgressTracker {
         }
       }
     }
-    
+
     return sessions.sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
   }
 
   private static broadcastUpdate(sessionId: string, event: string, data?: any) {
     const session = this.sessions.get(sessionId) || this.completedSessions.get(sessionId);
     const sockets = this.websockets.get(sessionId);
-    
+
     if (session && sockets) {
       const message = {
         type: event,
@@ -354,7 +358,7 @@ export class ProgressTracker {
   // Cleanup old sessions (call periodically)
   static cleanup() {
     const cutoff = Date.now() - (24 * 60 * 60 * 1000); // 24 hours ago
-    
+
     for (const [sessionId, session] of Array.from(this.sessions.entries())) {
       if (session.startTime.getTime() < cutoff) {
         this.sessions.delete(sessionId);
@@ -381,7 +385,7 @@ export class ProgressTracker {
         }
       });
       toRemove.forEach(ws => sockets.delete(ws));
-      
+
       if (sockets.size === 0) {
         this.websockets.delete(sessionId);
       }

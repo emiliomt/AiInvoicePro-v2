@@ -822,7 +822,7 @@ export default function Invoices() {
 
     return invoices.filter(invoice => {
       // Search filter
-      const matchesSearch = searchTerm === '' || 
+      const matchesSearch = searchTerm === '' ||
         invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         invoice.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
@@ -1166,8 +1166,8 @@ export default function Invoices() {
                         </div>
                         <div className="flex items-center space-x-2">
                           <Badge className={getStatusColor(invoice.status)}>
-                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' ? 'Auto Approved' : 
-                             invoice.status === 'approved' ? 'Manually Approved' : 
+                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' ? 'Auto Approved' :
+                             invoice.status === 'approved' ? 'Manually Approved' :
                              invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
                           </Badge>
                           {(invoice.status === 'approved' || invoice.status === 'extracted') && invoice.extractedData?.confidenceScore && (
@@ -1553,8 +1553,8 @@ export default function Invoices() {
                       <label className="text-sm font-medium text-gray-700">Status</label>
                       <div className="mt-1">
                         <Badge className={getStatusColor(selectedInvoice.status)}>
-                          {selectedInvoice.status === 'approved' && selectedInvoice.userId === 'rpa-system' ? 'Auto Approved' : 
-                           selectedInvoice.status === 'approved' ? 'Manually Approved' : 
+                          {selectedInvoice.status === 'approved' && selectedInvoice.userId === 'rpa-system' ? 'Auto Approved' :
+                           selectedInvoice.status === 'approved' ? 'Manually Approved' :
                            selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                         </Badge>
                       </div>
@@ -1794,4 +1794,3 @@ export default function Invoices() {
     </div>
   );
 }
-
