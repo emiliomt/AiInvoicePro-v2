@@ -3923,8 +3923,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Create progress tracking session
-      const sessionId = `classification-${Date.now()}`;
-      const { broadcastProgress } = await import('./websocketServer');
+      const sessionId = req.body.sessionId || `classification-${Date.now()}`;
+      const websocketModule = await import('./websocketServer');
+      const broadcastProgress = websocketModule.broadcastProgress;
 
       console.log(`Starting invoice processing for line item classification - Session: ${sessionId}`);
 
@@ -4077,14 +4078,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.error('❌ Error in bulk invoice processing:', error);
 
       // Send error notification if we have a session
-      const sessionId = `classification-${Date.now()}`;
+      const sessionId = req.body.sessionId || `classification-${Date.now()}`;
       try {
-        const { broadcastProgress } = await import('./websocketServer');
-        broadcastProgress({
-          type: 'classification_error',
-          sessionId,
-          message: `Processing failed: ${error.message}`
-        });
+        const websocketModule = await import('./websocketServer');
+        if (websocketModule.broadcastProgress) {
+          websocketModule.broadcastProgress({
+            type: 'classification_error',
+            sessionId,
+            message: `Processing failed: ${error.message}`
+          });
+        }
       } catch (wsError) {
         console.error('Failed to send WebSocket error:', wsError);
       }
