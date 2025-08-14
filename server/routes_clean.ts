@@ -304,8 +304,8 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
     const db = await getDb();
     const { ClassificationService } = await import('./services/classificationService');
 
-    // Check if invoice has line items
-    const existingLineItems = await getLineItemsByInvoiceId(invoice.id);
+    // Check if invoice has line items using storage instance
+    const existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
 
     if (!existingLineItems || existingLineItems.length === 0) {
       return { success: false, error: 'No line items found for this invoice' };
