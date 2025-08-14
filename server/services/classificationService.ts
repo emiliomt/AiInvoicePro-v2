@@ -270,16 +270,16 @@ export class ClassificationService {
       }
     }
 
-    // ✅ Update invoice status to "classified" after processing all line items
+    // ✅ Update invoice status to "processed" after processing all line items
     await db
       .update(invoices)
       .set({
-        status: 'classified',
+        status: 'processed',
         updatedAt: new Date()
       })
       .where(eq(invoices.id, invoiceId));
 
-    console.log(`✅ Updated invoice ${invoiceId} status to "classified" after line item classification`);
+    console.log(`✅ Updated invoice ${invoiceId} status to "processed" after line item classification`);
   }
 
   // Add custom keyword
@@ -519,9 +519,9 @@ Respond with JSON in this format:
     try {
       const storage = await getStorage();
       await storage.updateInvoice(invoiceId, { 
-        status: 'classified'
+        status: 'processed'
       });
-      console.log(`✅ Updated invoice ${invoiceId} status to 'classified' after AI classification`);
+      console.log(`✅ Updated invoice ${invoiceId} status to 'processed' after AI classification`);
     } catch (error) {
       console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
     }
