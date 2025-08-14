@@ -4108,12 +4108,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const processSessionId = sessionId || `process-${Date.now()}`;
       console.log(`Starting invoice processing for line item classification - Session: ${processSessionId}`);
 
-      // Initialize progress tracking
-      const progressSession = progressTracker.createSession(
+      // Initialize progress tracking using ProgressTracker class
+      const progressSession = ProgressTracker.createSession(
         processSessionId,
         userId,
-        `Classification - ${invoiceIds.length} invoices`,
-        invoiceIds.length
+        invoiceIds.length,
+        `Classification - ${invoiceIds.length} invoices`
       );
 
       // Initialize counters
@@ -4128,7 +4128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         const invoices = await storage.getInvoicesByIds(invoiceIds, userId);
         
         if (!invoices || invoices.length === 0) {
-          progressTracker.errorSession(processSessionId, "No invoices found for the provided IDs");
+          ProgressTracker.errorSession(processSessionId, "No invoices found for the provided IDs");
           return res.status(404).json({ message: "No invoices found for the provided IDs" });
         }
 
@@ -4136,13 +4136,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           invoices.map(inv => ({ id: inv.id, number: inv.invoiceNumber, vendor: inv.vendorName, projectId: inv.projectId }))
         );
 
+        // Update progress to extracting line items step
+        ProgressTracker.updateStep(processSessionId, 1, 'active', 'Extracting Line Items');
+
         // Process each invoice with proper transaction handling
         for (const invoice of invoices) {
           try {
             console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
             
             // Update progress
-            progressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
+            ProgressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
             
             // Process the invoice line items
             const result = await processInvoiceLineItems(invoice, vendorContext, userId);
@@ -4164,7 +4167,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
           
           processedCount++;
-          progressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
+          ProgressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
         }
 
         // Complete the progress session
@@ -4180,7 +4183,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           errors: errors.length > 0 ? errors : undefined
         };
 
-        progressTracker.completeSession(processSessionId, results);
+        ProgressTracker.completeSession(processSessionId, results);
 
         console.log(`Invoice processing completed - Session: ${processSessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
         
@@ -4196,7 +4199,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       } catch (fetchError) {
         console.error('Error fetching invoices:', fetchError);
-        progressTracker.errorSession(processSessionId, fetchError instanceof Error ? fetchError.message : 'Unknown error');
+        ProgressTracker.errorSession(processSessionId, fetchError instanceof Error ? fetchError.message : 'Unknown error');
         res.status(500).json({ 
           message: 'Failed to fetch invoices for processing',
           error: fetchError instanceof Error ? fetchError.message : 'Unknown error'
@@ -4206,7 +4209,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error('Error starting invoice processing:', error);
       const errorSessionId = req.body.sessionId || `error-${Date.now()}`;
-      progressTracker.errorSession(errorSessionId, error instanceof Error ? error.message : 'Unknown error');
+      ProgressTracker.errorSession(errorSessionId, error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({ 
         message: 'Failed to start invoice processing',
         error: error instanceof Error ? error.message : 'Unknown error'
