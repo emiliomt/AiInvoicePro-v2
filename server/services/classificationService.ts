@@ -258,8 +258,27 @@ export class ClassificationService {
       .from(lineItems)
       .where(eq(lineItems.invoiceId, invoiceId));
 
+    console.log(`🏷️ Starting classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
+
+    // Process each line item
     for (const lineItem of invoiceLineItems) {
-      await this.classifyAndStore(lineItem.id, userId);
+      try {
+        await this.classifyAndStore(lineItem.id, userId);
+      } catch (error) {
+        console.error(`❌ Failed to classify line item ${lineItem.id}:`, error);
+        // Continue with other items even if one fails
+      }
+    }
+
+    // ✅ FIX: Update the invoice status to "classified" after processing all line items
+    try {
+      const storage = await getStorage();
+      await storage.updateInvoice(invoiceId, { 
+        status: 'classified'
+      });
+      console.log(`✅ Updated invoice ${invoiceId} status to 'classified'`);
+    } catch (error) {
+      console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
     }
   }
 
@@ -484,8 +503,27 @@ Respond with JSON in this format:
       .from(lineItems)
       .where(eq(lineItems.invoiceId, invoiceId));
 
+    console.log(`🏷️ Starting AI classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
+
+    // Process each line item
     for (const lineItem of invoiceLineItems) {
-      await this.classifyAndStoreWithAI(lineItem.id, true, userId);
+      try {
+        await this.classifyAndStoreWithAI(lineItem.id, true, userId);
+      } catch (error) {
+        console.error(`❌ Failed to AI classify line item ${lineItem.id}:`, error);
+        // Continue with other items even if one fails
+      }
+    }
+
+    // ✅ FIX: Update the invoice status to "classified" after processing all line items
+    try {
+      const storage = await getStorage();
+      await storage.updateInvoice(invoiceId, { 
+        status: 'classified'
+      });
+      console.log(`✅ Updated invoice ${invoiceId} status to 'classified' after AI classification`);
+    } catch (error) {
+      console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
     }
   }
 }
