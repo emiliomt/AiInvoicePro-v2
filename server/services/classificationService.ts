@@ -228,8 +228,8 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeywords: classification.matchedKeywords || null,
-            method: 'keyword', // ✅ Add method field
+            matchedKeywords: classification.matchedKeywords ? classification.matchedKeywords.join(', ') : null,
+            method: 'keyword',
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -241,8 +241,8 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeywords: classification.matchedKeywords || null,
-        method: 'keyword', // ✅ Add method field
+        matchedKeywords: classification.matchedKeywords ? classification.matchedKeywords.join(', ') : null,
+        method: 'keyword',
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -348,7 +348,7 @@ export class ClassificationService {
           category: category as any,
           isManualOverride: true,
           method: 'manual',
-          matchedKeywords: ['manual override'],
+          matchedKeywords: 'manual override',
           confidence: '1.00',
           classifiedAt: new Date(),
           classifiedBy: userId
@@ -360,7 +360,7 @@ export class ClassificationService {
         category: category as any,
         isManualOverride: true,
         method: 'manual',
-        matchedKeywords: ['manual override'],
+        matchedKeywords: 'manual override',
         confidence: '1.00',
         classifiedBy: userId
       });
@@ -474,7 +474,7 @@ Respond with JSON in this format:
           .set({
             category: classification.category as any,
             method: useAI ? 'ai' : 'keyword',
-            matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
+            matchedKeywords: classification.matchedKeywords || null,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -487,7 +487,7 @@ Respond with JSON in this format:
         lineItemId,
         category: classification.category as any,
         method: useAI ? 'ai' : 'keyword',
-        matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
+        matchedKeywords: classification.matchedKeywords || null,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'

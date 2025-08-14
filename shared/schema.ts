@@ -821,8 +821,8 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   id: serial("id").primaryKey(),
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
-  matchedKeyword: varchar("matched_keyword", { length: 255 }),
-  method: classificationMethodEnum("method").default("keyword").notNull(), // ✅ NEW FIELD
+  matchedKeywords: varchar("matched_keywords", { length: 255 }), // ✅ Changed to plural
+  method: classificationMethodEnum("method").default("keyword").notNull(),
   isManualOverride: boolean("is_manual_override").default(false),
   confidence: decimal("confidence", { precision: 3, scale: 2 }),
   classifiedAt: timestamp("classified_at").defaultNow(),
