@@ -298,14 +298,19 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   }
 }
 
-// Helper function to process line items for a single invoice
-async function processInvoiceLineItems(invoice: any, vendorContext: any, userId: string): Promise<{ success: boolean; error?: string }> {
+// Update processInvoiceLineItems function to handle classification properly
+async function processInvoiceLineItems(invoice: any, vendorContext: any, userId: string) {
   try {
     const db = await getDb();
     const { ClassificationService } = await import('./services/classificationService');
 
-    // Get existing line items from database
-    const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoice.id));
+    // Check if invoice has line items
+    const existingLineItems = await getLineItemsByInvoiceId(invoice.id);
+
+    if (!existingLineItems || existingLineItems.length === 0) {
+      return { success: false, error: 'No line items found for this invoice' };
+    }
+
     console.log(`Found ${existingLineItems.length} existing line items in database`);
 
     let itemsToClassify: any[] = [];
@@ -362,23 +367,51 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
     for (const item of itemsToClassify) {
       try {
         // Check if already classified
-        const existingClassification = await db.select()
-          .from(lineItemClassifications)
-          .where(eq(lineItemClassifications.lineItemId, item.id))
-          .limit(1);
+        const existingClassification = await checkIfLineItemClassified(item.id);
 
-        if (existingClassification.length === 0) {
+        if (!existingClassification) {
           console.log(`Classifying item: "${item.description}"`);
-          await ClassificationService.classifyAndStore(item.id, userId);
+          // Call the AI classification service
+          const classificationResult = await ClassificationService.classifyLineItem(
+            { 
+              description: item.description, 
+              quantity: item.quantity, 
+              unitPrice: item.unitPrice, 
+              totalPrice: item.totalPrice, 
+              unit: item.unit, 
+              rawText: item.rawText 
+            }, 
+            vendorContext,
+            userId // Pass userId for context
+          );
+
+          // Insert the classification result into the database
+          await insertLineItemClassification({
+            lineItemId: item.id,
+            category: classificationResult.category,
+            matchedKeyword: classificationResult.matchedKeyword,
+            method: classificationResult.method,
+            confidence: classificationResult.confidence,
+            isManualOverride: false,
+            classifiedBy: userId,
+          });
+
           classifiedCount++;
         } else {
           console.log(`Item already classified: "${item.description}"`);
-          classifiedCount++;
+          classifiedCount++; // Count as processed even if already classified
         }
-      } catch (classificationError) {
-        console.error(`Failed to classify line item ${item.id}:`, classificationError);
+      } catch (classificationError: any) {
+        console.error(`Failed to classify line item ${item.id} ("${item.description}"):`, classificationError);
+        // Optionally, try to mark the item as unclassifiable or log the error
       }
     }
+
+    // Update invoice classification status
+    await updateInvoice(invoice.id, {
+      hasClassifications: classifiedCount > 0,
+      updatedAt: new Date()
+    });
 
     console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items, ${classifiedCount} classified`);
     return { success: true };
@@ -391,6 +424,116 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
     };
   }
 }
+
+// Helper function to check if line item is already classified
+async function checkIfLineItemClassified(lineItemId: number): Promise<boolean> {
+  try {
+    const { db } = await import('./storage');
+    const result = await db.select()
+      .from(lineItemClassifications)
+      .where(eq(lineItemClassifications.lineItemId, lineItemId))
+      .limit(1);
+
+    return result.length > 0;
+  } catch (error) {
+    console.error(`Error checking classification for line item ${lineItemId}:`, error);
+    return false;
+  }
+}
+
+// Helper function to insert line item classification
+async function insertLineItemClassification(data: {
+  lineItemId: number;
+  category: string;
+  matchedKeyword: string;
+  method: string;
+  confidence: number;
+  isManualOverride: boolean;
+  classifiedBy: string;
+}) {
+  try {
+    const { db } = await import('./storage');
+    await db.insert(lineItemClassifications).values({
+      lineItemId: data.lineItemId,
+      category: data.category as any,
+      matchedKeyword: data.matchedKeyword,
+      method: data.method,
+      confidence: data.confidence.toString(),
+      isManualOverride: data.isManualOverride,
+      classifiedBy: data.classifiedBy,
+      classifiedAt: new Date(),
+      createdAt: new Date(),
+      updatedAt: new Date()
+    });
+  } catch (error) {
+    console.error('Error inserting line item classification:', error);
+    throw error;
+  }
+}
+
+// Function to fix classification categories to match schema enum
+function fixClassificationCategories(desc: string): { category: string; matchedKeyword: string; confidence: number } | null {
+  const lowerDesc = desc.toLowerCase();
+
+  if (lowerDesc.includes('cement') || lowerDesc.includes('concrete') || lowerDesc.includes('brick') || lowerDesc.includes('sand') || lowerDesc.includes('gravel') || lowerDesc.includes('rebar') || lowerDesc.includes('steel') || lowerDesc.includes('paint') || lowerDesc.includes('wood') || lowerDesc.includes('pipe') || lowerDesc.includes('cable') || lowerDesc.includes('screw') || lowerDesc.includes('nail') || lowerDesc.includes('glue') || lowerDesc.includes('sealant') || lowerDesc.includes('waterproofing') || lowerDesc.includes('block') || lowerDesc.includes('tile') || lowerDesc.includes('sheet metal') || lowerDesc.includes('mortar') || lowerDesc.includes('plaster') || lowerDesc.includes('wire') || lowerDesc.includes('weld') || lowerDesc.includes('adhesive') || lowerDesc.includes('silicone') || lowerDesc.includes('varnish') || lowerDesc.includes('thinner') || lowerDesc.includes('anti-corrosive')) {
+    return {
+      category: 'materials_supplies', 
+      matchedKeyword: 'construction materials',
+      confidence: 0.9
+    };
+  }
+
+  if (lowerDesc.includes('tool') || lowerDesc.includes('equipment') || lowerDesc.includes('machine')) {
+    return {
+      category: 'equipment_tools', 
+      matchedKeyword: 'equipment terms',
+      confidence: 0.8
+    };
+  }
+  
+  if (lowerDesc.includes('service') || lowerDesc.includes('labor') || lowerDesc.includes('consulting') || lowerDesc.includes('engineering') || lowerDesc.includes('construction') || lowerDesc.includes('installation') || lowerDesc.includes('maintenance') || lowerDesc.includes('repair') || lowerDesc.includes('supervision') || lowerDesc.includes('design') || lowerDesc.includes('planning') || lowerDesc.includes('execution')) {
+    return {
+      category: 'services_labor',
+      matchedKeyword: 'service or labor terms',
+      confidence: 0.85
+    };
+  }
+
+  if (lowerDesc.includes('water') || lowerDesc.includes('electricity') || lowerDesc.includes('gas') || lowerDesc.includes('internet') || lowerDesc.includes('phone') || lowerDesc.includes('cleaning') || lowerDesc.includes('security') || lowerDesc.includes('energy')) {
+    return {
+      category: 'utilities_facilities',
+      matchedKeyword: 'utility or facility terms',
+      confidence: 0.75
+    };
+  }
+
+  if (lowerDesc.includes('food') || lowerDesc.includes('drink') || lowerDesc.includes('beverage')) {
+    return {
+      category: 'food_beverages',
+      matchedKeyword: 'food or beverage terms',
+      confidence: 0.8
+    };
+  }
+
+  if (lowerDesc.includes('transport') || lowerDesc.includes('shipping') || lowerDesc.includes('logistics')) {
+    return {
+      category: 'transportation_logistics',
+      matchedKeyword: 'transport or logistics terms',
+      confidence: 0.8
+    };
+  }
+
+  if (lowerDesc.includes('software') || lowerDesc.includes('it') || lowerDesc.includes('computer') || lowerDesc.includes('digital') || lowerDesc.includes('network')) {
+    return {
+      category: 'technology_software',
+      matchedKeyword: 'technology or software terms',
+      confidence: 0.8
+    };
+  }
+
+  return null; // No match found
+}
+
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Initialize classification service (temporarily disabled to fix server startup)
@@ -4002,6 +4145,34 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(401).json({ message: 'User not found' });
       }
 
+      // Get all invoices for the user
+      let invoices = await storage.getInvoicesByUserId(userId);
+
+      // Apply filters to invoices first
+      const filteredInvoiceIds = invoices
+        .filter(invoice => {
+          // Status check - must be processed invoices
+          if (!['extracted', 'approved', 'verified'].includes(invoice.status || '')) {
+            return false;
+          }
+
+          // Apply filters if provided
+          if (dateFrom && invoice.invoiceDate && invoice.invoiceDate < new Date(dateFrom)) {
+            return false;
+          }
+
+          if (dateTo && invoice.invoiceDate && invoice.invoiceDate > new Date(dateTo)) {
+            return false;
+          }
+
+          return true;
+        })
+        .map(inv => inv.id);
+
+      if (filteredInvoiceIds.length === 0) {
+        return res.json({ results: [], pagination: { page: 1, limit: 50, total: 0, pages: 0 } });
+      }
+
       const db = await getDb();
       let query = db
         .select({
@@ -4027,35 +4198,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(lineItemClassifications)
         .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
         .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
-        .where(eq(invoices.companyId, user.companyId || 'default'));
-
-      // Apply filters
-      const conditions = [eq(invoices.companyId, user.companyId || 'default')];
-
-      if (projectId) {
-        conditions.push(sql`EXISTS (
-          SELECT 1 FROM ${invoiceProjectMatches} ipm 
-          WHERE ipm.invoice_id = ${lineItems.invoiceId} 
-          AND ipm.project_id = ${projectId}
-          AND ipm.is_active = true
-        )`);
-      }
-
-      if (dateFrom) {
-        conditions.push(gte(lineItemClassifications.classifiedAt, new Date(dateFrom)));
-      }
-
-      if (dateTo) {
-        conditions.push(lte(lineItemClassifications.classifiedAt, new Date(dateTo)));
-      }
-
-      if (category) {
-        conditions.push(eq(lineItemClassifications.category, category));
-      }
-
-      if (conditions.length > 1) {
-        query = query.where(and(...conditions));
-      }
+        .where(
+          and(
+            inArray(invoices.id, filteredInvoiceIds), // Filter by invoices relevant to the user
+            projectId ? sql`EXISTS (
+              SELECT 1 FROM ${invoiceProjectMatches} ipm 
+              WHERE ipm.invoice_id = ${lineItems.invoiceId} 
+              AND ipm.project_id = ${projectId}
+              AND ipm.is_active = true
+            )` : undefined,
+            dateFrom ? gte(lineItemClassifications.classifiedAt, new Date(dateFrom)) : undefined,
+            dateTo ? lte(lineItemClassifications.classifiedAt, new Date(dateTo)) : undefined,
+            category ? eq(lineItemClassifications.category, category) : undefined
+          ).filter(Boolean) // Remove undefined conditions
+        );
 
       const results = await query
         .orderBy(desc(lineItemClassifications.classifiedAt))
@@ -4068,7 +4224,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .from(lineItemClassifications)
         .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
         .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
-        .where(conditions.length > 1 ? and(...conditions) : conditions[0]);
+        .where(
+          and(
+            inArray(invoices.id, filteredInvoiceIds),
+            projectId ? sql`EXISTS (
+              SELECT 1 FROM ${invoiceProjectMatches} ipm 
+              WHERE ipm.invoice_id = ${lineItems.invoiceId} 
+              AND ipm.project_id = ${projectId}
+              AND ipm.is_active = true
+            )` : undefined,
+            dateFrom ? gte(lineItemClassifications.classifiedAt, new Date(dateFrom)) : undefined,
+            dateTo ? lte(lineItemClassifications.classifiedAt, new Date(dateTo)) : undefined,
+            category ? eq(lineItemClassifications.category, category) : undefined
+          ).filter(Boolean)
+        );
 
       const [{ count }] = await countQuery;
 
