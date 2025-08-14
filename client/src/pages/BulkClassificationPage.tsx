@@ -79,7 +79,16 @@ export default function BulkClassificationPage() {
   const [processingSessionId, setProcessingSessionId] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [resultsPage, setResultsPage] = useState(1);
-  
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [progress, setProgress] = useState({
+    isVisible: false,
+    current: 0,
+    total: 0,
+    currentInvoice: null as string | null,
+    errors: [] as string[],
+    sessionId: null as string | null
+  });
+
   const queryClient = useQueryClient();
 
   // Get invoices ready for classification
@@ -218,7 +227,7 @@ export default function BulkClassificationPage() {
   });
 
   const invoices = invoiceData?.invoices || [];
-  const progress = progressData;
+  const progressDataFromQuery = progressData; // Renamed to avoid conflict with local state
   const results = resultsData?.results || [];
   const summary = summaryData || { totalClassifications: 0, categoryBreakdown: {}, averageConfidence: 0 };
   const categories = categoriesData || {};
@@ -239,33 +248,129 @@ export default function BulkClassificationPage() {
     }
   };
 
-  const handleStartClassification = () => {
+  const handleProcessSelected = async () => {
     if (selectedInvoices.length === 0) {
       toast({
-        title: "No Invoices Selected",
-        description: "Please select at least one invoice to classify.",
+        title: "No invoices selected",
+        description: "Please select at least one invoice to process.",
         variant: "destructive",
       });
       return;
     }
 
-    startClassificationMutation.mutate({
-      invoiceIds: selectedInvoices,
-      filters: {
-        projectId: filterProjectId || undefined,
-        dateFrom: dateFrom || undefined,
-        dateTo: dateTo || undefined,
-      },
-      options: {
-        reclassifyExisting: true,
-        maxConcurrency: 3,
-      }
+    const sessionId = `process-${Date.now()}`;
+    setIsProcessing(true);
+    setProgress({
+      isVisible: true,
+      current: 0,
+      total: selectedInvoices.length,
+      currentInvoice: null,
+      errors: [],
+      sessionId: sessionId
     });
+
+    // Initialize WebSocket connection for real-time progress
+    let ws: WebSocket | null = null;
+    try {
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const wsUrl = `${protocol}//${window.location.host}/ws`;
+      ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        console.log('WebSocket connected for progress tracking');
+        ws?.send(JSON.stringify({
+          type: 'subscribe_progress',
+          sessionId: sessionId
+        }));
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'progress' && data.sessionId === sessionId) {
+            setProgress(prev => ({
+              ...prev,
+              current: data.data.metrics.processedInvoices || prev.current,
+              currentInvoice: data.data.metrics.currentInvoice || prev.currentInvoice
+            }));
+          }
+        } catch (error) {
+          console.error('Error parsing WebSocket message:', error);
+        }
+      };
+
+      ws.onerror = (error) => {
+        console.error('WebSocket error:', error);
+      };
+
+    } catch (wsError) {
+      console.warn('WebSocket setup failed, continuing without real-time updates:', wsError);
+    }
+
+    try {
+      const response = await fetch('/api/process-invoices-line-items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceIds: selectedInvoices,
+          sessionId: sessionId,
+          vendorContext: {
+            vendorName: vendorContext.vendorName || '',
+            industry: vendorContext.industry || '',
+            businessType: vendorContext.businessType || ''
+          }
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to process invoices');
+      }
+
+      const result = await response.json();
+
+      // Update progress to show completion
+      setProgress(prev => ({
+        ...prev,
+        current: result.processedInvoices,
+        total: result.totalInvoices
+      }));
+
+      toast({
+        title: "Processing Complete",
+        description: `Successfully processed ${result.processedInvoices} out of ${result.totalInvoices} invoices.`,
+      });
+
+      // Refresh data
+      refetchInvoices(); // Changed from refetch to refetchInvoices
+      setSelectedInvoices([]);
+
+    } catch (error) {
+      console.error('Processing error:', error);
+      toast({
+        title: "Processing Failed",
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      // Close WebSocket connection
+      if (ws) {
+        ws.close();
+      }
+
+      setIsProcessing(false);
+      // Keep progress visible for 10 seconds to show completion
+      setTimeout(() => {
+        setProgress(prev => ({ ...prev, isVisible: false }));
+      }, 10000);
+    }
   };
 
+
   const getProgressPercentage = () => {
-    if (!progress || progress.totalInvoices === 0) return 0;
-    return Math.round((progress.processedInvoices / progress.totalInvoices) * 100);
+    if (!progressDataFromQuery || progressDataFromQuery.totalInvoices === 0) return 0;
+    return Math.round((progressDataFromQuery.processedInvoices / progressDataFromQuery.totalInvoices) * 100);
   };
 
   const getStatusIcon = (status: string) => {
@@ -344,61 +449,49 @@ export default function BulkClassificationPage() {
           </Card>
 
           {/* Progress Section */}
-          {progress && (
+          {(progress.isVisible || progressDataFromQuery) && (
             <Card>
               <CardHeader>
                 <CardTitle className="flex items-center">
-                  {getStatusIcon(progress.status)}
+                  {progressDataFromQuery ? getStatusIcon(progressDataFromQuery.status) : <Clock className="w-4 h-4 text-blue-500" />}
                   <span className="ml-2">Classification Progress</span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <div className="flex justify-between text-sm">
-                    <span>Progress</span>
-                    <span>{getProgressPercentage()}%</span>
+                  <div className="flex justify-between items-center">
+                    <span className="text-sm font-medium">Processing Progress</span>
+                    <span className="text-sm text-muted-foreground">
+                      {progress.current} / {progress.total}
+                    </span>
                   </div>
-                  <Progress value={getProgressPercentage()} className="w-full" />
-                </div>
-                
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                  <div>
-                    <div className="font-medium">Invoices</div>
-                    <div className="text-muted-foreground">
-                      {progress.processedInvoices} / {progress.totalInvoices}
+                  <Progress
+                    value={progress.total > 0 ? (progress.current / progress.total) * 100 : 0}
+                    className="w-full"
+                  />
+                  {progress.sessionId && (
+                    <div className="text-xs text-muted-foreground">
+                      Session: {progress.sessionId}
                     </div>
-                  </div>
-                  <div>
-                    <div className="font-medium">Line Items</div>
-                    <div className="text-muted-foreground">
-                      {progress.classifiedLineItems} / {progress.totalLineItems}
+                  )}
+                  {progress.current === progress.total && progress.total > 0 && (
+                    <div className="text-sm text-green-600 font-medium">
+                      ✅ Processing completed successfully!
                     </div>
-                  </div>
-                  <div>
-                    <div className="font-medium">Status</div>
-                    <Badge variant={progress.status === 'completed' ? 'default' : 'secondary'}>
-                      {progress.status}
-                    </Badge>
-                  </div>
-                  <div>
-                    <div className="font-medium">Avg. Confidence</div>
-                    <div className="text-muted-foreground">
-                      {Math.round(progress.summary.averageConfidence * 100)}%
-                    </div>
-                  </div>
+                  )}
                 </div>
 
-                {progress.currentInvoice && (
+                {progressDataFromQuery?.currentInvoice && (
                   <div className="text-sm text-muted-foreground">
-                    Currently processing: {progress.currentInvoice}
+                    Currently processing: {progressDataFromQuery.currentInvoice}
                   </div>
                 )}
 
-                {progress.errors.length > 0 && (
+                {progressDataFromQuery?.errors && progressDataFromQuery.errors.length > 0 && (
                   <div className="space-y-2">
                     <div className="font-medium text-red-600">Errors:</div>
                     <ScrollArea className="h-20">
-                      {progress.errors.map((error, index) => (
+                      {progressDataFromQuery.errors.map((error, index) => (
                         <div key={index} className="text-sm text-red-600">
                           {error}
                         </div>
@@ -451,7 +544,7 @@ export default function BulkClassificationPage() {
                           <TableCell>
                             <Checkbox
                               checked={selectedInvoices.includes(invoice.invoiceId)}
-                              onCheckedChange={(checked) => 
+                              onCheckedChange={(checked) =>
                                 handleInvoiceSelect(invoice.invoiceId, checked as boolean)
                               }
                             />
@@ -482,18 +575,18 @@ export default function BulkClassificationPage() {
                   </Table>
                 </ScrollArea>
               )}
-              
+
               <div className="flex items-center justify-between mt-4">
                 <div className="text-sm text-muted-foreground">
                   {selectedInvoices.length} of {invoices.length} invoices selected
                 </div>
-                <Button 
-                  onClick={handleStartClassification}
-                  disabled={selectedInvoices.length === 0 || startClassificationMutation.isPending}
+                <Button
+                  onClick={handleProcessSelected}
+                  disabled={selectedInvoices.length === 0 || isProcessing}
                   className="flex items-center"
                 >
                   <Zap className="w-4 h-4 mr-2" />
-                  {startClassificationMutation.isPending ? "Starting..." : "Start Classification"}
+                  {isProcessing ? "Processing..." : "Start Classification"}
                 </Button>
               </div>
             </CardContent>
@@ -562,7 +655,7 @@ export default function BulkClassificationPage() {
                   </Table>
                 </ScrollArea>
               )}
-              
+
               {resultsData?.pagination && (
                 <div className="flex items-center justify-between mt-4">
                   <div className="text-sm text-muted-foreground">

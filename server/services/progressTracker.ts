@@ -193,6 +193,12 @@ export class ProgressTracker {
 
     this.updateMetrics(sessionId);
     this.broadcastUpdate(sessionId, 'classification_finished');
+
+    // Keep completed sessions for 30 minutes for review
+    setTimeout(() => {
+      this.sessions.delete(sessionId);
+      this.websockets.delete(sessionId);
+    }, 30 * 60 * 1000); // 30 minutes
   }
 
   static errorSession(sessionId: string, error: string, stepIndex?: number) {
@@ -274,6 +280,18 @@ export class ProgressTracker {
   static getUserSessions(userId: string): ProgressSession[] {
     return Array.from(this.sessions.values())
       .filter(session => session.userId === userId);
+  }
+
+  // Get recent sessions (including completed ones) for a user
+  static getRecentUserSessions(userId: string, includeCompleted: boolean = true): ProgressSession[] {
+    const sessions = Array.from(this.sessions.values())
+      .filter(session => session.userId === userId);
+    
+    if (includeCompleted) {
+      return sessions.sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
+    }
+    
+    return sessions.filter(session => session.status !== 'completed' && session.status !== 'error');
   }
 }
 
