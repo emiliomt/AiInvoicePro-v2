@@ -490,7 +490,7 @@ function fixClassificationCategories(desc: string): { category: string; matchedK
       confidence: 0.8
     };
   }
-  
+
   if (lowerDesc.includes('service') || lowerDesc.includes('labor') || lowerDesc.includes('consulting') || lowerDesc.includes('engineering') || lowerDesc.includes('construction') || lowerDesc.includes('installation') || lowerDesc.includes('maintenance') || lowerDesc.includes('repair') || lowerDesc.includes('supervision') || lowerDesc.includes('design') || lowerDesc.includes('planning') || lowerDesc.includes('execution')) {
     return {
       category: 'services_labor',
@@ -1297,7 +1297,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Invoice processing endpoint - processes and stores all results in database
-  app.post('/api/invoices/process', isAuthenticated, async (req, res) => {
+  app.post('/api/invoices/process', async (req: any, res) => {
     try {
       const { invoiceId, isPettyCash, projectMatch, validationStatus } = req.body;
 
@@ -2634,7 +2634,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).claims.sub;
 
       const invoice = await storage.getInvoice(invoiceId);
-
       if (!invoice) {
         return res.status(404).json({ message: "Invoice not found" });
       }
@@ -3880,7 +3879,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Get invoices ready for classification
   app.get('/api/invoices/ready-for-classification', isAuthenticated, async (req: any, res) => {
     try {
-      const { projectId, dateFrom, dateTo, invoiceIds } = req.query;
+      const {projectId, dateFrom, dateTo, invoiceIds } = req.query;
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
 
