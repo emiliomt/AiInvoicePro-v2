@@ -387,13 +387,14 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
 
     console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items, ${classifiedCount} classified`);
 
-    // Update invoice status to extracted after successful processing
+    // Update invoice status to classified after successful processing
     await storage.updateInvoice(invoice.id, { 
-      status: 'extracted',
+      status: 'classified',
+      processingStatus: 'classified',
       updatedAt: new Date()
     });
 
-    console.log(`✅ Updated invoice ${invoice.id} status to "extracted" after line item processing`);
+    console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
 
     return { success: true };
 
