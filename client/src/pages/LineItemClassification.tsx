@@ -361,51 +361,32 @@ export default function LineItemClassification() {
 
   // Process invoices mutation
   const processInvoicesMutation = useMutation({
-    mutationFn: async ({ invoiceIds, vendorContext, filters }: {
-      invoiceIds: number[],
-      vendorContext: any,
-      filters?: any
+    mutationFn: async (data: {
+      invoiceIds: number[];
+      vendorContext?: VendorContext;
+      filters?: any;
     }) => {
-      const response = await fetch('/api/process-invoices-line-items', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          invoiceIds,
-          vendorContext,
-          filters,
-        }),
+      const response = await fetch("/api/process-invoices-line-items", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data),
       });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.error || 'Failed to process invoices');
-      }
-
       return response.json();
     },
-    onSuccess: (data) => {
+    onSuccess: (result) => {
+      setProcessingSessionId(result.sessionId);
+      setProgressSessionId(result.sessionId);
+      setShowProgressTracker(true);
       toast({
-        title: "Processing Complete",
-        description: data.message,
+        title: "Processing Started",
+        description:
+          "Invoice processing has begun. You can track progress below.",
       });
-      setSelectedInvoices([]);
-
-      // Force refresh of all invoice-related data
-      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/classification/categories"] });
-      queryClient.invalidateQueries({ queryKey: ["/api/classification/keywords"] });
-      
-      // Refetch invoices immediately to show updated status
-      queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
-      refetchInvoices();
     },
-    onError: (error: Error) => {
+    onError: (error) => {
       toast({
         title: "Processing Failed",
-        description: error.message,
+        description: "Unable to start invoice processing. Please try again.",
         variant: "destructive",
       });
     },

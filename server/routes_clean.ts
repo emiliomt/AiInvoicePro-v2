@@ -387,14 +387,13 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
 
     console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items, ${classifiedCount} classified`);
 
-    // Update invoice status to classified after successful processing
+    // Update invoice status to extracted after successful processing
     await storage.updateInvoice(invoice.id, { 
-      status: 'classified',
-      processingStatus: 'classified',
+      status: 'extracted',
       updatedAt: new Date()
     });
 
-    console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
+    console.log(`✅ Updated invoice ${invoice.id} status to "extracted" after line item processing`);
 
     return { success: true };
 
@@ -3933,7 +3932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
 
             // Update progress
-            ProgressTracker.updateProgress(processSessionId, processedCount, invoices.length, `Processing invoice ${invoice.invoiceNumber}`);
+            ProgressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
 
             // Process the invoice line items
             const result = await processInvoiceLineItems(invoice, vendorContext, user.claims.sub);
@@ -3955,7 +3954,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           }
 
           processedCount++;
-          ProgressTracker.updateProgress(processSessionId, processedCount, invoices.length, `Completed ${processedCount}/${invoices.length}`);
+          ProgressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
         }
 
         // Complete the progress session
