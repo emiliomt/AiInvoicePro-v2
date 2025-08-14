@@ -28,7 +28,8 @@ import { BulkClassificationService } from "./services/bulkClassificationService.
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
 import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { ProgressTracker } from './services/progressTracker';
-import { InvoiceProcessingService } from './services/invoiceProcessingService'; // Assuming InvoiceProcessingService is in './services/invoiceProcessingService'
+import { invoiceProcessingService } from './services/invoiceProcessingService';
+import { progressTracker } from './services/progressTracker';
 
 // Configure multer for file uploads
 const upload = multer({
@@ -287,6 +288,100 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
     } catch (updateError) {
       console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
     }
+  }
+}
+
+// Helper function to process line items for a single invoice
+async function processInvoiceLineItems(invoice: any, vendorContext: any, userId: string): Promise<{ success: boolean; error?: string }> {
+  try {
+    const db = await getDb();
+    const { ClassificationService } = await import('./services/classificationService');
+
+    // Get existing line items from database
+    const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoice.id));
+    console.log(`Found ${existingLineItems.length} existing line items in database`);
+
+    let itemsToClassify: any[] = [];
+
+    if (existingLineItems.length > 0) {
+      // Use existing line items
+      itemsToClassify = existingLineItems;
+      console.log(`Using existing ${existingLineItems.length} line items for classification`);
+    } else {
+      // Extract line items from invoice data or create default ones
+      let lineItemsData: any[] = [];
+
+      if (invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0) {
+        lineItemsData = invoice.extractedData.lineItems;
+        console.log(`Found ${lineItemsData.length} line items in extracted data`);
+      } else {
+        // Create default line item
+        const description = invoice.extractedData?.descriptionSummary || 
+                          invoice.extractedData?.concept || 
+                          `Service from ${invoice.vendorName || 'Unknown Vendor'}`;
+
+        lineItemsData = [{
+          description: description,
+          quantity: '1',
+          unitPrice: invoice.totalAmount || '0.00',
+          totalPrice: invoice.totalAmount || '0.00',
+          unit: 'service'
+        }];
+        console.log(`Created 1 default line item for invoice ${invoice.id}`);
+      }
+
+      // Insert line items into database
+      for (let i = 0; i < lineItemsData.length; i++) {
+        const item = lineItemsData[i];
+        const [newLineItem] = await db.insert(lineItems).values({
+          invoiceId: invoice.id,
+          description: item.description || 'Unknown item',
+          quantity: item.quantity || '1',
+          unitPrice: item.unitPrice || item.price || '0.00',
+          totalPrice: item.totalPrice || item.total || '0.00',
+          unit: item.unit || null,
+          rawText: item.rawText || item.description,
+          lineNumber: i + 1,
+        }).returning();
+
+        itemsToClassify.push(newLineItem);
+      }
+    }
+
+    console.log(`Processing ${itemsToClassify.length} line items for classification`);
+
+    // Classify each line item
+    let classifiedCount = 0;
+    for (const item of itemsToClassify) {
+      try {
+        // Check if already classified
+        const existingClassification = await db.select()
+          .from(lineItemClassifications)
+          .where(eq(lineItemClassifications.lineItemId, item.id))
+          .limit(1);
+
+        if (existingClassification.length === 0) {
+          console.log(`Classifying item: "${item.description}"`);
+          await ClassificationService.classifyAndStore(item.id, userId);
+          classifiedCount++;
+        } else {
+          console.log(`Item already classified: "${item.description}"`);
+          classifiedCount++;
+        }
+      } catch (classificationError) {
+        console.error(`Failed to classify line item ${item.id}:`, classificationError);
+      }
+    }
+
+    console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items, ${classifiedCount} classified`);
+    return { success: true };
+
+  } catch (error) {
+    console.error(`❌ Error processing invoice ${invoice.id}:`, error);
+    return { 
+      success: false, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    };
   }
 }
 
@@ -3998,37 +4093,120 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Process invoices for line item classification with enhanced progress tracking
   app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
     try {
-      const { invoiceIds, vendorContext, sessionId } = req.body;
       const userId = (req.user as any).claims.sub;
-
+      const { invoiceIds, vendorContext, sessionId } = req.body;
+      
       console.log('Full request body:', JSON.stringify(req.body, null, 2));
       console.log('Invoice IDs to process:', invoiceIds);
       console.log('Vendor context:', vendorContext);
-      console.log('Starting invoice processing for line item classification - Session:', sessionId);
 
-      // Create enhanced progress session
-      const progressSession = ProgressTracker.createSession(sessionId, userId, invoiceIds.length, `Classification - ${invoiceIds.length} invoices`);
+      if (!Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        return res.status(400).json({ message: "Invoice IDs are required" });
+      }
 
-      // Start processing in background
-      InvoiceProcessingService.processInvoicesForLineItemClassification(
-        invoiceIds,
-        vendorContext,
+      // Generate sessionId if not provided
+      const processSessionId = sessionId || `process-${Date.now()}`;
+      console.log(`Starting invoice processing for line item classification - Session: ${processSessionId}`);
+
+      // Initialize progress tracking
+      const progressSession = progressTracker.createSession(
+        processSessionId,
         userId,
-        sessionId
-      ).then(results => {
-        ProgressTracker.completeSession(sessionId, results);
-      }).catch(error => {
-        ProgressTracker.errorSession(sessionId, error.message);
-      });
+        `Classification - ${invoiceIds.length} invoices`,
+        invoiceIds.length
+      );
 
-      res.json({
-        message: 'Invoice processing started successfully',
-        sessionId,
-        status: 'processing'
-      });
+      // Initialize counters
+      let processedCount = 0;
+      let successCount = 0;
+      let failedCount = 0;
+      const errors: string[] = [];
+
+      try {
+        // Fetch invoices with proper error handling
+        console.log('Attempting to fetch invoices with IDs:', invoiceIds.join(', '));
+        const invoices = await storage.getInvoicesByIds(invoiceIds, userId);
+        
+        if (!invoices || invoices.length === 0) {
+          progressTracker.errorSession(processSessionId, "No invoices found for the provided IDs");
+          return res.status(404).json({ message: "No invoices found for the provided IDs" });
+        }
+
+        console.log(`Found ${invoices.length} invoices in database:`, 
+          invoices.map(inv => ({ id: inv.id, number: inv.invoiceNumber, vendor: inv.vendorName, projectId: inv.projectId }))
+        );
+
+        // Process each invoice with proper transaction handling
+        for (const invoice of invoices) {
+          try {
+            console.log(`Processing invoice ${invoice.id} - ${invoice.invoiceNumber}`);
+            
+            // Update progress
+            progressTracker.updateProgress(processSessionId, processedCount, `Processing invoice ${invoice.invoiceNumber}`);
+            
+            // Process the invoice line items
+            const result = await processInvoiceLineItems(invoice, vendorContext, userId);
+            
+            if (result.success) {
+              successCount++;
+              console.log(`✅ Successfully processed invoice ${invoice.id}`);
+            } else {
+              failedCount++;
+              errors.push(`Invoice ${invoice.id}: ${result.error}`);
+              console.log(`❌ Failed to process invoice ${invoice.id}: ${result.error}`);
+            }
+            
+          } catch (invoiceError) {
+            failedCount++;
+            const errorMsg = invoiceError instanceof Error ? invoiceError.message : 'Unknown error';
+            errors.push(`Invoice ${invoice.id}: ${errorMsg}`);
+            console.error(`Error processing invoice ${invoice.id}:`, invoiceError);
+          }
+          
+          processedCount++;
+          progressTracker.updateProgress(processSessionId, processedCount, `Completed ${processedCount}/${invoices.length}`);
+        }
+
+        // Complete the progress session
+        const results = {
+          message: "Invoice processing completed",
+          sessionId: processSessionId,
+          stats: {
+            total: invoiceIds.length,
+            processed: processedCount,
+            successful: successCount,
+            failed: failedCount
+          },
+          errors: errors.length > 0 ? errors : undefined
+        };
+
+        progressTracker.completeSession(processSessionId, results);
+
+        console.log(`Invoice processing completed - Session: ${processSessionId}. Processed: ${processedCount}, Success: ${successCount}, Failed: ${failedCount}`);
+        
+        if (errors.length > 0) {
+          console.log('Processing errors:', errors);
+        }
+
+        res.json({
+          message: 'Invoice processing completed successfully',
+          sessionId: processSessionId,
+          results
+        });
+
+      } catch (fetchError) {
+        console.error('Error fetching invoices:', fetchError);
+        progressTracker.errorSession(processSessionId, fetchError instanceof Error ? fetchError.message : 'Unknown error');
+        res.status(500).json({ 
+          message: 'Failed to fetch invoices for processing',
+          error: fetchError instanceof Error ? fetchError.message : 'Unknown error'
+        });
+      }
+
     } catch (error) {
       console.error('Error starting invoice processing:', error);
-      ProgressTracker.errorSession(sessionId, error instanceof Error ? error.message : 'Unknown error');
+      const errorSessionId = req.body.sessionId || `error-${Date.now()}`;
+      progressTracker.errorSession(errorSessionId, error instanceof Error ? error.message : 'Unknown error');
       res.status(500).json({ 
         message: 'Failed to start invoice processing',
         error: error instanceof Error ? error.message : 'Unknown error'
