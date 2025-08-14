@@ -386,14 +386,21 @@ async function processInvoiceLineItems(invoice: any, vendorContext: any, userId:
     }
 
     console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items, ${classifiedCount} classified`);
+
+    // Update invoice status to classified after successful processing
+    await storage.updateInvoice(invoice.id, { 
+      status: 'classified',
+      updatedAt: new Date()
+    });
+
+    console.log(`✅ Updated invoice ${invoice.id} status to "classified" after line item processing`);
+
     return { success: true };
 
   } catch (error) {
     console.error(`❌ Error processing invoice ${invoice.id}:`, error);
-    return { 
-      success: false, 
-      error: error instanceof Error ? error.message : 'Unknown error' 
-    };
+    // Propagate the error to be caught by the caller
+    throw error; 
   }
 }
 
@@ -5970,7 +5977,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           duration: session.endTime 
             ? session.endTime.getTime() - session.startTime.getTime()
             : Date.now() - session.startTime.getTime()
-        }))
+        }
       });
     } catch (error) {
       console.error('Error fetching progress sessions:', error);
@@ -6122,10 +6129,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   app.get('/api/invoices/:id/preview-pdf', isAuthenticated, async (req: any, res: any) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      if (isNaN(invoiceId)) {
-        return res.status(400).json({ error: 'Invalid invoice ID' });
-      }
-
       const userId = (req.user as any).claims.sub;
 
       // Verify invoice access
