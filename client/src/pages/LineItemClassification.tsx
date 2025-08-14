@@ -361,32 +361,48 @@ export default function LineItemClassification() {
 
   // Process invoices mutation
   const processInvoicesMutation = useMutation({
-    mutationFn: async (data: {
-      invoiceIds: number[];
-      vendorContext?: VendorContext;
-      filters?: any;
+    mutationFn: async ({ invoiceIds, vendorContext, filters }: {
+      invoiceIds: number[],
+      vendorContext: any,
+      filters?: any
     }) => {
-      const response = await fetch("/api/process-invoices-line-items", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(data),
+      const response = await fetch('/api/process-invoices-line-items', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          invoiceIds,
+          vendorContext,
+          filters,
+        }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to process invoices');
+      }
+
       return response.json();
     },
-    onSuccess: (result) => {
-      setProcessingSessionId(result.sessionId);
-      setProgressSessionId(result.sessionId);
-      setShowProgressTracker(true);
+    onSuccess: (data) => {
       toast({
-        title: "Processing Started",
-        description:
-          "Invoice processing has begun. You can track progress below.",
+        title: "Processing Complete",
+        description: data.message,
       });
+      setSelectedInvoices([]);
+
+      // Refresh the invoices data after processing
+      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+
+      // Also refetch the invoices to ensure immediate update
+      refetchInvoices();
     },
-    onError: (error) => {
+    onError: (error: Error) => {
       toast({
         title: "Processing Failed",
-        description: "Unable to start invoice processing. Please try again.",
+        description: error.message,
         variant: "destructive",
       });
     },
