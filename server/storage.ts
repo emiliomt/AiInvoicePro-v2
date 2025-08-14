@@ -509,30 +509,14 @@ class PostgresStorage implements IStorage {
 
   // Get invoices by multiple IDs with user filtering
   async getInvoicesByIds(invoiceIds: number[], userId?: string): Promise<Invoice[]> {
-    if (invoiceIds.length === 0) return [];
-
-    let query = db.select().from(invoices).where(inArray(invoices.id, invoiceIds));
-
-    // Add user filtering if provided
-    if (userId) {
-      // Get user's company to include RPA invoices
-      const user = await this.getUser(userId);
-      if (user && user.companyId) {
-        query = query.where(
-          or(
-            eq(invoices.userId, userId),
-            and(
-              eq(invoices.userId, 'rpa-system'),
-              eq(invoices.companyId, user.companyId)
-            )
-          )
-        ) as any;
-      } else {
-        query = query.where(eq(invoices.userId, userId)) as any;
-      }
+    if (invoiceIds.length === 0) {
+      return [];
     }
-
-    return await query.orderBy(desc(invoices.createdAt));
+    
+    return await db
+      .select()
+      .from(invoices)
+      .where(inArray(invoices.id, invoiceIds));
   }
 
   async getInvoicesByCompanyId(companyId: number): Promise<Invoice[]> {
@@ -560,7 +544,20 @@ class PostgresStorage implements IStorage {
   }
 
   async getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]> {
-    return await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+    return await db
+      .select()
+      .from(lineItems)
+      .where(eq(lineItems.invoiceId, invoiceId));
+  }
+
+  async getLineItemClassification(lineItemId: number): Promise<any> {
+    const result = await db
+      .select()
+      .from(lineItemClassifications)
+      .where(eq(lineItemClassifications.lineItemId, lineItemId))
+      .limit(1);
+    
+    return result.length > 0 ? result[0] : null;
   }
 
   async getLineItemByInvoiceAndIndex(invoiceId: number, lineIndex: number): Promise<LineItem | null> {
