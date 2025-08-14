@@ -6358,6 +6358,62 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Get progress sessions for a user (including completed ones)
+  app.get('/api/progress/sessions/:userId', async (req: any, res) => {
+    try {
+      const { userId } = req.params;
+      const { includeCompleted = 'true' } = req.query;
+      
+      const sessions = ProgressTracker.getRecentUserSessions(
+        userId, 
+        includeCompleted === 'true'
+      );
+
+      res.json({
+        sessions: sessions.map(session => ({
+          sessionId: session.sessionId,
+          title: session.title || `${session.type} - ${session.metrics.totalInvoices} invoices`,
+          status: session.status,
+          startTime: session.startTime,
+          endTime: session.endTime,
+          currentStep: session.currentStep,
+          totalSteps: session.totalSteps,
+          metrics: session.metrics,
+          duration: session.endTime 
+            ? session.endTime.getTime() - session.startTime.getTime()
+            : Date.now() - session.startTime.getTime()
+        }))
+      });
+    } catch (error) {
+      console.error('Error fetching progress sessions:', error);
+      res.status(500).json({ error: 'Failed to fetch progress sessions' });
+    }
+  });
+
+  // Get specific progress session details
+  app.get('/api/progress/session/:sessionId', async (req: any, res) => {
+    try {
+      const { sessionId } = req.params;
+      const session = ProgressTracker.getSession(sessionId);
+      
+      if (!session) {
+        return res.status(404).json({ error: 'Session not found' });
+      }
+
+      res.json({
+        session: {
+          ...session,
+          duration: session.endTime 
+            ? session.endTime.getTime() - session.startTime.getTime()
+            : Date.now() - session.startTime.getTime()
+        }
+      });
+    } catch (error) {
+      console.error('Error fetching progress session:', error);
+      res.status(500).json({ error: 'Failed to fetch progress session' });
+    }
+  });
+
   // Custom error handler middleware
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
