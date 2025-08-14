@@ -230,6 +230,7 @@ export class ClassificationService {
             category: classification.category as any,
             matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
             confidence: classification.confidence.toString(),
+            method: 'keyword-matching', // Add required method field
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
           })
@@ -242,8 +243,11 @@ export class ClassificationService {
         category: classification.category as any,
         matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
         confidence: classification.confidence.toString(),
+        method: 'keyword-matching', // Add required method field
         isManualOverride: false,
-        classifiedBy: userId || 'system'
+        classifiedBy: userId || 'system',
+        classifiedAt: new Date(),
+        createdAt: new Date()
       });
     }
   }
@@ -321,25 +325,31 @@ export class ClassificationService {
       .limit(1);
 
     if (existingClassification.length > 0) {
+      // Update existing classification
       await db
         .update(lineItemClassifications)
         .set({
           category: category as any,
-          isManualOverride: true,
           matchedKeywords: ['manual override'],
-          confidence: '1.00',
-          classifiedAt: new Date(),
-          classifiedBy: userId
+          confidence: '1.0', // Manual classifications have 100% confidence
+          method: 'manual-override', // Required field for manual updates
+          isManualOverride: true,
+          classifiedBy: userId,
+          classifiedAt: new Date()
         })
         .where(eq(lineItemClassifications.lineItemId, lineItemId));
     } else {
+      // Create new classification
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: category as any,
-        isManualOverride: true,
         matchedKeywords: ['manual override'],
-        confidence: '1.00',
-        classifiedBy: userId
+        confidence: '1.0',
+        method: 'manual-override', // Required field
+        isManualOverride: true,
+        classifiedBy: userId,
+        classifiedAt: new Date(),
+        createdAt: new Date()
       });
     }
   }
@@ -452,6 +462,7 @@ Respond with JSON in this format:
             category: classification.category as any,
             matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
             confidence: classification.confidence.toString(),
+            method: useAI ? 'ai' : 'keyword-matching', // Set method based on AI usage
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
           })
@@ -464,8 +475,11 @@ Respond with JSON in this format:
         category: classification.category as any,
         matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
         confidence: classification.confidence.toString(),
+        method: useAI ? 'ai' : 'keyword-matching', // Set method based on AI usage
         isManualOverride: false,
-        classifiedBy: userId || 'system'
+        classifiedBy: userId || 'system',
+        classifiedAt: new Date(),
+        createdAt: new Date()
       });
     }
   }
