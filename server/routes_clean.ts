@@ -1,35 +1,42 @@
-import { sql } from "drizzle-orm";
-import { lineItems, lineItemClassifications } from "../shared/schema";
-import { eq } from "drizzle-orm";
 import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { storage, getDb } from "./storage";
-import { setupAuth, isAuthenticated } from "./replitAuth";
-import { insertInvoiceSchema, insertLineItemSchema, insertApprovalSchema, insertErpConnectionSchema, insertErpTaskSchema, insertSavedWorkflowSchema, insertScheduledTaskSchema, insertInvoiceImporterConfigSchema } from "@shared/schema";
-import { processInvoiceOCR } from "./services/ocrService";
-import { extractInvoiceData, extractPurchaseOrderData } from "./services/aiService";
-import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
-import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
 import multer from "multer";
 import path from "path";
 import { z } from "zod";
 import { RequestHandler } from "express";
-import { findBestProjectMatch } from "./services/aiService.js";
+import { sql, eq, and, or, gte, lte, desc, inArray } from "drizzle-orm";
+import { storage, getDb } from "./storage";
+import { setupAuth, isAuthenticated } from "./replitAuth";
+import { 
+  insertInvoiceSchema, 
+  insertLineItemSchema, 
+  insertApprovalSchema, 
+  insertErpConnectionSchema, 
+  insertErpTaskSchema, 
+  insertSavedWorkflowSchema, 
+  insertScheduledTaskSchema, 
+  insertInvoiceImporterConfigSchema,
+  classifyLineItemSchema, 
+  batchClassifySchema, 
+  bulkClassifyInvoicesSchema,
+  lineItems, 
+  lineItemClassifications, 
+  invoiceProjectMatches, 
+  invoices 
+} from "@shared/schema";
+import { processInvoiceOCR } from "./services/ocrService";
+import { extractInvoiceData, extractPurchaseOrderData, findBestProjectMatch } from "./services/aiService";
+import { checkInvoiceDiscrepancies, storeInvoiceFlags } from "./services/discrepancyService";
+import { predictInvoiceIssues, storePredictiveAlerts } from "./services/predictiveService";
 import { projectMatcher } from "./projectMatcher.js";
 import { invoicePOMatcher } from "./services/invoicePoMatcher.js";
 import { erpAutomationService } from "./services/erpAutomationService.js";
 import { invoiceImporterService } from "./services/invoiceImporterService.js";
 import { pythonInvoiceImporter } from "./services/pythonInvoiceImporter.js";
 import { applyColombianRules, clearColombianInvoiceCache } from './services/colombianInvoiceExtractor';
-import { invoiceProcessingService } from "./services/invoiceProcessingService.js";
 import { lineItemClassificationService } from "./services/lineItemClassificationService.js";
-import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema } from "@shared/schema";
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
-import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
-import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
 import { ProgressTracker } from './services/progressTracker';
-import { invoiceProcessingService } from './services/invoiceProcessingService';
-import { progressTracker } from './services/progressTracker';
 
 // Configure multer for file uploads
 const upload = multer({

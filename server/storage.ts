@@ -234,7 +234,9 @@ export interface IStorage {
   // Line Items
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
   getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]>;
+  getLineItemByInvoiceAndIndex(invoiceId: number, lineIndex: number): Promise<LineItem | null>;
   deleteLineItemsByInvoiceId(invoiceId: number): Promise<void>;
+  updateInvoiceClassificationStatus(invoiceId: number, status?: string): Promise<void>;
 
   // Approvals
   createApproval(approval: InsertApproval): Promise<Approval>;
@@ -559,6 +561,32 @@ class PostgresStorage implements IStorage {
 
   async getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]> {
     return await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+  }
+
+  async getLineItemByInvoiceAndIndex(invoiceId: number, lineIndex: number): Promise<LineItem | null> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return null;
+    }
+    const [result] = await db.select().from(lineItems)
+      .where(and(
+        eq(lineItems.invoiceId, invoiceId),
+        eq(lineItems.index, lineIndex)
+      ));
+    return result || null;
+  }
+
+  async updateInvoiceClassificationStatus(invoiceId: number, status?: string): Promise<void> {
+    await ensureDbConnected();
+    if (!isDbConnected || !db) {
+      return;
+    }
+    await db.update(invoices)
+      .set({ 
+        classificationStatus: status || 'classified',
+        updatedAt: new Date()
+      })
+      .where(eq(invoices.id, invoiceId));
   }
 
   async deleteLineItemsByInvoiceId(invoiceId: number): Promise<void> {
