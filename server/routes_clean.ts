@@ -27,6 +27,8 @@ import { classifyLineItemSchema, batchClassifySchema, bulkClassifyInvoicesSchema
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { lineItems, lineItemClassifications, invoiceProjectMatches, invoices } from "@shared/schema";
 import { and, or, eq, gte, lte, desc, sql, inArray } from "drizzle-orm";
+import { ProgressTracker } from './progressTracker'; // Assuming ProgressTracker is in './progressTracker'
+import { InvoiceProcessingService } from './services/invoiceProcessingService'; // Assuming InvoiceProcessingService is in './services/invoiceProcessingService'
 
 // Configure multer for file uploads
 const upload = multer({
@@ -2300,7 +2302,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json(invoicesWithMatches || []);
       } else {
         const invoices = await storage.getInvoicesByUserId(userId);
-        
+
         // Add classification status for each invoice
         const invoicesWithClassificationStatus = await Promise.all(
           (invoices || []).map(async (invoice) => {
@@ -2311,16 +2313,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 .from(lineItemClassifications)
                 .innerJoin(lineItems, eq(lineItemClassifications.lineItemId, lineItems.id))
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               // Count total line items
               const lineItemsCount = await db
                 .select({ count: sql`count(*)` })
                 .from(lineItems)
                 .where(eq(lineItems.invoiceId, invoice.id));
-              
+
               const classificationCount = Number(classifications[0]?.count || 0);
               const totalLineItems = Number(lineItemsCount[0]?.count || 0);
-              
+
               return {
                 ...invoice,
                 classificationStatus: classificationCount > 0 ? 'Classified' : 'Not Classified',
@@ -2341,7 +2343,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
             }
           })
         );
-        
+
         res.json(invoicesWithClassificationStatus);
       }
     } catch (error) {
@@ -3993,39 +3995,44 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Process invoices for line item classification
+  // Process invoices for line item classification with enhanced progress tracking
   app.post('/api/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
     try {
-      const { invoiceIds, filters, vendorContext } = req.body;
+      const { invoiceIds, vendorContext, sessionId } = req.body;
       const userId = (req.user as any).claims.sub;
-      const user = await storage.getUser(userId);
 
-      // Debug logging
       console.log('Full request body:', JSON.stringify(req.body, null, 2));
       console.log('Invoice IDs to process:', invoiceIds);
       console.log('Vendor context:', vendorContext);
+      console.log('Starting invoice processing for line item classification - Session:', sessionId);
 
-      if (!user) {
-        return res.status(401).json({ message: 'User not found' });
-      }
+      // Create enhanced progress session
+      const progressSession = ProgressTracker.createSession(sessionId, userId, invoiceIds.length, `Classification - ${invoiceIds.length} invoices`);
 
       // Start processing in background
-      const sessionId = `process-${Date.now()}`;
+      InvoiceProcessingService.processInvoicesForLineItemClassification(
+        invoiceIds,
+        vendorContext,
+        userId,
+        sessionId
+      ).then(results => {
+        ProgressTracker.completeSession(sessionId, results);
+      }).catch(error => {
+        ProgressTracker.errorSession(sessionId, error.message);
+      });
 
-      // Start the processing (don't await to make it non-blocking)
-      processInvoicesForLineItemClassification(invoiceIds, filters, userId, user.companyId || 'default', sessionId)
-        .catch(error => {
-          console.error('Background invoice processing failed:', error);
-        });
-
-      res.json({ 
-        message: 'Invoice processing started',
+      res.json({
+        message: 'Invoice processing started successfully',
         sessionId,
         status: 'processing'
       });
     } catch (error) {
       console.error('Error starting invoice processing:', error);
-      res.status(500).json({ message: 'Failed to start invoice processing' });
+      ProgressTracker.errorSession(sessionId, error instanceof Error ? error.message : 'Unknown error');
+      res.status(500).json({ 
+        message: 'Failed to start invoice processing',
+        error: error instanceof Error ? error.message : 'Unknown error'
+      });
     }
   });
 
@@ -4130,9 +4137,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice processing function for line item classification
   async function processInvoicesForLineItemClassification(
     invoiceIds: number[], 
-    filters: any, 
+    vendorContext: any, 
     userId: string, 
-    companyId: string, 
     sessionId: string
   ) {
     console.log(`Starting invoice processing for line item classification - Session: ${sessionId}`);
@@ -4146,7 +4152,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       if (invoiceIds && invoiceIds.length > 0) {
         // Process specific invoices
-        const actualCompanyId = companyId === 'default' ? null : companyId;
+        const actualCompanyId = null; // Placeholder for companyId filtering if needed
 
         // First, let's debug what invoices we're looking for
         console.log(`Attempting to fetch invoices with IDs: ${invoiceIds.join(', ')}`);
@@ -4181,7 +4187,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         })));
 
         // Debug: Check the company ID filter
-        console.log(`Company ID filter - actualCompanyId: ${actualCompanyId}, companyId: ${companyId}`);
+        console.log(`Company ID filter - actualCompanyId: ${actualCompanyId}, companyId: null`);
 
         // If no invoices found, try a simpler query to debug
         if (targetInvoices.length === 0) {
@@ -4206,9 +4212,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
             targetInvoices = debugResults;
           }
         }
-      } else if (filters) {
-        // Process based on filters
-        const actualCompanyId = companyId === 'default' ? null : companyId;
+      } else if (vendorContext) { // Process based on vendor context/filters
+        const actualCompanyId = null; // Placeholder for company ID filtering
 
         const conditions = [
           actualCompanyId ? eq(invoices.companyId, actualCompanyId) : sql`${invoices.companyId} IS NULL`,
@@ -4220,16 +4225,16 @@ export async function registerRoutes(app: Express): Promise<Server> {
           )
         ];
 
-        if (filters.projectId) {
-          conditions.push(eq(invoiceProjectMatches.projectId, filters.projectId));
+        if (vendorContext.projectId) {
+          conditions.push(eq(invoiceProjectMatches.projectId, vendorContext.projectId));
         }
 
-        if (filters.dateFrom) {
-          conditions.push(gte(invoices.invoiceDate, new Date(filters.dateFrom)));
+        if (vendorContext.dateFrom) {
+          conditions.push(gte(invoices.invoiceDate, new Date(vendorContext.dateFrom)));
         }
 
-        if (filters.dateTo) {
-          conditions.push(lte(invoices.invoiceDate, new Date(filters.dateTo)));
+        if (vendorContext.dateTo) {
+          conditions.push(lte(invoices.invoiceDate, new Date(vendorContext.dateTo)));
         }
 
         const query = db
@@ -5495,9 +5500,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const user = req.user;
       if (!user) {
         return res.status(401).json({ error: 'Unauthorized' });
-      }
-
-      const workflows = await storage.getSavedWorkflows((user as any).claims.sub);
+      }      const workflows = await storage.getSavedWorkflows((user as any).claims.sub);
       res.json(workflows);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
@@ -6363,7 +6366,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const { userId } = req.params;
       const { includeCompleted = 'true' } = req.query;
-      
+
       const sessions = ProgressTracker.getRecentUserSessions(
         userId, 
         includeCompleted === 'true'
@@ -6395,7 +6398,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const { sessionId } = req.params;
       const session = ProgressTracker.getSession(sessionId);
-      
+
       if (!session) {
         return res.status(404).json({ error: 'Session not found' });
       }

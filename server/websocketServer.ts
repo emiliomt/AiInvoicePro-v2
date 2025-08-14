@@ -1,5 +1,6 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Server } from 'http';
+import { Server, IncomingMessage } from 'http';
+import url from 'url';
 import { ProgressTracker } from './services/progressTracker';
 
 export function setupWebSocketServer(server: Server) {
@@ -17,18 +18,29 @@ export function setupWebSocketServer(server: Server) {
     ws.on('message', (message) => {
       try {
         const data = JSON.parse(message.toString());
-        console.log('WebSocket message received:', data);
+        console.log('📨 WebSocket message received:', data);
 
-        if (data.type === 'subscribe' && data.userId) {
-          // Store user ID for this connection
-          userConnections.set(ws, data.userId);
-          console.log(`User ${data.userId} subscribed to WebSocket updates`);
-        } else if (data.type === 'subscribe_progress' && data.sessionId) {
-          // Subscribe to specific progress session
-          console.log(`Subscribed to progress session: ${data.sessionId}`);
-          // Add this connection to the progress tracker
-          const ProgressTracker = require('./services/progressTracker').ProgressTracker;
-          ProgressTracker.addWebSocket(data.sessionId, ws);
+        // Handle different message types
+        switch (data.type) {
+          case 'subscribe_progress':
+            if (data.sessionId) {
+              // Subscribe to progress updates for a specific session
+              ws.sessionId = data.sessionId;
+              ProgressTracker.addWebSocket(data.sessionId, ws);
+              console.log(`📡 Client subscribed to progress for session: ${data.sessionId}`);
+            }
+            break;
+
+          case 'unsubscribe_progress':
+            if (ws.sessionId) {
+              ProgressTracker.removeWebSocket(ws.sessionId, ws);
+              delete ws.sessionId;
+              console.log('📡 Client unsubscribed from progress updates');
+            }
+            break;
+
+          default:
+            console.log('Unknown WebSocket message type:', data.type);
         }
       } catch (error) {
         console.error('Error parsing WebSocket message:', error);
@@ -45,12 +57,11 @@ export function setupWebSocketServer(server: Server) {
     });
 
     ws.on('close', () => {
-      console.log('WebSocket client disconnected');
-      // Remove this WebSocket from all progress sessions
-      const allSessions = ProgressTracker.getUserSessions(''); // This gets all sessions
-      allSessions.forEach(session => {
-        ProgressTracker.removeWebSocket(session.sessionId, ws);
-      });
+      console.log('📡 WebSocket client disconnected');
+      if (ws.sessionId) {
+        ProgressTracker.removeWebSocket(ws.sessionId, ws);
+        console.log(`📡 Cleaning up session: ${ws.sessionId}`);
+      }
       // Remove the connection from our userConnections map
       userConnections.delete(ws);
     });
