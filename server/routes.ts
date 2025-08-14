@@ -73,81 +73,6 @@ const excelUpload = multer({
 
 // Using isAuthenticated from replitAuth.ts
 
-// Async function to handle line item classification processing
-  async function processInvoiceLineItemsAsync(invoiceId: number, userId: string, sessionId?: string) {
-    try {
-      console.log(`📋 Processing line items for invoice ${invoiceId}`);
-
-      // Get line items
-      const lineItems = await storage.getLineItemsByInvoiceId(invoiceId);
-
-      if (!lineItems || lineItems.length === 0) {
-        console.log(`⚠️ No line items found for invoice ${invoiceId}`);
-        await storage.updateInvoice(invoiceId, { 
-          status: "classified",
-          extractedData: { 
-            classificationMessage: "No line items to classify",
-            timestamp: new Date().toISOString()
-          }
-        });
-        return;
-      }
-
-      console.log(`📊 Found ${lineItems.length} line items to classify`);
-
-      // Import the ClassificationService properly
-      const { ClassificationService } = await import('./services/classificationService');
-
-      // Initialize progress tracking
-      let processedCount = 0;
-      const totalCount = lineItems.length;
-
-      // Process each line item
-      for (const lineItem of lineItems) {
-        try {
-          console.log(`🔍 Classifying line item ${lineItem.id}: ${lineItem.description}`);
-
-          // Classify the line item using keyword matching first, then AI if needed
-          await ClassificationService.classifyAndStore(lineItem.id, userId);
-
-          processedCount++;
-
-          // Log progress
-          const progressPercent = Math.round((processedCount / totalCount) * 100);
-          console.log(`📈 Classification progress: ${processedCount}/${totalCount} (${progressPercent}%)`);
-
-          // Optional: Add a small delay to prevent overwhelming the system
-          if (lineItems.length > 10) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-          }
-
-        } catch (itemError) {
-          console.error(`❌ Failed to classify line item ${lineItem.id}:`, itemError);
-          // Continue with other items even if one fails
-        }
-      }
-
-      // Update invoice status to classified
-      await storage.updateInvoice(invoiceId, {
-        status: "classified",
-        extractedData: {
-          ...((await storage.getInvoice(invoiceId))?.extractedData || {}),
-          classificationCompleted: true,
-          classifiedItemsCount: processedCount,
-          totalItemsCount: totalCount,
-          classificationTimestamp: new Date().toISOString(),
-          sessionId
-        }
-      });
-
-      console.log(`✅ Successfully classified ${processedCount}/${totalCount} line items for invoice ${invoiceId}`);
-
-    } catch (error) {
-      console.error(`❌ Line item classification failed for invoice ${invoiceId}:`, error);
-      throw error; // Re-throw to be handled by the calling function
-    }
-  }
-
 // Async processing function for invoice handling
 async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   try {
@@ -4378,6 +4303,39 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // XML Batch Import endpoint
+  app.post('/api/rpa/xml-batch-import', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = req.user;
+      if (!user) {
+        return res.status(401).json({ error: 'Unauthorized' });
+      }
+
+      const { xmlSources, jobName } = req.body;
+
+      if (!xmlSources || !Array.isArray(xmlSources) || xmlSources.length === 0) {
+        return res.status(400).json({ error: 'XML sources array is required' });
+      }
+
+      const userId = (user as any).claims.sub;
+
+      // Process XML invoices using RPA service
+      const { rpaService } = await import('./services/rpaService');
+      const result = await rpaService.batchProcessXMLInvoices(xmlSources, userId);
+
+      res.json({
+        message: `XML batch import completed: ${result.successful} successful, ${result.failed} failed`,
+        jobName: jobName || 'XML Batch Import',
+        ...result
+      });
+
+    } catch (error) {
+      console.error('XML batch import error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+      res.status(500).json({ error: errorMessage });
+    }
+  });
+
   // Invoice Importer routes
   app.post('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
     try {
@@ -5390,7 +5348,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
         return res.status(400).json({ error: 'Description is required' });
       }
 
-      // Import the Classifier dynamically to avoid initialization errors
+      // Import the classifier dynamically to avoid initialization errors
       const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
 
       // Check if OpenAI key is available
@@ -5428,7 +5386,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
         return res.status(400).json({ error: 'Line items array is required' });
       }
 
-      // Import the Classifier dynamically
+      // Import the classifier dynamically
       const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
 
       let openaiKey;
@@ -5475,7 +5433,7 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     try {
       const testResults = [];
 
-      // Import the Classifier dynamically
+      // Import the classifier dynamically
       const { AILineItemClassifier } = await import('./services/aiLineItemClassifier');
 
       let openaiKey;

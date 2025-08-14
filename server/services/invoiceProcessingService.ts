@@ -7,7 +7,6 @@ import { parseInvoiceXML } from './xmlParser.js';
 import * as fs from 'fs';
 import * as path from 'path';
 import { ClassificationService } from './classificationService.js';
-import { ProgressTracker } from './progressTracker';
 
 export class InvoiceProcessingService {
   /**
@@ -178,7 +177,7 @@ export class InvoiceProcessingService {
             processingStatus: 'failed',
             processedAt: new Date(),
           })
-          .where(eq(importedInvoice.id, importedInvoice.id));
+          .where(eq(importedInvoices.id, importedInvoice.id));
 
         errors.push(`${importedInvoice.originalFileName}: ${error.message}`);
         failed++;
@@ -364,7 +363,7 @@ export class InvoiceProcessingService {
             processingStatus: 'failed',
             processedAt: new Date(),
           })
-          .where(eq(importedInvoice.id, importedInvoice.id));
+          .where(eq(importedInvoices.id, importedInvoice.id));
 
         errors.push(`${importedInvoice.originalFileName}: ${error.message}`);
         failed++;
@@ -394,27 +393,12 @@ export class InvoiceProcessingService {
     let failedCount = 0;
     const errors: string[] = [];
 
-    // Start a new progress tracking session
-    const sessionId = ProgressTracker.startSession(userId, 'Invoice Processing', invoiceIds.length);
-    ProgressTracker.updateStep(sessionId, 1, 'active', 'Extracting Invoice Data');
-
     for (const invoiceId of invoiceIds) {
       try {
         // Process each invoice
         const result = await this.processInvoiceAutomatically(invoiceId, userId, source, skipValidation);
         if (result) {
           processedCount++;
-          // Update progress metrics
-          ProgressTracker.updateMetrics(sessionId, {
-            processedInvoices: processedCount,
-            currentInvoice: invoiceId,
-            totalItems: 0, // Placeholder, will be updated in the next step if applicable
-            processedItems: 0
-          });
-          // Move to the next step if this was the first invoice processed
-          if (processedCount === 1) {
-            ProgressTracker.updateStep(sessionId, 2, 'active', 'Classifying Line Items');
-          }
         } else {
           failedCount++;
           errors.push(`Failed to process invoice ID ${invoiceId} automatically`);
@@ -423,15 +407,7 @@ export class InvoiceProcessingService {
         console.error(`❌ Error processing invoice ID ${invoiceId} automatically:`, error);
         failedCount++;
         errors.push(`Invoice ID ${invoiceId}: ${error.message}`);
-        ProgressTracker.failSession(sessionId, error.message);
       }
-    }
-
-    // Complete the session if no errors occurred during the loop
-    if (failedCount === 0) {
-      ProgressTracker.completeSession(sessionId);
-    } else {
-      ProgressTracker.failSession(sessionId, `${failedCount} invoices failed to process.`);
     }
 
     console.log(`🎉 Finished automatic processing: ${processedCount} processed, ${failedCount} failed.`);
@@ -461,12 +437,6 @@ export class InvoiceProcessingService {
       return false;
     }
 
-    const sessionId = ProgressTracker.getSessionIdByInvoice(invoiceId); // Assume this function exists
-    if (!sessionId) {
-      console.error(`❌ No session found for invoice ${invoiceId}`);
-      return false;
-    }
-
     // Ensure initial status is set to 'processing'
     if (invoice.status === 'pending' || invoice.status === 'extracted') {
       await this.updateInvoiceStatus(invoiceId, 'processing', 'Invoice processing started...');
@@ -479,18 +449,17 @@ export class InvoiceProcessingService {
       try {
         // Extract data using AI service
         const extractedData = await aiService.extractInvoiceData(invoice.ocrText || '', true);
-
+        
         // Update invoice with extracted data
         await storage.updateInvoice(invoiceId, {
           extractedData: extractedData,
           status: 'extracted'
         });
-
+        
         console.log(`✅ AI extraction completed for invoice ${invoiceId}`);
       } catch (extractionError: any) {
         console.error(`❌ AI extraction failed for invoice ${invoiceId}:`, extractionError);
         await this.updateInvoiceStatus(invoiceId, 'rejected', `AI extraction failed: ${extractionError.message}`);
-        ProgressTracker.failStep(sessionId, 1, `AI extraction failed: ${extractionError.message}`);
         return false;
       }
 
@@ -517,11 +486,9 @@ export class InvoiceProcessingService {
           console.log(`❌ Validation failed for invoice ${invoiceId}:`, validationResult.violations);
           await this.updateInvoiceStatus(invoiceId, 'rejected', 
             `Validation failed: ${validationResult.violations?.map((v: any) => v.message).join(', ') || 'Unknown validation errors'}`);
-          ProgressTracker.failStep(sessionId, 1, `Validation failed: ${validationResult.violations?.map((v: any) => v.message).join(', ') || 'Unknown validation errors'}`);
           // Continue processing even if validation fails for now
         } else {
           console.log(`✅ Validation passed for invoice ${invoiceId}`);
-          ProgressTracker.updateStep(sessionId, 1, 'completed'); // Mark extraction step as completed
         }
 
         // Refresh invoice data after validation
@@ -529,7 +496,6 @@ export class InvoiceProcessingService {
       } catch (validationError: any) {
         console.error(`❌ Validation execution failed for invoice ${invoiceId}:`, validationError);
         await this.updateInvoiceStatus(invoiceId, 'processing', `Validation failed, continuing: ${validationError.message}`);
-        ProgressTracker.failStep(sessionId, 1, `Validation execution failed: ${validationError.message}`);
         // Continue processing even if validation fails
       }
     }
@@ -541,20 +507,17 @@ export class InvoiceProcessingService {
       try {
         const db = await getDb();
         const extractedData = invoice.extractedData as any;
-
+        
         // Check if any line items already exist for this invoice
         const existingLineItems = await db.select().from(lineItems).where(eq(lineItems.invoiceId, invoiceId));
-
+        
         let lineItemsToProcess: any[] = [];
-        let totalLineItems = 0;
-        let totalProcessed = 0;
-
+        
         if (existingLineItems.length === 0) {
           // Create line items from extracted data if available
           if (extractedData.lineItems && extractedData.lineItems.length > 0) {
             console.log(`📝 Creating ${extractedData.lineItems.length} line items from extracted data for invoice ${invoiceId}`);
-            totalLineItems = extractedData.lineItems.length;
-
+            
             for (const [index, item] of extractedData.lineItems.entries()) {
               const [lineItem] = await db.insert(lineItems).values({
                 invoiceId: invoiceId,
@@ -566,19 +529,17 @@ export class InvoiceProcessingService {
                 rawText: item.rawText || item.description,
                 lineNumber: index + 1,
               }).returning();
-
+              
               lineItemsToProcess.push(lineItem);
-              totalProcessed++; // Increment processed items count
             }
           } else {
             // Create a default line item from invoice summary if no detailed line items
             console.log(`📝 Creating default line item for invoice ${invoiceId} - no detailed line items found`);
-            totalLineItems = 1;
-
+            
             const description = extractedData.descriptionSummary || 
                               extractedData.concept || 
                               `Service from ${invoice.vendorName || 'Unknown Vendor'}`;
-
+                              
             const [lineItem] = await db.insert(lineItems).values({
               invoiceId: invoiceId,
               description: description,
@@ -589,17 +550,14 @@ export class InvoiceProcessingService {
               rawText: description,
               lineNumber: 1,
             }).returning();
-
+            
             lineItemsToProcess.push(lineItem);
-            totalProcessed++; // Increment processed items count
           }
         } else {
           console.log(`📋 Found ${existingLineItems.length} existing line items for invoice ${invoiceId}`);
           lineItemsToProcess = existingLineItems;
-          totalLineItems = existingLineItems.length;
-          totalProcessed = existingLineItems.length; // Assume all existing are processed for now
         }
-
+        
         // Now classify all line items
         let classifiedItemsCount = 0;
         for (const lineItem of lineItemsToProcess) {
@@ -609,7 +567,7 @@ export class InvoiceProcessingService {
               .from(lineItemClassifications)
               .where(eq(lineItemClassifications.lineItemId, lineItem.id))
               .limit(1);
-
+              
             if (existingClassification.length === 0) {
               console.log(`🔍 Classifying line item ${lineItem.id}: "${lineItem.description}"`);
               await ClassificationService.classifyAndStore(lineItem.id, userId);
@@ -622,23 +580,12 @@ export class InvoiceProcessingService {
             console.error(`❌ Failed to classify line item ${lineItem.id}:`, itemError);
           }
         }
-
+        
         console.log(`✅ Line item processing completed for invoice ${invoiceId}: ${lineItemsToProcess.length} items processed, ${classifiedItemsCount} classified`);
-
-        // Update progress metrics with line item details
-        ProgressTracker.updateMetrics(sessionId, {
-          totalItems: totalLineItems,
-          processedItems: totalProcessed, // This might need refinement if partial processing occurs
-        });
-
-        // Move to next step if extraction and classification are done
-        ProgressTracker.updateStep(sessionId, 2, 'completed');
-        ProgressTracker.updateStep(sessionId, 3, 'active', 'Performing Petty Cash Analysis');
-
+        
       } catch (classificationError: any) {
         console.error(`❌ Line item processing failed for invoice ${invoiceId}:`, classificationError);
         await this.updateInvoiceStatus(invoiceId, 'processing', `Line item processing failed, continuing: ${classificationError.message}`);
-        ProgressTracker.failStep(sessionId, 2, `Line item processing failed: ${classificationError.message}`);
         // Don't return false here, continue with processing
       }
     } else if (invoice && invoice.status === 'rejected') {
@@ -652,12 +599,9 @@ export class InvoiceProcessingService {
       if (invoice) {
         await this.performPettyCashAnalysis(invoiceId, invoice);
         console.log(`✅ Petty cash analysis completed for invoice ${invoiceId}`);
-        ProgressTracker.updateStep(sessionId, 3, 'completed');
-        ProgressTracker.updateStep(sessionId, 4, 'active', 'Matching with Projects');
       }
     } catch (pettyCashError: any) {
       console.error(`❌ Petty cash analysis failed for invoice ${invoiceId}:`, pettyCashError);
-      ProgressTracker.failStep(sessionId, 3, `Petty cash analysis failed: ${pettyCashError.message}`);
       // Continue processing even if petty cash analysis fails
     }
 
@@ -667,19 +611,15 @@ export class InvoiceProcessingService {
       if (invoice) {
         await this.performAutomaticProjectMatching(invoiceId, invoice, userId);
         console.log(`✅ Project matching completed for invoice ${invoiceId}`);
-        ProgressTracker.updateStep(sessionId, 4, 'completed');
-        ProgressTracker.updateStep(sessionId, 5, 'active', 'Finalizing Invoice');
       }
     } catch (projectError: any) {
       console.error(`❌ Project matching failed for invoice ${invoiceId}:`, projectError);
-      ProgressTracker.failStep(sessionId, 4, `Project matching failed: ${projectError.message}`);
       // Continue processing even if project matching fails
     }
 
     // Step 6: Finalize invoice status
     // Set to approved if everything went well
     await this.updateInvoiceStatus(invoiceId, 'approved', 'Invoice processing completed successfully');
-    ProgressTracker.updateStep(sessionId, 5, 'completed');
 
     console.log(`✅ Successfully processed invoice ID ${invoiceId}`);
     return true;
@@ -691,19 +631,19 @@ export class InvoiceProcessingService {
   private async performPettyCashAnalysis(invoiceId: number, invoice: Invoice): Promise<void> {
     const extractedData = invoice.extractedData as any;
     const totalAmount = extractedData?.totalAmount || invoice.totalAmount;
-
+    
     if (totalAmount) {
       // Convert to number if it's a string
       const amount = typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount;
-
+      
       // Define petty cash threshold (configurable) - adjusted for COP
       const PETTY_CASH_THRESHOLD = 200000; // 200,000 COP (approximately $50 USD)
-
+      
       const isPettyCash = amount <= PETTY_CASH_THRESHOLD;
-
+      
       if (isPettyCash) {
         console.log(`📋 Invoice ${invoiceId} flagged as petty cash (Amount: $${amount})`);
-
+        
         // Create petty cash log entry
         const db = await getDb();
         await db.insert(pettyCashLog).values({
@@ -713,7 +653,7 @@ export class InvoiceProcessingService {
           confidenceScore: '1.00', // High confidence for rule-based classification
           status: 'pending_approval'
         });
-
+        
         console.log(`✅ Petty cash log created for invoice ${invoiceId}`);
       } else {
         console.log(`📋 Invoice ${invoiceId} not petty cash (Amount: $${amount})`);
@@ -730,7 +670,7 @@ export class InvoiceProcessingService {
     try {
       // Get all active projects for the user's company
       const projects = await storage.getProjects();
-
+      
       if (!projects || projects.length === 0) {
         console.log(`ℹ️ No projects found for automatic matching for invoice ${invoiceId}`);
         return;
@@ -739,14 +679,14 @@ export class InvoiceProcessingService {
       // Use project matcher service
       const projectMatcher = new (await import('../projectMatcher')).ProjectMatcherService();
       const matches = await projectMatcher.matchInvoiceWithProjects(invoice, projects);
-
+      
       if (matches && matches.length > 0) {
         const bestMatch = matches[0];
-
+        
         // Auto-assign if confidence is high enough (>= 70%)
         if (bestMatch.matchScore >= 70) {
           console.log(`🎯 Auto-assigning project to invoice ${invoiceId}: ${bestMatch.project?.projectId} (Score: ${bestMatch.matchScore}%)`);
-
+          
           // Create project match record
           const db = await getDb();
           await db.insert(invoiceProjectMatches).values({
@@ -757,16 +697,16 @@ export class InvoiceProcessingService {
             isAutoMatched: true,
             matchedBy: userId || 'system'
           });
-
+          
           // Update invoice with project assignment
           await storage.updateInvoice(invoiceId, {
             projectName: bestMatch.project?.name || bestMatch.project?.projectId || 'Unknown Project'
           });
-
+          
           console.log(`✅ Project auto-assigned to invoice ${invoiceId}`);
         } else {
           console.log(`📋 Project match found for invoice ${invoiceId} but confidence too low for auto-assignment (Score: ${bestMatch.matchScore}%)`);
-
+          
           // Create project match record for manual review
           const db = await getDb();
           await db.insert(invoiceProjectMatches).values({
