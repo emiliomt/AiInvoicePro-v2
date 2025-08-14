@@ -1,3 +1,4 @@
+
 import { WebSocket } from 'ws';
 
 export interface ProgressStep {
@@ -34,11 +35,14 @@ export interface ProgressSession {
   };
   results?: any[];
   error?: string;
+  title?: string;
+  websockets?: Set<WebSocket>;
 }
 
 export class ProgressTracker {
   private static sessions = new Map<string, ProgressSession>();
   private static websockets = new Map<string, Set<WebSocket>>();
+  private static completedSessions = new Map<string, ProgressSession>();
 
   // Define the standard progress steps for line item classification
   private static readonly CLASSIFICATION_STEPS: Omit<ProgressStep, 'status' | 'startTime' | 'endTime'>[] = [
@@ -80,7 +84,7 @@ export class ProgressTracker {
     }
   ];
 
-  static createSession(sessionId: string, userId: string, totalInvoices: number): ProgressSession {
+  static createSession(sessionId: string, userId: string, totalInvoices: number, title?: string): ProgressSession {
     const session: ProgressSession = {
       sessionId,
       userId,
@@ -98,16 +102,19 @@ export class ProgressTracker {
         successRate: 0,
         elapsedTime: 0,
         estimatedRemaining: 0
-      }
+      },
+      title: title || `Line Item Classification - ${totalInvoices} invoices`
     };
 
     this.sessions.set(sessionId, session);
     this.broadcastUpdate(sessionId, 'classification_started');
+    
+    console.log(`📊 Progress session created: ${sessionId} - ${session.title}`);
     return session;
   }
 
   static getSession(sessionId: string): ProgressSession | undefined {
-    return this.sessions.get(sessionId);
+    return this.sessions.get(sessionId) || this.completedSessions.get(sessionId);
   }
 
   static updateStep(sessionId: string, stepIndex: number, status: 'active' | 'completed' | 'error', error?: string) {
@@ -143,6 +150,30 @@ export class ProgressTracker {
 
     this.updateMetrics(sessionId);
     this.broadcastUpdate(sessionId, 'step_progress');
+  }
+
+  static updateProgress(sessionId: string, current: number, message?: string): void {
+    const session = this.sessions.get(sessionId);
+    if (!session) return;
+
+    // Update metrics based on current progress
+    this.updateMetrics(sessionId, {
+      processedItems: current
+    });
+
+    // Calculate percentage
+    const percentage = session.metrics.totalItems > 0 
+      ? Math.round((current / session.metrics.totalItems) * 100)
+      : 0;
+    
+    this.broadcastUpdate(sessionId, 'progress_update', {
+      current,
+      total: session.metrics.totalItems,
+      percentage,
+      message
+    });
+
+    console.log(`📈 Progress update: ${sessionId} - ${current}/${session.metrics.totalItems} (${percentage}%)`);
   }
 
   static updateMetrics(sessionId: string, metrics?: Partial<ProgressSession['metrics']>) {
@@ -192,7 +223,23 @@ export class ProgressTracker {
     }
 
     this.updateMetrics(sessionId);
-    this.broadcastUpdate(sessionId, 'classification_finished');
+    this.broadcastUpdate(sessionId, 'classification_finished', {
+      results,
+      duration: session.endTime.getTime() - session.startTime.getTime()
+    });
+
+    // Move to completed sessions and keep for 30 minutes for review
+    this.completedSessions.set(sessionId, session);
+    this.sessions.delete(sessionId);
+
+    // Keep completed sessions for 30 minutes
+    setTimeout(() => {
+      this.completedSessions.delete(sessionId);
+      this.websockets.delete(sessionId);
+      console.log(`🧹 Cleaned up completed session: ${sessionId}`);
+    }, 30 * 60 * 1000); // 30 minutes
+
+    console.log(`✅ Progress session completed: ${sessionId}`);
   }
 
   static errorSession(sessionId: string, error: string, stepIndex?: number) {
@@ -209,7 +256,13 @@ export class ProgressTracker {
       session.steps[stepIndex].endTime = new Date();
     }
 
-    this.broadcastUpdate(sessionId, 'classification_error');
+    this.broadcastUpdate(sessionId, 'classification_error', { error });
+
+    // Move to completed sessions if it was active
+    this.completedSessions.set(sessionId, session);
+    this.sessions.delete(sessionId);
+
+    console.log(`❌ Progress session error: ${sessionId} - ${error}`);
   }
 
   static addWebSocket(sessionId: string, ws: WebSocket) {
@@ -221,11 +274,16 @@ export class ProgressTracker {
     // Send current state to newly connected client
     const session = this.getSession(sessionId);
     if (session) {
-      ws.send(JSON.stringify({
+      this.sendToWebSocket(ws, {
         type: 'progress_state',
         sessionId,
-        data: session
-      }));
+        data: {
+          ...session,
+          percentage: session.metrics.totalItems > 0 
+            ? Math.round((session.metrics.processedItems / session.metrics.totalItems) * 100)
+            : 0
+        }
+      });
     }
   }
 
@@ -239,22 +297,57 @@ export class ProgressTracker {
     }
   }
 
-  private static broadcastUpdate(sessionId: string, event: string) {
-    const session = this.sessions.get(sessionId);
+  // Get recent completed sessions for a user
+  static getRecentCompletedSessions(userId: string, includeCompleted: boolean = true): ProgressSession[] {
+    const sessions: ProgressSession[] = [];
+    
+    // Add active sessions
+    for (const session of this.sessions.values()) {
+      if (session.userId === userId) {
+        sessions.push(session);
+      }
+    }
+    
+    // Add completed sessions if requested
+    if (includeCompleted) {
+      for (const session of this.completedSessions.values()) {
+        if (session.userId === userId) {
+          sessions.push(session);
+        }
+      }
+    }
+    
+    return sessions.sort((a, b) => b.startTime.getTime() - a.startTime.getTime());
+  }
+
+  private static broadcastUpdate(sessionId: string, event: string, data?: any) {
+    const session = this.sessions.get(sessionId) || this.completedSessions.get(sessionId);
     const sockets = this.websockets.get(sessionId);
     
     if (session && sockets) {
-      const message = JSON.stringify({
+      const message = {
         type: event,
         sessionId,
-        data: session
-      });
+        data: {
+          ...data,
+          ...session,
+          timestamp: new Date().toISOString()
+        }
+      };
 
       sockets.forEach(ws => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(message);
-        }
+        this.sendToWebSocket(ws, message);
       });
+    }
+  }
+
+  private static sendToWebSocket(ws: WebSocket, message: any): void {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify(message));
+      }
+    } catch (error) {
+      console.error('Error sending WebSocket message:', error);
     }
   }
 
@@ -268,12 +361,42 @@ export class ProgressTracker {
         this.websockets.delete(sessionId);
       }
     }
+
+    // Also cleanup old completed sessions
+    for (const [sessionId, session] of Array.from(this.completedSessions.entries())) {
+      if (session.startTime.getTime() < cutoff) {
+        this.completedSessions.delete(sessionId);
+        this.websockets.delete(sessionId);
+      }
+    }
+  }
+
+  // Cleanup disconnected websockets
+  static cleanupWebSockets(): void {
+    for (const [sessionId, sockets] of this.websockets.entries()) {
+      const toRemove: WebSocket[] = [];
+      sockets.forEach(ws => {
+        if (ws.readyState !== WebSocket.OPEN) {
+          toRemove.push(ws);
+        }
+      });
+      toRemove.forEach(ws => sockets.delete(ws));
+      
+      if (sockets.size === 0) {
+        this.websockets.delete(sessionId);
+      }
+    }
   }
 
   // Get all active sessions for a user
   static getUserSessions(userId: string): ProgressSession[] {
     return Array.from(this.sessions.values())
       .filter(session => session.userId === userId);
+  }
+
+  // Get recent sessions (including completed ones) for a user
+  static getRecentUserSessions(userId: string, includeCompleted: boolean = true): ProgressSession[] {
+    return this.getRecentCompletedSessions(userId, includeCompleted);
   }
 }
 
@@ -289,3 +412,13 @@ export const progressTracker = {
     console.log('Legacy progress tracker initialized');
   }
 };
+
+// Cleanup disconnected websockets every 5 minutes
+setInterval(() => {
+  ProgressTracker.cleanupWebSockets();
+}, 5 * 60 * 1000);
+
+// Cleanup old sessions every hour
+setInterval(() => {
+  ProgressTracker.cleanup();
+}, 60 * 60 * 1000);
