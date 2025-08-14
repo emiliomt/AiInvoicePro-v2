@@ -1,5 +1,5 @@
 import { getStorage, getDb } from "../storage";
-import { classificationKeywords, lineItemClassifications, lineItems } from "../../shared/schema";
+import { classificationKeywords, lineItemClassifications, lineItems, invoices } from "../../shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "../../shared/schema";
 
@@ -228,8 +228,8 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            method: 'keyword',
-            matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
+            matchedKeyword: classification.matchedKeywords?.[0] || 'unknown',
+            method: 'keyword', // ✅ Add method field
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -241,8 +241,8 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        method: 'keyword',
-        matchedKeywords: classification.matchedKeywords ? [classification.matchedKeywords] : null,
+        matchedKeyword: classification.matchedKeywords?.[0] || 'unknown',
+        method: 'keyword', // ✅ Add method field
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -270,16 +270,16 @@ export class ClassificationService {
       }
     }
 
-    // ✅ FIX: Update the invoice status to "classified" after processing all line items
-    try {
-      const storage = await getStorage();
-      await storage.updateInvoice(invoiceId, { 
-        status: 'classified'
-      });
-      console.log(`✅ Updated invoice ${invoiceId} status to 'classified'`);
-    } catch (error) {
-      console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
-    }
+    // ✅ Update invoice status to "classified" after processing all line items
+    await db
+      .update(invoices)
+      .set({
+        status: 'classified',
+        updatedAt: new Date()
+      })
+      .where(eq(invoices.id, invoiceId));
+
+    console.log(`✅ Updated invoice ${invoiceId} status to "classified" after line item classification`);
   }
 
   // Add custom keyword
