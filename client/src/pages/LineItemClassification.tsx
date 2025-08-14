@@ -392,11 +392,14 @@ export default function LineItemClassification() {
       });
       setSelectedInvoices([]);
 
-      // Refresh the invoices data after processing
+      // Force refresh of all invoice-related data
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-
-      // Also refetch the invoices to ensure immediate update
+      queryClient.invalidateQueries({ queryKey: ["/api/classification/categories"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/classification/keywords"] });
+      
+      // Refetch invoices immediately to show updated status
+      queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
       refetchInvoices();
     },
     onError: (error: Error) => {
