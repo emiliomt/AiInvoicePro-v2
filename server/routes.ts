@@ -325,28 +325,20 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
           const currentPercentage = Math.round((processedCount / totalInvoices) * 100);
           console.log(`📈 Progress update: ${progressId} - ${processedCount}/${totalInvoices} - Processing invoice ${invoice.invoiceNumber || invoice.id} (${currentPercentage}%)`);
           
-          // Get existing line items AFTER duplicate removal
+          // Get existing line items
           let existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
           console.log(`Found ${existingLineItems.length} existing line items in database`);
           
           if (existingLineItems.length > 0) {
-            // ✅ FIX: Remove duplicates BEFORE processing using storage method
-            await storage.removeDuplicateLineItems(invoice.id);
-            
-            // Get the cleaned line items after duplicate removal
-            existingLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
-            
-            console.log(`Using ${existingLineItems.length} unique line items for classification`);
-            console.log(`Processing ${existingLineItems.length} line items for classification`);
-            
-            // Process classification using the service that updates status correctly
+            // ✅ FIX: Use ClassificationService which handles duplicate removal AND status update
             const { ClassificationService } = await import('./services/classificationService');
             await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
             
-            // Get final count after processing
+            // Get final count after processing and duplicate removal
+            const finalLineItems = await storage.getLineItemsByInvoiceId(invoice.id);
             const finalCount = await storage.getClassifiedLineItemCount(invoice.id);
             
-            console.log(`✅ Successfully processed invoice ${invoice.id}: ${existingLineItems.length} items, ${finalCount} classified`);
+            console.log(`✅ Successfully processed invoice ${invoice.id}: ${finalLineItems.length} unique items, ${finalCount} classified`);
             
             successCount++;
           } else {
