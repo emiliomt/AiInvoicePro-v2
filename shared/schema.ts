@@ -811,12 +811,9 @@ export const classificationKeywords = pgTable("classification_keywords", {
 
 // Classification method enum
 export const classificationMethodEnum = pgEnum("classification_method", [
-  "keyword",    // Keyword matching
-  "ai",         // AI/OpenAI classification
-  "fuzzy",      // Fuzzy matching
-  "context",    // Context-based classification
-  "learned",    // Machine learning based
-  "manual"      // Manual user override
+  "keyword",
+  "ai", 
+  "manual"
 ]);
 
 // Line item classifications table
@@ -824,15 +821,10 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   id: serial("id").primaryKey(),
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
-  subcategory: varchar("subcategory", { length: 255 }),
-  matchedKeywords: text("matched_keywords").array(), // Array of matched keywords
-  confidence: decimal("confidence", { precision: 3, scale: 2 }), // 0-1 confidence score
-  method: classificationMethodEnum("method").notNull(),
-  reasoning: text("reasoning"), // AI explanation for classification
-  vendorContext: text("vendor_context"), // Vendor-specific context
-  isUserVerified: boolean("is_user_verified").default(false),
+  matchedKeyword: varchar("matched_keyword", { length: 255 }),
+  method: classificationMethodEnum("method").default("keyword").notNull(), // ✅ NEW FIELD
   isManualOverride: boolean("is_manual_override").default(false),
-  originalText: text("original_text"), // Store original line item text
+  confidence: decimal("confidence", { precision: 3, scale: 2 }),
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
 });
