@@ -50,6 +50,7 @@ import {
   Sparkles,
   Edit,
   Database,
+  AlertTriangle,
 } from "lucide-react";
 import { apiRequest } from "@/lib/queryClient";
 import Header from "@/components/Header";
@@ -61,7 +62,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Textarea } from "@/components/ui/textarea";
-// import ProgressTracker from "@/components/ProgressTracker";
+import { useClassificationProgress } from '@/hooks/useClassificationProgress';
 
 interface LineItem {
   description: string;
@@ -232,6 +233,7 @@ export default function LineItemClassification() {
   // Progress tracking state
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [progressSessionId, setProgressSessionId] = useState<string>("");
+  const { progress: classificationProgress, isConnected: wsConnected, error: wsError } = useClassificationProgress();
 
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
@@ -1080,28 +1082,62 @@ export default function LineItemClassification() {
                   </Button>
                 </div>
 
-                {/* Progress Tracker */}
-                {showProgressTracker && progressSessionId && (
-                  <div className="my-6">
-                    <Card>
-                      <CardHeader>
-                        <CardTitle>Processing Progress</CardTitle>
-                      </CardHeader>
-                      <CardContent>
-                        <div className="space-y-4">
-                          <Progress value={50} />
-                          <p className="text-sm text-muted-foreground">
-                            Processing session: {progressSessionId}
-                          </p>
-                          <Button onClick={() => setShowProgressTracker(false)}>
-                            Close
-                          </Button>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </div>
+                {/* WebSocket Status */}
+                {wsError && (
+                  <Alert variant="destructive" className="mb-4">
+                    <AlertTriangle className="h-4 w-4" />
+                    <AlertTitle>Connection Issue</AlertTitle>
+                    <AlertDescription>
+                      Real-time progress updates unavailable: {wsError}
+                    </AlertDescription>
+                  </Alert>
                 )}
 
+                {/* Classification Progress */}
+                {classificationProgress && (
+                  <Card className="mb-6 border-blue-200 bg-blue-50">
+                    <CardHeader className="pb-3">
+                      <div className="flex items-center justify-between">
+                        <CardTitle className="text-lg text-blue-800">
+                          Classification in Progress
+                        </CardTitle>
+                        <div className="flex items-center space-x-2">
+                          {wsConnected ? (
+                            <Badge variant="outline" className="bg-green-50 text-green-700 border-green-200">
+                              Connected
+                            </Badge>
+                          ) : (
+                            <Badge variant="outline" className="bg-red-50 text-red-700 border-red-200">
+                              Disconnected
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="space-y-3">
+                        <div className="flex justify-between text-sm text-blue-700">
+                          <span>Invoice {classificationProgress.invoiceId}</span>
+                          <span>{classificationProgress.processed} of {classificationProgress.total} items</span>
+                        </div>
+                        <Progress 
+                          value={classificationProgress.percentage} 
+                          className="w-full h-3"
+                        />
+                        {classificationProgress.currentItem && (
+                          <p className="text-sm text-blue-600 truncate">
+                            Current: {classificationProgress.currentItem}
+                          </p>
+                        )}
+                        <div className="text-sm text-blue-600">
+                          {classificationProgress.percentage}% complete
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                )}
+
+                {/* Invoice Selection */}
                 {invoicesLoading ? (
                   <div className="flex items-center justify-center py-8">
                     <Loader2 className="h-6 w-6 animate-spin" />

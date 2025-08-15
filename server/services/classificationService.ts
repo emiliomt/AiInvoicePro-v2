@@ -255,11 +255,6 @@ export class ClassificationService {
     const db = await getDb();
     const storage = await getStorage();
 
-    // Import WebSocket functions
-    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
-
-    console.log(`🏷️ Starting classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
-
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
 
@@ -270,6 +265,11 @@ export class ClassificationService {
       .where(eq(lineItems.invoiceId, invoiceId));
 
     const total = invoiceLineItems.length;
+
+    // Import WebSocket functions
+    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
+
+    console.log(`🏷️ Starting classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
     
 
     // Process each line item
@@ -576,11 +576,6 @@ Respond with JSON in this format:
     const db = await getDb();
     const storage = await getStorage();
 
-    // Import WebSocket functions
-    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
-
-    console.log(`🏷️ Starting AI classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
-
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
 
@@ -591,6 +586,11 @@ Respond with JSON in this format:
       .where(eq(lineItems.invoiceId, invoiceId));
 
     const total = invoiceLineItems.length;
+
+    // Import WebSocket functions
+    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
+
+    console.log(`🏷️ Starting AI classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
     
 
     // Process each line item
