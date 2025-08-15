@@ -151,6 +151,66 @@ export class ProgressTracker {
     this.broadcastUpdate(sessionId, 'step_progress');
   }
 
+  updateProgress(userId: string, update: {
+    processId?: string;
+    taskId?: number;
+    current?: number;
+    total?: number;
+    step?: number;
+    totalSteps?: number;
+    status: 'processing' | 'completed' | 'failed';
+    message: string;
+    timestamp: Date;
+    data?: any;
+  }) {
+    try {
+      const connections = this.connections.get(userId) || [];
+
+      // Calculate progress percentage if current/total provided
+      let progressPercentage = 0;
+      if (update.current !== undefined && update.total !== undefined && update.total > 0) {
+        progressPercentage = Math.round((update.current / update.total) * 100);
+      } else if (update.step !== undefined && update.totalSteps !== undefined && update.totalSteps > 0) {
+        progressPercentage = Math.round((update.step / update.totalSteps) * 100);
+      }
+
+      // Enhanced progress message with proper formatting
+      const progressMessage = update.current !== undefined && update.total !== undefined 
+        ? `${update.current}/${update.total} (${progressPercentage}%)`
+        : update.step !== undefined && update.totalSteps !== undefined
+        ? `${update.step}/${update.totalSteps} (${progressPercentage}%)`
+        : update.message;
+
+      const progressData = {
+        type: 'progress',
+        processId: update.processId || update.taskId?.toString() || 'unknown',
+        status: update.status,
+        progress: progressPercentage,
+        current: update.current || update.step || 0,
+        total: update.total || update.totalSteps || 0,
+        message: update.message,
+        progressMessage,
+        timestamp: update.timestamp.toISOString(),
+        data: update.data
+      };
+
+      console.log(`📈 Progress update: ${progressData.processId} - ${progressMessage}`);
+
+      connections.forEach(connection => {
+        if (connection.ws.readyState === WebSocket.OPEN) {
+          try {
+            connection.ws.send(JSON.stringify(progressData));
+          } catch (error) {
+            console.error('Error sending progress update:', error);
+          }
+        }
+      });
+
+    } catch (error) {
+      console.error('Error in updateProgress:', error);
+    }
+  }
+  
   static updateProgress(sessionId: string, current: number, total?: number, message?: string): void {
     const session = this.sessions.get(sessionId);
     if (!session) return;
