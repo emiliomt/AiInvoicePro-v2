@@ -276,7 +276,7 @@ export class ClassificationService {
     let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
-        // Broadcast progress update
+        // Broadcast progress update at the start of processing each item
         broadcastClassificationProgress({
           invoiceId,
           processed,
@@ -285,29 +285,61 @@ export class ClassificationService {
           currentItem: lineItem.description
         }, userId);
 
-        await this.classifyAndStore(lineItem.id, userId);
-        processed++;
-
-        // Get the classification result for broadcasting
-        const classification = await db
+        // Check if item is already classified
+        const existingClassification = await db
           .select()
           .from(lineItemClassifications)
           .where(eq(lineItemClassifications.lineItemId, lineItem.id))
           .limit(1);
 
-        if (classification.length > 0) {
+        if (existingClassification.length > 0) {
+          console.log(`Item already classified: "${lineItem.description}"`);
+          // Still broadcast that this item was "processed" for UI feedback
           broadcastLineItemClassified({
             lineItemId: lineItem.id,
             invoiceId,
-            category: classification[0].category,
-            confidence: parseFloat(classification[0].confidence || '0')
+            category: existingClassification[0].category,
+            confidence: parseFloat(existingClassification[0].confidence || '0')
           }, userId);
+        } else {
+          // Classify and store new item
+          await this.classifyAndStore(lineItem.id, userId);
+
+          // Get the new classification result for broadcasting
+          const classification = await db
+            .select()
+            .from(lineItemClassifications)
+            .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+            .limit(1);
+
+          if (classification.length > 0) {
+            broadcastLineItemClassified({
+              lineItemId: lineItem.id,
+              invoiceId,
+              category: classification[0].category,
+              confidence: parseFloat(classification[0].confidence || '0')
+            }, userId);
+          }
         }
+
+        processed++;
+
+        // Broadcast progress after processing each item
+        broadcastClassificationProgress({
+          invoiceId,
+          processed,
+          total,
+          percentage: Math.round((processed / total) * 100),
+          currentItem: processed < total ? `Processed ${processed}/${total} items` : 'Classification complete'
+        }, userId);
+
+        // Add a small delay to make progress visible to user
+        await new Promise(resolve => setTimeout(resolve, 50));
 
       } catch (error) {
         console.error(`❌ Failed to classify line item ${lineItem.id}:`, error);
         broadcastClassificationError(`Failed to classify item: ${lineItem.description}`, invoiceId, userId);
-        // Continue with other items even if one fails
+        processed++; // Still increment to avoid infinite loop
       }
     }
 
@@ -565,7 +597,7 @@ Respond with JSON in this format:
     let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
-        // Broadcast progress update
+        // Broadcast progress update at the start of processing each item
         broadcastClassificationProgress({
           invoiceId,
           processed,
@@ -574,29 +606,61 @@ Respond with JSON in this format:
           currentItem: lineItem.description
         }, userId);
 
-        await this.classifyAndStoreWithAI(lineItem.id, true, userId);
-        processed++;
-
-        // Get the classification result for broadcasting
-        const classification = await db
+        // Check if item is already classified
+        const existingClassification = await db
           .select()
           .from(lineItemClassifications)
           .where(eq(lineItemClassifications.lineItemId, lineItem.id))
           .limit(1);
 
-        if (classification.length > 0) {
+        if (existingClassification.length > 0) {
+          console.log(`AI: Item already classified: "${lineItem.description}"`);
+          // Still broadcast that this item was "processed" for UI feedback
           broadcastLineItemClassified({
             lineItemId: lineItem.id,
             invoiceId,
-            category: classification[0].category,
-            confidence: parseFloat(classification[0].confidence || '0')
+            category: existingClassification[0].category,
+            confidence: parseFloat(existingClassification[0].confidence || '0')
           }, userId);
+        } else {
+          // AI classify and store new item
+          await this.classifyAndStoreWithAI(lineItem.id, true, userId);
+
+          // Get the new classification result for broadcasting
+          const classification = await db
+            .select()
+            .from(lineItemClassifications)
+            .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+            .limit(1);
+
+          if (classification.length > 0) {
+            broadcastLineItemClassified({
+              lineItemId: lineItem.id,
+              invoiceId,
+              category: classification[0].category,
+              confidence: parseFloat(classification[0].confidence || '0')
+            }, userId);
+          }
         }
+
+        processed++;
+
+        // Broadcast progress after processing each item
+        broadcastClassificationProgress({
+          invoiceId,
+          processed,
+          total,
+          percentage: Math.round((processed / total) * 100),
+          currentItem: processed < total ? `AI Processed ${processed}/${total} items` : 'AI Classification complete'
+        }, userId);
+
+        // Add a small delay to make progress visible to user
+        await new Promise(resolve => setTimeout(resolve, 100));
 
       } catch (error) {
         console.error(`❌ Failed to AI classify line item ${lineItem.id}:`, error);
         broadcastClassificationError(`Failed to AI classify item: ${lineItem.description}`, invoiceId, userId);
-        // Continue with other items even if one fails
+        processed++; // Still increment to avoid infinite loop
       }
     }
 
