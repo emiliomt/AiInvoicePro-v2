@@ -30,10 +30,10 @@ export function useClassificationProgress() {
     
     ws.onopen = () => {
       console.log('📡 Classification WebSocket connected');
-      // Subscribe to classification updates
+      // Subscribe to classification updates with current user
       ws.send(JSON.stringify({
         type: 'subscribe',
-        userId: 'current-user' // Replace with actual user ID
+        userId: '43658475' // Use actual user ID from your session
       }));
     };
 
@@ -45,7 +45,13 @@ export function useClassificationProgress() {
         switch (data.type) {
           case 'classification_progress':
             console.log('📊 Classification progress update:', data);
-            setProgress(data);
+            setProgress({
+              invoiceId: data.invoiceId,
+              processed: data.processed || 0,
+              total: data.total || 0,
+              percentage: data.percentage || 0,
+              currentItem: data.currentItem
+            });
             setIsProcessing(true);
             break;
             
@@ -73,6 +79,34 @@ export function useClassificationProgress() {
           case 'welcome':
           case 'subscribed':
             console.log('📡 WebSocket connection established:', data.message);
+            break;
+
+          // Handle progress tracker messages
+          case 'progress_update':
+          case 'classification_started':
+          case 'step_updated':
+          case 'metrics_updated':
+            console.log('📈 Progress tracker update:', data);
+            if (data.data) {
+              const progressData = data.data;
+              setProgress({
+                invoiceId: progressData.currentInvoice || 0,
+                processed: progressData.metrics?.processedItems || 0,
+                total: progressData.metrics?.totalItems || 0,
+                percentage: progressData.percentage || 0,
+                currentItem: progressData.currentStep < progressData.steps.length 
+                  ? progressData.steps[progressData.currentStep]?.description 
+                  : undefined
+              });
+              setIsProcessing(progressData.status === 'processing');
+            }
+            break;
+
+          case 'classification_finished':
+            console.log('✅ Classification finished:', data);
+            setProgress(null);
+            setIsProcessing(false);
+            queryClient.invalidateQueries({ queryKey: ['invoices'] });
             break;
             
           default:
