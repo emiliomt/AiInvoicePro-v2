@@ -1991,6 +1991,11 @@ class PostgresStorage implements IStorage {
 
 export const storage: IStorage = new PostgresStorage();
 
+// Export the database connection for direct access
+export function getDb() {
+  return db;
+}
+
 // Helper function to get total invoice count
 export async function getInvoiceCount(): Promise<number> {
   try {
