@@ -870,16 +870,18 @@ export default function Invoices() {
                 onClick={async () => {
                   console.log('Manual refresh triggered');
                   try {
-                    // Clear the query cache first to force a fresh fetch
-                    queryClient.removeQueries({ queryKey: ["/api/invoices"] });
-                    queryClient.removeQueries({ queryKey: ["/api/dashboard/stats"] });
+                    // Clear the query cache and invalidate queries
+                    await queryClient.resetQueries({ queryKey: ["/api/invoices"] });
+                    await queryClient.resetQueries({ queryKey: ["/api/dashboard/stats"] });
                     
-                    // Then refetch the data
-                    await refetch();
+                    // Force refetch with fresh data
+                    await queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
                     
-                    // Also invalidate related queries to refresh other components
-                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-                    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                    // Clear linkedFilesMap to refresh linked files data
+                    setLinkedFilesMap({});
+                    
+                    // Refetch invoices to get updated data and trigger linked files fetch
+                    const freshInvoices = await refetch();
                     
                     toast({
                       title: "Refreshed",
