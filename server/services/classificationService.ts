@@ -228,8 +228,8 @@ export class ClassificationService {
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            matchedKeywords: classification.matchedKeywords ? classification.matchedKeywords.join(', ') : null,
-            method: 'keyword',
+            matchedKeywords: classification.matchedKeywords || null, // Array format
+            method: 'keyword' as any,
             confidence: classification.confidence.toString(),
             classifiedAt: new Date(),
             classifiedBy: userId || 'system'
@@ -241,8 +241,8 @@ export class ClassificationService {
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        matchedKeywords: classification.matchedKeywords ? classification.matchedKeywords.join(', ') : null,
-        method: 'keyword',
+        matchedKeywords: classification.matchedKeywords || null, // Array format
+        method: 'keyword' as any,
         confidence: classification.confidence.toString(),
         isManualOverride: false,
         classifiedBy: userId || 'system'
@@ -423,8 +423,8 @@ export class ClassificationService {
         .set({
           category: category as any,
           isManualOverride: true,
-          method: 'manual',
-          matchedKeywords: 'manual override',
+          method: 'manual' as any,
+          matchedKeywords: ['manual override'], // Array format
           confidence: '1.00',
           classifiedAt: new Date(),
           classifiedBy: userId
@@ -435,8 +435,8 @@ export class ClassificationService {
         lineItemId,
         category: category as any,
         isManualOverride: true,
-        method: 'manual',
-        matchedKeywords: 'manual override',
+        method: 'manual' as any,
+        matchedKeywords: ['manual override'], // Array format
         confidence: '1.00',
         classifiedBy: userId
       });
@@ -549,11 +549,12 @@ Respond with JSON in this format:
           .update(lineItemClassifications)
           .set({
             category: classification.category as any,
-            method: useAI ? 'ai' : 'keyword',
-            matchedKeywords: classification.matchedKeywords || null,
+            method: useAI ? 'ai' as any : 'keyword' as any,
+            matchedKeywords: useAI ? null : classification.matchedKeywords || null, // AI doesn't use keywords
             confidence: classification.confidence.toString(),
+            reasoning: useAI ? (classification as any).reasoning || null : null, // AI reasoning
             classifiedAt: new Date(),
-            classifiedBy: userId || 'system'
+            classifiedBy: userId || (useAI ? 'ai-system' : 'system')
           })
           .where(eq(lineItemClassifications.lineItemId, lineItemId));
       }
@@ -562,11 +563,12 @@ Respond with JSON in this format:
       await db.insert(lineItemClassifications).values({
         lineItemId,
         category: classification.category as any,
-        method: useAI ? 'ai' : 'keyword',
-        matchedKeywords: classification.matchedKeywords || null,
+        method: useAI ? 'ai' as any : 'keyword' as any,
+        matchedKeywords: useAI ? null : classification.matchedKeywords || null,
         confidence: classification.confidence.toString(),
+        reasoning: useAI ? (classification as any).reasoning || null : null,
         isManualOverride: false,
-        classifiedBy: userId || 'system'
+        classifiedBy: userId || (useAI ? 'ai-system' : 'system')
       });
     }
   }
