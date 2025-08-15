@@ -166,8 +166,8 @@ export default function Invoices() {
     },
     retry: 3,
     retryDelay: 1000,
-    refetchInterval: 5000,
     staleTime: 0, // Always consider data stale to ensure fresh fetches
+    refetchOnWindowFocus: true,
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -869,14 +869,34 @@ export default function Invoices() {
                 size="sm"
                 onClick={async () => {
                   console.log('Manual refresh triggered');
-                  await refetch();
-                  // Also invalidate related queries
-                  queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
-                  queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                  try {
+                    // Clear the query cache first to force a fresh fetch
+                    queryClient.removeQueries({ queryKey: ["/api/invoices"] });
+                    queryClient.removeQueries({ queryKey: ["/api/dashboard/stats"] });
+                    
+                    // Then refetch the data
+                    await refetch();
+                    
+                    // Also invalidate related queries to refresh other components
+                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                    
+                    toast({
+                      title: "Refreshed",
+                      description: "Invoice data has been updated",
+                    });
+                  } catch (error) {
+                    console.error('Refresh failed:', error);
+                    toast({
+                      title: "Refresh Failed",
+                      description: "Failed to refresh invoice data",
+                      variant: "destructive",
+                    });
+                  }
                 }}
                 disabled={isLoading}
               >
-                {isLoading ? "Refreshing..." : "Refresh"}
+                {isLoading ? "Refreshing..." : "Refresh Invoices"}
               </Button>
               <Button
                 variant="default"
@@ -1046,8 +1066,14 @@ export default function Invoices() {
                       className="mt-2"
                       onClick={async () => {
                         console.log('Retry triggered from error state');
-                        await refetch();
-                        queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                        try {
+                          // Clear cache and refetch
+                          queryClient.removeQueries({ queryKey: ["/api/invoices"] });
+                          await refetch();
+                          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                        } catch (retryError) {
+                          console.error('Retry failed:', retryError);
+                        }
                       }}
                       disabled={isLoading}
                     >
@@ -1070,8 +1096,13 @@ export default function Invoices() {
                   className="mt-4"
                   onClick={async () => {
                     console.log('Refresh triggered from empty state');
-                    await refetch();
-                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                    try {
+                      queryClient.removeQueries({ queryKey: ["/api/invoices"] });
+                      await refetch();
+                      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                    } catch (refreshError) {
+                      console.error('Refresh from empty state failed:', refreshError);
+                    }
                   }}
                   disabled={isLoading}
                 >
