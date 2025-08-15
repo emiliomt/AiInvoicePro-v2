@@ -821,10 +821,15 @@ export const lineItemClassifications = pgTable("line_item_classifications", {
   id: serial("id").primaryKey(),
   lineItemId: integer("line_item_id").references(() => lineItems.id).notNull(),
   category: classificationCategoryEnum("category").notNull(),
-  matchedKeywords: varchar("matched_keywords", { length: 255 }), // ✅ Changed to plural
-  method: classificationMethodEnum("method").default("keyword").notNull(),
-  isManualOverride: boolean("is_manual_override").default(false),
+  subcategory: varchar("subcategory"),
+  matchedKeywords: varchar("matched_keywords").array(), // FIXED: array type based on your schema
   confidence: decimal("confidence", { precision: 3, scale: 2 }),
+  method: classificationMethodEnum("method").notNull(), // Required in your DB
+  reasoning: text("reasoning"),
+  vendorContext: text("vendor_context"),
+  isUserVerified: boolean("is_user_verified").default(false),
+  isManualOverride: boolean("is_manual_override").default(false),
+  originalText: text("original_text"),
   classifiedAt: timestamp("classified_at").defaultNow(),
   classifiedBy: varchar("classified_by"),
 });
