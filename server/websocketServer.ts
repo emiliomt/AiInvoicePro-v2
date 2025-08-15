@@ -1,4 +1,3 @@
-
 import { WebSocketServer, WebSocket } from 'ws';
 import { Server, IncomingMessage } from 'http';
 import url from 'url';
@@ -44,7 +43,7 @@ export function setupWebSocketServer(server: Server) {
               ws.userId = data.userId;
               userConnections.set(ws, data.userId);
               console.log(`👤 User ${data.userId} subscribed to WebSocket updates`);
-              
+
               ws.send(JSON.stringify({
                 type: 'subscribed',
                 userId: data.userId,
@@ -59,7 +58,7 @@ export function setupWebSocketServer(server: Server) {
               sessionConnections.set(ws, data.sessionId);
               ProgressTracker.addWebSocket(data.sessionId, ws);
               console.log(`📈 Client subscribed to progress for session: ${data.sessionId}`);
-              
+
               ws.send(JSON.stringify({
                 type: 'progress_subscribed',
                 sessionId: data.sessionId,
@@ -84,7 +83,7 @@ export function setupWebSocketServer(server: Server) {
               sessionConnections.delete(ws);
               delete ws.sessionId;
               console.log(`📉 Client unsubscribed from progress session: ${data.sessionId}`);
-              
+
               ws.send(JSON.stringify({
                 type: 'progress_unsubscribed',
                 sessionId: data.sessionId,
@@ -139,13 +138,13 @@ export function setupWebSocketServer(server: Server) {
 
     ws.on('close', (code, reason) => {
       console.log(`📡 WebSocket client disconnected (${code}): ${reason}`);
-      
+
       // Clean up all connections for this WebSocket
       if (ws.userId) {
         userConnections.delete(ws);
         console.log(`👤 Cleaned up user connection for: ${ws.userId}`);
       }
-      
+
       if (ws.sessionId) {
         ProgressTracker.removeWebSocket(ws.sessionId, ws);
         sessionConnections.delete(ws);
@@ -155,7 +154,7 @@ export function setupWebSocketServer(server: Server) {
 
     ws.on('error', (error) => {
       console.error('❌ WebSocket error:', error);
-      
+
       // Clean up connections on error
       if (ws.userId) {
         userConnections.delete(ws);

@@ -255,6 +255,9 @@ export class ClassificationService {
     const db = await getDb();
     const storage = await getStorage();
     
+    // Import WebSocket functions
+    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
+    
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
     
@@ -264,16 +267,44 @@ export class ClassificationService {
       .from(lineItems)
       .where(eq(lineItems.invoiceId, invoiceId));
 
-    console.log(`🏷️ Starting classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
+    const total = invoiceLineItems.length;
+    console.log(`🏷️ Starting classification for ${total} line items in invoice ${invoiceId}`);
 
     // Process each line item
     let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
+        // Broadcast progress update
+        broadcastClassificationProgress({
+          invoiceId,
+          processed,
+          total,
+          percentage: Math.round((processed / total) * 100),
+          currentItem: lineItem.description
+        }, userId);
+
         await this.classifyAndStore(lineItem.id, userId);
         processed++;
+
+        // Get the classification result for broadcasting
+        const classification = await db
+          .select()
+          .from(lineItemClassifications)
+          .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+          .limit(1);
+
+        if (classification.length > 0) {
+          broadcastLineItemClassified({
+            lineItemId: lineItem.id,
+            invoiceId,
+            category: classification[0].category,
+            confidence: parseFloat(classification[0].confidence || '0')
+          }, userId);
+        }
+
       } catch (error) {
         console.error(`❌ Failed to classify line item ${lineItem.id}:`, error);
+        broadcastClassificationError(`Failed to classify item: ${lineItem.description}`, invoiceId, userId);
         // Continue with other items even if one fails
       }
     }
@@ -288,6 +319,8 @@ export class ClassificationService {
       })
       .where(eq(invoices.id, invoiceId));
 
+    // Broadcast completion
+    broadcastClassificationComplete(invoiceId, userId);
     console.log(`✅ Updated invoice ${invoiceId} status to "classified" after line item classification`);
   }
 
@@ -509,6 +542,9 @@ Respond with JSON in this format:
     const db = await getDb();
     const storage = await getStorage();
     
+    // Import WebSocket functions
+    const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
+    
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
     
@@ -518,16 +554,44 @@ Respond with JSON in this format:
       .from(lineItems)
       .where(eq(lineItems.invoiceId, invoiceId));
 
-    console.log(`🏷️ Starting AI classification for ${invoiceLineItems.length} line items in invoice ${invoiceId}`);
+    const total = invoiceLineItems.length;
+    console.log(`🏷️ Starting AI classification for ${total} line items in invoice ${invoiceId}`);
 
     // Process each line item
     let processed = 0;
     for (const lineItem of invoiceLineItems) {
       try {
+        // Broadcast progress update
+        broadcastClassificationProgress({
+          invoiceId,
+          processed,
+          total,
+          percentage: Math.round((processed / total) * 100),
+          currentItem: lineItem.description
+        }, userId);
+
         await this.classifyAndStoreWithAI(lineItem.id, true, userId);
         processed++;
+
+        // Get the classification result for broadcasting
+        const classification = await db
+          .select()
+          .from(lineItemClassifications)
+          .where(eq(lineItemClassifications.lineItemId, lineItem.id))
+          .limit(1);
+
+        if (classification.length > 0) {
+          broadcastLineItemClassified({
+            lineItemId: lineItem.id,
+            invoiceId,
+            category: classification[0].category,
+            confidence: parseFloat(classification[0].confidence || '0')
+          }, userId);
+        }
+
       } catch (error) {
         console.error(`❌ Failed to AI classify line item ${lineItem.id}:`, error);
+        broadcastClassificationError(`Failed to AI classify item: ${lineItem.description}`, invoiceId, userId);
         // Continue with other items even if one fails
       }
     }
@@ -539,9 +603,13 @@ Respond with JSON in this format:
         status: 'classified',
         processingStatus: 'classified'
       });
+      
+      // Broadcast completion
+      broadcastClassificationComplete(invoiceId, userId);
       console.log(`✅ Updated invoice ${invoiceId} status to 'classified' after AI classification`);
     } catch (error) {
       console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
+      broadcastClassificationError(`Failed to update invoice status`, invoiceId, userId);
     }
   }
 }
