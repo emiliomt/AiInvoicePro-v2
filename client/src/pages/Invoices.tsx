@@ -870,18 +870,23 @@ export default function Invoices() {
                 onClick={async () => {
                   console.log('Manual refresh triggered');
                   try {
-                    // Clear the query cache and invalidate queries
-                    await queryClient.resetQueries({ queryKey: ["/api/invoices"] });
-                    await queryClient.resetQueries({ queryKey: ["/api/dashboard/stats"] });
-                    
-                    // Force refetch with fresh data
-                    await queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
-                    
-                    // Clear linkedFilesMap to refresh linked files data
+                    // Clear local state first
                     setLinkedFilesMap({});
                     
-                    // Refetch invoices to get updated data and trigger linked files fetch
-                    const freshInvoices = await refetch();
+                    // Clear and refetch data
+                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                    
+                    // Force a fresh refetch
+                    const result = await refetch();
+                    
+                    // If we have RPA invoices, refetch their linked files
+                    if (result.data) {
+                      const rpaInvoices = result.data.filter((inv: Invoice) => inv.userId === 'rpa-system');
+                      if (rpaInvoices.length > 0) {
+                        await fetchLinkedFilesForInvoices(rpaInvoices);
+                      }
+                    }
                     
                     toast({
                       title: "Refreshed",
