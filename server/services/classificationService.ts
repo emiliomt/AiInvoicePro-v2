@@ -254,13 +254,15 @@ export class ClassificationService {
   static async classifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
     const storage = await getStorage();
-    
+
     // Import WebSocket functions
     const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
-    
+
+    console.log(`🏷️ Starting classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
+
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
-    
+
     // Get line items after duplicate removal
     const invoiceLineItems = await db
       .select()
@@ -268,7 +270,7 @@ export class ClassificationService {
       .where(eq(lineItems.invoiceId, invoiceId));
 
     const total = invoiceLineItems.length;
-    console.log(`🏷️ Starting classification for ${total} line items in invoice ${invoiceId}`);
+    
 
     // Process each line item
     let processed = 0;
@@ -541,13 +543,15 @@ Respond with JSON in this format:
   static async aiClassifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
     const storage = await getStorage();
-    
+
     // Import WebSocket functions
     const { broadcastClassificationProgress, broadcastClassificationComplete, broadcastLineItemClassified, broadcastClassificationError } = await import('../websocketServer');
-    
+
+    console.log(`🏷️ Starting AI classification for ${total} line items in invoice ${invoiceId} with WebSocket broadcasting`);
+
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
-    
+
     // Get line items after duplicate removal
     const invoiceLineItems = await db
       .select()
@@ -555,7 +559,7 @@ Respond with JSON in this format:
       .where(eq(lineItems.invoiceId, invoiceId));
 
     const total = invoiceLineItems.length;
-    console.log(`🏷️ Starting AI classification for ${total} line items in invoice ${invoiceId}`);
+    
 
     // Process each line item
     let processed = 0;
@@ -603,7 +607,7 @@ Respond with JSON in this format:
         status: 'classified',
         processingStatus: 'classified'
       });
-      
+
       // Broadcast completion
       broadcastClassificationComplete(invoiceId, userId);
       console.log(`✅ Updated invoice ${invoiceId} status to 'classified' after AI classification`);

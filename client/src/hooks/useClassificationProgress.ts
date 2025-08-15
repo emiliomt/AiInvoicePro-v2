@@ -29,7 +29,7 @@ export function useClassificationProgress() {
     const ws = new WebSocket(wsUrl);
     
     ws.onopen = () => {
-      console.log('Classification WebSocket connected');
+      console.log('📡 Classification WebSocket connected');
       // Subscribe to classification updates
       ws.send(JSON.stringify({
         type: 'subscribe',
@@ -40,14 +40,17 @@ export function useClassificationProgress() {
     ws.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
+        console.log('📨 WebSocket message received:', data);
         
         switch (data.type) {
           case 'classification_progress':
+            console.log('📊 Classification progress update:', data);
             setProgress(data);
             setIsProcessing(true);
             break;
             
           case 'classification_complete':
+            console.log('✅ Classification complete:', data);
             setProgress(null);
             setIsProcessing(false);
             // Invalidate queries to refresh data
@@ -56,18 +59,27 @@ export function useClassificationProgress() {
             break;
             
           case 'line_item_classified':
+            console.log('📋 Line item classified:', data);
             // Update specific line item in cache
             handleLineItemUpdate(data);
             break;
             
           case 'classification_error':
+            console.error('❌ Classification error:', data.error);
             setProgress(null);
             setIsProcessing(false);
-            console.error('Classification error:', data.error);
             break;
+            
+          case 'welcome':
+          case 'subscribed':
+            console.log('📡 WebSocket connection established:', data.message);
+            break;
+            
+          default:
+            console.log('❓ Unknown WebSocket message type:', data.type);
         }
       } catch (error) {
-        console.error('Error parsing WebSocket message:', error);
+        console.error('❌ Error parsing WebSocket message:', error);
       }
     };
 

@@ -205,6 +205,7 @@ export function setupWebSocketServer(server: Server) {
   });
 
   console.log('✅ WebSocket server setup complete on /ws');
+  setGlobalWebSocketServer(wss);
   return wss;
 }
 
@@ -234,4 +235,81 @@ export function broadcastToUser(wss: WebSocketServer, userId: string, message: a
       }
     }
   });
+}
+
+// Store WebSocket server instance globally for classification broadcasts
+let globalWss: WebSocketServer | null = null;
+
+export function setGlobalWebSocketServer(wss: WebSocketServer) {
+  globalWss = wss;
+}
+
+// Classification progress broadcasting functions
+export function broadcastClassificationProgress(progress: any, userId?: string) {
+  if (!globalWss) return;
+  
+  const message = {
+    type: 'classification_progress',
+    ...progress
+  };
+
+  console.log('📡 Broadcasting classification progress:', message);
+
+  if (userId) {
+    broadcastToUser(globalWss, userId, message);
+  } else {
+    broadcastToAll(globalWss, message);
+  }
+}
+
+export function broadcastClassificationComplete(invoiceId: number, userId?: string) {
+  if (!globalWss) return;
+  
+  const message = {
+    type: 'classification_complete',
+    invoiceId
+  };
+
+  console.log('📡 Broadcasting classification complete:', message);
+
+  if (userId) {
+    broadcastToUser(globalWss, userId, message);
+  } else {
+    broadcastToAll(globalWss, message);
+  }
+}
+
+export function broadcastLineItemClassified(update: any, userId?: string) {
+  if (!globalWss) return;
+  
+  const message = {
+    type: 'line_item_classified',
+    ...update
+  };
+
+  console.log('📡 Broadcasting line item classified:', message);
+
+  if (userId) {
+    broadcastToUser(globalWss, userId, message);
+  } else {
+    broadcastToAll(globalWss, message);
+  }
+}
+
+export function broadcastClassificationError(error: string, invoiceId?: number, userId?: string) {
+  if (!globalWss) return;
+  
+  const message = {
+    type: 'classification_error',
+    error,
+    invoiceId
+  };
+
+  console.log('📡 Broadcasting classification error:', message);
+
+  if (userId) {
+    broadcastToUser(globalWss, userId, message);
+  } else {
+    broadcastToAll(globalWss, message);
+  }
 }
