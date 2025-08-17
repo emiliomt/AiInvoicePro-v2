@@ -37,6 +37,16 @@ export function registerRoutes(app: Express): Server {
   // Mount the API router BEFORE any other middleware
   app.use("/api", apiRouter);
 
+  // 🧪 ADD THIS TEST ROUTE FIRST
+  app.get("/api/test-dedup", (req, res) => {
+    console.log("🧪 TEST ROUTE HIT!");
+    res.json({
+      success: true,
+      message: "Test route working!",
+      timestamp: new Date().toISOString(),
+    });
+  });
+
   // Add authentication routes to the API router
   apiRouter.get("/login", (req, res, next) => {
     console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
@@ -859,53 +869,20 @@ export function registerRoutes(app: Express): Server {
     },
   );
 
-  // Deduplicate line items for a specific invoice
+  // 🔧 THEN ADD THE DEDUPLICATION ROUTE
   apiRouter.post(
     "/invoices/:id/deduplicate",
     isAuthenticated,
-    async (req: any, res) => {
-      try {
-        const userId = (req.user as any).claims.sub;
-        const invoiceId = parseInt(req.params.id);
+    (req: any, res) => {
+      console.log("🔄 DEDUPLICATION ROUTE HIT!");
+      console.log("Invoice ID:", req.params.id);
 
-        if (isNaN(invoiceId)) {
-          return res.status(400).json({ error: "Invalid invoice ID" });
-        }
-
-        // Check if user owns the invoice
-        const invoice = await storage.getInvoice(invoiceId);
-        if (!invoice || invoice.userId !== userId) {
-          return res
-            .status(404)
-            .json({ error: "Invoice not found or access denied" });
-        }
-
-        console.log(`🔄 Starting deduplication for invoice ${invoiceId}`);
-
-        // Run deduplication
-        const result = await storage.deduplicateLineItems(invoiceId);
-
-        console.log(
-          `✅ Deduplication completed for invoice ${invoiceId}:`,
-          result,
-        );
-
-        res.json({
-          message: "Deduplication completed successfully",
-          invoiceId,
-          summary: {
-            duplicatesRemoved: result.removed,
-            itemsKept: result.kept,
-            duplicateGroups: result.details.length,
-          },
-          details: result.details,
-        });
-      } catch (error) {
-        console.error("❌ Error deduplicating line items:", error);
-        res.status(500).json({
-          error: "Failed to deduplicate line items",
-        });
-      }
+      res.json({
+        success: true,
+        message: "Deduplication route working!",
+        invoiceId: req.params.id,
+        timestamp: new Date().toISOString(),
+      });
     },
   );
 

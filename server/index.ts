@@ -75,22 +75,12 @@ app.use((req, res, next) => {
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      console.error('Express error handler triggered:', err);
+      console.error(`Error ${status}: ${message}`);
       res.status(status).json({ message });
-      // Don't throw error here - it causes unhandled rejection
     });
 
-    // importantly only setup vite in development and after
-    // setting up all the other routes so the catch-all route
-    // doesn't interfere with the other routes
-    if (app.get("env") === "development") {
-      console.log('Setting up Vite development server...');
-      await setupVite(app, server);
-      console.log('Vite setup complete');
-    } else {
-      console.log('Setting up static file serving...');
-      serveStatic(app);
-    }
+    await setupVite(app, server);
+    console.log('Vite setup complete');
 
     // ALWAYS serve the app on port 5000
     // this serves both the API and the client.
@@ -100,19 +90,9 @@ app.use((req, res, next) => {
     server.listen(port, "0.0.0.0", () => {
       clearTimeout(serverTimeout);
       log(`serving on port ${port}`);
-    }).on('error', (err: any) => {
-      clearTimeout(serverTimeout);
-      if (err.code === 'EADDRINUSE') {
-        log(`Port ${port} is already in use, trying to find and kill existing process...`);
-        process.exit(1);
-      } else {
-        log(`Server error: ${err.message}`);
-        process.exit(1);
-      }
     });
-  
   } catch (error) {
-    console.error('Failed to start server:', error);
+    console.error('Error during server initialization:', error);
     process.exit(1);
   }
 })();
