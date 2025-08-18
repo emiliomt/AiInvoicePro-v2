@@ -45,8 +45,12 @@ export function registerRoutes(app: Express): Server {
     // Set CORS headers for test route - MUST be set before any response
     res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization",
+    );
     res.setHeader("Access-Control-Allow-Credentials", "true");
+    res.setHeader("Access-Control-Max-Age", "86400"); // Cache preflight for 24 hours
 
     res.json({
       success: true,
@@ -86,10 +90,14 @@ export function registerRoutes(app: Express): Server {
 
     res.setHeader("Access-Control-Allow-Origin", req.headers.origin || "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
-    res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+    res.setHeader(
+      "Access-Control-Allow-Headers",
+      "Content-Type, Authorization",
+    );
     res.setHeader("Access-Control-Allow-Credentials", "true");
     res.setHeader("Access-Control-Max-Age", "86400"); // Cache preflight for 24 hours
 
+    // Send empty response for OPTIONS preflight
     res.status(200).end();
   });
 
@@ -980,6 +988,28 @@ export function registerRoutes(app: Express): Server {
       });
     },
   );
+
+  // Temporary non-authenticated deduplication endpoint for testing
+  apiRouter.post("/invoices/:id/deduplicate-test", (req: any, res) => {
+    console.log("🧪 TEST DEDUPLICATION ROUTE HIT!");
+    console.log("Invoice ID:", req.params.id);
+    console.log("Origin:", req.headers.origin);
+
+    // Set CORS headers for test deduplication endpoint
+    res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
+    res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
+    res.header("Access-Control-Allow-Headers", "Content-Type");
+    res.header("Access-Control-Allow-Credentials", "true");
+
+    res.json({
+      success: true,
+      message: "Test deduplication route working!",
+      invoiceId: req.params.id,
+      timestamp: new Date().toISOString(),
+      origin: req.headers.origin || "unknown",
+      note: "This is a test endpoint - no authentication required",
+    });
+  });
 
   // OPTIONS handler for deduplication (CORS preflight)
   apiRouter.options("/invoices/:id/deduplicate", (req, res) => {
