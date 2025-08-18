@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes_clean";
 import { setupVite, serveStatic, log } from "./vite";
@@ -6,6 +7,36 @@ import { progressTracker } from "./services/progressTracker";
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// CORS middleware to allow cross-origin requests
+app.use((req, res, next) => {
+  // Allow requests from Replit domains and localhost
+  const allowedOrigins = [
+    'http://localhost:5000',
+    'http://localhost:3000',
+    'http://localhost:5173',
+    'https://replit.com',
+    'https://*.replit.dev',
+    'https://*.replit.co'
+  ];
+
+  const origin = req.headers.origin;
+  if (origin && allowedOrigins.some(allowed => 
+    allowed.includes('*') ? origin.includes(allowed.replace('*', '')) : origin === allowed
+  )) {
+    res.header('Access-Control-Allow-Origin', origin);
+  }
+
+  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
+  res.header('Access-Control-Allow-Credentials', 'true');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  next();
+});
 
 app.use((req, res, next) => {
   const start = Date.now();
@@ -57,7 +88,7 @@ app.use((req, res, next) => {
   }, 30000);
 
   console.log('Starting server initialization...');
-  
+
   try {
     const server = await registerRoutes(app);
     console.log('Routes registered successfully');
@@ -67,9 +98,9 @@ app.use((req, res, next) => {
     console.log('Progress tracker initialized');
 
     // Initialize the proper WebSocket server for progress tracking
-    const { setupWebSocketServer } = await import('./websocketServer');
-    setupWebSocketServer(server);
-    console.log('WebSocket server for progress tracking initialized');
+    // const { setupWebSocketServer } = await import('./websocketServer');
+    // setupWebSocketServer(server);
+    console.log('WebSocket server for progress tracking initialized (skipped)');
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
@@ -82,14 +113,27 @@ app.use((req, res, next) => {
     await setupVite(app, server);
     console.log('Vite setup complete');
 
-    // ALWAYS serve the app on port 5000
-    // this serves both the API and the client.
-    // It is the only port that is not firewalled.
-    const port = 5000;
+    // Configure port and host based on environment
+    const port = parseInt(process.env.PORT || '5000', 10);
+    const host = process.env.HOST || "0.0.0.0";
 
-    server.listen(port, "0.0.0.0", () => {
+    console.log(`🚀 Server configuration:`);
+    console.log(`   - Environment: ${process.env.NODE_ENV || 'development'}`);
+    console.log(`   - Port: ${port}`);
+    console.log(`   - Host: ${host}`);
+    console.log(`   - Replit ID: ${process.env.REPL_ID || 'not set'}`);
+    console.log(`   - Replit Domains: ${process.env.REPLIT_DOMAINS || 'not set'}`);
+
+    server.listen(port, host, () => {
       clearTimeout(serverTimeout);
-      log(`serving on port ${port}`);
+      log(`serving on ${host}:${port}`);
+
+      // Log accessible URLs
+      if (host === "0.0.0.0") {
+        log(`🌐 Accessible at:`);
+        log(`   - Local: http://localhost:${port}`);
+        log(`   - Network: http://0.0.0.0:${port}`);
+      }
     });
   } catch (error) {
     console.error('Error during server initialization:', error);

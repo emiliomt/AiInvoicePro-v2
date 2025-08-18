@@ -1,21 +1,12 @@
-import express, {
-  type Express,
-  type Request,
-  type Response,
-  type NextFunction,
-} from "express";
+import express, { type Express, type Request, type Response, type NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
 import passport from "passport";
 import * as replitAuthModule from "./replitAuth";
-import {
-  authMonitoring,
-  monitorProtectedRoute,
-  monitorApiResponse,
-} from "./services/authMonitoringService.js";
-import { authTestService } from "./services/authTestService.js";
+import { authMonitoring, monitorProtectedRoute, monitorApiResponse } from './services/authMonitoringService.js';
+import { authTestService } from './services/authTestService.js';
 import { schedulerService } from "./services/schedulerService";
 import { PythonRPAService } from "./services/pythonRpaService";
 import { xmlProcessingService } from "./services/xmlProcessingService";
@@ -32,18 +23,18 @@ export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
   // Add global API response monitoring
-  app.use("/api", monitorApiResponse());
+  app.use('/api', monitorApiResponse());
 
   // Mount the API router BEFORE any other middleware
-  app.use("/api", apiRouter);
+  app.use('/api', apiRouter);
 
   // 🧪 ADD THIS TEST ROUTE FIRST
-  app.get("/api/test-dedup", (req, res) => {
-    console.log("🧪 TEST ROUTE HIT!");
-    res.json({
-      success: true,
-      message: "Test route working!",
-      timestamp: new Date().toISOString(),
+  app.get('/api/test-dedup', (req, res) => {
+    console.log('🧪 TEST ROUTE HIT!');
+    res.json({ 
+      success: true, 
+      message: 'Test route working!', 
+      timestamp: new Date().toISOString() 
     });
   });
 
@@ -52,7 +43,7 @@ export function registerRoutes(app: Express): Server {
     console.log(`🔐 LOGIN HANDLER CALLED - hostname: ${req.hostname}`);
     console.log(`🔐 Using strategy: replitauth`);
 
-    const authHandler = passport.authenticate("replitauth", {
+    const authHandler = passport.authenticate('replitauth', {
       prompt: "login consent",
       scope: ["openid", "email", "profile", "offline_access"],
     });
@@ -62,10 +53,10 @@ export function registerRoutes(app: Express): Server {
   });
 
   apiRouter.get("/callback", (req, res, next) => {
-    console.log("🔄 Auth callback - using strategy: replitauth");
-    console.log("🔄 Callback query params:", req.query);
+    console.log('🔄 Auth callback - using strategy: replitauth');
+    console.log('🔄 Callback query params:', req.query);
 
-    passport.authenticate("replitauth", {
+    passport.authenticate('replitauth', {
       successReturnToOrRedirect: "/",
       failureRedirect: "/api/login",
     })(req, res, next);
@@ -78,813 +69,657 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Basic user endpoint
-  apiRouter.get(
-    "/user",
-    isAuthenticated,
-    async (req: Request, res: Response) => {
-      try {
-        console.log(
-          "📋 User endpoint called - User object:",
-          (req as any).user ? "present" : "missing",
-        );
+  apiRouter.get("/user", isAuthenticated, async (req: Request, res: Response) => {
+    try {
+      console.log('📋 User endpoint called - User object:', (req as any).user ? 'present' : 'missing');
 
-        // Get the raw user object
-        const rawUser = (req as any).user;
+      // Get the raw user object
+      const rawUser = (req as any).user;
 
-        // Extract user data from the authenticated request
-        const user = replitAuthModule.getUser(req);
+      // Extract user data from the authenticated request
+      const user = replitAuthModule.getUser(req);
 
-        if (!user) {
-          console.log("❌ No user found in request");
-          await authMonitoring.logAuthEvent({
-            event: "user_endpoint_access",
-            userAgent: req.headers["user-agent"],
-            ip: req.ip,
-            success: false,
-            details: { error: "No user in request" },
-          });
-          return res.status(401).json({ error: "Not authenticated" });
-        }
-
-        console.log("📋 User object structure:", Object.keys(user));
-
-        // Handle both direct claims and nested claims structure
-        const userClaims = user.claims || user;
-        const userData = {
-          id: userClaims.sub,
-          email: userClaims.email,
-          firstName: userClaims.first_name || userClaims.given_name,
-          lastName: userClaims.last_name || userClaims.family_name,
-          profileImageUrl: userClaims.profile_image_url || userClaims.picture,
-        };
-
-        console.log("✅ Returning user data:", userData);
-
+      if (!user) {
+        console.log('❌ No user found in request');
         await authMonitoring.logAuthEvent({
-          event: "user_endpoint_access",
-          userId: userData.id,
-          userAgent: req.headers["user-agent"],
-          ip: req.ip,
-          success: true,
-          details: { email: userData.email },
-        });
-
-        res.json(userData);
-      } catch (error) {
-        console.error("❌ Error in user endpoint:", error);
-        await authMonitoring.logAuthEvent({
-          event: "user_endpoint_error",
-          userAgent: req.headers["user-agent"],
+          event: 'user_endpoint_access',
+          userAgent: req.headers['user-agent'],
           ip: req.ip,
           success: false,
-          details: {
-            error: error instanceof Error ? error.message : "Unknown error",
-          },
+          details: { error: 'No user in request' }
         });
-        res.status(500).json({ error: "Internal server error" });
+        return res.status(401).json({ error: 'Not authenticated' });
       }
-    },
-  );
+
+      console.log('📋 User object structure:', Object.keys(user));
+
+      // Handle both direct claims and nested claims structure
+      const userClaims = user.claims || user;
+      const userData = {
+        id: userClaims.sub,
+        email: userClaims.email,
+        firstName: userClaims.first_name || userClaims.given_name,
+        lastName: userClaims.last_name || userClaims.family_name,
+        profileImageUrl: userClaims.profile_image_url || userClaims.picture
+      };
+
+      console.log('✅ Returning user data:', userData);
+
+      await authMonitoring.logAuthEvent({
+        event: 'user_endpoint_access',
+        userId: userData.id,
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+        success: true,
+        details: { email: userData.email }
+      });
+
+      res.json(userData);
+    } catch (error) {
+      console.error('❌ Error in user endpoint:', error);
+      await authMonitoring.logAuthEvent({
+        event: 'user_endpoint_error',
+        userAgent: req.headers['user-agent'],
+        ip: req.ip,
+        success: false,
+        details: { error: error instanceof Error ? error.message : 'Unknown error' }
+      });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  });
 
   // Health check endpoint
   apiRouter.get("/health", (req, res) => {
     res.json({
       status: "ok",
-      timestamp: new Date().toISOString(),
+      timestamp: new Date().toISOString()
     });
   });
 
-  // Get all invoices
-  apiRouter.get(
-    "/invoices",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        const userId = req.user?.claims?.sub;
-        if (!userId) {
-          return res.status(401).json({ message: "User not authenticated" });
-        }
+  // Health check endpoint for testing
+  apiRouter.get("/health-check", (req, res) => {
+    // Set CORS headers specifically for health check
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
 
-        const invoices = await storage.getInvoices();
-        res.json(invoices);
-      } catch (error) {
-        console.error("Error fetching invoices:", error);
-        res.status(500).json({ message: "Failed to fetch invoices" });
+    res.json({
+      success: true,
+      message: "Server is working!",
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || "development",
+      origin: req.headers.origin || 'unknown',
+      hostname: req.hostname || 'unknown'
+    });
+  });
+
+  // OPTIONS handler for health check (CORS preflight)
+  apiRouter.options("/health-check", (req, res) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type');
+    res.status(200).end();
+  });
+
+  // Get all invoices
+  apiRouter.get("/invoices", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({ message: "User not authenticated" });
       }
-    },
-  );
+
+      const invoices = await storage.getInvoices();
+      res.json(invoices);
+    } catch (error) {
+      console.error("Error fetching invoices:", error);
+      res.status(500).json({ message: "Failed to fetch invoices" });
+    }
+  });
 
   // Get invoice by ID
-  apiRouter.get(
-    "/invoices/:id",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        const invoiceId = parseInt(req.params.id);
-        const invoice = await storage.getInvoice(invoiceId);
+  apiRouter.get("/invoices/:id", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
 
-        if (!invoice) {
-          return res.status(404).json({ message: "Invoice not found" });
-        }
-
-        res.json(invoice);
-      } catch (error) {
-        console.error("Error fetching invoice:", error);
-        res.status(500).json({ message: "Failed to fetch invoice" });
+      if (!invoice) {
+        return res.status(404).json({ message: "Invoice not found" });
       }
-    },
-  );
+
+      res.json(invoice);
+    } catch (error) {
+      console.error("Error fetching invoice:", error);
+      res.status(500).json({ message: "Failed to fetch invoice" });
+    }
+  });
 
   // Basic dashboard stats
-  apiRouter.get(
-    "/dashboard/stats",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        const invoices = await storage.getInvoices();
+  apiRouter.get("/dashboard/stats", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      const invoices = await storage.getInvoices();
 
-        const stats = {
-          totalInvoices: invoices.length,
-          pendingInvoices: invoices.filter((i: any) => i.status === "pending")
-            .length,
-          approvedInvoices: invoices.filter((i: any) => i.status === "approved")
-            .length,
-          rejectedInvoices: invoices.filter((i: any) => i.status === "rejected")
-            .length,
-        };
+      const stats = {
+        totalInvoices: invoices.length,
+        pendingInvoices: invoices.filter((i: any) => i.status === 'pending').length,
+        approvedInvoices: invoices.filter((i: any) => i.status === 'approved').length,
+        rejectedInvoices: invoices.filter((i: any) => i.status === 'rejected').length,
+      };
 
-        res.json(stats);
-      } catch (error) {
-        console.error("Error fetching dashboard stats:", error);
-        res.status(500).json({ message: "Failed to fetch dashboard stats" });
-      }
-    },
-  );
+      res.json(stats);
+    } catch (error) {
+      console.error("Error fetching dashboard stats:", error);
+      res.status(500).json({ message: "Failed to fetch dashboard stats" });
+    }
+  });
 
   // Get validation rules
-  apiRouter.get(
-    "/validation-rules",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        console.log("🔍 API: GET /api/validation-rules - Starting request");
-        console.log("🔍 API: User authenticated:", !!req.user);
-        console.log("🔍 API: User ID:", req.user?.claims?.sub);
+  apiRouter.get("/validation-rules", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      console.log("🔍 API: GET /api/validation-rules - Starting request");
+      console.log("🔍 API: User authenticated:", !!req.user);
+      console.log("🔍 API: User ID:", req.user?.claims?.sub);
 
-        const rules = await storage.getValidationRules();
-        console.log(`✅ API: Retrieved ${rules.length} validation rules`);
-        console.log("✅ API: Rules data:", JSON.stringify(rules, null, 2));
+      const rules = await storage.getValidationRules();
+      console.log(`✅ API: Retrieved ${rules.length} validation rules`);
+      console.log("✅ API: Rules data:", JSON.stringify(rules, null, 2));
 
-        res.json(rules);
-      } catch (error) {
-        console.error("❌ API: Error fetching validation rules:", error);
-        console.error(
-          "❌ API: Error stack:",
-          error instanceof Error ? error.stack : "No stack",
-        );
-        res.status(500).json({
-          message: "Failed to fetch validation rules",
-          error: error instanceof Error ? error.message : String(error),
-        });
-      }
-    },
-  );
+      res.json(rules);
+    } catch (error) {
+      console.error("❌ API: Error fetching validation rules:", error);
+      console.error("❌ API: Error stack:", error instanceof Error ? error.stack : "No stack");
+      res.status(500).json({
+        message: "Failed to fetch validation rules",
+        error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
 
   // Create validation rule
-  apiRouter.post(
-    "/validation-rules",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        console.log("📝 API: POST /api/validation-rules - Starting request");
-        console.log(
-          "📝 API: Request headers:",
-          JSON.stringify(req.headers, null, 2),
-        );
-        console.log("📝 API: Request body:", JSON.stringify(req.body, null, 2));
-        console.log("📝 API: User authenticated:", !!req.user);
-        console.log("📝 API: User ID:", req.user?.claims?.sub);
+  apiRouter.post("/validation-rules", isAuthenticated, async (req: any, res: Response) => {
+    try {
+      console.log("📝 API: POST /api/validation-rules - Starting request");
+      console.log("📝 API: Request headers:", JSON.stringify(req.headers, null, 2));
+      console.log("📝 API: Request body:", JSON.stringify(req.body, null, 2));
+      console.log("📝 API: User authenticated:", !!req.user);
+      console.log("📝 API: User ID:", req.user?.claims?.sub);
 
-        const {
-          name,
-          description,
-          fieldName,
-          ruleType,
-          ruleValue,
-          severity,
-          errorMessage,
-        } = req.body;
+      const { name, description, fieldName, ruleType, ruleValue, severity, errorMessage } = req.body;
 
-        // Validation
-        if (!name || !fieldName || !ruleType || !ruleValue) {
-          console.log("❌ API: Validation failed - Missing required fields");
-          console.log("❌ API: Field check:", {
-            name: !!name,
-            fieldName: !!fieldName,
-            ruleType: !!ruleType,
-            ruleValue: !!ruleValue,
-          });
-          return res.status(400).json({
-            message: "Missing required fields",
-            required: ["name", "fieldName", "ruleType", "ruleValue"],
-            received: {
-              name: !!name,
-              fieldName: !!fieldName,
-              ruleType: !!ruleType,
-              ruleValue: !!ruleValue,
-            },
-          });
-        }
-
-        console.log(
-          "✅ API: Field validation passed, calling storage.createValidationRule",
-        );
-        const ruleData = {
-          name,
-          description: description || null,
-          fieldName,
-          ruleType,
-          ruleValue,
-          severity: severity || "medium",
-          errorMessage: errorMessage || null,
-          isActive: true,
-        };
-        console.log(
-          "✅ API: Rule data to be created:",
-          JSON.stringify(ruleData, null, 2),
-        );
-
-        const rule = await storage.createValidationRule(ruleData);
-
-        console.log(
-          "✅ API: Rule created successfully:",
-          JSON.stringify(rule, null, 2),
-        );
-        res.status(201).json(rule);
-      } catch (error) {
-        console.error("❌ API: Error creating validation rule:", error);
-        console.error(
-          "❌ API: Error name:",
-          error instanceof Error ? error.name : "Unknown",
-        );
-        console.error(
-          "❌ API: Error message:",
-          error instanceof Error ? error.message : String(error),
-        );
-        console.error(
-          "❌ API: Error stack:",
-          error instanceof Error ? error.stack : "No stack",
-        );
-        console.error("❌ API: Error code:", (error as any)?.code);
-        console.error("❌ API: Error detail:", (error as any)?.detail);
-        console.error("❌ API: Full error object:", error);
-
-        res.status(500).json({
-          message: "Failed to create validation rule",
-          error: error instanceof Error ? error.message : String(error),
-          code: (error as any)?.code,
-          detail: (error as any)?.detail,
+      // Validation
+      if (!name || !fieldName || !ruleType || !ruleValue) {
+        console.log("❌ API: Validation failed - Missing required fields");
+        console.log("❌ API: Field check:", {
+          name: !!name,
+          fieldName: !!fieldName,
+          ruleType: !!ruleType,
+          ruleValue: !!ruleValue
+        });
+        return res.status(400).json({
+          message: "Missing required fields",
+          required: ["name", "fieldName", "ruleType", "ruleValue"],
+          received: { name: !!name, fieldName: !!fieldName, ruleType: !!ruleType, ruleValue: !!ruleValue }
         });
       }
-    },
-  );
+
+      console.log("✅ API: Field validation passed, calling storage.createValidationRule");
+      const ruleData = {
+        name,
+        description: description || null,
+        fieldName,
+        ruleType,
+        ruleValue,
+        severity: severity || "medium",
+        errorMessage: errorMessage || null,
+        isActive: true,
+      };
+      console.log("✅ API: Rule data to be created:", JSON.stringify(ruleData, null, 2));
+
+      const rule = await storage.createValidationRule(ruleData);
+
+      console.log("✅ API: Rule created successfully:", JSON.stringify(rule, null, 2));
+      res.status(201).json(rule);
+    } catch (error) {
+      console.error("❌ API: Error creating validation rule:", error);
+      console.error("❌ API: Error name:", error instanceof Error ? error.name : "Unknown");
+      console.error("❌ API: Error message:", error instanceof Error ? error.message : String(error));
+      console.error("❌ API: Error stack:", error instanceof Error ? error.stack : "No stack");
+      console.error("❌ API: Error code:", (error as any)?.code);
+      console.error("❌ API: Error detail:", (error as any)?.detail);
+      console.error("❌ API: Full error object:", error);
+
+      res.status(500).json({
+        message: "Failed to create validation rule",
+        error: error instanceof Error ? error.message : String(error),
+        code: (error as any)?.code,
+        detail: (error as any)?.detail
+      });
+    }
+  });
 
   // Debug endpoint for validation rules troubleshooting
-  apiRouter.get(
-    "/validation-rules/debug",
-    isAuthenticated,
-    async (req: any, res: Response) => {
-      try {
-        console.log(
-          "🐛 Debug: Checking validation rules table structure and data",
-        );
+  apiRouter.get('/validation-rules/debug', isAuthenticated, async (req: any, res: Response) => {
+    try {
+      console.log("🐛 Debug: Checking validation rules table structure and data");
 
-        // Import database connection
-        const { drizzle } = await import("drizzle-orm/neon-http");
-        const { neon } = await import("@neondatabase/serverless");
-        const { sql } = await import("drizzle-orm");
-        const client = neon(process.env.DATABASE_URL!);
-        const debugDb = drizzle(client);
+      // Import database connection
+      const { drizzle } = await import("drizzle-orm/neon-http");
+      const { neon } = await import("@neondatabase/serverless");
+      const { sql } = await import("drizzle-orm");
+      const client = neon(process.env.DATABASE_URL!);
+      const debugDb = drizzle(client);
 
-        // Get database table structure
-        const tableInfoResult = await debugDb.execute(sql`
+      // Get database table structure
+      const tableInfoResult = await debugDb.execute(sql`
         SELECT column_name, data_type, is_nullable, column_default
         FROM information_schema.columns
         WHERE table_name = 'validation_rules'
         ORDER BY ordinal_position;
       `);
 
-        // Check if table exists
-        const tableExistsResult = await debugDb.execute(sql`
+      // Check if table exists
+      const tableExistsResult = await debugDb.execute(sql`
         SELECT EXISTS (
           SELECT FROM information_schema.tables
           WHERE table_name = 'validation_rules'
         );
       `);
 
-        // Get current rules using raw SQL
-        const rawRulesResult = await debugDb.execute(sql`
+      // Get current rules using raw SQL
+      const rawRulesResult = await debugDb.execute(sql`
         SELECT * FROM validation_rules ORDER BY created_at DESC;
       `);
 
-        // Get current rules using storage method
-        const currentRules = await storage.getValidationRules();
+      // Get current rules using storage method
+      const currentRules = await storage.getValidationRules();
 
-        // Get sample invoice structure
-        const sampleInvoice = await debugDb.execute(sql`
+      // Get sample invoice structure
+      const sampleInvoice = await debugDb.execute(sql`
         SELECT id, vendor_name, total_amount, extracted_data
         FROM invoices
         ORDER BY created_at DESC
         LIMIT 1;
       `);
 
-        console.log("🐛 Debug results:", {
-          tableExists: tableExistsResult.rows[0]?.exists,
-          tableColumns: tableInfoResult.rows.length,
-          rawRulesCount: rawRulesResult.rows.length,
-          storageRulesCount: currentRules.length,
-        });
+      console.log("🐛 Debug results:", {
+        tableExists: tableExistsResult.rows[0]?.exists,
+        tableColumns: tableInfoResult.rows.length,
+        rawRulesCount: rawRulesResult.rows.length,
+        storageRulesCount: currentRules.length
+      });
 
-        res.json({
-          tableExists: tableExistsResult.rows[0]?.exists || false,
-          tableStructure: tableInfoResult.rows,
-          rawRulesFromDb: {
-            count: rawRulesResult.rows.length,
-            rules: rawRulesResult.rows,
-          },
-          storageMethodRules: {
-            count: currentRules.length,
-            rules: currentRules,
-          },
-          sampleInvoiceStructure: sampleInvoice.rows[0] || null,
-          debugInfo: {
-            databaseUrl: process.env.DATABASE_URL ? "✅ Set" : "❌ Missing",
-            timestamp: new Date().toISOString(),
-          },
-        });
-      } catch (error) {
-        console.error("🐛 Debug endpoint error:", error);
-        res.status(500).json({
-          error: error instanceof Error ? error.message : String(error),
-          stack: error instanceof Error ? error.stack : "No stack trace",
-          debugTimestamp: new Date().toISOString(),
-        });
-      }
-    },
-  );
+      res.json({
+        tableExists: tableExistsResult.rows[0]?.exists || false,
+        tableStructure: tableInfoResult.rows,
+        rawRulesFromDb: {
+          count: rawRulesResult.rows.length,
+          rules: rawRulesResult.rows
+        },
+        storageMethodRules: {
+          count: currentRules.length,
+          rules: currentRules
+        },
+        sampleInvoiceStructure: sampleInvoice.rows[0] || null,
+        debugInfo: {
+          databaseUrl: process.env.DATABASE_URL ? "✅ Set" : "❌ Missing",
+          timestamp: new Date().toISOString()
+        }
+      });
+
+    } catch (error) {
+      console.error("🐛 Debug endpoint error:", error);
+      res.status(500).json({
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : "No stack trace",
+        debugTimestamp: new Date().toISOString()
+      });
+    }
+  });
 
   // Initiate automatic processing
-  apiRouter.post(
-    "/invoices/initiate-automatic-process",
-    isAuthenticated,
-    async (req, res) => {
-      const startTime = Date.now();
-      let processingTimeout: NodeJS.Timeout;
+  apiRouter.post('/invoices/initiate-automatic-process', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    let processingTimeout: NodeJS.Timeout;
 
+    try {
+      console.log('🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...');
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request user:', (req.user as any)?.claims?.sub);
+      console.log('🚀 [AUTOMATIC_PROCESSING] Request body:', JSON.stringify(req.body, null, 2));
+
+      // Ensure we always return JSON with proper headers
+      res.setHeader('Content-Type', 'application/json');
+
+      // Set up timeout to prevent hanging - increased to 5 minutes
+      processingTimeout = setTimeout(() => {
+        console.error('⏰ [AUTOMATIC_PROCESSING] Processing timeout after 5 minutes');
+        if (!res.headersSent) {
+          res.status(408).json({
+            success: false,
+            error: 'Processing timeout',
+            message: 'Automatic processing took too long and was cancelled. The system will continue processing in the background.',
+            timestamp: new Date().toISOString()
+          });
+        }
+      }, 300000); // 5 minute timeout for browser automation
+
+      // Call the Python RPA Service directly for more reliable processing
+      let result;
       try {
-        console.log(
-          "🚀 [AUTOMATIC_PROCESSING] Starting automatic invoice processing...",
-        );
-        console.log(
-          "🚀 [AUTOMATIC_PROCESSING] Request user:",
-          (req.user as any)?.claims?.sub,
-        );
-        console.log(
-          "🚀 [AUTOMATIC_PROCESSING] Request body:",
-          JSON.stringify(req.body, null, 2),
-        );
+        console.log('🔄 [AUTOMATIC_PROCESSING] Starting Python RPA service...');
 
-        // Ensure we always return JSON with proper headers
-        res.setHeader("Content-Type", "application/json");
+        // First try direct Python RPA processing
+        result = await PythonRPAService.processInvoicesAutomatically();
 
-        // Set up timeout to prevent hanging - increased to 5 minutes
-        processingTimeout = setTimeout(() => {
-          console.error(
-            "⏰ [AUTOMATIC_PROCESSING] Processing timeout after 5 minutes",
-          );
-          if (!res.headersSent) {
-            res.status(408).json({
-              success: false,
-              error: "Processing timeout",
-              message:
-                "Automatic processing took too long and was cancelled. The system will continue processing in the background.",
-              timestamp: new Date().toISOString(),
-            });
-          }
-        }, 300000); // 5 minute timeout for browser automation
+        if (result.success) {
+          console.log('✅ [AUTOMATIC_PROCESSING] Python RPA processing completed successfully');
+        } else {
+          console.log('⚠️ [AUTOMATIC_PROCESSING] Python RPA processing completed with warnings');
+        }
 
-        // Call the Python RPA Service directly for more reliable processing
-        let result;
+      } catch (rpaError: any) {
+        console.error('❌ [AUTOMATIC_PROCESSING] Python RPA service failed, falling back to invoice importer:', rpaError.message);
+
+        // Fallback to invoice importer service
         try {
-          console.log(
-            "🔄 [AUTOMATIC_PROCESSING] Starting Python RPA service...",
-          );
+          console.log('🔄 [AUTOMATIC_PROCESSING] Falling back to invoice importer service...');
 
-          // First try direct Python RPA processing
-          result = await PythonRPAService.processInvoicesAutomatically();
+          // Get all active invoice importer configurations
+          const configs = await storage.getInvoiceImporterConfigs();
+          console.log(`📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`);
 
-          if (result.success) {
-            console.log(
-              "✅ [AUTOMATIC_PROCESSING] Python RPA processing completed successfully",
-            );
-          } else {
-            console.log(
-              "⚠️ [AUTOMATIC_PROCESSING] Python RPA processing completed with warnings",
-            );
+          if (configs.length === 0) {
+            throw new Error('No invoice importer configurations found');
           }
-        } catch (rpaError: any) {
-          console.error(
-            "❌ [AUTOMATIC_PROCESSING] Python RPA service failed, falling back to invoice importer:",
-            rpaError.message,
-          );
 
-          // Fallback to invoice importer service
-          try {
-            console.log(
-              "🔄 [AUTOMATIC_PROCESSING] Falling back to invoice importer service...",
-            );
-
-            // Get all active invoice importer configurations
-            const configs = await storage.getInvoiceImporterConfigs();
-            console.log(
-              `📋 [AUTOMATIC_PROCESSING] Found ${configs.length} importer configurations`,
-            );
-
-            if (configs.length === 0) {
-              throw new Error("No invoice importer configurations found");
-            }
-
-            // Process each configuration
-            const processedConfigurations = [];
-            for (const config of configs) {
-              if (config.isActive) {
-                console.log(
-                  `🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`,
-                );
-                try {
-                  await invoiceImporterService.executeImportTask(config.id);
-                  processedConfigurations.push({
-                    configId: config.id,
-                    taskName: config.taskName,
-                    status: "completed",
-                  });
-                } catch (configError: any) {
-                  console.error(
-                    `❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`,
-                    configError,
-                  );
-                  processedConfigurations.push({
-                    configId: config.id,
-                    taskName: config.taskName,
-                    status: "failed",
-                    error: configError.message,
-                  });
-                }
+          // Process each configuration
+          const processedConfigurations = [];
+          for (const config of configs) {
+            if (config.isActive) {
+              console.log(`🚀 [AUTOMATIC_PROCESSING] Processing configuration: ${config.taskName}`);
+              try {
+                await invoiceImporterService.executeImportTask(config.id);
+                processedConfigurations.push({
+                  configId: config.id,
+                  taskName: config.taskName,
+                  status: 'completed'
+                });
+              } catch (configError: any) {
+                console.error(`❌ [AUTOMATIC_PROCESSING] Failed to process config ${config.id}:`, configError);
+                processedConfigurations.push({
+                  configId: config.id,
+                  taskName: config.taskName,
+                  status: 'failed',
+                  error: configError.message
+                });
               }
             }
-
-            result = {
-              success: true,
-              message: `Processed ${processedConfigurations.length} import configurations`,
-              processedConfigurations,
-              processedInvoices: processedConfigurations.filter(
-                (c) => c.status === "completed",
-              ).length,
-              timestamp: new Date().toISOString(),
-            };
-
-            console.log(
-              "✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:",
-              JSON.stringify(result, null, 2),
-            );
-          } catch (importerError: any) {
-            console.error(
-              "❌ [AUTOMATIC_PROCESSING] Invoice importer service also failed:",
-              importerError.message,
-            );
-
-            // Return a more user-friendly response for RPA failures
-            const isRpaFailure =
-              importerError.message.includes("selector") ||
-              importerError.message.includes("login") ||
-              importerError.message.includes("RPA");
-
-            result = {
-              success: true, // Mark as success since it switched to manual mode
-              warning: true,
-              message: isRpaFailure
-                ? "RPA automation encountered login issues and switched to manual processing mode. Your import configurations are ready for manual invoice upload."
-                : importerError.message ||
-                  "Automatic processing completed with warnings",
-              processedInvoices: 0,
-              manualModeEnabled: isRpaFailure,
-              timestamp: new Date().toISOString(),
-            };
           }
-        }
 
-        // Clear timeout since we're responding
-        clearTimeout(processingTimeout);
+          result = {
+            success: true,
+            message: `Processed ${processedConfigurations.length} import configurations`,
+            processedConfigurations,
+            processedInvoices: processedConfigurations.filter(c => c.status === 'completed').length,
+            timestamp: new Date().toISOString()
+          };
 
-        const processingTime = Date.now() - startTime;
-        console.log(
-          `✅ [AUTOMATIC_PROCESSING] Completed successfully in ${processingTime}ms`,
-        );
+          console.log('✅ [AUTOMATIC_PROCESSING] Invoice importer service completed:', JSON.stringify(result, null, 2));
+        } catch (importerError: any) {
+          console.error('❌ [AUTOMATIC_PROCESSING] Invoice importer service also failed:', importerError.message);
 
-        // Ensure result is a valid JSON object
-        const jsonResponse = {
-          success: result?.success !== false,
-          message: result?.warning
-            ? result.message
-            : "Automatic processing completed successfully",
-          warning: result?.warning || false,
-          manualModeEnabled: result?.manualModeEnabled || false,
-          data: result || {},
-          processingTimeMs: processingTime,
-          timestamp: new Date().toISOString(),
-        };
+          // Return a more user-friendly response for RPA failures
+          const isRpaFailure = importerError.message.includes('selector') || importerError.message.includes('login') || importerError.message.includes('RPA');
 
-        console.log(
-          "📤 [AUTOMATIC_PROCESSING] Sending response:",
-          JSON.stringify(jsonResponse, null, 2),
-        );
-
-        if (!res.headersSent) {
-          res.status(200).json(jsonResponse);
-        } else {
-          console.warn(
-            "⚠️ [AUTOMATIC_PROCESSING] Response already sent, skipping",
-          );
-        }
-      } catch (error) {
-        // Clear timeout
-        if (processingTimeout) {
-          clearTimeout(processingTimeout);
-        }
-
-        const processingTime = Date.now() - startTime;
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        console.error(
-          "❌ [AUTOMATIC_PROCESSING] Failed after",
-          processingTime,
-          "ms:",
-          errorMessage,
-        );
-        console.error(
-          "❌ [AUTOMATIC_PROCESSING] Error stack:",
-          error instanceof Error ? error.stack : "No stack",
-        );
-        console.error(
-          "❌ [AUTOMATIC_PROCESSING] Error name:",
-          error instanceof Error ? error.name : "Unknown",
-        );
-        console.error("❌ [AUTOMATIC_PROCESSING] Error message:", errorMessage);
-
-        // Always return JSON, never let Express return HTML
-        res.setHeader("Content-Type", "application/json");
-
-        if (!res.headersSent) {
-          res.status(500).json({
-            success: false,
-            error: "Automatic processing failed",
-            message:
-              error instanceof Error ? error.message : "Unknown error occurred",
-            processingTimeMs: processingTime,
-            timestamp: new Date().toISOString(),
-          });
-        } else {
-          console.warn(
-            "⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent",
-          );
+          result = {
+            success: true, // Mark as success since it switched to manual mode
+            warning: true,
+            message: isRpaFailure
+              ? 'RPA automation encountered login issues and switched to manual processing mode. Your import configurations are ready for manual invoice upload.'
+              : importerError.message || 'Automatic processing completed with warnings',
+            processedInvoices: 0,
+            manualModeEnabled: isRpaFailure,
+            timestamp: new Date().toISOString()
+          };
         }
       }
-    },
-  );
+
+      // Clear timeout since we're responding
+      clearTimeout(processingTimeout);
+
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [AUTOMATIC_PROCESSING] Completed successfully in ${processingTime}ms`);
+
+      // Ensure result is a valid JSON object
+      const jsonResponse = {
+        success: result?.success !== false,
+        message: result?.warning ? result.message : 'Automatic processing completed successfully',
+        warning: result?.warning || false,
+        manualModeEnabled: result?.manualModeEnabled || false,
+        data: result || {},
+        processingTimeMs: processingTime,
+        timestamp: new Date().toISOString()
+      };
+
+      console.log('📤 [AUTOMATIC_PROCESSING] Sending response:', JSON.stringify(jsonResponse, null, 2));
+
+      if (!res.headersSent) {
+        res.status(200).json(jsonResponse);
+      } else {
+        console.warn('⚠️ [AUTOMATIC_PROCESSING] Response already sent, skipping');
+      }
+
+    } catch (error) {
+      // Clear timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+      }
+
+      const processingTime = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [AUTOMATIC_PROCESSING] Failed after', processingTime, 'ms:', errorMessage);
+      console.error('❌ [AUTOMATIC_PROCESSING] Error stack:', error instanceof Error ? error.stack : 'No stack');
+      console.error('❌ [AUTOMATIC_PROCESSING] Error name:', error instanceof Error ? error.name : 'Unknown');
+      console.error('❌ [AUTOMATIC_PROCESSING] Error message:', errorMessage);
+
+      // Always return JSON, never let Express return HTML
+      res.setHeader('Content-Type', 'application/json');
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Automatic processing failed',
+          message: error instanceof Error ? error.message : 'Unknown error occurred',
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
+      } else {
+        console.warn('⚠️ [AUTOMATIC_PROCESSING] Error occurred but response already sent');
+      }
+    }
+  });
 
   // Test Python RPA environment endpoint
-  apiRouter.get("/rpa/test-environment", isAuthenticated, async (req, res) => {
+  apiRouter.get('/rpa/test-environment', isAuthenticated, async (req, res) => {
     try {
-      console.log("🧪 [RPA_TEST] Testing Python RPA environment...");
+      console.log('🧪 [RPA_TEST] Testing Python RPA environment...');
 
       const result = await PythonRPAService.testRPAEnvironment();
 
-      console.log(
-        "✅ [RPA_TEST] Environment test completed:",
-        JSON.stringify(result, null, 2),
-      );
+      console.log('✅ [RPA_TEST] Environment test completed:', JSON.stringify(result, null, 2));
 
       res.json({
         success: true,
         data: result,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       });
     } catch (error: any) {
-      const errorMessage =
-        error instanceof Error ? error.message : String(error);
-      console.error("❌ [RPA_TEST] Environment test failed:", errorMessage);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [RPA_TEST] Environment test failed:', errorMessage);
 
       res.status(500).json({
         success: false,
-        error: "RPA environment test failed",
+        error: 'RPA environment test failed',
         message: errorMessage,
-        timestamp: new Date().toISOString(),
+        timestamp: new Date().toISOString()
       });
     }
   });
 
   // Direct Python RPA processing endpoint (with extended timeout)
-  apiRouter.post(
-    "/invoices/python-rpa-process",
-    isAuthenticated,
-    async (req, res) => {
-      const startTime = Date.now();
-      let processingTimeout: NodeJS.Timeout;
+  apiRouter.post('/invoices/python-rpa-process', isAuthenticated, async (req, res) => {
+    const startTime = Date.now();
+    let processingTimeout: NodeJS.Timeout;
 
-      try {
-        console.log(
-          "🚀 [PYTHON_RPA_DIRECT] Starting direct Python RPA processing...",
-        );
+    try {
+      console.log('🚀 [PYTHON_RPA_DIRECT] Starting direct Python RPA processing...');
 
-        // Ensure we always return JSON with proper headers
-        res.setHeader("Content-Type", "application/json");
+      // Ensure we always return JSON with proper headers
+      res.setHeader('Content-Type', 'application/json');
 
-        // Set up timeout to prevent hanging - matched to Python script timeout
-        processingTimeout = setTimeout(() => {
-          console.error(
-            "⏰ [PYTHON_RPA_DIRECT] Processing timeout after 4.5 minutes",
-          );
-          if (!res.headersSent) {
-            res.status(408).json({
-              success: false,
-              error: "Python RPA processing timeout",
-              message: "Python RPA processing took too long and was cancelled.",
-              timestamp: new Date().toISOString(),
-            });
-          }
-        }, 270000); // 4.5 minute timeout (slightly longer than Python script timeout)
-
-        // Call Python RPA Service directly
-        const result = await PythonRPAService.processInvoicesAutomatically();
-
-        // Clear timeout since we got a response
-        clearTimeout(processingTimeout);
-
-        const processingTime = Date.now() - startTime;
-        console.log(
-          `✅ [PYTHON_RPA_DIRECT] Processing completed in ${processingTime}ms`,
-        );
-
+      // Set up timeout to prevent hanging - matched to Python script timeout
+      processingTimeout = setTimeout(() => {
+        console.error('⏰ [PYTHON_RPA_DIRECT] Processing timeout after 4.5 minutes');
         if (!res.headersSent) {
-          res.status(200).json({
-            success: result.success,
-            message: result.message || "Python RPA processing completed",
-            data: result,
-            processingTimeMs: processingTime,
-            timestamp: new Date().toISOString(),
-          });
-        }
-      } catch (error: any) {
-        // Clear timeout
-        if (processingTimeout) {
-          clearTimeout(processingTimeout);
-        }
-
-        const processingTime = Date.now() - startTime;
-        const errorMessage =
-          error instanceof Error ? error.message : String(error);
-        console.error(
-          "❌ [PYTHON_RPA_DIRECT] Failed after",
-          processingTime,
-          "ms:",
-          errorMessage,
-        );
-
-        if (!res.headersSent) {
-          res.status(500).json({
+          res.status(408).json({
             success: false,
-            error: "Python RPA processing failed",
-            message: errorMessage || "Unknown error occurred",
-            processingTimeMs: processingTime,
-            timestamp: new Date().toISOString(),
+            error: 'Python RPA processing timeout',
+            message: 'Python RPA processing took too long and was cancelled.',
+            timestamp: new Date().toISOString()
           });
         }
+      }, 270000); // 4.5 minute timeout (slightly longer than Python script timeout)
+
+      // Call Python RPA Service directly
+      const result = await PythonRPAService.processInvoicesAutomatically();
+
+      // Clear timeout since we got a response
+      clearTimeout(processingTimeout);
+
+      const processingTime = Date.now() - startTime;
+      console.log(`✅ [PYTHON_RPA_DIRECT] Processing completed in ${processingTime}ms`);
+
+      if (!res.headersSent) {
+        res.status(200).json({
+          success: result.success,
+          message: result.message || 'Python RPA processing completed',
+          data: result,
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
       }
-    },
-  );
+
+    } catch (error: any) {
+      // Clear timeout
+      if (processingTimeout) {
+        clearTimeout(processingTimeout);
+      }
+
+      const processingTime = Date.now() - startTime;
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error('❌ [PYTHON_RPA_DIRECT] Failed after', processingTime, 'ms:', errorMessage);
+
+      if (!res.headersSent) {
+        res.status(500).json({
+          success: false,
+          error: 'Python RPA processing failed',
+          message: errorMessage || 'Unknown error occurred',
+          processingTimeMs: processingTime,
+          timestamp: new Date().toISOString()
+        });
+      }
+    }
+  });
 
   // Process selected invoices for line item classification
-  apiRouter.post(
-    "/process-invoices-line-items",
-    isAuthenticated,
-    async (req: any, res) => {
-      try {
-        const userId = req.user?.claims?.sub;
-        const { invoiceIds } = req.body;
+  apiRouter.post('/process-invoices-line-items', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      const { invoiceIds } = req.body;
 
-        if (!userId) {
-          console.log("❌ Error: User ID not found in request.");
-          return res
-            .status(401)
-            .json({ message: "User authentication is required." });
-        }
+      if (!userId) {
+        console.log('❌ Error: User ID not found in request.');
+        return res.status(401).json({ message: 'User authentication is required.' });
+      }
 
-        // Validate request body
-        if (
-          !invoiceIds ||
-          !Array.isArray(invoiceIds) ||
-          invoiceIds.length === 0
-        ) {
-          console.log("❌ Error: Invalid invoiceIds provided.");
-          return res.status(400).json({
-            error: "invoiceIds array is required and must not be empty",
-          });
-        }
-
-        console.log(
-          `🚀 Starting line item classification for ${invoiceIds.length} invoices for user ${userId}`,
-        );
-
-        // Get all selected invoices and validate access
-        const invoices = await Promise.all(
-          invoiceIds.map(async (id: number) => {
-            const invoice = await storage.getInvoice(id);
-            if (!invoice) {
-              console.log(`❌ Invoice ${id} not found.`);
-              throw new Error(`Invoice ${id} not found`);
-            }
-            if (invoice.userId !== userId) {
-              console.log(
-                `❌ Access denied for invoice ${id}. Expected user ${userId}, found ${invoice.userId}.`,
-              );
-              throw new Error(`Invoice ${id} access denied`);
-            }
-            return invoice;
-          }),
-        );
-
-        // Filter invoices that can be processed
-        const processableInvoices = invoices.filter((invoice) =>
-          ["classified", "pending", "approved"].includes(invoice.status || ""),
-        );
-
-        if (processableInvoices.length === 0) {
-          console.log("⚠️ No invoices available for line item processing.");
-          return res.status(400).json({
-            error:
-              "No invoices available for line item processing. Selected invoices may not be ready for classification.",
-          });
-        }
-
-        console.log(
-          `📊 Processing ${processableInvoices.length} invoices for line item classification`,
-        );
-
-        // Send immediate response
-        res.json({
-          message: `Started line item processing for ${processableInvoices.length} invoices`,
-          totalInvoices: processableInvoices.length,
-          invoiceIds: processableInvoices.map((inv) => inv.id),
-          status: "started",
-        });
-
-        // Process invoices in background using the helper function
-        setImmediate(async () => {
-          try {
-            await processInvoiceLineItems(processableInvoices, userId);
-            console.log(
-              `🎉 Background processing completed for ${processableInvoices.length} invoices`,
-            );
-          } catch (error) {
-            console.error("❌ Background processing failed:", error);
-          }
-        });
-      } catch (error: any) {
-        console.error("❌ Line item processing error:", error);
-        res.status(500).json({
-          error: "Failed to initiate line item processing",
-          message: error.message,
+      // Validate request body
+      if (!invoiceIds || !Array.isArray(invoiceIds) || invoiceIds.length === 0) {
+        console.log('❌ Error: Invalid invoiceIds provided.');
+        return res.status(400).json({
+          error: 'invoiceIds array is required and must not be empty'
         });
       }
-    },
-  );
+
+      console.log(`🚀 Starting line item classification for ${invoiceIds.length} invoices for user ${userId}`);
+
+      // Get all selected invoices and validate access
+      const invoices = await Promise.all(
+        invoiceIds.map(async (id: number) => {
+          const invoice = await storage.getInvoice(id);
+          if (!invoice) {
+            console.log(`❌ Invoice ${id} not found.`);
+            throw new Error(`Invoice ${id} not found`);
+          }
+          if (invoice.userId !== userId) {
+            console.log(`❌ Access denied for invoice ${id}. Expected user ${userId}, found ${invoice.userId}.`);
+            throw new Error(`Invoice ${id} access denied`);
+          }
+          return invoice;
+        })
+      );
+
+      // Filter invoices that can be processed
+      const processableInvoices = invoices.filter(invoice =>
+        ['classified', 'pending', 'approved'].includes(invoice.status || '')
+      );
+
+      if (processableInvoices.length === 0) {
+        console.log('⚠️ No invoices available for line item processing.');
+        return res.status(400).json({
+          error: 'No invoices available for line item processing. Selected invoices may not be ready for classification.'
+        });
+      }
+
+      console.log(`📊 Processing ${processableInvoices.length} invoices for line item classification`);
+
+      // Send immediate response
+      res.json({
+        message: `Started line item processing for ${processableInvoices.length} invoices`,
+        totalInvoices: processableInvoices.length,
+        invoiceIds: processableInvoices.map(inv => inv.id),
+        status: 'started'
+      });
+
+      // Process invoices in background using the helper function
+      setImmediate(async () => {
+        try {
+          await processInvoiceLineItems(processableInvoices, userId);
+          console.log(`🎉 Background processing completed for ${processableInvoices.length} invoices`);
+        } catch (error) {
+          console.error('❌ Background processing failed:', error);
+        }
+      });
+
+    } catch (error: any) {
+      console.error('❌ Line item processing error:', error);
+      res.status(500).json({
+        error: 'Failed to initiate line item processing',
+        message: error.message
+      });
+    }
+  });
 
   // 🔧 THEN ADD THE DEDUPLICATION ROUTE
-  apiRouter.post(
-    "/invoices/:id/deduplicate",
-    isAuthenticated,
-    (req: any, res) => {
-      console.log("🔄 DEDUPLICATION ROUTE HIT!");
-      console.log("Invoice ID:", req.params.id);
+  apiRouter.post('/invoices/:id/deduplicate', isAuthenticated, (req: any, res) => {
+    console.log('🔄 DEDUPLICATION ROUTE HIT!');
+    console.log('Invoice ID:', req.params.id);
 
-      res.json({
-        success: true,
-        message: "Deduplication route working!",
-        invoiceId: req.params.id,
-        timestamp: new Date().toISOString(),
-      });
-    },
-  );
+    res.json({
+      success: true,
+      message: 'Deduplication route working!',
+      invoiceId: req.params.id,
+      timestamp: new Date().toISOString()
+    });
+  });
 
   return httpServer;
 }
