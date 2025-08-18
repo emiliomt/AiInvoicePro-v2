@@ -21,10 +21,19 @@ app.use((req, res, next) => {
   ];
 
   const origin = req.headers.origin;
-  if (origin && allowedOrigins.some(allowed => 
-    allowed.includes('*') ? origin.includes(allowed.replace('*', '')) : origin === allowed
-  )) {
-    res.header('Access-Control-Allow-Origin', origin);
+  if (origin) {
+    const isAllowed = allowedOrigins.some(allowed => {
+      if (allowed.includes('*')) {
+        // Handle wildcard patterns like "https://*.replit.dev"
+        const pattern = allowed.replace('*', '');
+        return origin.startsWith(pattern);
+      }
+      return origin === allowed;
+    });
+
+    if (isAllowed) {
+      res.header('Access-Control-Allow-Origin', origin);
+    }
   }
 
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
