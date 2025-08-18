@@ -21,6 +21,9 @@ import { PythonRPAService } from "./services/pythonRpaService";
 import { xmlProcessingService } from "./services/xmlProcessingService";
 import { ClassificationService } from "./services/classificationService";
 import { getUser } from "./replitAuth";
+import { db } from "./db";
+import { lineItems, lineItemClassifications } from "@shared/schema";
+import { eq } from "drizzle-orm";
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -962,30 +965,152 @@ export function registerRoutes(app: Express): Server {
     },
   );
 
-  // 🔧 THEN ADD THE DEDUPLICATION ROUTE
+  // Deduplication endpoint
   apiRouter.post(
     "/invoices/:id/deduplicate",
     isAuthenticated,
-    (req: any, res) => {
-      console.log("🔄 DEDUPLICATION ROUTE HIT!");
-      console.log("Invoice ID:", req.params.id);
-      console.log("User:", req.user?.claims?.sub);
-      console.log("Origin:", req.headers.origin);
+    async (req: any, res) => {
+      try {
+        const userId = (req.user as any).claims.sub;
+        const invoiceId = parseInt(req.params.id);
 
-      // Set CORS headers for deduplication endpoint
-      res.header("Access-Control-Allow-Origin", req.headers.origin || "*");
-      res.header("Access-Control-Allow-Methods", "POST, OPTIONS");
-      res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-      res.header("Access-Control-Allow-Credentials", "true");
+        console.log(
+          `🔄 Starting deduplication for invoice ${invoiceId} by user ${userId}`,
+        );
 
-      res.json({
-        success: true,
-        message: "Deduplication route working!",
-        invoiceId: req.params.id,
-        userId: req.user?.claims?.sub,
-        timestamp: new Date().toISOString(),
-        origin: req.headers.origin || "unknown",
-      });
+        if (isNaN(invoiceId)) {
+          return res
+            .status(400)
+            .json({ success: false, error: "Invalid invoice ID" });
+        }
+
+        // Check if user owns the invoice
+        const invoice = await storage.getInvoice(invoiceId);
+        if (!invoice || invoice.userId !== userId) {
+          return res
+            .status(404)
+            .json({
+              success: false,
+              error: "Invoice not found or access denied",
+            });
+        }
+
+        // Get all line items for this invoice
+        const allLineItems = await storage.getLineItemsByInvoiceId(invoiceId);
+
+        if (allLineItems.length === 0) {
+          return res.json({
+            success: true,
+            message: "No line items found",
+            invoiceId,
+            summary: { duplicatesRemoved: 0, itemsKept: 0, duplicateGroups: 0 },
+          });
+        }
+
+        console.log(
+          `📝 Found ${allLineItems.length} line items for invoice ${invoiceId}`,
+        );
+
+        // Group items by description to find duplicates
+        const grouped = new Map();
+
+        for (const item of allLineItems) {
+          const key = (item.description || "").trim().toLowerCase();
+          if (!grouped.has(key)) {
+            grouped.set(key, []);
+          }
+          grouped.get(key).push(item);
+        }
+
+        // Find duplicates
+        const duplicateGroups = Array.from(grouped.entries()).filter(
+          ([key, items]) => items.length > 1,
+        );
+
+        if (duplicateGroups.length === 0) {
+          return res.json({
+            success: true,
+            message: "No duplicates found",
+            invoiceId,
+            summary: {
+              duplicatesRemoved: 0,
+              itemsKept: allLineItems.length,
+              duplicateGroups: 0,
+            },
+          });
+        }
+
+        let totalRemoved = 0;
+        const details = [];
+
+        // Remove duplicates (keep first, remove rest)
+        for (const [description, items] of duplicateGroups) {
+          console.log(
+            `🔄 Processing ${items.length} duplicates of: ${description.substring(0, 50)}...`,
+          );
+
+          const [keepItem, ...removeItems] = items.sort(
+            (a: any, b: any) => a.id - b.id,
+          );
+
+          details.push({
+            description: keepItem.description || "Unknown",
+            duplicateCount: items.length,
+            removedCount: removeItems.length,
+          });
+
+          if (removeItems.length > 0) {
+            // Delete classifications first (to avoid foreign key issues)
+            for (const item of removeItems) {
+              try {
+                await db
+                  .delete(lineItemClassifications)
+                  .where(eq(lineItemClassifications.lineItemId, item.id));
+              } catch (error) {
+                console.log(
+                  `Note: No classifications to delete for item ${item.id}`,
+                );
+              }
+            }
+
+            // Delete duplicate line items
+            for (const item of removeItems) {
+              await db.delete(lineItems).where(eq(lineItems.id, item.id));
+            }
+
+            totalRemoved += removeItems.length;
+            console.log(
+              `🗑️ Removed ${removeItems.length} duplicates of: ${description.substring(0, 30)}...`,
+            );
+          }
+        }
+
+        const finalCount = allLineItems.length - totalRemoved;
+
+        console.log(`✅ Deduplication completed for invoice ${invoiceId}:`);
+        console.log(`   📊 Original: ${allLineItems.length} items`);
+        console.log(`   🗑️ Removed: ${totalRemoved} duplicates`);
+        console.log(`   ✅ Kept: ${finalCount} unique items`);
+
+        res.json({
+          success: true,
+          message: "Deduplication completed successfully",
+          invoiceId,
+          summary: {
+            duplicatesRemoved: totalRemoved,
+            itemsKept: finalCount,
+            duplicateGroups: duplicateGroups.length,
+          },
+          details: details,
+        });
+      } catch (error) {
+        console.error("❌ Error in deduplication:", error);
+        res.status(500).json({
+          success: false,
+          error: "Deduplication failed",
+          message: error instanceof Error ? error.message : "Unknown error",
+        });
+      }
     },
   );
 
