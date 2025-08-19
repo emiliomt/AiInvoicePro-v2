@@ -63,3 +63,6 @@ vite.config.ts.*
 replit.nix
 deployments
 cookies.txt
+
+# RPA Debug Captures (may contain sensitive data from external systems)
+rpa_debug_captures/
