@@ -729,11 +729,13 @@ class InvoiceRPAService:
             screenshot_path = os.path.join(debug_date_dir, screenshot_filename)
             self.driver.save_screenshot(screenshot_path)
 
-            # HTML source
+            # HTML source (sanitized to remove credentials)
             html_filename = f"{timestamp}_{clean_label}.html"
             html_path = os.path.join(debug_date_dir, html_filename)
             with open(html_path, 'w', encoding='utf-8') as f:
-                f.write(self.driver.page_source)
+                # Sanitize HTML content to remove sensitive data
+                sanitized_html = self._sanitize_html_content(self.driver.page_source)
+                f.write(sanitized_html)
 
             # Page info
             info_filename = f"{timestamp}_{clean_label}_info.txt"
@@ -766,6 +768,83 @@ class InvoiceRPAService:
 
         except Exception as e:
             self.log(f"Failed to create debug capture: {e}", "ERROR")
+
+    def _sanitize_html_content(self, html_content: str) -> str:
+        """
+        Sanitize HTML content to remove sensitive authentication data
+        This prevents credentials from being stored in debug capture files
+        """
+        try:
+            import re
+            
+            # Remove Bearer tokens (matches the specific pattern found in the vulnerability)
+            html_content = re.sub(
+                r'"token":"Bearer [^"]*"', 
+                '"token":"[REDACTED_BEARER_TOKEN]"', 
+                html_content
+            )
+            
+            # Remove other token patterns
+            html_content = re.sub(
+                r'r\.dataset\.token = "[^"]*"', 
+                'r.dataset.token = "[REDACTED_TOKEN]"', 
+                html_content
+            )
+            
+            # Remove session IDs and sensitive identifiers
+            html_content = re.sub(
+                r'var id_session = \'[^\']*\'', 
+                'var id_session = \'[REDACTED_SESSION]\'', 
+                html_content
+            )
+            
+            # Remove authentication headers in AJAX requests
+            html_content = re.sub(
+                r'Authorization["\']?\s*:\s*["\']?Bearer [^"\'>\s]*', 
+                'Authorization: "Bearer [REDACTED]"', 
+                html_content, 
+                flags=re.IGNORECASE
+            )
+            
+            # Remove password field values
+            html_content = re.sub(
+                r'(<input[^>]*type=["\']password["\'][^>]*value=["\'])[^"\']*(["\'][^>]*>)',
+                r'\1[REDACTED]\2',
+                html_content,
+                flags=re.IGNORECASE
+            )
+            
+            # Remove API keys (common patterns)
+            html_content = re.sub(
+                r'["\']apikey["\']?\s*:\s*["\'][^"\']*["\']',
+                '"apikey": "[REDACTED_API_KEY]"',
+                html_content,
+                flags=re.IGNORECASE
+            )
+            
+            # Add security notice to sanitized files
+            security_notice = '''
+<!-- SECURITY NOTICE: This debug capture file has been sanitized to remove sensitive authentication data -->
+<!-- Original tokens, passwords, and API keys have been replaced with [REDACTED] placeholders -->
+'''
+            
+            # Insert notice after <html> tag if present
+            if '<html' in html_content.lower():
+                html_content = re.sub(
+                    r'(<html[^>]*>)', 
+                    r'\1' + security_notice, 
+                    html_content, 
+                    flags=re.IGNORECASE
+                )
+            else:
+                html_content = security_notice + html_content
+                
+            return html_content
+            
+        except Exception as e:
+            self.log(f"Error sanitizing HTML content: {e}", "ERROR")
+            # Return a minimal safe version if sanitization fails
+            return f"<!-- DEBUG CAPTURE ERROR: Could not sanitize HTML content - {e} -->\n<!-- Original content removed for security -->"
 
     def login_to_erp(self) -> bool:
         """Login to ERP system"""
