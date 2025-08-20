@@ -817,9 +817,10 @@ class PythonInvoiceImporter {
               timestamp: new Date().toISOString()
             };
             
-            // Try broadcasting to specific user first, then fallback to all clients
-            console.log(`📡 Broadcasting RPA progress to user ${config.userId} and all clients`);
-            websocketModule.broadcastRpaProgress(progressMessage, config.userId);
+            // Broadcast to company ID for company-wide updates  
+            const broadcastId = config.companyId || '860527800'; // Default company ID
+            console.log(`📡 Broadcasting RPA progress to company ${broadcastId} and all clients`);
+            websocketModule.broadcastRpaProgress(progressMessage, broadcastId);
             // Also broadcast to all clients to ensure delivery
             websocketModule.broadcastRpaProgress(progressMessage);
             console.log(`📡 Broadcasted RPA progress update: ${progress.progress}% - ${progress.currentStep}`);

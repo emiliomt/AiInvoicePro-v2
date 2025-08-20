@@ -45,12 +45,12 @@ export function setupWebSocketServer(server: Server) {
             if (data.userId) {
               ws.userId = data.userId;
               userConnections.set(ws, data.userId);
-              console.log(`👤 User ${data.userId} subscribed to WebSocket updates`);
+              console.log(`🏢 Client subscribed to WebSocket updates for: ${data.userId}`);
 
               ws.send(JSON.stringify({
                 type: 'subscribed',
                 userId: data.userId,
-                message: 'Successfully subscribed to user updates'
+                message: 'Successfully subscribed to company updates'
               }));
             }
             break;
@@ -230,13 +230,13 @@ export function broadcastToAll(wss: WebSocketServer, message: any) {
 export function broadcastToUser(wss: WebSocketServer, userId: string, message: any) {
   const messageString = JSON.stringify(message);
   let userFound = false;
-  console.log(`🔍 Looking for user: ${userId} among ${wss.clients.size} connected clients`);
+  console.log(`🔍 Looking for company/user: ${userId} among ${wss.clients.size} connected clients`);
   
   wss.clients.forEach((ws: ExtendedWebSocket) => {
-    console.log(`📊 Client userId: ${ws.userId}, readyState: ${ws.readyState}`);
+    console.log(`📊 Client subscribed to: ${ws.userId}, readyState: ${ws.readyState}`);
     
     if (ws.readyState === WebSocket.OPEN && ws.userId === userId) {
-      console.log(`✅ Sending message to user ${userId}`);
+      console.log(`✅ Sending message to company/user ${userId}`);
       try {
         ws.send(messageString);
         userFound = true;
@@ -247,7 +247,7 @@ export function broadcastToUser(wss: WebSocketServer, userId: string, message: a
   });
   
   if (!userFound) {
-    console.log(`🚫 User ${userId} not found in connected clients, broadcasting to all instead`);
+    console.log(`🚫 Company/user ${userId} not found in connected clients, broadcasting to all instead`);
     broadcastToAll(wss, message);
   }
 }

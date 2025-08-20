@@ -220,13 +220,13 @@ export default function InvoiceImporter() {
             setWs(websocket);
 
             try {
-              // Subscribe to progress updates with actual user ID
-              const actualUserId = user?.id || 'current-user';
-              console.log('🔌 Subscribing to WebSocket with userId:', actualUserId);
+              // Subscribe to progress updates with company ID for company-wide updates
+              const companyId = user?.companyId || '860527800'; // Default company ID
+              console.log('🏢 Subscribing to WebSocket with companyId:', companyId);
               console.log('👤 Current user object:', user);
               websocket.send(JSON.stringify({
                 type: 'subscribe',
-                userId: actualUserId,
+                userId: companyId, // Using userId field but with companyId value
               }));
               resolve();
             } catch (sendError) {
