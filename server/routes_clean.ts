@@ -5734,6 +5734,113 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
   });
 
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
+  // API endpoint to process XML files from Python RPA
+  app.post('/api/rpa/process-xml', async (req: any, res) => {
+    try {
+      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
+
+      console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
+
+      // Get import configuration to determine company ID
+      let companyId = null;
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            companyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+          } else {
+            console.warn(`⚠️ Config ${configId} not found`);
+          }
+        } catch (error) {
+          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
+        }
+      }
+
+      // Fallback: If no company ID from config, default to 1 for existing users
+      if (!companyId) {
+        companyId = 1;
+        console.log(`🔧 Using fallback company ID: ${companyId}`);
+      }
+
+      // Check for existing invoice with same document number to prevent duplicates
+      if (!filename) {
+        console.error(`❌ No filename provided in request body`);
+        return res.status(400).json({ error: 'Filename is required' });
+      }
+
+      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      if (existingInvoices.length > 0) {
+        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), skipping XML processing`);
+        return res.json({ 
+          success: true, 
+          invoiceId: existingInvoices[0].id,
+          message: `XML file ${filename} linked as reference to existing invoice`,
+          linkedToExisting: true
+        });
+      }
+
+      // Read the XML file from uploads directory
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join('uploads', filename);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'XML file not found' });
+      }
+
+      const fileBuffer = fs.readFileSync(filePath);
+
+      // Create invoice record similar to manual upload
+      const invoiceData = {
+        fileName: filename,
+        fileSize: fileSize || fileBuffer.length,
+        uploadedAt: new Date(),
+        userId: 'rpa-system',
+        companyId: companyId,
+        originalFileName: filename,
+        extractedInvoiceNumber: documentNumber,
+        extractedVendorName: emisor,
+        extractedTotalAmount: totalValue,
+        metadata: {
+          source: source || 'python_rpa',
+          configId: configId,
+          buyerTaxId: buyerTaxId,
+          extractedData: {
+            documentNumber,
+            emisor,
+            totalValue
+          }
+        }
+      };
+
+      const invoice = await storage.createInvoice(invoiceData);
+      console.log(`✅ Created invoice ${invoice.id} for XML file ${filename}`);
+
+      // Queue for processing (async, don't wait for completion)
+      setImmediate(async () => {
+        try {
+          const { rpaService } = await import('./services/rpaService');
+          await rpaService.processInvoiceBuffer(invoice.id, fileBuffer, filename);
+          console.log(`✅ RPA XML invoice ${invoice.id} processed successfully`);
+        } catch (error) {
+          console.error(`❌ RPA XML invoice ${invoice.id} processing failed:`, error);
+        }
+      });
+
+      res.json({ 
+        success: true, 
+        invoiceId: invoice.id,
+        message: `XML file ${filename} queued for processing` 
+      });
+
+    } catch (error) {
+      console.error('Error processing RPA XML:', error);
+      res.status(500).json({ error: 'Failed to process RPA XML file' });
+    }
+  });
+
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
       const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;

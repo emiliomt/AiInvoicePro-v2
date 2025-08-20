@@ -471,6 +471,23 @@ export const progressTracker = {
     console.log('Legacy progress tracker called:', { userId, data });
     // For now, just log - could be extended to create a compatible session if needed
   },
+  
+  sendTaskComplete: (userId: string, taskId: string | number, success: boolean, message: string, data?: any) => {
+    // Legacy task completion method
+    console.log('Legacy task completion:', { userId, taskId, success, message, data });
+    
+    // If there's an active session for this task, complete it
+    const sessionId = `task-${taskId}`;
+    const session = ProgressTracker.getSession(sessionId);
+    if (session) {
+      if (success) {
+        ProgressTracker.completeSession(sessionId, data);
+      } else {
+        ProgressTracker.errorSession(sessionId, message);
+      }
+    }
+  },
+  
   initialize: (server: any) => {
     // Legacy initialization method - the new WebSocket setup is handled elsewhere
     console.log('Legacy progress tracker initialized');
