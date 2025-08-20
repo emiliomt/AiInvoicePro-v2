@@ -123,29 +123,35 @@ export default function Profile() {
                   />
                 </div>
 
-                <div className="space-y-2">
-                  <Label htmlFor="location" className="flex items-center">
-                    <MapPin className="mr-2 h-4 w-4" />
-                    Location
-                  </Label>
-                  <Input 
-                    id="location" 
-                    placeholder="Enter your location"
-                  />
-                </div>
 
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="location" className="flex items-center">
+                      <MapPin className="mr-2 h-4 w-4" />
+                      Location
+                    </Label>
+                    <Input 
+                      id="location" 
+                      placeholder="Enter your location"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="companyId" className="flex items-center">
+                      <Building className="mr-2 h-4 w-4" />
+                      Company ID
+                    </Label>
+                    <Input 
+                      id="companyId" 
+                      defaultValue={typedUser?.companyId || '860527800'}
+                      placeholder="Enter your company ID"
+                    />
+                  </div>
+                </div>
+                
                 <div className="space-y-2">
-                  <Label htmlFor="companyId" className="flex items-center">
-                    <Building className="mr-2 h-4 w-4" />
-                    Company ID
-                  </Label>
-                  <Input 
-                    id="companyId" 
-                    defaultValue={typedUser?.companyId || '860527800'}
-                    placeholder="Enter your company ID"
-                  />
                   <p className="text-sm text-muted-foreground">
-                    Company ID determines which invoices you can access. All users with the same Company ID share access to invoices.
+                    <strong>Company ID:</strong> Determines which invoices you can access. All users with the same Company ID share access to invoices.
                   </p>
                 </div>
 

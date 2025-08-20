@@ -447,7 +447,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const userId = (req.user as any).claims.sub;
       
       // Get user's company ID for company-wide stats
-      const user = await storage.getUserById(userId);
+      const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
@@ -2422,7 +2422,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const db = await getDb();
 
       // Get user's company ID for company-wide access
-      const user = await storage.getUserById(userId);
+      const user = await storage.getUser(userId);
       if (!user) {
         return res.status(404).json({ message: "User not found" });
       }
