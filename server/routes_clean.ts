@@ -5915,7 +5915,63 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
       const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
       if (existingInvoices.length > 0) {
-        console.log(`⚠️ Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), skipping PDF processing`);
+        console.log(`🔗 Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
+        
+        // Link PDF to existing invoice in imported_invoices table
+        try {
+          const { Client } = await import('pg');
+          const dbClient = new Client({
+            connectionString: process.env.DATABASE_URL,
+          });
+          
+          await dbClient.connect();
+          
+          // Insert PDF as linked file to the existing invoice
+          const insertQuery = `
+            INSERT INTO imported_invoices (
+              log_id, 
+              original_file_name, 
+              file_path, 
+              file_size, 
+              file_type, 
+              base_file_name,
+              is_data_source,
+              linked_invoice_id,
+              created_at,
+              metadata
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            ON CONFLICT (log_id, original_file_name) DO NOTHING
+          `;
+          
+          const values = [
+            configId || 4, // log_id 
+            filename, // original_file_name
+            `uploads/${filename}`, // file_path
+            fileSize || 0, // file_size
+            'pdf', // file_type
+            baseFileName, // base_file_name
+            false, // is_data_source (PDF is reference only)
+            existingInvoices[0].id, // linked_invoice_id
+            new Date(), // created_at
+            JSON.stringify({
+              source: source || 'python_rpa',
+              configId: configId,
+              linkedToXml: true,
+              documentNumber,
+              emisor,
+              totalValue
+            }) // metadata
+          ];
+          
+          await dbClient.query(insertQuery, values);
+          await dbClient.end();
+          
+          console.log(`✅ PDF file ${filename} successfully linked to invoice ${existingInvoices[0].id}`);
+          
+        } catch (linkError) {
+          console.error(`❌ Failed to link PDF to invoice:`, linkError);
+        }
+        
         return res.json({ 
           success: true, 
           invoiceId: existingInvoices[0].id,
