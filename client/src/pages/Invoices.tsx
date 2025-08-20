@@ -514,66 +514,104 @@ export default function Invoices() {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: FileList) => {
-      console.log(
-        "🚀 Starting upload mutation with files:",
-        Array.from(files).map((f) => ({
-          name: f.name,
-          size: f.size,
-          type: f.type,
-        })),
-      );
+      console.log('=== FRONTEND UPLOAD DEBUG ===');
+      console.log('Files received:', files);
+      console.log('Files length:', files.length);
+      console.log('FileList type:', typeof files);
+      console.log('Is FileList:', files instanceof FileList);
 
-      const formData = new FormData();
-      Array.from(files).forEach((file, index) => {
-        console.log(`📎 Appending file ${index + 1}:`, {
+      // Detailed file inspection
+      if (files.length === 0) {
+        console.error('❌ NO FILES IN FILELIST');
+        throw new Error('No files selected for upload');
+      }
+
+      // Convert FileList to Array and validate each file
+      const fileArray = Array.from(files);
+      console.log('Converted to array:', fileArray.length, 'files');
+
+      fileArray.forEach((file, index) => {
+        console.log(`File ${index + 1} details:`, {
           name: file.name,
           size: file.size,
           type: file.type,
+          lastModified: file.lastModified,
+          isFile: file instanceof File,
+          hasStream: !!file.stream,
+          hasText: typeof file.text === 'function',
+          hasArrayBuffer: typeof file.arrayBuffer === 'function'
         });
-        formData.append("invoice", file);
+
+        // Validate file
+        if (file.size === 0) {
+          console.error(`❌ File ${file.name} has zero size`);
+          throw new Error(`File ${file.name} is empty`);
+        }
+
+        if (file.size > 10 * 1024 * 1024) {
+          console.error(`❌ File ${file.name} is too large`);
+          throw new Error(`File ${file.name} exceeds 10MB limit`);
+        }
       });
 
-      // Debug FormData content
-      console.log(
-        "📋 FormData entries:",
-        Array.from(formData.entries()).map(([key, value]) => ({
-          key,
-          value:
-            value instanceof File
-              ? { name: value.name, size: value.size, type: value.type }
-              : value,
-        })),
-      );
+      console.log('✅ All files validated, creating FormData');
 
-      console.log("📤 Sending request to /api/invoices/upload");
-      const response = await apiRequest(
-        "POST",
-        "/api/invoices/upload",
-        formData,
-      );
-      console.log(
-        "📥 Response received:",
-        response.status,
-        response.statusText,
-      );
+      const formData = new FormData();
+
+      // Add files with enhanced logging
+      fileArray.forEach((file, index) => {
+        console.log(`Adding file ${index + 1} to FormData:`, file.name);
+        formData.append('invoice', file);
+      });
+
+      // Debug FormData contents
+      console.log('FormData inspection:');
+      let formDataSize = 0;
+      for (const [key, value] of formData.entries()) {
+        if (value instanceof File) {
+          console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
+          formDataSize += value.size;
+        } else {
+          console.log(`  ${key}: ${value}`);
+        }
+      }
+      console.log(`Total FormData size: ${formDataSize} bytes`);
+
+      // Verify FormData has files before sending
+      const hasFiles = Array.from(formData.entries()).some(([, value]) => value instanceof File);
+      if (!hasFiles) {
+        console.error('❌ FormData contains no files');
+        throw new Error('FormData validation failed: no files found');
+      }
+
+      console.log('✅ FormData validated, sending request');
+      console.log('Request URL: /api/invoices/upload');
+
+      const response = await apiRequest('POST', '/api/invoices/upload', formData);
+
+      console.log('Response received:', {
+        status: response.status,
+        statusText: response.statusText,
+        headers: Object.fromEntries(response.headers.entries()),
+        ok: response.ok
+      });
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(
-          "❌ Upload failed:",
-          response.status,
-          response.statusText,
-          errorText,
-        );
-        throw new Error(
-          `Upload failed: ${response.status} ${response.statusText}`,
-        );
+        console.error('❌ Upload failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorText
+        });
+        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
+
       const result = await response.json();
-      console.log("✅ Upload successful:", result);
+      console.log('✅ Upload successful:', result);
       return result;
     },
     onSuccess: (data) => {
+      console.log('Upload mutation success:', data);
       toast({
         title: "Success",
         description: `Successfully uploaded ${data.uploadedCount} invoice(s)`,
@@ -583,6 +621,7 @@ export default function Invoices() {
       setIsUploading(false);
     },
     onError: (error: Error) => {
+      console.error('Upload mutation error:', error);
       toast({
         title: "Upload Failed",
         description: error.message,
@@ -592,39 +631,128 @@ export default function Invoices() {
     },
   });
 
-  const handleFileUpload = useCallback(
-    (event: React.ChangeEvent<HTMLInputElement>) => {
-      console.log("📁 handleFileUpload triggered");
-      const files = event.target.files;
-      console.log(
-        "📋 Files from input:",
-        files
-          ? Array.from(files).map((f) => ({
-              name: f.name,
-              size: f.size,
-              type: f.type,
-            }))
-          : "No files",
-      );
+  const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
+    console.log('=== FILE INPUT CHANGE EVENT ===');
+    console.log('Event:', event);
+    console.log('Target:', event.target);
+    console.log('Files property:', event.target.files);
 
-      if (files && files.length > 0) {
-        console.log("✅ Files found, starting upload...");
-        setIsUploading(true);
-        uploadMutation.mutate(files);
-      } else {
-        console.log("❌ No files to upload");
-      }
-      // Reset file input
+    const files = event.target.files;
+
+    // Enhanced validation
+    if (!files) {
+      console.error('❌ event.target.files is null');
+      toast({
+        title: "Upload Error",
+        description: "No files detected. Please try selecting files again.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (files.length === 0) {
+      console.error('❌ event.target.files is empty');
+      toast({
+        title: "Upload Error",
+        description: "No files selected. Please select at least one file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log(`✅ Files detected: ${files.length} file(s)`);
+
+    // Log each file before processing
+    Array.from(files).forEach((file, index) => {
+      console.log(`File ${index + 1}:`, {
+        name: file.name,
+        size: file.size,
+        type: file.type,
+        valid: file.size > 0 && file.name.length > 0
+      });
+    });
+
+    setIsUploading(true);
+
+    // Small delay to ensure state is updated
+    setTimeout(() => {
+      uploadMutation.mutate(files);
+    }, 100);
+
+    // Reset file input AFTER processing
+    setTimeout(() => {
       if (fileInputRef.current) {
-        fileInputRef.current.value = "";
+        fileInputRef.current.value = '';
+        console.log('File input reset');
       }
-    },
-    [uploadMutation],
-  );
+    }, 200);
+  }, [uploadMutation, toast, setIsUploading]);
 
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
+  const handleUploadClick = useCallback(() => {
+    console.log('=== UPLOAD BUTTON CLICKED ===');
+    console.log('File input ref:', fileInputRef.current);
+
+    if (!fileInputRef.current) {
+      console.error('❌ File input ref is null');
+      toast({
+        title: "Upload Error",
+        description: "File input not available. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    console.log('File input element:', {
+      type: fileInputRef.current.type,
+      accept: fileInputRef.current.accept,
+      multiple: fileInputRef.current.multiple,
+      disabled: fileInputRef.current.disabled,
+      value: fileInputRef.current.value
+    });
+
+    // Ensure input is not disabled
+    if (fileInputRef.current.disabled) {
+      console.error('❌ File input is disabled');
+      return;
+    }
+
+    // Clear any previous value
+    fileInputRef.current.value = '';
+
+    console.log('Triggering file input click');
+    fileInputRef.current.click();
+  }, [toast]);
+
+  // Alternative upload method using drag and drop
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    console.log('Drag over detected');
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    console.log('=== FILE DROP EVENT ===');
+    console.log('Drop event:', e);
+    console.log('DataTransfer:', e.dataTransfer);
+    console.log('Files in drop:', e.dataTransfer.files.length);
+
+    const files = e.dataTransfer.files;
+
+    if (files.length > 0) {
+      setIsUploading(true);
+      uploadMutation.mutate(files);
+    } else {
+      console.error('❌ No files in drop event');
+      toast({
+        title: "Drop Error",
+        description: "No files detected in drop. Please try again.",
+        variant: "destructive",
+      });
+    }
+  }, [uploadMutation, toast, setIsUploading]);
 
   const handleBulkAction = async () => {
     if (!bulkAction || selectedInvoices.length === 0) return;
@@ -1114,23 +1242,62 @@ export default function Invoices() {
               >
                 {isLoading ? "Refreshing..." : "Refresh Invoices"}
               </Button>
-              <Button
-                variant="default"
-                size="sm"
-                onClick={handleUploadClick}
-                disabled={isUploading}
+              {/* Enhanced upload button with drag and drop */}
+              <div
+                className="relative"
+                onDragOver={handleDragOver}
+                onDrop={handleDrop}
               >
-                <Upload size={16} className="mr-2" />
-                {isUploading ? "Uploading..." : "Upload Invoice"}
+                <Button
+                  variant="default"
+                  size="sm"
+                  onClick={handleUploadClick}
+                  disabled={isUploading}
+                  className="relative"
+                >
+                  <Upload size={16} className="mr-2" />
+                  {isUploading ? "Uploading..." : "Upload Invoice"}
+                </Button>
+
+                {/* Hidden file input with enhanced attributes */}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept=".pdf,.xml,.jpg,.jpeg,.png"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                  key={Date.now()} // Force re-render to avoid caching issues
+                  data-testid="file-input"
+                />
+              </div>
+
+              {/* Test button for debugging */}
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  console.log('=== MANUAL TEST ===');
+                  console.log('File input ref:', fileInputRef.current);
+                  console.log('Upload mutation:', uploadMutation);
+                  console.log('Is uploading:', isUploading);
+
+                  // Test with dummy file
+                  const testFile = new File(['test content'], 'test.pdf', { type: 'application/pdf' });
+                  const testFileList = {
+                    0: testFile,
+                    length: 1,
+                    item: (index: number) => index === 0 ? testFile : null,
+                    [Symbol.iterator]: function* () { yield testFile; }
+                  } as FileList;
+
+                  console.log('Testing with dummy file');
+                  uploadMutation.mutate(testFileList);
+                }}
+                className="bg-yellow-500 hover:bg-yellow-600"
+              >
+                🧪 Test Upload
               </Button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".pdf,.xml,.jpg,.jpeg,.png"
-                multiple
-                onChange={handleFileUpload}
-                className="hidden"
-              />
               {invoices.length > 0 && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -1593,7 +1760,8 @@ export default function Invoices() {
                                     Item Classification
                                   </p>
                                   <div className="flex flex-wrap gap-1">
-                                    {(invoice.extractedData as any)?.lineItems
+                                    {(invoice.extractedData as any)
+                                      ?.lineItems
                                       ?.length > 0 ? (
                                       (() => {
                                         const classifications = new Set();
