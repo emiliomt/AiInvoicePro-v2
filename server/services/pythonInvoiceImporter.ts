@@ -802,7 +802,7 @@ class PythonInvoiceImporter {
           
           // Also broadcast via WebSocket using the global broadcasting system
           import('../websocketServer').then(websocketModule => {
-            websocketModule.broadcastRpaProgress({
+            const progressMessage = {
               sessionId,
               type: 'rpa_progress',
               configId: progress.configId,
@@ -815,7 +815,13 @@ class PythonInvoiceImporter {
               failedImports: progress.failedImports,
               isComplete: progress.isComplete,
               timestamp: new Date().toISOString()
-            }, config.userId);
+            };
+            
+            // Try broadcasting to specific user first, then fallback to all clients
+            console.log(`📡 Broadcasting RPA progress to user ${config.userId} and all clients`);
+            websocketModule.broadcastRpaProgress(progressMessage, config.userId);
+            // Also broadcast to all clients to ensure delivery
+            websocketModule.broadcastRpaProgress(progressMessage);
             console.log(`📡 Broadcasted RPA progress update: ${progress.progress}% - ${progress.currentStep}`);
           }).catch(broadcastError => {
             console.error('Failed to broadcast RPA progress:', broadcastError);

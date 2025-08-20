@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>WebSocket Progress Test</title>
+</head>
+<body>
+    <h1>WebSocket Progress Test</h1>
+    <div id="status">Connecting...</div>
+    <div id="messages"></div>
+    
+    <script>
+        const ws = new WebSocket('ws://localhost:5000/ws');
+        const statusDiv = document.getElementById('status');
+        const messagesDiv = document.getElementById('messages');
+        
+        ws.onopen = function() {
+            statusDiv.innerHTML = 'Connected to WebSocket';
+            console.log('WebSocket connected');
+            
+            // Subscribe with both user IDs to test
+            ws.send(JSON.stringify({
+                type: 'subscribe',
+                userId: '43662419' // Real user ID
+            }));
+            
+            // Also try current-user for comparison
+            setTimeout(() => {
+                ws.send(JSON.stringify({
+                    type: 'subscribe', 
+                    userId: 'current-user'
+                }));
+            }, 1000);
+        };
+        
+        ws.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            console.log('Received:', data);
+            
+            const messageDiv = document.createElement('div');
+            messageDiv.style.border = '1px solid #ccc';
+            messageDiv.style.margin = '5px';
+            messageDiv.style.padding = '10px';
+            
+            if (data.type === 'rpa_progress') {
+                messageDiv.innerHTML = `
+                    <strong>RPA Progress Update:</strong><br>
+                    Progress: ${data.progress}%<br>
+                    Step: ${data.currentStep}<br>
+                    Total: ${data.totalInvoices}<br>
+                    Processed: ${data.processedInvoices}<br>
+                    Time: ${data.timestamp}
+                `;
+                messageDiv.style.backgroundColor = '#e8f5e8';
+            } else {
+                messageDiv.innerHTML = `<strong>${data.type}:</strong> ${JSON.stringify(data, null, 2)}`;
+            }
+            
+            messagesDiv.appendChild(messageDiv);
+            messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        };
+        
+        ws.onclose = function() {
+            statusDiv.innerHTML = 'Disconnected from WebSocket';
+        };
+        
+        ws.onerror = function(error) {
+            statusDiv.innerHTML = 'WebSocket error: ' + error;
+        };
+    </script>
+</body>
+</html>

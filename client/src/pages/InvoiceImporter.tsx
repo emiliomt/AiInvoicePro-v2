@@ -153,8 +153,14 @@ export default function InvoiceImporter() {
     fetchLogs();
     fetchERPConnections();
     fetchImportLogs();
-    fetchUser();
-    initializeWebSocket();
+    
+    // Initialize WebSocket after user data is fetched
+    const initializeApp = async () => {
+      await fetchUser();
+      initializeWebSocket();
+    };
+    
+    initializeApp();
 
     return () => {
       // Clean up WebSocket connection
@@ -176,17 +182,12 @@ export default function InvoiceImporter() {
         const userData = await response.json();
         console.log('👤 Fetched user data:', userData);
         setUser(userData);
-        
-        // Reconnect WebSocket with the correct user ID
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          console.log('🔄 Reconnecting WebSocket with new user ID:', userData.id);
-          wsRef.current.close();
-          setTimeout(() => initializeWebSocket(), 100);
-        }
+        return userData;
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
     }
+    return null;
   };
 
   // Initialize WebSocket connection for real-time updates
@@ -222,6 +223,7 @@ export default function InvoiceImporter() {
               // Subscribe to progress updates with actual user ID
               const actualUserId = user?.id || 'current-user';
               console.log('🔌 Subscribing to WebSocket with userId:', actualUserId);
+              console.log('👤 Current user object:', user);
               websocket.send(JSON.stringify({
                 type: 'subscribe',
                 userId: actualUserId,

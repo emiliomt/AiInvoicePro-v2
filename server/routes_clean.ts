@@ -4505,6 +4505,33 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
 
   // Test endpoint to simulate progress for demonstrating real-time updates
+  // Test WebSocket broadcast endpoint  
+  app.post('/api/websocket/test-broadcast', isAuthenticated, async (req: any, res) => {
+    try {
+      const { broadcastRpaProgress } = await import('./websocketServer');
+      const testMessage = {
+        sessionId: 'test-session',
+        configId: 4,
+        progress: 75,
+        currentStep: 'Test broadcast message',
+        totalInvoices: 10,
+        processedInvoices: 7,
+        successfulImports: 0,
+        failedImports: 0,
+        isComplete: false,
+        timestamp: new Date().toISOString()
+      };
+      
+      console.log('🧪 Sending test WebSocket broadcast');
+      // Broadcast without user ID to send to all clients
+      broadcastRpaProgress(testMessage);
+      res.json({ message: 'Test broadcast sent to all clients', testMessage });
+    } catch (error) {
+      console.error('Test broadcast error:', error);
+      res.status(500).json({ error: 'Failed to send test broadcast' });
+    }
+  });
+
   app.post('/api/invoice-importer/test-progress/:configId', isAuthenticated, async (req: any, res) => {
     try {
       const configId = parseInt(req.params.configId);
