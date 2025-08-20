@@ -133,8 +133,8 @@ export default function InvoiceImporter() {
   // Progress polling state
   // Removed progressPollingInterval - now handled by ProgressTracker
 
-  // User state for WebSocket
-  const [user] = useState({ id: 'current-user' });
+  // User state for WebSocket  
+  const [user, setUser] = useState({ id: 'current-user' });
 
   // ZIP timeout input display state
   const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
@@ -153,6 +153,7 @@ export default function InvoiceImporter() {
     fetchLogs();
     fetchERPConnections();
     fetchImportLogs();
+    fetchUser();
     initializeWebSocket();
 
     return () => {
@@ -166,6 +167,20 @@ export default function InvoiceImporter() {
       }
     };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Fetch user data
+  const fetchUser = async () => {
+    try {
+      const response = await fetch('/api/user');
+      if (response.ok) {
+        const userData = await response.json();
+        console.log('👤 Fetched user data:', userData);
+        setUser(userData);
+      }
+    } catch (error) {
+      console.error('Failed to fetch user data:', error);
+    }
+  };
 
   // Initialize WebSocket connection for real-time updates
   const initializeWebSocket = () => {
@@ -198,9 +213,11 @@ export default function InvoiceImporter() {
 
             try {
               // Subscribe to progress updates with actual user ID
+              const actualUserId = user?.id || 'current-user';
+              console.log('🔌 Subscribing to WebSocket with userId:', actualUserId);
               websocket.send(JSON.stringify({
                 type: 'subscribe',
-                userId: user?.id || 'current-user',
+                userId: actualUserId,
               }));
               resolve();
             } catch (sendError) {

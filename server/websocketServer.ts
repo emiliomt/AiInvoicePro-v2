@@ -229,15 +229,27 @@ export function broadcastToAll(wss: WebSocketServer, message: any) {
 // Utility function to broadcast to specific user
 export function broadcastToUser(wss: WebSocketServer, userId: string, message: any) {
   const messageString = JSON.stringify(message);
+  let userFound = false;
+  console.log(`🔍 Looking for user: ${userId} among ${wss.clients.size} connected clients`);
+  
   wss.clients.forEach((ws: ExtendedWebSocket) => {
+    console.log(`📊 Client userId: ${ws.userId}, readyState: ${ws.readyState}`);
+    
     if (ws.readyState === WebSocket.OPEN && ws.userId === userId) {
+      console.log(`✅ Sending message to user ${userId}`);
       try {
         ws.send(messageString);
+        userFound = true;
       } catch (error) {
         console.error('Error sending message to user:', error);
       }
     }
   });
+  
+  if (!userFound) {
+    console.log(`🚫 User ${userId} not found in connected clients, broadcasting to all instead`);
+    broadcastToAll(wss, message);
+  }
 }
 
 // Store WebSocket server instance globally for classification broadcasts
@@ -267,14 +279,18 @@ export function broadcastClassificationProgress(progress: any, userId?: string) 
 
 // RPA progress broadcasting functions
 export function broadcastRpaProgress(progress: any, userId?: string) {
-  if (!globalWss) return;
+  if (!globalWss) {
+    console.log('❌ No WebSocket server available for broadcasting');
+    return;
+  }
   
   const message = {
     type: 'rpa_progress',
     ...progress
   };
 
-  console.log('📡 Broadcasting RPA progress:', message);
+  console.log('📡 Broadcasting RPA progress to user:', userId, 'Message:', message);
+  console.log('📡 WebSocket server connections:', globalWss.clients.size);
 
   if (userId) {
     broadcastToUser(globalWss, userId, message);
