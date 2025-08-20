@@ -16,6 +16,9 @@ export function setupWebSocketServer(server: Server) {
     path: '/ws'
   });
 
+  // Set global WebSocket server for broadcasting
+  setGlobalWebSocketServer(wss);
+
   // Use Maps to store connection metadata
   const userConnections = new Map<ExtendedWebSocket, string>();
   const sessionConnections = new Map<ExtendedWebSocket, string>();
@@ -66,7 +69,7 @@ export function setupWebSocketServer(server: Server) {
               }));
 
               // Send current progress if available
-              const currentProgress = ProgressTracker.getProgress(data.sessionId);
+              const currentProgress = ProgressTracker.getSession(data.sessionId);
               if (currentProgress) {
                 ws.send(JSON.stringify({
                   type: 'progress_update',
@@ -102,7 +105,7 @@ export function setupWebSocketServer(server: Server) {
 
           case 'get_progress':
             if (data.sessionId) {
-              const progress = ProgressTracker.getProgress(data.sessionId);
+              const progress = ProgressTracker.getSession(data.sessionId);
               ws.send(JSON.stringify({
                 type: 'progress_response',
                 sessionId: data.sessionId,
@@ -254,6 +257,24 @@ export function broadcastClassificationProgress(progress: any, userId?: string) 
   };
 
   console.log('📡 Broadcasting classification progress:', message);
+
+  if (userId) {
+    broadcastToUser(globalWss, userId, message);
+  } else {
+    broadcastToAll(globalWss, message);
+  }
+}
+
+// RPA progress broadcasting functions
+export function broadcastRpaProgress(progress: any, userId?: string) {
+  if (!globalWss) return;
+  
+  const message = {
+    type: 'rpa_progress',
+    ...progress
+  };
+
+  console.log('📡 Broadcasting RPA progress:', message);
 
   if (userId) {
     broadcastToUser(globalWss, userId, message);

@@ -773,7 +773,10 @@ class PythonInvoiceImporter {
     try {
       storage.getInvoiceImporterConfig(progress.configId).then(config => {
         if (config) {
-          // Send individual log line for real-time streaming
+          // Create a session ID for RPA import tracking
+          const sessionId = `rpa-import-${progress.configId}-${progress.logId}`;
+          
+          // Send individual log line for real-time streaming using WebSocket
           progressTracker.sendProgress(config.userId, {
             taskId: progress.logId,
             step: progress.progress,
@@ -796,6 +799,25 @@ class PythonInvoiceImporter {
               currentLogLine: logLine // Send current line for immediate display
             }
           });
+          
+          // Also broadcast via WebSocket using the global broadcasting system
+          const { broadcastRpaProgress } = require('../websocketServer');
+          broadcastRpaProgress({
+            sessionId,
+            type: 'rpa_progress',
+            configId: progress.configId,
+            logId: progress.logId,
+            progress: progress.progress,
+            currentStep: progress.currentStep,
+            totalInvoices: progress.totalInvoices,
+            processedInvoices: progress.processedInvoices,
+            successfulImports: progress.successfulImports,
+            failedImports: progress.failedImports,
+            isComplete: progress.isComplete,
+            timestamp: new Date().toISOString()
+          }, config.userId);
+          
+          console.log(`📡 Broadcasted RPA progress update: ${progress.progress}% - ${progress.currentStep}`);
         }
       }).catch(error => {
         console.error('Failed to get config for real-time log update:', error);

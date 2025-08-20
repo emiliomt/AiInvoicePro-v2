@@ -121,9 +121,9 @@ app.use((req, res, next) => {
     console.log("Progress tracker initialized");
 
     // Initialize the proper WebSocket server for progress tracking
-    // const { setupWebSocketServer } = await import('./websocketServer');
-    // setupWebSocketServer(server);
-    console.log("WebSocket server for progress tracking initialized (skipped)");
+    const { setupWebSocketServer } = await import('./websocketServer');
+    setupWebSocketServer(server);
+    console.log("WebSocket server for progress tracking initialized");
 
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
       const status = err.status || err.statusCode || 500;
