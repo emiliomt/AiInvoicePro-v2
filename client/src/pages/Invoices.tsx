@@ -1270,6 +1270,15 @@ export default function Invoices() {
                   key={Date.now()} // Force re-render to avoid caching issues
                   data-testid="file-input"
                 />
+
+                {/* Temporary visible file input for testing */}
+                <input
+                  type="file"
+                  accept=".pdf,.xml,.jpg,.jpeg,.png"
+                  multiple
+                  onChange={handleFileUpload}
+                  style={{ display: 'block', margin: '10px 0' }}
+                />
               </div>
 
               {/* Test button for debugging */}
