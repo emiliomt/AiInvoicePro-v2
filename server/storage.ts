@@ -1577,6 +1577,30 @@ class PostgresStorage implements IStorage {
             ),
           );
 
+        // Delete imported_invoices linked to company invoices (CRITICAL for RPA imports)
+        const { Client } = await import('pg');
+        const dbClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+        });
+        
+        try {
+          await dbClient.connect();
+          
+          // Delete imported_invoices that are linked to invoices from this company
+          const deleteLinkedQuery = `
+            DELETE FROM imported_invoices 
+            WHERE linked_invoice_id IN (
+              SELECT id FROM invoices WHERE company_id = $1
+            )
+          `;
+          
+          const result = await dbClient.query(deleteLinkedQuery, [companyId]);
+          console.log(`🗑️ Deleted ${result.rowCount} linked imported_invoices for company ${companyId}`);
+          
+        } finally {
+          await dbClient.end();
+        }
+
         // Finally delete the invoices
         await db.delete(invoices).where(eq(invoices.companyId, companyId));
       }
