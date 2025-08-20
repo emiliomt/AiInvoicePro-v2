@@ -5789,9 +5789,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         }
       }
 
-      // Fallback: If no company ID from config, default to 1 for existing users
+      // Fallback: If no company ID from config, default to main company for existing users
       if (!companyId) {
-        companyId = 1;
+        companyId = 860527800;
         console.log(`🔧 Using fallback company ID: ${companyId}`);
       }
 
@@ -5900,9 +5900,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         console.warn(`⚠️ No configId provided for PDF processing`);
       }
 
-      // Fallback: If no company ID from config, default to 1 for existing users
+      // Fallback: If no company ID from config, default to main company for existing users
       if (!companyId) {
-        companyId = 1;
+        companyId = 860527800;
         console.log(`🔧 Using fallback company ID: ${companyId}`);
       }
 
