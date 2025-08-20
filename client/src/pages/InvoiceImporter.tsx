@@ -134,7 +134,7 @@ export default function InvoiceImporter() {
   // Removed progressPollingInterval - now handled by ProgressTracker
 
   // User state for WebSocket  
-  const [user, setUser] = useState({ id: 'current-user' });
+  const [user, setUser] = useState<any>(null);
 
   // ZIP timeout input display state
   const [zipTimeoutInput, setZipTimeoutInput] = useState('60');
@@ -156,8 +156,13 @@ export default function InvoiceImporter() {
     
     // Initialize WebSocket after user data is fetched
     const initializeApp = async () => {
-      await fetchUser();
-      initializeWebSocket();
+      const userData = await fetchUser();
+      if (userData) {
+        setUser(userData);
+        setTimeout(() => initializeWebSocket(), 100); // Small delay to ensure state update
+      } else {
+        initializeWebSocket(); // Fallback
+      }
     };
     
     initializeApp();
@@ -192,10 +197,15 @@ export default function InvoiceImporter() {
 
   // Initialize WebSocket connection for real-time updates
   const initializeWebSocket = () => {
-    // Prevent multiple connections
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected, skipping initialization');
-      return;
+    // Close existing connection if any
+    if (wsRef.current) {
+      console.log('Closing existing WebSocket connection');
+      wsRef.current.close();
+      wsRef.current = null;
+    }
+    if (ws) {
+      ws.close();
+      setWs(null);
     }
 
     // Close any existing connection
@@ -224,6 +234,7 @@ export default function InvoiceImporter() {
               const companyId = user?.companyId || '860527800'; // Default company ID
               console.log('🏢 Subscribing to WebSocket with companyId:', companyId);
               console.log('👤 Current user object:', user);
+              console.log('🔧 User companyId from object:', user?.companyId);
               websocket.send(JSON.stringify({
                 type: 'subscribe',
                 userId: companyId, // Using userId field but with companyId value

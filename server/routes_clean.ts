@@ -433,7 +433,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         email: req.user.claims.email,
         firstName: req.user.claims.given_name || user?.firstName || '',
         lastName: req.user.claims.family_name || user?.lastName || '',
-        profileImageUrl: req.user.claims.picture || user?.profileImageUrl
+        profileImageUrl: req.user.claims.picture || user?.profileImageUrl,
+        companyId: user?.companyId || '860527800' // Include company ID for WebSocket subscriptions
       });
     } catch (error) {
       console.error("Error fetching user:", error);
