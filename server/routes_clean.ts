@@ -4736,8 +4736,19 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 const filePath = path.join(uploadDir, pdfFile);
                 const fileStats = fs.statSync(filePath);
                 
+                // Get the actual log ID from the current import session
+                let actualLogId = 2; // fallback
+                try {
+                  const logs = await storage.getInvoiceImporterLogsByConfig(configId);
+                  if (logs.length > 0) {
+                    actualLogId = logs[logs.length - 1].id; // Use the most recent log
+                  }
+                } catch (logError) {
+                  console.error('Could not fetch log ID, using fallback:', logError);
+                }
+                
                 const values = [
-                  configId || 4, // log_id 
+                  actualLogId, // log_id (use actual log from current import)
                   pdfFile, // original_file_name
                   filePath, // file_path
                   fileStats.size, // file_size
@@ -4750,7 +4761,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     source: 'auto_link',
                     configId: configId,
                     linkedToXml: true,
-                    autoLinked: true
+                    autoLinked: true,
+                    actualLogId: actualLogId
                   }) // metadata
                 ];
                 

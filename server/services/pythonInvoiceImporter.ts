@@ -551,6 +551,9 @@ class PythonInvoiceImporter {
               
               console.log(`🔄 Progress updated for config ${progress.configId}: ${progress.progress}% - ${progress.currentStep}`);
               console.log(`📊 Stats update:`, statsUpdate);
+              
+              // Send real-time progress update to frontend after stats update
+              this.sendRealTimeLogLine(progress, trimmedLine);
             }
 
             // Debug: Log STATS lines when detected
@@ -592,8 +595,10 @@ class PythonInvoiceImporter {
               progress.isComplete = true;
             }
 
-            // Send real-time log line via WebSocket immediately
-            this.sendRealTimeLogLine(progress, trimmedLine);
+            // Send real-time log line via WebSocket immediately (only for non-stats lines)
+            if (!trimmedLine.includes('STATS:') && !trimmedLine.includes('PROGRESS:')) {
+              this.sendRealTimeLogLine(progress, trimmedLine);
+            }
           }
 
           // Append to accumulated logs for database storage
