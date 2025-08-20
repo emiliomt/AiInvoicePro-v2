@@ -19,6 +19,7 @@ import {
   settings,
   validationRules,
   lineItemClassifications,
+  pettyCashLog,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -1474,7 +1475,21 @@ class PostgresStorage implements IStorage {
       const count = companyInvoices[0]?.count || 0;
 
       if (count > 0) {
-        // Delete line items first
+        // First delete line item classifications (they reference line items)
+        await db
+          .delete(lineItemClassifications)
+          .where(
+            inArray(
+              lineItemClassifications.lineItemId,
+              db
+                .select({ id: lineItems.id })
+                .from(lineItems)
+                .innerJoin(invoices, eq(lineItems.invoiceId, invoices.id))
+                .where(eq(invoices.companyId, companyId)),
+            ),
+          );
+
+        // Then delete line items
         await db
           .delete(lineItems)
           .where(
@@ -1549,15 +1564,18 @@ class PostgresStorage implements IStorage {
             ),
           );
 
-        // Delete feedback logs
-        // await db
-        //   .delete(feedbackLogs)
-        //   .where(
-        //     inArray(
-        //       feedbackLogs.invoiceId,
-        //       db.select({ id: invoices.id }).from(invoices).where(eq(invoices.companyId, companyId))
-        //     )
-        //   );
+        // Delete petty cash logs that reference invoices
+        await db
+          .delete(pettyCashLog)
+          .where(
+            inArray(
+              pettyCashLog.invoiceId,
+              db
+                .select({ id: invoices.id })
+                .from(invoices)
+                .where(eq(invoices.companyId, companyId)),
+            ),
+          );
 
         // Finally delete the invoices
         await db.delete(invoices).where(eq(invoices.companyId, companyId));
