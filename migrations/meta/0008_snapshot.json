@@ -1,0 +1,329 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "id": "0008_add_workflow_management",
+  "prevId": "0007_add_classification_keywords",
+  "tables": {
+    "invoices": {
+      "name": "invoices",
+      "schema": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "user_id",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "company_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "file_name",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "file_url",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "status",
+          "type": "invoice_status",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "pending"
+        },
+        {
+          "name": "vendor_name",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "invoice_number",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "invoice_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "due_date",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "total_amount",
+          "type": "decimal",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "tax_amount",
+          "type": "decimal",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "subtotal",
+          "type": "decimal",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "currency",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "USD"
+        },
+        {
+          "name": "ocr_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "extracted_data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "project_name",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "confidence_score",
+          "type": "decimal",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "validation_status",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "pending"
+        },
+        {
+          "name": "validation_results",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "validation_score",
+          "type": "decimal",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "is_validated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": false,
+          "default": false
+        },
+        {
+          "name": "validated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "uploaded_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        {
+          "name": "processing_status",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "pending"
+        },
+        {
+          "name": "workflow_mode",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "automatic"
+        },
+        {
+          "name": "current_workflow_step",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": 1
+        },
+        {
+          "name": "workflow_completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "invoices_company_id_companies_id_fk",
+          "tableName": "invoices",
+          "columns": ["company_id"],
+          "referencedTableName": "companies",
+          "referencedColumns": ["id"]
+        }
+      ],
+      "uniqueConstraints": []
+    },
+    "workflow_execution_log": {
+      "name": "workflow_execution_log",
+      "schema": "",
+      "columns": [
+        {
+          "name": "id",
+          "type": "serial",
+          "primaryKey": true,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "invoice_id",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "step_number",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "step_name",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "execution_mode",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "automatic"
+        },
+        {
+          "name": "status",
+          "type": "varchar",
+          "primaryKey": false,
+          "notNull": true,
+          "default": null
+        },
+        {
+          "name": "result",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "error_message",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "execution_time_ms",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        },
+        {
+          "name": "started_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "now()"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false,
+          "default": null
+        }
+      ],
+      "indexes": [],
+      "foreignKeys": [
+        {
+          "name": "workflow_execution_log_invoice_id_invoices_id_fk",
+          "tableName": "workflow_execution_log",
+          "columns": ["invoice_id"],
+          "referencedTableName": "invoices",
+          "referencedColumns": ["id"]
+        }
+      ],
+      "uniqueConstraints": []
+    }
+  }
+}
