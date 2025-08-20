@@ -13,6 +13,7 @@ import glob
 import shutil
 from datetime import datetime
 
+
 def clear_sqlite_database(db_path, db_type):
     """Clear a SQLite database"""
     try:
@@ -36,7 +37,8 @@ def clear_sqlite_database(db_path, db_type):
                     if not any(table_name.lower().startswith(prefix) for prefix in allowed_prefixes):
                         print(f"⚠️  Skipping unexpected table: {table_name}")
                         continue
-                    cursor.execute(f"DELETE FROM `{table_name}`")
+                    # Use proper SQLite identifier quoting for table names
+                    cursor.execute(f'DELETE FROM "{table_name}"')
                     print(f"Cleared SQLite table: {table_name}")
 
                 conn.commit()
@@ -57,6 +59,7 @@ def clear_postgresql_tables():
         # Try psycopg2 first, then fall back to environment check
         try:
             import psycopg2
+            from psycopg2 import sql as psycopg2_sql
             psycopg2_available = True
         except ImportError:
             psycopg2_available = False
@@ -95,19 +98,23 @@ def clear_postgresql_tables():
                     );
                 """, (table,))
 
-                if cursor.fetchone()[0]:
+                result = cursor.fetchone()
+                if result and result[0]:
                     # Validate table name to prevent SQL injection (identifiers cannot be parameterized)
                     if not table.replace('_', '').replace('-', '').isalnum():
                         print(f"⚠️  Skipping table with invalid name: {table}")
                         continue
                         
                     # Get count before clearing
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    before_count = cursor.fetchone()[0]
+                    # Note: Table identifiers cannot use parameterized queries, but these are from a controlled list
+                    cursor.execute(psycopg2_sql.SQL("SELECT COUNT(*) FROM {}").format(psycopg2_sql.Identifier(table)))
+                    before_result = cursor.fetchone()
+                    before_count = before_result[0] if before_result else 0
 
-                    cursor.execute(f"DELETE FROM {table}")
-                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
-                    after_count = cursor.fetchone()[0]
+                    cursor.execute(psycopg2_sql.SQL("DELETE FROM {}").format(psycopg2_sql.Identifier(table)))
+                    cursor.execute(psycopg2_sql.SQL("SELECT COUNT(*) FROM {}").format(psycopg2_sql.Identifier(table)))
+                    after_result = cursor.fetchone()
+                    after_count = after_result[0] if after_result else 0
                     records_cleared = before_count - after_count
                     cleared_count += records_cleared
 
@@ -128,7 +135,8 @@ def clear_postgresql_tables():
         # Clear RPA-generated invoices from main invoices table
         try:
             cursor.execute("SELECT COUNT(*) FROM invoices WHERE user_id = 'rpa-system'")
-            rpa_invoice_count = cursor.fetchone()[0]
+            count_result = cursor.fetchone()
+            rpa_invoice_count = count_result[0] if count_result else 0
             if rpa_invoice_count > 0:
                 cursor.execute("DELETE FROM invoices WHERE user_id = 'rpa-system'")
                 print(f"Cleared {rpa_invoice_count} RPA-generated invoices from main invoices table")
