@@ -27,7 +27,11 @@ def clear_sqlite_database(db_path, db_type):
             if tables:
                 for table in tables:
                     table_name = table[0]
-                    cursor.execute("DELETE FROM " + table_name)
+                    # Validate table name to prevent SQL injection
+                    if not table_name.replace('_', '').replace('-', '').isalnum():
+                        print(f"⚠️  Skipping table with invalid name: {table_name}")
+                        continue
+                    cursor.execute(f"DELETE FROM `{table_name}`")
                     print(f"Cleared SQLite table: {table_name}")
 
                 conn.commit()
@@ -87,12 +91,17 @@ def clear_postgresql_tables():
                 """, (table,))
 
                 if cursor.fetchone()[0]:
+                    # Validate table name to prevent SQL injection
+                    if not table.replace('_', '').replace('-', '').isalnum():
+                        print(f"⚠️  Skipping table with invalid name: {table}")
+                        continue
+                        
                     # Get count before clearing
-                    cursor.execute("SELECT COUNT(*) FROM " + table)
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
                     before_count = cursor.fetchone()[0]
 
-                    cursor.execute("DELETE FROM " + table)
-                    cursor.execute("SELECT COUNT(*) FROM " + table)
+                    cursor.execute(f"DELETE FROM {table}")
+                    cursor.execute(f"SELECT COUNT(*) FROM {table}")
                     after_count = cursor.fetchone()[0]
                     records_cleared = before_count - after_count
                     cleared_count += records_cleared
