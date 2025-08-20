@@ -5,8 +5,32 @@ import { setupVite, serveStatic, log } from "./vite";
 import { progressTracker } from "./services/progressTracker";
 
 const app = express();
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+
+// Configure middleware to handle JSON and URL-encoded data, but exclude multipart form data
+app.use((req, res, next) => {
+  // Skip body parsing for multipart form data (file uploads)
+  if (req.headers['content-type'] && req.headers['content-type'].startsWith('multipart/form-data')) {
+    return next();
+  }
+  
+  // Parse JSON and URL-encoded data for other requests
+  if (req.headers['content-type'] === 'application/json') {
+    express.json()(req, res, next);
+  } else if (req.headers['content-type'] === 'application/x-www-form-urlencoded') {
+    express.urlencoded({ extended: false })(req, res, next);
+  } else {
+    next();
+  }
+});
+
+// Fallback for requests without content-type header
+app.use((req, res, next) => {
+  if (!req.headers['content-type']) {
+    express.json()(req, res, next);
+  } else {
+    next();
+  }
+});
 
 // CORS middleware to allow cross-origin requests
 app.use((req, res, next) => {

@@ -19,8 +19,11 @@ export function FileUpload({
     'application/pdf': ['.pdf'],
     'image/jpeg': ['.jpg', '.jpeg'],
     'image/png': ['.png'],
+    'image/jpg': ['.jpg'],
     'application/xml': ['.xml'],
-    'text/xml': ['.xml']
+    'text/xml': ['.xml'],
+    'text/plain': ['.txt'], // Allow text files as fallback
+    'application/octet-stream': ['.pdf', '.jpg', '.jpeg', '.png', '.xml'] // Generic binary files
   },
   maxSize = 10 * 1024 * 1024, // 10MB
   className,
@@ -29,25 +32,83 @@ export function FileUpload({
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
 
   const onDrop = useCallback((acceptedFiles: File[]) => {
-    setSelectedFiles(acceptedFiles);
-    onFileSelect(acceptedFiles);
-  }, [onFileSelect]);
+    console.log('FileUpload: Files dropped:', acceptedFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
+    
+    // Validate files
+    if (!acceptedFiles || acceptedFiles.length === 0) {
+      console.error('FileUpload: No files accepted');
+      return;
+    }
+    
+    // Check file sizes
+    const validFiles = acceptedFiles.filter(file => {
+      if (file.size > maxSize) {
+        console.warn(`FileUpload: File ${file.name} is too large (${file.size} bytes, max: ${maxSize} bytes)`);
+        return false;
+      }
+      return true;
+    });
+    
+    if (validFiles.length === 0) {
+      console.error('FileUpload: No valid files after validation');
+      return;
+    }
+    
+    setSelectedFiles(validFiles);
+    onFileSelect(validFiles);
+  }, [onFileSelect, maxSize]);
+
+  const onDropRejected = useCallback((rejectedFiles: any[]) => {
+    console.log('FileUpload: Files rejected:', rejectedFiles);
+    // You could show a toast here for rejected files
+  }, []);
+
+  const handleClick = useCallback(() => {
+    // This will trigger the file input click
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.multiple = multiple;
+    input.accept = Object.entries(accept)
+      .map(([mimeType, extensions]) => extensions.map(ext => mimeType + ext).join(','))
+      .join(',');
+    
+    input.onchange = (e) => {
+      const target = e.target as HTMLInputElement;
+      if (target.files) {
+        const files = Array.from(target.files);
+        console.log('FileUpload: Files selected via click:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+        setSelectedFiles(files);
+        onFileSelect(files);
+      }
+    };
+    
+    input.click();
+  }, [multiple, accept, onFileSelect]);
 
   const { getRootProps, getInputProps, isDragActive, isDragReject } = useDropzone({
     onDrop,
+    onDropRejected,
     accept,
     maxSize,
     multiple,
+    onDropAccepted: (files) => {
+      console.log('FileUpload: Dropzone accepted files:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
+    },
+    onFileDialogCancel: () => {
+      console.log('FileUpload: File dialog cancelled');
+    },
   });
 
   const clearFiles = () => {
     setSelectedFiles([]);
+    onFileSelect([]); // Notify parent component
   };
 
   const removeFile = (index: number) => {
     setSelectedFiles((prevFiles) => {
       const newFiles = [...prevFiles];
       newFiles.splice(index, 1);
+      onFileSelect(newFiles); // Notify parent component
       return newFiles;
     });
   };
@@ -56,6 +117,7 @@ export function FileUpload({
     <div className={cn("space-y-4", className)}>
       <div
         {...getRootProps()}
+        onClick={handleClick}
         className={cn(
           "border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors",
           isDragActive && !isDragReject && "border-primary bg-primary/5",

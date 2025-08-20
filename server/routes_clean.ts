@@ -1799,6 +1799,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, upload.array('invoice', 10), async (req: any, res) => {
     console.log('=== INVOICE UPLOAD DEBUG ===');
+    console.log('Request headers:', req.headers);
+    console.log('Request body keys:', Object.keys(req.body || {}));
+    console.log('Request files:', req.files);
+    console.log('Request file count:', req.files?.length || 0);
+    
     const files = req.files as Express.Multer.File[];
 
     // 🔥 FIX: Get userId from authenticated request properly
