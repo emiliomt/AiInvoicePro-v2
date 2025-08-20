@@ -205,6 +205,7 @@ export interface IStorage {
   createLineItem(lineItem: InsertLineItem): Promise<LineItem>;
   getLineItemsByInvoiceId(invoiceId: number): Promise<LineItem[]>;
   deleteLineItemsByInvoiceId(invoiceId: number): Promise<void>;
+  removeDuplicateLineItems(invoiceId: number): Promise<{ removed: number; kept: number; details: Array<{ description: string | null, duplicateCount: number, removedIds: number[] }> }>;
 
   // Approvals
   createApproval(approval: InsertApproval): Promise<Approval>;
@@ -567,6 +568,10 @@ class PostgresStorage implements IStorage {
 
   async deleteLineItemsByInvoiceId(invoiceId: number): Promise<void> {
     await db.delete(lineItems).where(eq(lineItems.invoiceId, invoiceId));
+  }
+
+  async removeDuplicateLineItems(invoiceId: number): Promise<{ removed: number; kept: number; details: Array<{ description: string | null, duplicateCount: number, removedIds: number[] }> }> {
+    return await deduplicateLineItems(invoiceId);
   }
 
   // Approvals
@@ -2243,31 +2248,31 @@ export async function deduplicateLineItems(invoiceId: number) {
     );
 
     // Group items by description to find duplicates
-    const grouped = new Map();
+    const grouped = new Map<string, typeof allLineItems>();
 
     for (const item of allLineItems) {
       const key = item.description?.trim().toLowerCase() || "unknown";
       if (!grouped.has(key)) {
         grouped.set(key, []);
       }
-      grouped.get(key).push(item);
+      grouped.get(key)!.push(item);
     }
 
     // Find and remove duplicates
     let totalRemoved = 0;
-    const details = [];
+    const details: Array<{ description: string | null, duplicateCount: number, removedIds: number[] }> = [];
 
     for (const [description, items] of grouped.entries()) {
       if (items.length > 1) {
         console.log(`🔄 Found ${items.length} duplicates of: ${description}`);
 
         // Keep the first item, remove the rest
-        const [keepItem, ...removeItems] = items.sort((a, b) => a.id - b.id);
+        const [keepItem, ...removeItems] = items.sort((a: any, b: any) => a.id - b.id);
 
         details.push({
           description: keepItem.description,
           duplicateCount: items.length,
-          removedIds: removeItems.map((i) => i.id),
+          removedIds: removeItems.map((i: any) => i.id),
         });
 
         if (removeItems.length > 0) {

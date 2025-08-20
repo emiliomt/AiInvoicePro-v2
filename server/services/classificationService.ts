@@ -253,7 +253,6 @@ export class ClassificationService {
   // Bulk classify line items for an invoice
   static async classifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
-    const storage = await getStorage();
 
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
@@ -343,11 +342,11 @@ export class ClassificationService {
       }
     }
 
-    // ✅ Update invoice status to "classified" after processing all line items
+    // ✅ Update invoice status to "extracted" after processing all line items
     await db
       .update(invoices)
       .set({
-        status: 'classified',
+        status: 'extracted',
         processingStatus: 'classified',
         updatedAt: new Date()
       })
@@ -355,7 +354,7 @@ export class ClassificationService {
 
     // Broadcast completion
     broadcastClassificationComplete(invoiceId, userId);
-    console.log(`✅ Updated invoice ${invoiceId} status to "classified" after line item classification`);
+    console.log(`✅ Updated invoice ${invoiceId} status to "extracted" after line item classification`);
   }
 
   // Add custom keyword
@@ -576,7 +575,6 @@ Respond with JSON in this format:
   // Bulk AI classify line items for an invoice
   static async aiClassifyInvoiceLineItems(invoiceId: number, userId?: string): Promise<void> {
     const db = await getDb();
-    const storage = await getStorage();
 
     // Remove duplicates first
     await storage.removeDuplicateLineItems(invoiceId);
@@ -666,17 +664,16 @@ Respond with JSON in this format:
       }
     }
 
-    // ✅ Update the invoice status to "classified" after processing all line items
+    // ✅ Update the invoice status to "extracted" after processing all line items
     try {
-      const storage = await getStorage();
       await storage.updateInvoice(invoiceId, { 
-        status: 'classified',
+        status: 'extracted',
         processingStatus: 'classified'
       });
 
       // Broadcast completion
       broadcastClassificationComplete(invoiceId, userId);
-      console.log(`✅ Updated invoice ${invoiceId} status to 'classified' after AI classification`);
+      console.log(`✅ Updated invoice ${invoiceId} status to 'extracted' after AI classification`);
     } catch (error) {
       console.error(`❌ Failed to update invoice ${invoiceId} status:`, error);
       broadcastClassificationError(`Failed to update invoice status`, invoiceId, userId);
