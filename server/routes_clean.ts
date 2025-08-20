@@ -2262,13 +2262,13 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      // Check access permissions (company-wide access for users in same company)
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
-      const hasAccess = invoice.userId === userId || 
-        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+      const hasAccess = user?.companyId && invoice.companyId && user.companyId === invoice.companyId;
 
       if (!hasAccess) {
+        console.log(`Preview access denied for user ${userId} to invoice ${invoice.id}`);
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -2298,11 +2298,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).send('Invoice not found');
       }
 
-      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      // Check access permissions (company-wide access for users in same company)
       const userId = (req.user as any).claims.sub;
       const user = await storage.getUser(userId);
-      const hasAccess = invoice.userId === userId || 
-        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+      const hasAccess = user?.companyId && invoice.companyId && user.companyId === invoice.companyId;
 
       if (!hasAccess) {
         console.log(`Preview access denied for user ${userId} to invoice ${invoiceId}`);
@@ -2398,9 +2397,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check if user owns the invoice
+      // Check company-wide access permissions
       const userId = (req.user as any).claims.sub;
-      if (invoice.userId !== userId) {
+      const user = await storage.getUser(userId);
+      const hasAccess = user?.companyId && invoice.companyId && user.companyId === invoice.companyId;
+
+      if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
       }
 
@@ -2630,10 +2632,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      // Check access permissions (user owns invoice OR it's an RPA invoice for the same company)
+      // Check access permissions (company-wide access for users in same company)
       const user = await storage.getUser(userId);
-      const hasAccess = invoice.userId === userId || 
-        (invoice.userId === 'rpa-system' && user?.companyId === invoice.companyId);
+      const hasAccess = user?.companyId && invoice.companyId && user.companyId === invoice.companyId;
 
       if (!hasAccess) {
         return res.status(403).json({ message: "Access denied" });
