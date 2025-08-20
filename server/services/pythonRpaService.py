@@ -147,8 +147,8 @@ class InvoiceRPAService:
             cursor = conn.cursor()
             
             # Normalize inputs as requested
-            normalized_invoice_number = invoice_number.strip().upper()
-            normalized_emisor_id = emisor_id.strip()
+            normalized_invoice_number = (invoice_number or "").strip().upper()
+            normalized_emisor_id = (emisor_id or "").strip()
             
             # Build the base SQL query using actual data structure (simpler and more reliable)
             # Skip invoices unless they are marked as 'failed' or need retry
@@ -180,7 +180,7 @@ class InvoiceRPAService:
                                 ABS(CAST(REGEXP_REPLACE(REGEXP_REPLACE(REGEXP_REPLACE(COALESCE(metadata->>'totalAmount', '0'), '[^0-9]', '', 'g'), '^$', '0'), '^0*', '') AS NUMERIC) - %s) <= 100
                             )
                         """
-                        params.append(normalized_total)
+                        params.append(str(normalized_total))
                         self.log(f"🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
                     else:
                         self.log(f"⚠️ Could not extract numeric value from '{total_amount}', skipping amount validation", "WARNING")

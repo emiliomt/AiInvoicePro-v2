@@ -214,7 +214,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       const validationResult = await storage.validateInvoiceData(validationData);
 
       // Determine the status based on validation results
-      let status = 'extracted';
+      let status: "pending" | "processing" | "extracted" | "approved" | "rejected" | "paid" | "matched" = 'extracted';
       if (validationResult.isValid) {
         status = 'approved'; // Automatically approve if validation passes
       } else if (validationResult.criticalViolations > 0) {
@@ -229,7 +229,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         validationResults: validationResult, // Store complete validation results
         validationStatus: validationResult.status,
         isValidated: true, // Mark as validated regardless of pass/fail
-        validationScore: validationResult.validationScore,
+        validationScore: validationResult.validationScore?.toString() || "0",
         processingStatus: 'validated' // Update processing status
       });
 
@@ -275,7 +275,7 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
         validationResults: errorResult,
         validationStatus: 'error',
         isValidated: false,
-        validationScore: 0
+        validationScore: "0"
       });
     }
 
@@ -932,7 +932,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
               ocrText: ocrText,
               fileName: fileName,
               uploadedBy: req.user.id || "anonymous",
-            }, userId);
+            });
 
             processedPOs.push(newPurchaseOrder);
             console.log(`Purchase order saved with ID: ${newPurchaseOrder.id} for file: ${fileName}`);
@@ -984,7 +984,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/purchase-orders', isAuthenticated, async (req, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      const purchaseOrders = await storage.getPurchaseOrders(userId);
+      const purchaseOrders = await storage.getPurchaseOrders();
       res.json(purchaseOrders);
     } catch (error) {
       console.error("Error fetching purchase orders:", error);
@@ -996,7 +996,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const userId = (req.user as any).claims.sub;
       const poData = req.body;
-      const purchaseOrder = await storage.createPurchaseOrder(poData, userId);
+      const purchaseOrder = await storage.createPurchaseOrder(poData);
       res.json(purchaseOrder);
     } catch (error) {
       console.error("Error creating purchase order:", error);
@@ -1094,7 +1094,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "Invoice not found" });
       }
 
-      const potentialMatches = await storage.findPotentialProjectMatches(invoice);
+      const potentialMatches = await storage.findPotentialProjectMatches(invoiceId);
       res.json(potentialMatches);
     } catch (error) {
       console.error("Error finding project matches:", error);
