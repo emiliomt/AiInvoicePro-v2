@@ -5477,10 +5477,27 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         return res.status(404).json({ error: 'Import configuration not found' });
       }
 
-      // Check if user has access to this configuration
-      if (config.userId !== (user as any).claims.sub) {
+      // Check if user has access to this configuration (owner or same company)
+      const currentUser = await storage.getUser((user as any).claims.sub);
+      const configOwner = await storage.getUser(config.userId);
+      
+      // Allow access if:
+      // 1. User is the owner
+      // 2. Both users share the same company (when company relationships are set up)
+      // 3. As fallback for company-wide access when no companies are configured, allow broader access
+      const isOwner = config.userId === (user as any).claims.sub;
+      const hasSameCompany = currentUser?.companyId && configOwner?.companyId && 
+                            currentUser.companyId === configOwner.companyId;
+      const allowBroadAccess = !currentUser?.companyId && !configOwner?.companyId; // No company structure set up
+      
+      const hasAccess = isOwner || hasSameCompany || allowBroadAccess;
+      
+      if (!hasAccess) {
+        console.log(`Access denied for user ${(user as any).claims.sub} to config ${configId}. Config owner: ${config.userId}, User company: ${currentUser?.companyId}, Owner company: ${configOwner?.companyId}`);
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
+      
+      console.log(`Access granted for user ${(user as any).claims.sub} to delete config ${configId}. Reason: ${isOwner ? 'owner' : hasSameCompany ? 'same company' : 'broad access (no companies configured)'}`);
 
       // Delete related records first to avoid foreign key constraint issues
       await storage.deleteInvoiceImporterConfigCascade(configId);
