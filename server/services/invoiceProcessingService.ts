@@ -115,7 +115,7 @@ export class InvoiceProcessingService {
         // Create invoice record
         const invoiceData = {
           userId: 'rpa-system',
-          companyId: 2, // Always use RPA Import Company (ID: 2) for RPA imports
+          companyId: 860527800, // Use main company ID for company-wide access
           fileName: importedInvoice.originalFileName || `imported_${importedInvoice.id}`,
           fileUrl: importedInvoice.filePath,
           status: 'extracted' as const,
@@ -301,7 +301,7 @@ export class InvoiceProcessingService {
         // Create invoice record
         const invoiceData = {
           userId: 'rpa-system',
-          companyId: 2, // Always use RPA Import Company (ID: 2) for RPA imports
+          companyId: 860527800, // Use main company ID for company-wide access
           fileName: importedInvoice.originalFileName || `imported_${importedInvoice.id}`,
           fileUrl: importedInvoice.filePath,
           status: 'extracted' as const,

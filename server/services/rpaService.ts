@@ -583,6 +583,7 @@ export class RPAService {
         // Create invoice record
         const invoiceData = {
           userId,
+          companyId: 860527800, // Use main company ID for company-wide access
           fileName: source.fileName || `xml_invoice_${source.id}`,
           fileUrl: null,
           status: 'extracted' as const,
