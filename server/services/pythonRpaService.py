@@ -1980,17 +1980,73 @@ class InvoiceRPAService:
         try:
             self.log("🔍 Estimating total invoices across all pages...")
             
-            # Get initial page row count
-            rows = self.driver.find_elements(By.CSS_SELECTOR, "div.rt-tr-group")
-            data_rows = [r for r in rows if r.text.strip()]
+            # Try multiple selectors to find invoice rows more reliably
+            row_selectors = [
+                "div.rt-tr-group",  # React Table rows
+                "table tbody tr",   # Standard table rows
+                "tr[class*='row']", # Rows with 'row' in class name
+                "[data-testid*='row']", # Data test ID rows
+                ".invoice-row",     # Custom invoice row class
+                "div[role='row']",  # ARIA role rows
+            ]
+            
+            data_rows = []
+            for selector in row_selectors:
+                try:
+                    rows = self.driver.find_elements(By.CSS_SELECTOR, selector)
+                    filtered_rows = [r for r in rows if r.text.strip() and len(r.text.strip()) > 10]  # Filter meaningful rows
+                    if filtered_rows:
+                        data_rows = filtered_rows
+                        self.log(f"✅ Found {len(data_rows)} rows using selector: {selector}")
+                        break
+                except Exception as e:
+                    self.log(f"Selector {selector} failed: {e}")
+                    continue
+            
             first_page_count = len(data_rows)
             
             if first_page_count == 0:
-                self.log("⚠️ No data rows found on first page, using fallback estimate")
-                self.global_progress['estimated_total_invoices'] = 50  # Conservative fallback
-                self.global_progress['initial_estimate_method'] = 'fallback'
-                return
+                self.log("⚠️ No data rows found on first page with any selector")
+                # Try to get a more conservative estimate by looking at page elements
+                try:
+                    # Look for any text that might indicate row count
+                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
+                    
+                    # Look for patterns like "Showing 1-10 of 15" or similar
+                    import re
+                    count_patterns = [
+                        r'showing\s+\d+\s*-\s*(\d+)\s+of\s+(\d+)',
+                        r'(\d+)\s+of\s+(\d+)\s+items',
+                        r'total:\s*(\d+)',
+                        r'(\d+)\s+results',
+                    ]
+                    
+                    for pattern in count_patterns:
+                        match = re.search(pattern, page_text, re.IGNORECASE)
+                        if match:
+                            if len(match.groups()) >= 2:
+                                total_count = int(match.group(2))
+                            else:
+                                total_count = int(match.group(1))
+                            
+                            self.global_progress['estimated_total_invoices'] = total_count
+                            self.global_progress['initial_estimate_method'] = f'text_pattern_{pattern}'
+                            self.log(f"📊 Found total count from page text: {total_count}")
+                            return
+                    
+                    # If no patterns match, use a very conservative fallback
+                    self.global_progress['estimated_total_invoices'] = 10  # More realistic fallback
+                    self.global_progress['initial_estimate_method'] = 'conservative_fallback'
+                    self.log("⚠️ Using conservative fallback estimate of 10 invoices")
+                    return
+                    
+                except Exception as e:
+                    self.log(f"Could not analyze page text: {e}")
+                    self.global_progress['estimated_total_invoices'] = 10  # Conservative fallback
+                    self.global_progress['initial_estimate_method'] = 'error_fallback'
+                    return
             
+            # If we found rows, continue with pagination analysis
             # Try to find pagination info to get total pages
             try:
                 # Look for pagination indicators (common patterns)
@@ -2024,18 +2080,26 @@ class InvoiceRPAService:
             except Exception as e:
                 self.log(f"⚠️ Could not find pagination info: {e}")
             
-            # Fallback: Estimate based on first page and assume reasonable page count
-            estimated_pages = 3  # Conservative estimate
-            estimated_total = first_page_count * estimated_pages
-            self.global_progress['estimated_total_invoices'] = estimated_total
-            self.global_progress['initial_estimate_method'] = f'conservative_estimate_{estimated_pages}_pages'
-            self.log(f"📊 Conservative estimate: {estimated_total} total invoices ({first_page_count} per page × {estimated_pages} estimated pages)")
+            # Fallback: Use only the rows found on current page (most accurate for single page)
+            if first_page_count <= 15:  # If small count, likely single page
+                self.global_progress['estimated_total_invoices'] = first_page_count
+                self.global_progress['initial_estimate_method'] = f'single_page_actual_count'
+                self.log(f"📊 Using actual count for single page: {first_page_count} invoices")
+            else:
+                # Estimate conservatively for larger pages
+                estimated_pages = max(2, first_page_count // 10)  # Reasonable estimate
+                estimated_total = first_page_count * estimated_pages
+                self.global_progress['estimated_total_invoices'] = estimated_total
+                self.global_progress['initial_estimate_method'] = f'conservative_estimate_{estimated_pages}_pages'
+                self.log(f"📊 Conservative estimate: {estimated_total} total invoices ({first_page_count} per page × {estimated_pages} estimated pages)")
             
         except Exception as e:
             self.log(f"❌ Error estimating total invoices: {e}", "ERROR")
             # Ultra-conservative fallback
-            self.global_progress['estimated_total_invoices'] = 30
+            self.global_progress['estimated_total_invoices'] = 10
             self.global_progress['initial_estimate_method'] = 'error_fallback'
+            
+
     
     def refine_total_estimate(self):
         """Refine total invoice estimate based on actual page data"""
