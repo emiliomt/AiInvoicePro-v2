@@ -2588,7 +2588,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Delete all invoices for a user (must come before parameterized route)
+  // Delete all invoices for a company (company-wide access)
   app.delete('/api/invoices/delete-all', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
@@ -2597,12 +2597,22 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "User ID is required" });
       }
 
-      console.log(`Starting delete all invoices for user: ${userId}`);
+      // Get user's company ID for company-wide deletion
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
 
-      // Delete all invoices for this user directly
-      const deletedCount = await storage.deleteAllUserInvoices(userId);
+      if (!user.companyId) {
+        return res.status(400).json({ message: "User is not associated with a company" });
+      }
 
-      console.log(`Successfully deleted ${deletedCount} invoices for user ${userId}`);
+      console.log(`Starting delete all invoices for company: ${user.companyId} (requested by user: ${userId})`);
+
+      // Delete all invoices for this company
+      const deletedCount = await storage.deleteAllCompanyInvoices(user.companyId);
+
+      console.log(`Successfully deleted ${deletedCount} invoices for company ${user.companyId}`);
 
       res.json({ 
         message: `Successfully deleted ${deletedCount} invoice${deletedCount === 1 ? '' : 's'}`,
