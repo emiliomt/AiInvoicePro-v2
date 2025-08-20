@@ -14,7 +14,7 @@ import sys
 import json
 import base64
 import psycopg2
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 from datetime import datetime
 from typing import Dict, Any, Optional
 
@@ -1388,7 +1388,6 @@ class InvoiceRPAService:
                 # For XML files, try to extract additional metadata from content
                 if file_type == 'xml' and file_path and os.path.exists(file_path):
                     try:
-                        import xml.etree.ElementTree as ET
                         tree = ET.parse(file_path)
                         root = tree.getroot()
                         
@@ -1444,7 +1443,6 @@ class InvoiceRPAService:
                 # For XML files, try to extract additional metadata from content
                 if file_type == 'xml' and file_path and os.path.exists(file_path):
                     try:
-                        import xml.etree.ElementTree as ET
                         tree = ET.parse(file_path)
                         root = tree.getroot()
                         
