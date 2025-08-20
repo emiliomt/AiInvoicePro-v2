@@ -27,6 +27,7 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **Real-Time Progress Tracking:** Implemented comprehensive WebSocket-based progress tracking system for line item classification processing, featuring visual progress indicators, detailed step tracking, real-time metrics updates, and automatic completion handling with seamless user experience.
 - **Database Integrity Management:** Comprehensive database connection handling with transaction-based cascading deletions for invoice import configurations, ensuring proper foreign key constraint handling and data consistency.
 - **RPA Processing Pipeline:** Fixed critical issues preventing successful invoice processing including missing API endpoints, progress tracking errors, and improved invoice count estimation for accurate progress reporting.
+- **RPA Invoice Pairing & Counting:** Implemented intelligent XML+PDF file pairing to count unique invoices instead of individual files, preventing double-counting and ensuring accurate statistics. XML files serve as data sources while PDFs are stored as references only.
 
 **System Design Choices:**
 - **Frontend:** React with TypeScript, utilizing Tailwind CSS and shadcn/ui components for a modern and efficient user interface.

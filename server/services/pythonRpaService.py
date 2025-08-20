@@ -2343,10 +2343,13 @@ class InvoiceRPAService:
                 if len(unmatched_pdfs) > 3:
                     self.log(f"   ... and {len(unmatched_pdfs) - 3} more unmatched PDFs")
             
+            # Process each unique invoice (not individual files)
             for index, base_name in enumerate(all_base_names):
                 # Update progress with current unique invoice being processed
                 progress_percent = 90 + int((index / total_unique_invoices) * 8)  # 90-98% range
                 self.update_progress(f"Processing invoice {index + 1}/{total_unique_invoices}: {base_name}", progress_percent)
+                
+                invoice_processed_successfully = False
                 
                 if base_name in matched_pairs:
                     # ✅ MATCHED PAIR: Both XML and PDF present - ONLY process XML for data extraction
@@ -2355,97 +2358,128 @@ class InvoiceRPAService:
                     pdf_filename = pair_info['pdf_file']
                     match_type = pair_info['match_type']
                     
-                    self.log(f"🔄 EXTRACTION PRIORITY ({match_type}): XML '{xml_filename}' will be processed for data, PDF '{pdf_filename}' stored as reference ONLY")
+                    self.log(f"🔄 PAIRED INVOICE ({match_type}): XML '{xml_filename}' → data source, PDF '{pdf_filename}' → reference only")
                     
-                    # Process XML (data source) - ONLY this triggers extraction
+                    # Process ONLY XML for data extraction (counts as 1 invoice)
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
                         xml_info['base_file_name'] = base_name
-                        xml_info['matched_file_name'] = pdf_filename
+                        xml_info['matched_pdf_file'] = pdf_filename
                         processed_files.append(xml_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ XML processed for extraction: {xml_filename}")
-                        
-                        # Send real-time progress update for this successful processing
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        invoice_processed_successfully = True
+                        self.log(f"✅ Paired invoice processed: {xml_filename} (PDF {pdf_filename} linked as reference)")
                     else:
-                        failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        self.log(f"❌ Failed to process paired invoice: {xml_filename}")
                     
-                    # Store PDF as reference ONLY - NO extraction pipeline
-                    pdf_info = self._store_pdf_as_reference_only(pdf_filename, pdf_dir, base_name, xml_filename)
-                    if pdf_info:
-                        # Mark PDF to be linked after XML processing is complete
-                        pdf_info['link_to_xml_invoice'] = True
-                        pdf_info['xml_filename'] = xml_filename
-                        processed_files.append(pdf_info)
-                        self.log(f"📎 PDF stored as reference: {pdf_filename} (NO EXTRACTION, will link to XML invoice)")
+                    # Store PDF as reference metadata ONLY - NO separate processing count
+                    self._store_pdf_as_reference_metadata(pdf_filename, pdf_dir, xml_filename)
                     
                 elif base_name in unmatched_xmls:
-                    # Case: Only XML file present - store XML, set isDataSource = true
+                    # Case: Only XML file present - process as single invoice
                     xml_filename = xml_files[base_name]
-                    self.log(f"📄 Processing XML only: {base_name}")
+                    self.log(f"📄 XML-only invoice: {xml_filename}")
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
                         xml_info['base_file_name'] = base_name
                         processed_files.append(xml_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ XML processed successfully: {xml_filename}")
-                        
-                        # Send real-time progress update
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        invoice_processed_successfully = True
+                        self.log(f"✅ XML-only invoice processed: {xml_filename}")
                     else:
-                        failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                        self.log(f"❌ Failed to process XML-only invoice: {xml_filename}")
                         
                 elif base_name in unmatched_pdfs:
-                    # Case: Only PDF file present - process it since it passed session time filtering
+                    # Case: Only PDF file present - process through OCR pipeline
                     pdf_filename = pdf_files[base_name]
-                    
-                    self.log(f"📄 PDF-ONLY PROCESSING: {base_name} (OCR extraction - no XML available)")
-                    pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
-                    if pdf_info:
-                        pdf_info['base_file_name'] = base_name
-                        processed_files.append(pdf_info)
-                        processed_count += 1
-                        successful_count += 1
-                        self.log(f"✅ PDF processed for OCR extraction: {pdf_filename}")
-                        
-                        # Send real-time progress update
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
-                    else:
-                        failed_count += 1
-                        self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                    invoice_processed_successfully = self._process_unmatched_pdf_invoice(pdf_filename, pdf_dir, uploads_dir, base_name)
+                    if invoice_processed_successfully:
+                        processed_files.append({
+                            'type': 'pdf',
+                            'base_file_name': base_name,
+                            'upload_filename': pdf_filename,
+                            'is_data_source': True
+                        })
 
-            # Store processed files to database with proper linking (imported_invoices table)
-            self._store_conditional_files_to_database(processed_files)
-            
-            # After all files are processed through manual pipeline, link PDFs to XML-derived invoice records
-            self._link_pdfs_to_main_invoices(processed_files)
-            
-            # Note: Files are already processed through manual pipeline via trigger_manual_processing
-            # The manual pipeline creates records in the main 'invoices' table
-            # The conditional storage above is for metadata and file linking in 'imported_invoices' table
-
-            # Update final stats
+                # Update counters based on invoice success/failure (not individual files)
+                processed_count += 1
+                if invoice_processed_successfully:
+                    successful_count += 1
+                else:
+                    failed_count += 1
+                
+                # Send real-time progress update for this unique invoice
+                self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
+                
+            # Update class-level stats to reflect unique invoices
+            self.stats['total_invoices'] = total_unique_invoices
             self.stats['processed_invoices'] = processed_count
             self.stats['successful_imports'] = successful_count
             self.stats['failed_imports'] = failed_count
             
-            self.log(f"✅ Processed {processed_count} files through manual pipeline with proper PDF linking")
-            self.log(f"📊 Final stats: Processed={processed_count}, Success={successful_count}, Failed={failed_count}")
-            self.log(f"File breakdown: {sum(1 for f in processed_files if f['type'] == 'xml')} XML, {sum(1 for f in processed_files if f['type'] == 'pdf')} PDF")
-            self.log(f"🎯 SESSION ISOLATION: {len(self.session_downloaded_files)} files from current session processed")
-            if processed_count == 0 and len(self.session_downloaded_files) == 0:
-                self.log("⚠️ No files were downloaded or processed in this session - this indicates no new invoices were available")
+            self.log(f"✅ Pipeline processing completed:")
+            self.log(f"   - Total unique invoices: {total_unique_invoices}")
+            self.log(f"   - Successfully processed: {successful_count}")
+            self.log(f"   - Failed: {failed_count}")
+            self.log(f"   - Paired files (XML+PDF): {len(matched_pairs)} invoices")
             
             return True
-
+            
         except Exception as e:
-            self.log(f"Error processing files through manual pipeline: {e}", "ERROR")
+            self.log(f"❌ Error in pipeline processing: {e}", "ERROR")
             return False
+
+    def _store_pdf_as_reference_metadata(self, pdf_filename: str, pdf_dir: str, xml_filename: str):
+        """Store PDF as reference metadata without processing through extraction pipeline"""
+        try:
+            # Move PDF to uploads directory for reference
+            pdf_source = os.path.join(pdf_dir, pdf_filename)
+            pdf_dest = os.path.join('uploads', pdf_filename)
+            
+            if os.path.exists(pdf_source):
+                shutil.copy2(pdf_source, pdf_dest)
+                self.log(f"📎 PDF reference stored: {pdf_filename} (linked to XML: {xml_filename})")
+                
+                # Update imported_invoices table with reference linkage
+                self._update_imported_invoice_status({
+                    'original_file_name': pdf_filename
+                }, 'reference_only', f'Linked as reference to XML: {xml_filename}')
+            
+        except Exception as e:
+            self.log(f"❌ Error storing PDF reference {pdf_filename}: {e}", "ERROR")
+
+    def _process_unmatched_pdf_invoice(self, pdf_filename: str, pdf_dir: str, uploads_dir: str, base_name: str) -> bool:
+        """Process a PDF-only invoice through OCR pipeline"""
+        try:
+            self.log(f"📄 PDF-only invoice: {pdf_filename} (OCR required)")
+            
+            # Check if this PDF should be processed or skipped
+            if not self._should_process_orphaned_pdf(pdf_filename, base_name):
+                self.log(f"⏭️ Skipping already processed PDF: {pdf_filename}")
+                return True  # Consider as successful to avoid counting as failure
+            
+            pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
+            if pdf_info:
+                self.log(f"✅ PDF-only invoice processed (OCR): {pdf_filename}")
+                return True
+            else:
+                self.log(f"❌ Failed to process PDF-only invoice: {pdf_filename}")
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ Error processing PDF-only invoice {pdf_filename}: {e}", "ERROR")
+            return False
+    
+    def _store_conditional_files_to_database(self, processed_files: list):
+        """Store processed files with conditional logic - removed as handled by manual pipeline"""
+        # This method is no longer needed as files are processed through the manual pipeline
+        # which handles database storage automatically via the Node.js endpoints
+        self.log(f"📝 File processing handled by manual pipeline for {len(processed_files)} files")
+        
+    def _link_pdfs_to_main_invoices(self, processed_files: list):
+        """Link PDF references to main invoice records - removed as handled by manual pipeline"""
+        # This method is no longer needed as linking is handled by the manual pipeline
+        # The Node.js endpoints handle the creation of records in the main invoices table
+        self.log(f"🔗 File linking handled by manual pipeline for {len(processed_files)} files")
+
     
     def _tokens_match(self, xml_token: str, pdf_token: str, xml_base: str, pdf_base: str) -> bool:
         """Enhanced token matching with multiple strategies"""
