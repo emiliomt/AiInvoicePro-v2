@@ -4668,6 +4668,117 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
+  // Function to automatically link PDF files to existing invoices after RPA import
+  async function linkPDFsToExistingInvoices(configId: number) {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      
+      // Get all PDF files in uploads directory
+      const uploadDir = 'uploads';
+      if (!fs.existsSync(uploadDir)) {
+        console.log('📁 Upload directory does not exist, skipping PDF linking');
+        return;
+      }
+      
+      const files = fs.readdirSync(uploadDir);
+      const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
+      
+      console.log(`🔍 Found ${pdfFiles.length} PDF files in uploads directory`);
+      
+      let linkedCount = 0;
+      
+      for (const pdfFile of pdfFiles) {
+        try {
+          // Extract base name from PDF file (remove extension and vendor info)
+          const baseFileName = pdfFile.replace(/\.(pdf)$/i, '').split('_').slice(0, 2).join('_');
+          
+          // Look for existing invoices with matching base name
+          const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+          
+          if (existingInvoices.length > 0) {
+            const invoice = existingInvoices[0];
+            
+            // Check if PDF is already linked
+            const { Client } = await import('pg');
+            const dbClient = new Client({
+              connectionString: process.env.DATABASE_URL,
+            });
+            
+            try {
+              await dbClient.connect();
+              
+              // Check for existing link
+              const existingLinkQuery = `
+                SELECT id FROM imported_invoices 
+                WHERE linked_invoice_id = $1 AND file_type = 'pdf' AND original_file_name = $2
+              `;
+              
+              const existingLinks = await dbClient.query(existingLinkQuery, [invoice.id, pdfFile]);
+              
+              if (existingLinks.rows.length === 0) {
+                // Link PDF to invoice
+                const insertQuery = `
+                  INSERT INTO imported_invoices (
+                    log_id, 
+                    original_file_name, 
+                    file_path, 
+                    file_size, 
+                    file_type, 
+                    base_file_name,
+                    is_data_source,
+                    linked_invoice_id,
+                    created_at,
+                    metadata
+                  ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+                `;
+                
+                const filePath = path.join(uploadDir, pdfFile);
+                const fileStats = fs.statSync(filePath);
+                
+                const values = [
+                  configId || 4, // log_id 
+                  pdfFile, // original_file_name
+                  filePath, // file_path
+                  fileStats.size, // file_size
+                  'pdf', // file_type
+                  baseFileName, // base_file_name
+                  false, // is_data_source (PDF is reference only)
+                  invoice.id, // linked_invoice_id
+                  new Date(), // created_at
+                  JSON.stringify({
+                    source: 'auto_link',
+                    configId: configId,
+                    linkedToXml: true,
+                    autoLinked: true
+                  }) // metadata
+                ];
+                
+                await dbClient.query(insertQuery, values);
+                linkedCount++;
+                
+                console.log(`🔗 Linked PDF ${pdfFile} to invoice ${invoice.id} (${invoice.invoiceNumber})`);
+              } else {
+                console.log(`⚠️ PDF ${pdfFile} already linked to invoice ${invoice.id}`);
+              }
+              
+            } finally {
+              await dbClient.end();
+            }
+          }
+        } catch (error) {
+          console.error(`❌ Error linking PDF ${pdfFile}:`, error);
+        }
+      }
+      
+      console.log(`✅ Automatic PDF linking completed: ${linkedCount} PDFs linked`);
+      
+    } catch (error) {
+      console.error('❌ Error in automatic PDF linking:', error);
+      throw error;
+    }
+  }
+
   // Get comprehensive import logs with metadata  
   app.get('/api/import-logs', isAuthenticated, async (req: any, res) => {
     try {
@@ -5607,8 +5718,17 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Start the import process asynchronously but don't wait for it
       setImmediate(() => {
         pythonInvoiceImporter.executeImportTaskWithLogId(configId, log.id)
-          .then(() => {
+          .then(async () => {
             console.log(`Import task ${configId} completed successfully`);
+            
+            // Automatic PDF linking after RPA completion
+            console.log(`🔗 Starting automatic PDF linking for completed RPA import...`);
+            try {
+              await linkPDFsToExistingInvoices(configId);
+              console.log(`✅ Automatic PDF linking completed for import task ${configId}`);
+            } catch (linkError) {
+              console.error(`❌ Automatic PDF linking failed for import task ${configId}:`, linkError);
+            }
           })
           .catch((error) => {
             console.error(`Import task ${configId} failed:`, error);
