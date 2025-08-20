@@ -92,23 +92,45 @@ app.use((req, res, next) => {
 });
 
 (async () => {
-  // Add global error handlers
+  // Add global error handlers with proper environment variable validation
   process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
-    // Don't exit the process, just log the error
+    // Don't exit the process in production, just log the error
+    if (process.env.NODE_ENV !== 'production') {
+      console.warn("Unhandled rejection occurred but continuing...");
+    }
   });
 
   process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error);
     // For uncaught exceptions, we should exit gracefully
+    console.error("Process will exit due to uncaught exception");
     process.exit(1);
   });
 
-  // Add timeout for server operations
-  const serverTimeout = setTimeout(() => {
-    console.error("Server startup timeout after 30 seconds");
+  // Validate essential environment variables
+  const requiredEnvVars = ['DATABASE_URL'];
+  const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+  
+  if (missingEnvVars.length > 0) {
+    console.error("Missing required environment variables:", missingEnvVars.join(', '));
+    console.error("Please ensure all required environment variables are set");
+    if (process.env.NODE_ENV === 'production') {
+      console.error("Deployment failure: Required environment variables not configured");
+    }
     process.exit(1);
-  }, 30000);
+  }
+
+  console.log("Environment validation passed");
+
+  // Add timeout for server operations (only in development)
+  let serverTimeout: NodeJS.Timeout | null = null;
+  if (process.env.NODE_ENV !== 'production') {
+    serverTimeout = setTimeout(() => {
+      console.error("Server startup timeout after 30 seconds");
+      process.exit(1);
+    }, 30000);
+  }
 
   console.log("Starting server initialization...");
 
@@ -140,6 +162,12 @@ app.use((req, res, next) => {
     const port = parseInt(process.env.PORT || "5000", 10);
     const host = process.env.HOST || "0.0.0.0";
 
+    // Ensure port is valid
+    if (isNaN(port) || port < 1 || port > 65535) {
+      console.error(`Invalid port number: ${process.env.PORT}`);
+      process.exit(1);
+    }
+
     console.log(`🚀 Server configuration:`);
     console.log(`   - Environment: ${process.env.NODE_ENV || "development"}`);
     console.log(`   - Port: ${port}`);
@@ -150,15 +178,31 @@ app.use((req, res, next) => {
     );
 
     server.listen(port, host, () => {
-      clearTimeout(serverTimeout);
+      if (serverTimeout) {
+        clearTimeout(serverTimeout);
+      }
       log(`serving on ${host}:${port}`);
+      console.log(`✅ Server started successfully`);
+      console.log(`✅ Health check available at: http://${host}:${port}/health`);
 
       // Log accessible URLs
       if (host === "0.0.0.0") {
         log(`🌐 Accessible at:`);
         log(`   - Local: http://localhost:${port}`);
         log(`   - Network: http://0.0.0.0:${port}`);
+        if (process.env.REPLIT_DOMAINS) {
+          log(`   - Replit: https://${process.env.REPLIT_DOMAINS}`);
+        }
       }
+    });
+
+    // Handle server startup errors
+    server.on('error', (error: any) => {
+      console.error('Server startup error:', error);
+      if (error.code === 'EADDRINUSE') {
+        console.error(`Port ${port} is already in use`);
+      }
+      process.exit(1);
     });
   } catch (error) {
     console.error("Error during server initialization:", error);

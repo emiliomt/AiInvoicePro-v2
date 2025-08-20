@@ -7109,6 +7109,23 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     }
   }
 
+  // Add health check endpoint for deployment monitoring
+  app.get('/api/health', (req, res) => {
+    res.status(200).json({
+      status: 'ok',
+      timestamp: new Date().toISOString(),
+      environment: process.env.NODE_ENV || 'development',
+      uptime: process.uptime(),
+      memory: process.memoryUsage(),
+      pid: process.pid
+    });
+  });
+
+  // Simple health check for load balancers
+  app.get('/health', (req, res) => {
+    res.status(200).send('OK');
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
