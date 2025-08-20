@@ -104,6 +104,10 @@ app.use((req, res, next) => {
   process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error);
     // For uncaught exceptions, we should exit gracefully
+    if (process.env.NODE_ENV === 'production') {
+      console.error("Production error logged, attempting to continue...");
+      return; // Don't exit in production for better stability
+    }
     console.error("Process will exit due to uncaught exception");
     process.exit(1);
   });
@@ -135,6 +139,23 @@ app.use((req, res, next) => {
   console.log("Starting server initialization...");
 
   try {
+    // Add basic health check before attempting complex initialization
+    app.get('/health', (req, res) => {
+      res.status(200).send('OK');
+    });
+
+    app.get('/api/health', (req, res) => {
+      const healthData = {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        environment: process.env.NODE_ENV || 'development',
+        uptime: process.uptime(),
+        memory: process.memoryUsage(),
+        pid: process.pid
+      };
+      res.status(200).json(healthData);
+    });
+
     const server = await registerRoutes(app);
     console.log("Routes registered successfully");
 
