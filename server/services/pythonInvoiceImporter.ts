@@ -801,21 +801,25 @@ class PythonInvoiceImporter {
           });
           
           // Also broadcast via WebSocket using the global broadcasting system
-          const { broadcastRpaProgress } = require('../websocketServer');
-          broadcastRpaProgress({
-            sessionId,
-            type: 'rpa_progress',
-            configId: progress.configId,
-            logId: progress.logId,
-            progress: progress.progress,
-            currentStep: progress.currentStep,
-            totalInvoices: progress.totalInvoices,
-            processedInvoices: progress.processedInvoices,
-            successfulImports: progress.successfulImports,
-            failedImports: progress.failedImports,
-            isComplete: progress.isComplete,
-            timestamp: new Date().toISOString()
-          }, config.userId);
+          import('../websocketServer').then(websocketModule => {
+            websocketModule.broadcastRpaProgress({
+              sessionId,
+              type: 'rpa_progress',
+              configId: progress.configId,
+              logId: progress.logId,
+              progress: progress.progress,
+              currentStep: progress.currentStep,
+              totalInvoices: progress.totalInvoices,
+              processedInvoices: progress.processedInvoices,
+              successfulImports: progress.successfulImports,
+              failedImports: progress.failedImports,
+              isComplete: progress.isComplete,
+              timestamp: new Date().toISOString()
+            }, config.userId);
+            console.log(`📡 Broadcasted RPA progress update: ${progress.progress}% - ${progress.currentStep}`);
+          }).catch(broadcastError => {
+            console.error('Failed to broadcast RPA progress:', broadcastError);
+          });
           
           console.log(`📡 Broadcasted RPA progress update: ${progress.progress}% - ${progress.currentStep}`);
         }
@@ -909,6 +913,9 @@ class PythonInvoiceImporter {
   setTestProgress(configId: number, progress: ImportProgress): void {
     this.activeImports.set(configId, progress);
     console.log(`🧪 Test progress set for config ${configId}: ${progress.progress}% - ${progress.currentStep}`);
+    
+    // Send real-time progress update via WebSocket for testing
+    this.sendRealTimeLogLine(progress, `🧪 TEST: ${progress.currentStep} (${progress.progress}%)`);
   }
 
   /**
