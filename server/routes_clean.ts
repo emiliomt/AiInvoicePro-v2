@@ -38,6 +38,10 @@ import { lineItemClassificationService } from "./services/lineItemClassification
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { ProgressTracker } from './services/progressTracker';
 import * as progressTracker from './services/progressTracker'; // Import for progress tracking functions
+import { InvoiceProcessingService } from './services/invoiceProcessingService.js';
+
+// Initialize services
+const invoiceProcessingService = new InvoiceProcessingService();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -1031,7 +1035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices/:id/matches', isAuthenticated, async (req, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const matches = await storage.getInvoicePoMatches(invoiceId);
+      const matches = await storage.getInvoicePoMatchesByInvoiceId(invoiceId);
       res.json(matches);
     } catch (error) {
       console.error("Error fetching invoice matches:", error);
@@ -1264,7 +1268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (projectMatch) finalStatus = 'matched';
       if (validationStatus) finalStatus = 'validated';
 
-      await storage.updateInvoice(invoice.id, {
+      await storage.updateInvoice(invoiceId, {
         processingStatus: finalStatus
       });
 
@@ -2027,10 +2031,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Clear AI service cache if it exists
-      const { aiService } = await import('./services/aiService');
-      if (aiService && typeof aiService.clearCache === 'function') {
-        aiService.clearCache();
-        console.log('AI service cache cleared');
+      try {
+        const aiModule = await import('./services/aiService');
+        if (aiModule && typeof aiModule.clearCache === 'function') {
+          aiModule.clearCache();
+          console.log('AI service cache cleared');
+        }
+      } catch (error) {
+        console.log('AI service cache clear skipped:', error);
       }
 
       // Clear any cached extraction results
