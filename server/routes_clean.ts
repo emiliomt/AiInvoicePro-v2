@@ -445,7 +445,17 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      const stats = await storage.getDashboardStats(userId);
+      
+      // Get user's company ID for company-wide stats
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Get company-wide stats instead of user-specific stats
+      const stats = user.companyId 
+        ? await storage.getDashboardStatsByCompanyId(user.companyId)
+        : await storage.getDashboardStats(userId);
       res.json(stats);
     } catch (error) {
       console.error("Error fetching dashboard stats:", error);
@@ -2404,18 +2414,27 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Get user's invoices with classification status
+  // Get company's invoices with classification status (company-wide access)
   app.get('/api/invoices', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
       const includeMatches = req.query.includeMatches === 'true';
       const db = await getDb();
 
+      // Get user's company ID for company-wide access
+      const user = await storage.getUserById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
       if (includeMatches) {
         const invoicesWithMatches = await storage.getInvoicesWithProjectMatches(userId);
         res.json(invoicesWithMatches || []);
       } else {
-        const invoices = await storage.getInvoicesByUserId(userId);
+        // Get all invoices for the user's company instead of just the user's invoices
+        const invoices = user.companyId 
+          ? await storage.getInvoicesByCompanyId(user.companyId)
+          : await storage.getInvoicesByUserId(userId);
 
         // Add classification status for each invoice
         const invoicesWithClassificationStatus = await Promise.all(

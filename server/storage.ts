@@ -76,6 +76,7 @@ export interface IStorage {
 
   // Dashboard and stats
   getDashboardStats(userId?: string): Promise<any>;
+  getDashboardStatsByCompanyId(companyId: number): Promise<any>;
   getPendingApprovals(): Promise<any[]>;
   getTopIssuesThisMonth(): Promise<any[]>;
   deleteAllUserInvoices(userId: string): Promise<number>;
@@ -1248,6 +1249,68 @@ class PostgresStorage implements IStorage {
       };
     } catch (error) {
       console.error("Error in getDashboardStats:", error);
+      return {
+        totalInvoices: 0,
+        pendingInvoices: 0,
+        approvedInvoices: 0,
+        totalProjects: 0,
+        recentInvoices: 0,
+        processingTime: 0,
+      };
+    }
+  }
+
+  async getDashboardStatsByCompanyId(companyId: number): Promise<any> {
+    try {
+      // Get basic counts for company-wide dashboard
+      const totalInvoicesPromise = db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
+        .where(eq(invoices.companyId, companyId));
+
+      const pendingInvoicesPromise = db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.status, "pending"),
+            eq(invoices.companyId, companyId),
+          ),
+        );
+
+      const approvedInvoicesPromise = db
+        .select({ count: sql<number>`count(*)` })
+        .from(invoices)
+        .where(
+          and(
+            eq(invoices.status, "approved"),
+            eq(invoices.companyId, companyId),
+          ),
+        );
+
+      const totalProjectsPromise = db
+        .select({ count: sql<number>`count(*)` })
+        .from(projects)
+        .where(eq(projects.companyId, companyId));
+
+      const [totalInvoices, pendingInvoices, approvedInvoices, totalProjects] =
+        await Promise.all([
+          totalInvoicesPromise,
+          pendingInvoicesPromise,
+          approvedInvoicesPromise,
+          totalProjectsPromise,
+        ]);
+
+      return {
+        totalInvoices: totalInvoices[0]?.count || 0,
+        pendingInvoices: pendingInvoices[0]?.count || 0,
+        approvedInvoices: approvedInvoices[0]?.count || 0,
+        totalProjects: totalProjects[0]?.count || 0,
+        recentInvoices: 0,
+        processingTime: 0,
+      };
+    } catch (error) {
+      console.error("Error in getDashboardStatsByCompanyId:", error);
       return {
         totalInvoices: 0,
         pendingInvoices: 0,

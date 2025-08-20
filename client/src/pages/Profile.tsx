@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { User, Mail, Calendar, MapPin } from "lucide-react";
+import { User, Mail, Calendar, MapPin, Building } from "lucide-react";
 import Header from "@/components/Header";
 
 export default function Profile() {
@@ -132,6 +132,21 @@ export default function Profile() {
                     id="location" 
                     placeholder="Enter your location"
                   />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="companyId" className="flex items-center">
+                    <Building className="mr-2 h-4 w-4" />
+                    Company ID
+                  </Label>
+                  <Input 
+                    id="companyId" 
+                    defaultValue={typedUser?.companyId || '860527800'}
+                    placeholder="Enter your company ID"
+                  />
+                  <p className="text-sm text-muted-foreground">
+                    Company ID determines which invoices you can access. All users with the same Company ID share access to invoices.
+                  </p>
                 </div>
 
                 <div className="flex justify-end space-x-4 pt-4">
