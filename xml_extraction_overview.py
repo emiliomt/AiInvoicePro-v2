@@ -1,7 +1,7 @@
 # XML Data Extraction System Overview
 # This file shows the complete XML data extraction logic used in the invoice processing system
 
-import xml.etree.ElementTree as ET
+import defusedxml.ElementTree as ET
 import re
 import os
 from typing import Optional, Dict, Any
