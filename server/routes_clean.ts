@@ -38,7 +38,10 @@ import { lineItemClassificationService } from "./services/lineItemClassification
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { ProgressTracker } from './services/progressTracker';
 import * as progressTracker from './services/progressTracker'; // Import for progress tracking functions
-import { workflowOrchestrator } from "./services/workflowOrchestrator";
+import { InvoiceProcessingService } from './services/invoiceProcessingService.js';
+
+// Initialize services
+const invoiceProcessingService = new InvoiceProcessingService();
 
 // Configure multer for file uploads
 const upload = multer({
@@ -411,41 +414,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
   // Auth middleware
   await setupAuth(app);
-
-  // 5. MIDDLEWARE DEBUGGING
-  // Add this before all routes to debug middleware order
-  app.use((req, res, next) => {
-    if (req.url.includes('/upload')) {
-      console.log('=== MIDDLEWARE ORDER DEBUG ===');
-      console.log('URL:', req.url);
-      console.log('Method:', req.method);
-      console.log('Content-Type:', req.headers['content-type']);
-      console.log('Has body:', !!req.body);
-      console.log('Body type:', typeof req.body);
-    }
-    next();
-  });
-
-  // 6. BODY PARSER DEBUGGING
-  // Add this to check if body-parser is interfering
-  app.use('/api/invoices/upload', (req, res, next) => {
-    console.log('=== BODY PARSER DEBUG ===');
-    console.log('Body parsed:', !!req.body);
-    console.log('Body keys:', Object.keys(req.body || {}));
-    console.log('Raw body available:', !!(req as any).rawBody);
-    next();
-  });
-
-  // 7. POTENTIAL FIX: Ensure body parser doesn't interfere
-  // Add this BEFORE the upload route and AFTER body parser middleware
-  app.use('/api/invoices/upload*', (req, res, next) => {
-    // Skip body parsing for upload routes
-    if (req.headers['content-type']?.includes('multipart/form-data')) {
-      console.log('Skipping body parser for multipart upload');
-      return next();
-    }
-    next();
-  });
 
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
@@ -1067,7 +1035,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices/:id/matches', isAuthenticated, async (req, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const matches = await storage.getInvoicePoMatches(invoiceId);
+      const matches = await storage.getInvoicePoMatchesByInvoiceId(invoiceId);
       res.json(matches);
     } catch (error) {
       console.error("Error fetching invoice matches:", error);
@@ -1300,7 +1268,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (projectMatch) finalStatus = 'matched';
       if (validationStatus) finalStatus = 'validated';
 
-      await storage.updateInvoice(invoice.id, {
+      await storage.updateInvoice(invoiceId, {
         processingStatus: finalStatus
       });
 
@@ -1406,8 +1374,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
-      // First find the project by projectId to get the integer id
-      const project = await storage.getProjectByProjectId(projectId);
+      // Get all projects and find the one with matching projectId
+      const projects = await storage.getProjects();
+      const project = projects.find(p => p.projectId === projectId);
+      
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
@@ -1420,8 +1390,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedAt: new Date()
       });
 
-      // Return the updated project
-      const updatedProject = await storage.getProjectByProjectId(projectId);
+      // Return the updated project by getting it again
+      const updatedProjects = await storage.getProjects();
+      const updatedProject = updatedProjects.find(p => p.id === project.id);
       res.json(updatedProject);
     } catch (error) {
       console.error("Error validating project:", error);
@@ -1831,23 +1802,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Invoice upload endpoint
+  // Invoice upload and processing
   app.post('/api/invoices/upload', isAuthenticated, upload.array('invoice', 10), async (req: any, res) => {
     console.log('=== INVOICE UPLOAD DEBUG ===');
-    console.log('Request headers:', req.headers);
-    console.log('Request body keys:', Object.keys(req.body || {}));
-    console.log('Request files:', req.files);
-    console.log('Request file count:', req.files?.length || 0);
-    
     const files = req.files as Express.Multer.File[];
+
+    // 🔥 FIX: Get userId from authenticated request properly
     const userId = (req.user as any).claims.sub;
-    
+
     console.log('Upload request details:', {
       authenticated: !!req.user,
-      userId: userId,
+      userId: userId,  // ✅ Now properly defined
       hasFiles: !!(files && files.length > 0),
       fileCount: files?.length || 0,
-      files: files?.map((f: any) => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
+      files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
       body: req.body
     });
 
@@ -1857,22 +1825,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
       return res.status(401).json({ message: "Authentication required" });
     }
 
-    // Get user's company ID
-    const user = await storage.getUser(userId);
-    if (!user) {
-      console.error('User not found in database:', userId);
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const companyId = user.companyId;
-    console.log('User company ID:', companyId);
-
     if (!files || files.length === 0) {
       return res.status(400).json({ message: "No files uploaded" });
     }
 
     // Filter only invoice files
-    const invoiceFiles = files.filter((f: any) => f.fieldname === 'invoice');
+    const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
     if (invoiceFiles.length === 0) {
       return res.status(400).json({ message: "No invoice files found" });
     }
@@ -1890,7 +1848,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
     try {
       // Process invoice files in parallel for better performance
-      const processPromises = invoiceFiles.map(async (file: any) => {
+      const processPromises = invoiceFiles.map(async (file) => {
         try {
           // Generate unique filename
           const fileExt = path.extname(file.originalname);
@@ -1902,34 +1860,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
           // Create initial invoice record with file path
           const invoice = await storage.createInvoice({
-            userId,  // Keep userId for tracking who uploaded
-            companyId, // Use companyId for multi-tenant data scoping
+            userId,  // ✅ Now properly defined
             fileName: file.originalname,
             status: "processing",
             fileUrl: filePath,
           });
 
-          console.log(`✅ Created invoice record: ${invoice.id} for file: ${file.originalname}`);
-          uploadedInvoices.push(invoice);
+          console.log(`Created invoice record ${invoice.id} for file ${file.originalname}`);
+
+          // Start processing immediately using setImmediate to avoid blocking
+          setImmediate(async () => {
+            try {
+              console.log(`Starting background processing for invoice ${invoice.id}`);
+              await processInvoiceAsync(invoice, file.buffer);
+              console.log(`Completed background processing for invoice ${invoice.id}`);
+            } catch (error) {
+              console.error(`Failed to process invoice ${invoice.id}:`, error);
+              // Update invoice with error status
+              try {
+                await storage.updateInvoice(invoice.id, {
+                  status: "rejected",
+                  extractedData: { 
+                    error: error instanceof Error ? error.message : 'Unknown error',
+                    timestamp: new Date().toISOString(),
+                    processStep: 'background_processing'
+                  }
+                });
+              } catch (updateError) {
+                console.error(`Failed to update invoice ${invoice.id} with error:`, updateError);
+              }
+            }
+          });
 
           return invoice;
         } catch (fileError) {
           console.error(`Error processing file ${file.originalname}:`, fileError);
-          throw fileError;
+          return null;
         }
       });
 
-      // Wait for all files to be processed
       const results = await Promise.allSettled(processPromises);
-      
-      // Count successful and failed uploads
-      const successful = results.filter((r: any) => r.status === 'fulfilled').length;
-      const failed = results.filter((r: any) => r.status === 'rejected').length;
+      results.forEach(result => {
+        if (result.status === 'fulfilled' && result.value) {
+          uploadedInvoices.push(result.value);
+        }
+      });
 
-      console.log(`Upload summary: ${successful} successful, ${failed} failed`);
+      console.log(`Successfully created ${uploadedInvoices.length} invoice records`);
 
       res.json({ 
-        message: `Successfully uploaded ${successful} invoice(s). Processing started.`,
+        message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
         invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
       });
     } catch (error) {
@@ -1937,65 +1917,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to upload invoices" });
     }
   });
-
-  // 3. ALTERNATIVE UPLOAD ROUTE WITH DIFFERENT MULTER CONFIG
-  // Add this as a fallback route to test different configurations
-  app.post('/api/invoices/upload-test', isAuthenticated, (req: any, res) => {
-    console.log('=== TESTING ALTERNATIVE MULTER CONFIG ===');
-    
-    // Alternative multer configuration
-    const testUpload = multer({
-      storage: multer.memoryStorage(),
-      limits: {
-        fileSize: 10 * 1024 * 1024, // 10MB
-        files: 10, // Max 10 files
-        fields: 10 // Max 10 non-file fields
-      },
-      fileFilter: (req, file, cb) => {
-        console.log('File filter check:', {
-          originalname: file.originalname,
-          mimetype: file.mimetype
-        });
-        
-        // More permissive file filter for testing
-        const allowedMimes = [
-          'application/pdf',
-          'image/jpeg',
-          'image/jpg', 
-          'image/png',
-          'application/xml',
-          'text/xml'
-        ];
-        
-        if (allowedMimes.includes(file.mimetype)) {
-          cb(null, true);
-        } else {
-          console.log('File rejected by filter:', file.mimetype);
-          cb(new Error(`File type ${file.mimetype} not allowed`));
-        }
-      },
-    });
-
-    testUpload.any()(req, res, (err) => {
-      if (err) {
-        console.error('Test upload error:', err);
-        return res.status(400).json({ message: `Test upload failed: ${err.message}` });
-      }
-
-      const files = req.files as Express.Multer.File[];
-      console.log('Test upload successful, files:', files?.length || 0);
-      
-      res.json({
-        message: `Test upload received ${files?.length || 0} files`,
-        files: files?.map(f => ({
-          name: f.originalname,
-          size: f.size,
-          type: f.mimetype
-        })) || []
-      });
-    });
-  });
-
   // Clean corrupted invoice data
   app.post('/api/invoices/clean-data', isAuthenticated, async (req: any, res) => {
     try {
@@ -2113,10 +2034,14 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Clear AI service cache if it exists
-      const { aiService } = await import('./services/aiService');
-      if (aiService && typeof aiService.clearCache === 'function') {
-        aiService.clearCache();
-        console.log('AI service cache cleared');
+      try {
+        const aiModule = await import('./services/aiService');
+        if (aiModule && typeof aiModule.clearCache === 'function') {
+          aiModule.clearCache();
+          console.log('AI service cache cleared');
+        }
+      } catch (error) {
+        console.log('AI service cache clear skipped:', error);
       }
 
       // Clear any cached extraction results
@@ -7194,144 +7119,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
       console.error(`Import task ${configId} failed:`, error);
     }
   }
-
-  // Workflow management endpoints
-  app.post('/api/invoices/:id/workflow/execute-step', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { stepNumber, mode = 'manual' } = req.body;
-      const userId = (req.user as any).claims.sub;
-
-      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
-        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
-      }
-
-      // Validate step prerequisites
-      const prerequisites = await workflowOrchestrator.validateStepPrerequisites(invoiceId, stepNumber);
-      if (!prerequisites.valid) {
-        return res.status(400).json({ 
-          error: 'Step prerequisites not met', 
-          issues: prerequisites.issues 
-        });
-      }
-
-      // Execute the workflow step
-      const result = await workflowOrchestrator.executeWorkflowStep(invoiceId, stepNumber, mode);
-      
-      if (result.success) {
-        res.json({ 
-          success: true, 
-          step: stepNumber, 
-          result: result.result,
-          message: `Step ${stepNumber} executed successfully`
-        });
-      } else {
-        res.status(500).json({ 
-          success: false, 
-          step: stepNumber, 
-          error: result.error 
-        });
-      }
-    } catch (error) {
-      console.error('Error executing workflow step:', error);
-      res.status(500).json({ 
-        error: 'Failed to execute workflow step',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  app.get('/api/invoices/:id/workflow/status', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const workflowStatus = await workflowOrchestrator.getWorkflowStatus(invoiceId);
-      res.json(workflowStatus);
-    } catch (error) {
-      console.error('Error getting workflow status:', error);
-      res.status(500).json({ 
-        error: 'Failed to get workflow status',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  app.post('/api/invoices/:id/workflow/reset', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { stepNumber } = req.body;
-      const userId = (req.user as any).claims.sub;
-
-      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
-        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
-      }
-
-      await workflowOrchestrator.resetWorkflowToStep(invoiceId, stepNumber);
-      
-      res.json({ 
-        success: true, 
-        message: `Workflow reset to step ${stepNumber}`,
-        currentStep: stepNumber
-      });
-    } catch (error) {
-      console.error('Error resetting workflow:', error);
-      res.status(500).json({ 
-        error: 'Failed to reset workflow',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  app.post('/api/invoices/:id/workflow/execute-complete', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { config = {} } = req.body;
-      const userId = (req.user as any).claims.sub;
-
-      // Execute complete workflow automatically
-      const result = await workflowOrchestrator.executeCompleteWorkflow(invoiceId, config);
-      
-      res.json({
-        success: result.success,
-        results: result.results,
-        errors: result.errors,
-        message: result.success ? 'Workflow completed successfully' : 'Workflow completed with errors'
-      });
-    } catch (error) {
-      console.error('Error executing complete workflow:', error);
-      res.status(500).json({ 
-        error: 'Failed to execute complete workflow',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
-
-  app.get('/api/projects/validated', isAuthenticated, async (req: any, res) => {
-    try {
-      const db = await getDb();
-      const { projects } = await import('@shared/schema');
-      
-      // Get validated projects for matching
-      const validatedProjects = await db.select({
-        id: projects.id,
-        name: projects.name,
-        address: projects.address,
-        city: projects.city,
-        vatNumber: projects.vatNumber,
-        isValidated: projects.isValidated
-      })
-      .from(projects)
-      .where(eq(projects.isValidated, true))
-      .orderBy(projects.name);
-
-      res.json(validatedProjects);
-    } catch (error) {
-      console.error('Error fetching validated projects:', error);
-      res.status(500).json({ 
-        error: 'Failed to fetch validated projects',
-        details: error instanceof Error ? error.message : 'Unknown error'
-      });
-    }
-  });
 
   // Add health check endpoint for deployment monitoring
   app.get('/api/health', (req, res) => {

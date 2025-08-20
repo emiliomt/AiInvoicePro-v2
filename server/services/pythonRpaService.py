@@ -133,7 +133,7 @@ class InvoiceRPAService:
         print(f"[{timestamp}] {level}: {message}")
         sys.stdout.flush()
 
-    def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: Optional[str] = None) -> bool:
+    def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: str = None) -> bool:
         """
         Robust helper function to check if an invoice already exists in the database
         Checks the imported_invoices table using normalized inputs for:
@@ -384,7 +384,7 @@ class InvoiceRPAService:
             # If we can't check, assume not processed to be safe
             return False
 
-    def _update_imported_invoice_status(self, file_info, status: str, error_message: Optional[str] = None):
+    def _update_imported_invoice_status(self, file_info, status: str, error_message: str = None):
         """Update processing status of imported invoice with lifecycle tracking"""
         try:
             pg_conn = psycopg2.connect(
@@ -396,7 +396,7 @@ class InvoiceRPAService:
             )
             pg_cursor = pg_conn.cursor()
             
-            filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', 'unknown')))
+            filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', '')))
             
             # Try multiple patterns to find the record - be more flexible with filename matching
             patterns = [
@@ -1332,7 +1332,7 @@ class InvoiceRPAService:
             self.log(f"Error extracting invoice files: {e}", "ERROR")
             return False
 
-    def extract_invoice_token(self, filename: str) -> Optional[str]:
+    def extract_invoice_token(self, filename: str) -> str:
         """Extract normalized invoice token using regex for dynamic matching"""
         base = filename.rsplit('.', 1)[0].lower()
         match = re.search(r'(\d{20,26})', base)
@@ -1991,10 +1991,7 @@ class InvoiceRPAService:
             data_rows = []
             for selector in row_selectors:
                 try:
-                    if self.driver:
-                        rows = self.driver.find_elements(By.CSS_SELECTOR, selector)
-                    else:
-                        continue
+                    rows = self.driver.find_elements(By.CSS_SELECTOR, selector)
                     filtered_rows = [r for r in rows if r.text.strip() and len(r.text.strip()) > 10]  # Filter meaningful rows
                     if filtered_rows:
                         data_rows = filtered_rows
@@ -2011,11 +2008,7 @@ class InvoiceRPAService:
                 # Try to get a more conservative estimate by looking at page elements
                 try:
                     # Look for any text that might indicate row count
-                    if self.driver:
-                        page_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    else:
-                        self.log("Driver not available for page text analysis")
-                        return
+                    page_text = self.driver.find_element(By.TAG_NAME, "body").text
                     
                     # Look for patterns like "Showing 1-10 of 15" or similar
                     import re
@@ -2142,7 +2135,7 @@ class InvoiceRPAService:
             
             # Clear PDF directory - BUT PRESERVE files that are linked to existing invoices
             pdf_dir = self.download_dir
-            if pdf_dir and os.path.exists(pdf_dir):
+            if os.path.exists(pdf_dir):
                 pdf_files_cleared = 0
                 pdf_files_preserved = 0
                 
@@ -2171,8 +2164,7 @@ class InvoiceRPAService:
                             "SELECT COUNT(*) FROM invoices WHERE file_name = %s OR file_url LIKE %s",
                             (filename, f"%{filename}%")
                         )
-                        result = cursor.fetchone()
-                        count = result[0] if result else 0
+                        count = cursor.fetchone()[0]
                         
                         cursor.close()
                         conn.close()
@@ -2560,8 +2552,7 @@ class InvoiceRPAService:
                 )
             """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
             
-            result = pg_cursor.fetchone()
-            existing_invoice_count = result[0] if result else 0
+            existing_invoice_count = pg_cursor.fetchone()[0]
             
             # Also check imported_invoices table
             pg_cursor.execute("""
@@ -2575,8 +2566,7 @@ class InvoiceRPAService:
                 )
             """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
             
-            result = pg_cursor.fetchone()
-            existing_imported_count = result[0] if result else 0
+            existing_imported_count = pg_cursor.fetchone()[0]
             
             pg_conn.close()
             
@@ -2806,8 +2796,7 @@ class InvoiceRPAService:
                         })
                     ))
                     
-                    result = pg_cursor.fetchone()
-                    file_id = result[0] if result else None
+                    file_id = pg_cursor.fetchone()[0]
                     file_id_mapping[file_info['upload_filename']] = file_id
                     
                     self.log(f"Stored {file_info['type'].upper()} file: {file_info['upload_filename']} (ID: {file_id})")
@@ -3158,7 +3147,7 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
-    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: Optional[str] = None):
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: str = None):
         """Trigger the manual upload processing pipeline via HTTP request"""
         try:
             import requests

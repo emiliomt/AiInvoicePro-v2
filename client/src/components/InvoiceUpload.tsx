@@ -15,16 +15,12 @@ export default function InvoiceUpload() {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: File[]) => {
-      console.log('InvoiceUpload: Starting upload with files:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
       const formData = new FormData();
       
       // Add all files to the same FormData
       files.forEach(file => {
         formData.append('invoice', file);
       });
-      
-      console.log('InvoiceUpload: FormData created with', files.length, 'files');
-      console.log('InvoiceUpload: FormData entries:', Array.from(formData.entries()).map(([key, value]) => ({ key, value: value instanceof File ? { name: value.name, size: value.size, type: value.type } : value })));
       
       const response = await apiRequest('POST', '/api/invoices/upload', formData);
       if (!response.ok) {
@@ -101,25 +97,12 @@ export default function InvoiceUpload() {
   });
 
   const handleFileSelect = (files: File[]) => {
-    console.log('InvoiceUpload: Files selected:', files.map(f => ({ name: f.name, size: f.size, type: f.type })));
     setSelectedFiles(files);
   };
 
   const handleUpload = () => {
-    console.log('InvoiceUpload: Upload button clicked');
-    console.log('InvoiceUpload: selectedFiles state:', selectedFiles);
-    console.log('InvoiceUpload: selectedFiles length:', selectedFiles.length);
-    
     if (selectedFiles.length > 0) {
-      console.log('InvoiceUpload: Starting upload mutation');
       uploadMutation.mutate(selectedFiles);
-    } else {
-      console.error('InvoiceUpload: No files to upload');
-      toast({
-        title: "Upload Failed",
-        description: "No files selected for upload",
-        variant: "destructive",
-      });
     }
   };
 

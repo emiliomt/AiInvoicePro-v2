@@ -2,29 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  FileText,
-  Eye,
-  Download,
-  Calendar,
-  DollarSign,
-  Trash2,
-  FileIcon,
-  AlertTriangle,
-  ThumbsUp,
-  Upload,
-  Play,
-  Loader2,
-  CheckSquare,
-  Square,
-  Package,
-  Link,
-  X,
-  CheckCircle,
-  XCircle,
-  RotateCcw,
-  Filter,
-} from "lucide-react";
+import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw, Filter } from "lucide-react";
 import { useState, useCallback, useRef, useMemo } from "react";
 import {
   AlertDialog,
@@ -51,22 +29,16 @@ import { apiRequest } from "@/lib/queryClient";
 import PDFPreviewModal from "@/components/PDFPreviewModal";
 import ExtractionFeedbackModal from "@/components/ExtractionFeedbackModal";
 import { Progress } from "@/components/ui/progress";
-import { Input } from "@/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 
 // Utility functions for classification status
 const getClassificationStatus = (hasClassifications: boolean): string => {
-  return hasClassifications ? "classified" : "unclassified";
+  return hasClassifications ? 'classified' : 'unclassified';
 };
 
 const getClassificationLabel = (hasClassifications: boolean): string => {
-  return hasClassifications ? "Classified" : "Not Classified";
+  return hasClassifications ? 'Classified' : 'Not Classified';
 };
 
 interface Invoice {
@@ -111,12 +83,12 @@ interface LinkedFilesInfo {
 // Helper function to determine if invoice was extracted using AI/OCR (vs XML)
 const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   // XML files don't need AI feedback buttons since they have structured data
-  if (invoice.fileName?.toLowerCase().endsWith(".xml")) {
+  if (invoice.fileName?.toLowerCase().endsWith('.xml')) {
     return false;
   }
 
   // PDF/JPG/PNG files or invoices with OCR text indicate AI extraction
-  const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || "");
+  const isPDFImageFile = /\.(pdf|jpg|jpeg|png)$/i.test(invoice.fileName || '');
   const hasOCRText = !!invoice.ocrText;
 
   return isPDFImageFile || hasOCRText;
@@ -125,18 +97,18 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
 // Helper function to check if invoice is eligible for "Report a Problem" button
 const isEligibleForProblemReport = (invoice: Invoice): boolean => {
   // Only show for extracted invoices
-  if (invoice.status !== "extracted") {
+  if (invoice.status !== 'extracted') {
     return false;
   }
 
   // Only show for PDF files (not XML files)
-  const isPDFFile = /\.pdf$/i.test(invoice.fileName || "");
+  const isPDFFile = /\.pdf$/i.test(invoice.fileName || '');
   if (!isPDFFile) {
     return false;
   }
 
   // For manual uploads (non-RPA), always show the button if it's AI-extracted
-  if (invoice.userId !== "rpa-system") {
+  if (invoice.userId !== 'rpa-system') {
     return isAIExtractedInvoice(invoice);
   }
 
@@ -148,7 +120,7 @@ const isEligibleForProblemReport = (invoice: Invoice): boolean => {
 export default function Invoices() {
   const [selectedInvoices, setSelectedInvoices] = useState<number[]>([]);
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null);
-  const [bulkAction, setBulkAction] = useState<string>("");
+  const [bulkAction, setBulkAction] = useState<string>('');
   const [showDetailsModal, setShowDetailsModal] = useState(false);
   const [previewInvoice, setPreviewInvoice] = useState<Invoice | null>(null);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
@@ -157,70 +129,38 @@ export default function Invoices() {
   const [isUploading, setIsUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isProcessingAutomatic, setIsProcessingAutomatic] = useState(false);
-  const [linkedFilesMap, setLinkedFilesMap] = useState<
-    Record<number, LinkedFilesInfo>
-  >({});
-  const [processingProgress, setProcessingProgress] = useState({
-    current: 0,
-    total: 0,
-    currentStep: "",
-  });
+  const [linkedFilesMap, setLinkedFilesMap] = useState<Record<number, LinkedFilesInfo>>({});
+  const [processingProgress, setProcessingProgress] = useState({ current: 0, total: 0, currentStep: '' });
   const [showProcessingStatus, setShowProcessingStatus] = useState(false);
-  const [processingComplete, setProcessingComplete] = useState<{
-    show: boolean;
-    success: boolean;
-    message: string;
-  }>({ show: false, success: false, message: "" });
-  const [processing, setProcessing] = useState({
-    show: false,
-    message: "",
-    progress: 0,
-    total: 0,
-    processed: 0,
-  }); // State for the processing bar
-  const [searchTerm, setSearchTerm] = useState("");
-  const [classificationFilter, setClassificationFilter] = useState("all");
+  const [processingComplete, setProcessingComplete] = useState<{show: boolean, success: boolean, message: string}>({show: false, success: false, message: ''});
+  const [processing, setProcessing] = useState({ show: false, message: '', progress: 0, total: 0, processed: 0 }); // State for the processing bar
+  const [searchTerm, setSearchTerm] = useState('');
+  const [classificationFilter, setClassificationFilter] = useState('all');
 
-  const {
-    data: invoices = [],
-    isLoading,
-    error,
-    refetch,
-  } = useQuery<Invoice[]>({
+  const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
     queryFn: async () => {
       try {
-        console.log("Fetching invoices...");
-        const response = await apiRequest("GET", "/api/invoices");
+        console.log('Fetching invoices...');
+        const response = await apiRequest('GET', '/api/invoices');
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(
-            `Failed to fetch invoices: ${response.status} ${response.statusText}`,
-            errorText,
-          );
-          throw new Error(
-            `Failed to fetch invoices: ${response.status} ${response.statusText}`,
-          );
+          console.error(`Failed to fetch invoices: ${response.status} ${response.statusText}`, errorText);
+          throw new Error(`Failed to fetch invoices: ${response.status} ${response.statusText}`);
         }
         const data = await response.json();
-        console.log("Invoices fetched:", data.length, "invoices");
+        console.log('Invoices fetched:', data.length, 'invoices');
 
         // Fetch linked files for RPA-imported invoices
-        const rpaInvoices = data.filter(
-          (inv: Invoice) => inv.userId === "rpa-system",
-        );
-        console.log(
-          "Found RPA invoices:",
-          rpaInvoices.length,
-          rpaInvoices.map((invoice: Invoice) => invoice.id),
-        );
+        const rpaInvoices = data.filter((inv: Invoice) => inv.userId === 'rpa-system');
+        console.log('Found RPA invoices:', rpaInvoices.length, rpaInvoices.map((invoice: Invoice) => invoice.id));
         if (rpaInvoices.length > 0) {
           fetchLinkedFilesForInvoices(rpaInvoices);
         }
 
         return data;
       } catch (err: any) {
-        console.error("Invoices query error:", err.message);
+        console.error('Invoices query error:', err.message);
         throw err;
       }
     },
@@ -240,36 +180,28 @@ export default function Invoices() {
 
     for (const invoice of rpaInvoices) {
       try {
-        const response = await apiRequest(
-          "GET",
-          `/api/invoices/${invoice.id}/linked-files`,
-        );
+        const response = await apiRequest('GET', `/api/invoices/${invoice.id}/linked-files`);
         if (response.ok) {
           const linkedInfo: LinkedFilesInfo = await response.json();
           console.log(`Linked files for invoice ${invoice.id}:`, linkedInfo);
           linkedFilesData[invoice.id] = linkedInfo;
         }
       } catch (error) {
-        console.error(
-          `Failed to fetch linked files for invoice ${invoice.id}:`,
-          error,
-        );
+        console.error(`Failed to fetch linked files for invoice ${invoice.id}:`, error);
       }
     }
 
-    console.log("Setting linkedFilesMap:", linkedFilesData);
+    console.log('Setting linkedFilesMap:', linkedFilesData);
     setLinkedFilesMap(linkedFilesData);
   };
 
   const deleteMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
-      const response = await apiRequest("DELETE", `/api/invoices/${invoiceId}`);
+      const response = await apiRequest('DELETE', `/api/invoices/${invoiceId}`);
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`Failed to delete invoice ${invoiceId}:`, errorText);
-        throw new Error(
-          `Failed to delete invoice: ${response.status} ${response.statusText}`,
-        );
+        throw new Error(`Failed to delete invoice: ${response.status} ${response.statusText}`);
       }
       return response.json();
     },
@@ -298,13 +230,11 @@ export default function Invoices() {
 
   const deleteAllMutation = useMutation({
     mutationFn: async () => {
-      const response = await apiRequest("DELETE", "/api/invoices/delete-all");
+      const response = await apiRequest('DELETE', '/api/invoices/delete-all');
       if (!response.ok) {
         const errorText = await response.text();
-        console.error("Failed to delete all invoices:", errorText);
-        throw new Error(
-          `Failed to delete all invoices: ${response.status} ${response.statusText}`,
-        );
+        console.error('Failed to delete all invoices:', errorText);
+        throw new Error(`Failed to delete all invoices: ${response.status} ${response.statusText}`);
       }
       return response.json();
     },
@@ -332,18 +262,12 @@ export default function Invoices() {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case "processed":
-        return "bg-green-100 text-green-800";
-      case "pending":
-        return "bg-yellow-100 text-yellow-800";
-      case "failed":
-        return "bg-red-100 text-red-800";
-      case "draft":
-        return "bg-gray-100 text-gray-800";
-      case "approved":
-        return "bg-blue-100 text-blue-800"; // Added case for approved status
-      default:
-        return "bg-gray-100 text-gray-800";
+      case "processed": return "bg-green-100 text-green-800";
+      case "pending": return "bg-yellow-100 text-yellow-800";
+      case "failed": return "bg-red-100 text-red-800";
+      case "draft": return "bg-gray-100 text-gray-800";
+      case "approved": return "bg-blue-100 text-blue-800"; // Added case for approved status
+      default: return "bg-gray-100 text-gray-800";
     }
   };
 
@@ -351,17 +275,14 @@ export default function Invoices() {
     if (!amount || amount === "null" || amount === "undefined") return "N/A";
 
     // Clean up any potential HTML or corrupted content
-    const cleanAmount =
-      typeof amount === "string"
-        ? amount.replace(/<[^>]*>/g, "").trim()
-        : amount;
+    const cleanAmount = typeof amount === 'string' ? amount.replace(/<[^>]*>/g, '').trim() : amount;
 
     const numericAmount = parseFloat(cleanAmount);
     if (isNaN(numericAmount)) return "N/A";
 
-    const formattedNumber = numericAmount.toLocaleString("en-US", {
+    const formattedNumber = numericAmount.toLocaleString('en-US', {
       minimumFractionDigits: 2,
-      maximumFractionDigits: 2,
+      maximumFractionDigits: 2
     });
     return `${currency} ${formattedNumber}`;
   };
@@ -375,21 +296,14 @@ export default function Invoices() {
     }
   };
 
-  const safeRenderText = (
-    text: string | null | undefined,
-    fallback: string = "N/A",
-  ) => {
+  const safeRenderText = (text: string | null | undefined, fallback: string = "N/A") => {
     if (!text || text === "null" || text === "undefined") return fallback;
 
     // Clean up any HTML tags or corrupted content
-    const cleanText =
-      typeof text === "string"
-        ? text.replace(/<[^>]*>/g, "").trim()
-        : String(text);
+    const cleanText = typeof text === 'string' ? text.replace(/<[^>]*>/g, '').trim() : String(text);
 
     // Check if the text contains excessive special characters (likely corrupted)
-    const specialCharRatio =
-      (cleanText.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleanText.length;
+    const specialCharRatio = (cleanText.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleanText.length;
     if (specialCharRatio > 0.3) {
       return fallback;
     }
@@ -398,7 +312,7 @@ export default function Invoices() {
   };
 
   const isPDFFile = (fileName: string | null) => {
-    return fileName ? fileName.toLowerCase().endsWith(".pdf") : false;
+    return fileName ? fileName.toLowerCase().endsWith('.pdf') : false;
   };
 
   const handlePreviewClick = (invoice: Invoice) => {
@@ -407,14 +321,14 @@ export default function Invoices() {
     const linkedInfo = linkedFilesMap[invoice.id];
     const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
 
-    if (hasLinkedFiles && invoice.userId === "rpa-system") {
+    if (hasLinkedFiles && invoice.userId === 'rpa-system') {
       // Create a modified invoice object for linked PDF preview
       const linkedPDFInvoice = {
         ...invoice,
-        fileName: linkedInfo.linkedFiles[0]?.fileName || "linked.pdf",
+        fileName: linkedInfo.linkedFiles[0]?.fileName || 'linked.pdf',
         // Use special preview endpoint for linked PDFs
         _isLinkedPDF: true,
-        _linkedPDFUrl: `/api/invoices/${invoice.id}/preview-pdf`,
+        _linkedPDFUrl: `/api/invoices/${invoice.id}/preview-pdf`
       };
       setPreviewInvoice(linkedPDFInvoice as any);
     } else {
@@ -435,17 +349,13 @@ export default function Invoices() {
 
   const positiveFeedbackMutation = useMutation({
     mutationFn: async (invoiceId: number) => {
-      const response = await apiRequest(
-        "POST",
-        `/api/invoices/${invoiceId}/positive-feedback`,
-      );
+      const response = await apiRequest('POST', `/api/invoices/${invoiceId}/positive-feedback`);
       return response.json();
     },
     onSuccess: () => {
       toast({
         title: "Feedback Submitted",
-        description:
-          "Thanks! Your positive feedback helps improve our AI extraction.",
+        description: "Thanks! Your positive feedback helps improve our AI extraction.",
       });
     },
     onError: (error: Error) => {
@@ -467,19 +377,19 @@ export default function Invoices() {
       const hasLinkedFiles = linkedInfo && linkedInfo.hasLinkedFiles;
 
       const response = await fetch(`/api/invoices/${invoice.id}/download`, {
-        method: "GET",
-        credentials: "include",
+        method: 'GET',
+        credentials: 'include',
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Download failed");
+        throw new Error(errorData.error || 'Download failed');
       }
 
       // Create blob and download
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
+      const a = document.createElement('a');
       a.href = url;
 
       // Set appropriate filename based on whether it's a ZIP or single file
@@ -502,11 +412,10 @@ export default function Invoices() {
           : `Downloading ${invoice.fileName}`,
       });
     } catch (error) {
-      console.error("Download error:", error);
+      console.error('Download error:', error);
       toast({
         title: "Download Failed",
-        description:
-          error instanceof Error ? error.message : "Failed to download file",
+        description: error instanceof Error ? error.message : "Failed to download file",
         variant: "destructive",
       });
     }
@@ -514,104 +423,19 @@ export default function Invoices() {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: FileList) => {
-      console.log('=== FRONTEND UPLOAD DEBUG ===');
-      console.log('Files received:', files);
-      console.log('Files length:', files.length);
-      console.log('FileList type:', typeof files);
-      console.log('Is FileList:', files instanceof FileList);
-
-      // Detailed file inspection
-      if (files.length === 0) {
-        console.error('❌ NO FILES IN FILELIST');
-        throw new Error('No files selected for upload');
-      }
-
-      // Convert FileList to Array and validate each file
-      const fileArray = Array.from(files);
-      console.log('Converted to array:', fileArray.length, 'files');
-
-      fileArray.forEach((file, index) => {
-        console.log(`File ${index + 1} details:`, {
-          name: file.name,
-          size: file.size,
-          type: file.type,
-          lastModified: file.lastModified,
-          isFile: file instanceof File,
-          hasStream: !!file.stream,
-          hasText: typeof file.text === 'function',
-          hasArrayBuffer: typeof file.arrayBuffer === 'function'
-        });
-
-        // Validate file
-        if (file.size === 0) {
-          console.error(`❌ File ${file.name} has zero size`);
-          throw new Error(`File ${file.name} is empty`);
-        }
-
-        if (file.size > 10 * 1024 * 1024) {
-          console.error(`❌ File ${file.name} is too large`);
-          throw new Error(`File ${file.name} exceeds 10MB limit`);
-        }
-      });
-
-      console.log('✅ All files validated, creating FormData');
-
       const formData = new FormData();
-
-      // Add files with enhanced logging
-      fileArray.forEach((file, index) => {
-        console.log(`Adding file ${index + 1} to FormData:`, file.name);
+      Array.from(files).forEach((file) => {
         formData.append('invoice', file);
       });
 
-      // Debug FormData contents
-      console.log('FormData inspection:');
-      let formDataSize = 0;
-      for (const [key, value] of formData.entries()) {
-        if (value instanceof File) {
-          console.log(`  ${key}: File(${value.name}, ${value.size} bytes, ${value.type})`);
-          formDataSize += value.size;
-        } else {
-          console.log(`  ${key}: ${value}`);
-        }
-      }
-      console.log(`Total FormData size: ${formDataSize} bytes`);
-
-      // Verify FormData has files before sending
-      const hasFiles = Array.from(formData.entries()).some(([, value]) => value instanceof File);
-      if (!hasFiles) {
-        console.error('❌ FormData contains no files');
-        throw new Error('FormData validation failed: no files found');
-      }
-
-      console.log('✅ FormData validated, sending request');
-      console.log('Request URL: /api/invoices/upload');
-
       const response = await apiRequest('POST', '/api/invoices/upload', formData);
-
-      console.log('Response received:', {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        ok: response.ok
-      });
-
       if (!response.ok) {
         const errorText = await response.text();
-        console.error('❌ Upload failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorText
-        });
-        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
       }
-
-      const result = await response.json();
-      console.log('✅ Upload successful:', result);
-      return result;
+      return response.json();
     },
     onSuccess: (data) => {
-      console.log('Upload mutation success:', data);
       toast({
         title: "Success",
         description: `Successfully uploaded ${data.uploadedCount} invoice(s)`,
@@ -621,7 +445,6 @@ export default function Invoices() {
       setIsUploading(false);
     },
     onError: (error: Error) => {
-      console.error('Upload mutation error:', error);
       toast({
         title: "Upload Failed",
         description: error.message,
@@ -632,136 +455,29 @@ export default function Invoices() {
   });
 
   const handleFileUpload = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
-    console.log('=== FILE INPUT CHANGE EVENT ===');
-    console.log('Event:', event);
-    console.log('Target:', event.target);
-    console.log('Files property:', event.target.files);
-
     const files = event.target.files;
-
-    // Enhanced validation
-    if (!files) {
-      console.error('❌ event.target.files is null');
-      toast({
-        title: "Upload Error",
-        description: "No files detected. Please try selecting files again.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    if (files.length === 0) {
-      console.error('❌ event.target.files is empty');
-      toast({
-        title: "Upload Error",
-        description: "No files selected. Please select at least one file.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    console.log(`✅ Files detected: ${files.length} file(s)`);
-
-    // Log each file before processing
-    Array.from(files).forEach((file, index) => {
-      console.log(`File ${index + 1}:`, {
-        name: file.name,
-        size: file.size,
-        type: file.type,
-        valid: file.size > 0 && file.name.length > 0
-      });
-    });
-
-    setIsUploading(true);
-
-    // Small delay to ensure state is updated
-    setTimeout(() => {
-      uploadMutation.mutate(files);
-    }, 100);
-
-    // Reset file input AFTER processing
-    setTimeout(() => {
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-        console.log('File input reset');
-      }
-    }, 200);
-  }, [uploadMutation, toast, setIsUploading]);
-
-  const handleUploadClick = useCallback(() => {
-    console.log('=== UPLOAD BUTTON CLICKED ===');
-    console.log('File input ref:', fileInputRef.current);
-
-    if (!fileInputRef.current) {
-      console.error('❌ File input ref is null');
-      toast({
-        title: "Upload Error",
-        description: "File input not available. Please refresh the page.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    console.log('File input element:', {
-      type: fileInputRef.current.type,
-      accept: fileInputRef.current.accept,
-      multiple: fileInputRef.current.multiple,
-      disabled: fileInputRef.current.disabled,
-      value: fileInputRef.current.value
-    });
-
-    // Ensure input is not disabled
-    if (fileInputRef.current.disabled) {
-      console.error('❌ File input is disabled');
-      return;
-    }
-
-    // Clear any previous value
-    fileInputRef.current.value = '';
-
-    console.log('Triggering file input click');
-    fileInputRef.current.click();
-  }, [toast]);
-
-  // Alternative upload method using drag and drop
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    console.log('Drag over detected');
-  }, []);
-
-  const handleDrop = useCallback((e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    console.log('=== FILE DROP EVENT ===');
-    console.log('Drop event:', e);
-    console.log('DataTransfer:', e.dataTransfer);
-    console.log('Files in drop:', e.dataTransfer.files.length);
-
-    const files = e.dataTransfer.files;
-
-    if (files.length > 0) {
+    if (files && files.length > 0) {
       setIsUploading(true);
       uploadMutation.mutate(files);
-    } else {
-      console.error('❌ No files in drop event');
-      toast({
-        title: "Drop Error",
-        description: "No files detected in drop. Please try again.",
-        variant: "destructive",
-      });
     }
-  }, [uploadMutation, toast, setIsUploading]);
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  }, [uploadMutation]);
+
+  const handleUploadClick = () => {
+    fileInputRef.current?.click();
+  };
 
   const handleBulkAction = async () => {
     if (!bulkAction || selectedInvoices.length === 0) return;
 
     try {
-      const response = await fetch("/api/invoices/bulk-action", {
-        method: "POST",
+      const response = await fetch('/api/invoices/bulk-action', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           action: bulkAction,
@@ -769,16 +485,16 @@ export default function Invoices() {
         }),
       });
 
-      if (!response.ok) throw new Error("Bulk action failed");
+      if (!response.ok) throw new Error('Bulk action failed');
 
       toast({
         title: "Success",
         description: `Bulk ${bulkAction} completed successfully`,
       });
 
-      queryClient.invalidateQueries({ queryKey: ["invoices"] });
+      queryClient.invalidateQueries({ queryKey: ['invoices'] });
       setSelectedInvoices([]);
-      setBulkAction("");
+      setBulkAction('');
     } catch (error) {
       toast({
         title: "Error",
@@ -789,39 +505,38 @@ export default function Invoices() {
   };
 
   const handleSelectInvoice = (invoiceId: number) => {
-    console.log("🔄 handleSelectInvoice called with ID:", invoiceId);
-    setSelectedInvoices((prev) => {
+    console.log('🔄 handleSelectInvoice called with ID:', invoiceId);
+    setSelectedInvoices(prev => {
       const isCurrentlySelected = prev.includes(invoiceId);
       const newSelection = isCurrentlySelected
-        ? prev.filter((id) => id !== invoiceId)
+        ? prev.filter(id => id !== invoiceId)
         : [...prev, invoiceId];
 
-      console.log("📋 Previous selection:", prev);
-      console.log("📋 New selection:", newSelection);
-      console.log("📊 Selection count:", newSelection.length);
+      console.log('📋 Previous selection:', prev);
+      console.log('📋 New selection:', newSelection);
+      console.log('📊 Selection count:', newSelection.length);
 
       return newSelection;
     });
   };
 
   const handleSelectAll = () => {
-    console.log("🔄 handleSelectAll called");
-    console.log("📊 Current selection count:", selectedInvoices.length);
-    console.log("📊 Total invoices:", invoices.length);
+    console.log('🔄 handleSelectAll called');
+    console.log('📊 Current selection count:', selectedInvoices.length);
+    console.log('📊 Total invoices:', invoices.length);
 
-    const newSelection =
-      selectedInvoices.length === invoices.length
-        ? []
-        : invoices.map((invoice) => invoice.id);
+    const newSelection = selectedInvoices.length === invoices.length
+      ? []
+      : invoices.map(invoice => invoice.id);
 
-    console.log("📋 New selection after select all:", newSelection);
+    console.log('📋 New selection after select all:', newSelection);
     setSelectedInvoices(newSelection);
   };
 
   const handleInitiateAutomaticProcess = async () => {
-    console.log("🚀 handleInitiateAutomaticProcess called");
-    console.log("📝 Selected invoices:", selectedInvoices);
-    console.log("📊 Selected count:", selectedInvoices.length);
+    console.log('🚀 handleInitiateAutomaticProcess called');
+    console.log('📝 Selected invoices:', selectedInvoices);
+    console.log('📊 Selected count:', selectedInvoices.length);
 
     if (selectedInvoices.length === 0) {
       toast({
@@ -833,62 +548,60 @@ export default function Invoices() {
     }
 
     // Get the selected invoices with their details
-    const selectedInvoiceObjects = invoices.filter((inv) =>
-      selectedInvoices.includes(inv.id),
-    );
-    console.log("🔍 Selected invoice objects:", selectedInvoiceObjects);
+    const selectedInvoiceObjects = invoices.filter(inv => selectedInvoices.includes(inv.id));
+    console.log('🔍 Selected invoice objects:', selectedInvoiceObjects);
 
     setIsProcessingAutomatic(true);
     setShowProcessingStatus(true);
     setProcessingProgress({
       current: 0,
       total: selectedInvoices.length,
-      currentStep: "Initiating automatic processing...",
+      currentStep: 'Initiating automatic processing...'
     });
 
     try {
       const requestPayload = {
         invoiceIds: selectedInvoices,
-        source: "manual",
+        source: 'manual'
       };
 
-      console.log("📤 Sending automatic processing request:", requestPayload);
+      console.log('📤 Sending automatic processing request:', requestPayload);
 
       // Update progress to show we're making the request
       setProcessingProgress({
         current: 1,
         total: selectedInvoices.length,
-        currentStep: `Processing ${selectedInvoices.length} selected invoice${selectedInvoices.length === 1 ? "" : "s"}...`,
+        currentStep: `Processing ${selectedInvoices.length} selected invoice${selectedInvoices.length === 1 ? '' : 's'}...`
       });
 
-      const response = await fetch("/api/invoices/initiate-automatic-process", {
-        method: "POST",
+      const response = await fetch('/api/invoices/initiate-automatic-process', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify(requestPayload),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Automatic processing failed");
+        throw new Error(errorData.error || 'Automatic processing failed');
       }
 
       const result = await response.json();
-      console.log("✅ Processing result:", result);
+      console.log('✅ Processing result:', result);
 
       // Show completion
       setProcessingProgress({
         current: selectedInvoices.length,
         total: selectedInvoices.length,
-        currentStep: "Processing completed successfully!",
+        currentStep: 'Processing completed successfully!'
       });
 
       // Show completion message
       setProcessingComplete({
         show: true,
         success: true,
-        message: `Successfully initiated processing for ${selectedInvoices.length} invoice${selectedInvoices.length === 1 ? "" : "s"}`,
+        message: `Successfully initiated processing for ${selectedInvoices.length} invoice${selectedInvoices.length === 1 ? '' : 's'}`
       });
 
       toast({
@@ -903,22 +616,23 @@ export default function Invoices() {
       // Hide progress after delay
       setTimeout(() => {
         setShowProcessingStatus(false);
-        setProcessingComplete({ show: false, success: false, message: "" });
+        setProcessingComplete({show: false, success: false, message: ''});
       }, 3000);
+
     } catch (error: any) {
-      console.error("❌ Automatic processing failed:", error);
+      console.error('❌ Automatic processing failed:', error);
 
       // Show error in progress
       setProcessingProgress({
         current: 0,
         total: selectedInvoices.length,
-        currentStep: "Processing failed",
+        currentStep: 'Processing failed'
       });
 
       setProcessingComplete({
         show: true,
         success: false,
-        message: error.message || "Failed to initiate automatic processing",
+        message: error.message || "Failed to initiate automatic processing"
       });
 
       toast({
@@ -930,7 +644,7 @@ export default function Invoices() {
       // Hide progress after delay
       setTimeout(() => {
         setShowProcessingStatus(false);
-        setProcessingComplete({ show: false, success: false, message: "" });
+        setProcessingComplete({show: false, success: false, message: ''});
       }, 5000);
     } finally {
       setIsProcessingAutomatic(false);
@@ -939,32 +653,26 @@ export default function Invoices() {
 
   const handleCancelProcessing = async () => {
     try {
-      const response = await fetch("/api/invoices/cancel-processing", {
-        method: "POST",
+      const response = await fetch('/api/invoices/cancel-processing', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-        },
+          'Content-Type': 'application/json',
+        }
       });
 
       if (response.ok) {
-        setProcessing({
-          show: false,
-          message: "",
-          progress: 0,
-          total: 0,
-          processed: 0,
-        });
+        setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
         setProcessingComplete({
           show: true,
           success: false,
-          message: "Processing cancelled by user",
+          message: 'Processing cancelled by user'
         });
         refetch();
       } else {
-        console.error("Failed to cancel processing");
+        console.error('Failed to cancel processing');
       }
     } catch (error) {
-      console.error("Error cancelling processing:", error);
+      console.error('Error cancelling processing:', error);
     }
   };
 
@@ -980,121 +688,98 @@ export default function Invoices() {
 
     setProcessing({
       show: true,
-      message: "Starting batch processing...",
+      message: 'Starting batch processing...',
       progress: 0,
       total: selectedInvoices.length,
-      processed: 0,
+      processed: 0
     });
 
     try {
-      const response = await fetch("/api/invoices/process-batch", {
-        method: "POST",
+      const response = await fetch('/api/invoices/process-batch', {
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
           invoiceIds: selectedInvoices,
-          source: "batch_manual",
-          skipValidation: false,
+          source: 'batch_manual',
+          skipValidation: false
         }),
       });
 
       if (!response.ok) {
         const errorData = await response.json();
-        throw new Error(errorData.error || "Failed to start batch processing");
+        throw new Error(errorData.error || 'Failed to start batch processing');
       }
 
       const result = await response.json();
 
-      setProcessing((prev) => ({
+      setProcessing(prev => ({
         ...prev,
         message: `Processing ${result.totalInvoices} invoices...`,
-        total: result.totalInvoices,
+        total: result.totalInvoices
       }));
 
       // Poll for updates
       const pollInterval = setInterval(async () => {
         try {
-          const statusResponse = await fetch("/api/invoices/processing-status");
+          const statusResponse = await fetch('/api/invoices/processing-status');
           if (!statusResponse.ok) {
-            throw new Error("Failed to fetch processing status");
+            throw new Error('Failed to fetch processing status');
           }
           const statusData = await statusResponse.json();
 
           const processedCount = statusData.processing || 0;
           const totalProcessing = result.totalInvoices;
 
-          setProcessing((prev) => ({
+          setProcessing(prev => ({
             ...prev,
             processed: totalProcessing - processedCount,
-            progress: Math.round(
-              ((totalProcessing - processedCount) / totalProcessing) * 100,
-            ),
+            progress: Math.round(((totalProcessing - processedCount) / totalProcessing) * 100)
           }));
 
           if (processedCount === 0) {
             clearInterval(pollInterval);
-            setProcessing({
-              show: false,
-              message: "",
-              progress: 0,
-              total: 0,
-              processed: 0,
-            });
+            setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
             setProcessingComplete({
               show: true,
               success: true,
-              message: `Successfully processed ${result.totalInvoices} invoices`,
+              message: `Successfully processed ${result.totalInvoices} invoices`
             });
             refetch();
             // Auto-hide processing complete after 5 seconds
             setTimeout(() => {
-              setProcessingComplete({
-                show: false,
-                success: false,
-                message: "",
-              });
+              setProcessingComplete({show: false, success: false, message: ''});
             }, 5000);
           }
         } catch (error) {
-          console.error("Error polling status:", error);
+          console.error('Error polling status:', error);
           // Optionally, stop polling on error or show an error message
           clearInterval(pollInterval);
-          setProcessing({
-            show: false,
-            message: "",
-            progress: 0,
-            total: 0,
-            processed: 0,
-          });
+          setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
           setProcessingComplete({
             show: true,
             success: false,
-            message: "Error occurred during processing. Please try again.",
+            message: 'Error occurred during processing. Please try again.'
           });
           // Auto-hide processing complete after 5 seconds
           setTimeout(() => {
-            setProcessingComplete({ show: false, success: false, message: "" });
+            setProcessingComplete({show: false, success: false, message: ''});
           }, 5000);
         }
       }, 2000);
+
     } catch (error: any) {
-      console.error("Batch processing error:", error);
-      setProcessing({
-        show: false,
-        message: "",
-        progress: 0,
-        total: 0,
-        processed: 0,
-      });
+      console.error('Batch processing error:', error);
+      setProcessing({ show: false, message: '', progress: 0, total: 0, processed: 0 });
       setProcessingComplete({
         show: true,
         success: false,
-        message: `Processing failed: ${error.message}`,
+        message: `Processing failed: ${error.message}`
       });
       // Auto-hide processing complete after 5 seconds
       setTimeout(() => {
-        setProcessingComplete({ show: false, success: false, message: "" });
+        setProcessingComplete({show: false, success: false, message: ''});
       }, 5000);
     }
   };
@@ -1102,20 +787,20 @@ export default function Invoices() {
   const handleResetStatus = async (invoiceId: number) => {
     try {
       const response = await fetch(`/api/invoices/${invoiceId}/reset-status`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
-        },
+          'Content-Type': 'application/json',
+        }
       });
 
       if (!response.ok) {
-        throw new Error("Failed to reset invoice status");
+        throw new Error('Failed to reset invoice status');
       }
 
       // Refresh the data
       refetch();
     } catch (error: any) {
-      console.error("Reset error:", error);
+      console.error('Reset error:', error);
       alert(`Failed to reset invoice status: ${error.message}`);
     }
   };
@@ -1123,24 +808,24 @@ export default function Invoices() {
   const handleProcessSingle = async (invoiceId: number) => {
     try {
       const response = await fetch(`/api/invoices/${invoiceId}/process`, {
-        method: "POST",
+        method: 'POST',
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          source: "manual",
-          skipValidation: false,
+          source: 'manual',
+          skipValidation: false
         }),
       });
 
       if (!response.ok) {
-        throw new Error("Failed to process invoice");
+        throw new Error('Failed to process invoice');
       }
 
       // Refresh the data
       refetch();
     } catch (error: any) {
-      console.error("Processing error:", error);
+      console.error('Processing error:', error);
       alert(`Failed to process invoice: ${error.message}`);
     }
   };
@@ -1148,17 +833,16 @@ export default function Invoices() {
   const filteredInvoices = useMemo(() => {
     if (!invoices) return [];
 
-    return invoices.filter((invoice) => {
+    return invoices.filter(invoice => {
       // Search filter
-      const matchesSearch =
-        searchTerm === "" ||
+      const matchesSearch = searchTerm === '' ||
         invoice.fileName.toLowerCase().includes(searchTerm.toLowerCase()) ||
         invoice.vendorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
         invoice.projectName?.toLowerCase().includes(searchTerm.toLowerCase());
 
       // Classification filter
       let matchesClassification = true;
-      if (classificationFilter !== "all") {
+      if (classificationFilter !== 'all') {
         const status = getClassificationStatus(invoice.hasClassifications);
         matchesClassification = status === classificationFilter;
       }
@@ -1190,47 +874,39 @@ export default function Invoices() {
           <div className="flex justify-between items-start">
             <div>
               <h1 className="text-3xl font-bold text-gray-900">Invoices</h1>
-              <p className="text-gray-600 mt-2">
-                Manage and view all your processed invoices
-              </p>
+              <p className="text-gray-600 mt-2">Manage and view all your processed invoices</p>
             </div>
             <div className="flex items-center space-x-2">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={async () => {
-                  console.log("Manual refresh triggered");
+                  console.log('Manual refresh triggered');
                   try {
                     // Clear local state first
                     setLinkedFilesMap({});
-
+                    
                     // Clear and refetch data
-                    queryClient.invalidateQueries({
-                      queryKey: ["/api/invoices"],
-                    });
-                    queryClient.invalidateQueries({
-                      queryKey: ["/api/dashboard/stats"],
-                    });
-
+                    queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
+                    queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+                    
                     // Force a fresh refetch
                     const result = await refetch();
-
+                    
                     // If we have RPA invoices, refetch their linked files
                     if (result.data) {
-                      const rpaInvoices = result.data.filter(
-                        (inv: Invoice) => inv.userId === "rpa-system",
-                      );
+                      const rpaInvoices = result.data.filter((inv: Invoice) => inv.userId === 'rpa-system');
                       if (rpaInvoices.length > 0) {
                         await fetchLinkedFilesForInvoices(rpaInvoices);
                       }
                     }
-
+                    
                     toast({
                       title: "Refreshed",
                       description: "Invoice data has been updated",
                     });
                   } catch (error) {
-                    console.error("Refresh failed:", error);
+                    console.error('Refresh failed:', error);
                     toast({
                       title: "Refresh Failed",
                       description: "Failed to refresh invoice data",
@@ -1242,71 +918,23 @@ export default function Invoices() {
               >
                 {isLoading ? "Refreshing..." : "Refresh Invoices"}
               </Button>
-              {/* Enhanced upload button with drag and drop */}
-              <div
-                className="relative"
-                onDragOver={handleDragOver}
-                onDrop={handleDrop}
-              >
-                <Button
-                  variant="default"
-                  size="sm"
-                  onClick={handleUploadClick}
-                  disabled={isUploading}
-                  className="relative"
-                >
-                  <Upload size={16} className="mr-2" />
-                  {isUploading ? "Uploading..." : "Upload Invoice"}
-                </Button>
-
-                {/* Hidden file input with enhanced attributes */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept=".pdf,.xml,.jpg,.jpeg,.png"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                  key={Date.now()} // Force re-render to avoid caching issues
-                  data-testid="file-input"
-                />
-
-                {/* Temporary visible file input for testing */}
-                <input
-                  type="file"
-                  accept=".pdf,.xml,.jpg,.jpeg,.png"
-                  multiple
-                  onChange={handleFileUpload}
-                  style={{ display: 'block', margin: '10px 0' }}
-                />
-              </div>
-
-              {/* Test button for debugging */}
               <Button
-                variant="outline"
+                variant="default"
                 size="sm"
-                onClick={() => {
-                  console.log('=== MANUAL TEST ===');
-                  console.log('File input ref:', fileInputRef.current);
-                  console.log('Upload mutation:', uploadMutation);
-                  console.log('Is uploading:', isUploading);
-
-                  // Test with dummy file
-                  const testFile = new File(['test content'], 'test.pdf', { type: 'application/pdf' });
-                  const testFileList = {
-                    0: testFile,
-                    length: 1,
-                    item: (index: number) => index === 0 ? testFile : null,
-                    [Symbol.iterator]: function* () { yield testFile; }
-                  } as FileList;
-
-                  console.log('Testing with dummy file');
-                  uploadMutation.mutate(testFileList);
-                }}
-                className="bg-yellow-500 hover:bg-yellow-600"
+                onClick={handleUploadClick}
+                disabled={isUploading}
               >
-                🧪 Test Upload
+                <Upload size={16} className="mr-2" />
+                {isUploading ? "Uploading..." : "Upload Invoice"}
               </Button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pdf,.xml,.jpg,.jpeg,.png"
+                multiple
+                onChange={handleFileUpload}
+                className="hidden"
+              />
               {invoices.length > 0 && (
                 <AlertDialog>
                   <AlertDialogTrigger asChild>
@@ -1319,11 +947,8 @@ export default function Invoices() {
                     <AlertDialogHeader>
                       <AlertDialogTitle>Delete All Invoices</AlertDialogTitle>
                       <AlertDialogDescription>
-                        Are you sure you want to delete ALL invoices? This
-                        action cannot be undone. This will permanently delete
-                        all {invoices.length} invoice
-                        {invoices.length === 1 ? "" : "s"} and their associated
-                        data.
+                        Are you sure you want to delete ALL invoices? This action cannot be undone.
+                        This will permanently delete all {invoices.length} invoice{invoices.length === 1 ? '' : 's'} and their associated data.
                       </AlertDialogDescription>
                     </AlertDialogHeader>
                     <AlertDialogFooter>
@@ -1333,32 +958,28 @@ export default function Invoices() {
                         className="bg-red-600 hover:bg-red-700"
                         disabled={deleteAllMutation.isPending}
                       >
-                        {deleteAllMutation.isPending
-                          ? "Deleting..."
-                          : "Delete All"}
+                        {deleteAllMutation.isPending ? "Deleting..." : "Delete All"}
                       </AlertDialogAction>
                     </AlertDialogFooter>
                   </AlertDialogContent>
                 </AlertDialog>
               )}
               <Button
-                onClick={handleInitiateAutomaticProcess}
-                disabled={
-                  selectedInvoices.length === 0 || isProcessingAutomatic
-                }
-              >
-                {isProcessingAutomatic ? (
-                  <>
-                    <Loader2 size={16} className="mr-2 animate-spin" />
-                    Processing...
-                  </>
-                ) : (
-                  <>
-                    <Play size={16} className="mr-2" />
-                    Process Selected ({selectedInvoices.length})
-                  </>
-                )}
-              </Button>
+                    onClick={handleInitiateAutomaticProcess}
+                    disabled={selectedInvoices.length === 0 || isProcessingAutomatic}
+                  >
+                    {isProcessingAutomatic ? (
+                      <>
+                        <Loader2 size={16} className="mr-2 animate-spin" />
+                        Processing...
+                      </>
+                    ) : (
+                      <>
+                        <Play size={16} className="mr-2" />
+                        Process Selected ({selectedInvoices.length})
+                      </>
+                    )}
+                  </Button>
             </div>
           </div>
           {/* Filter and Search Bar */}
@@ -1372,10 +993,7 @@ export default function Invoices() {
                 className="max-w-lg"
               />
               <Filter className="h-4 w-4 text-gray-500" />
-              <Select
-                value={classificationFilter}
-                onValueChange={setClassificationFilter}
-              >
+              <Select value={classificationFilter} onValueChange={setClassificationFilter}>
                 <SelectTrigger className="w-48">
                   <SelectValue placeholder="Filter by classification" />
                 </SelectTrigger>
@@ -1387,12 +1005,7 @@ export default function Invoices() {
               </Select>
             </div>
             {selectedInvoices.length > 0 && (
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleBatchProcess}
-                className="text-blue-600 border-blue-300"
-              >
+              <Button variant="outline" size="sm" onClick={handleBatchProcess} className="text-blue-600 border-blue-300">
                 Batch Process ({selectedInvoices.length})
               </Button>
             )}
@@ -1407,29 +1020,17 @@ export default function Invoices() {
                 <div className="flex items-center space-x-2">
                   <Loader2 className="h-4 w-4 text-blue-600 animate-spin" />
                   <div>
-                    <h3 className="text-sm font-medium text-blue-800">
-                      Processing Selected Invoices
-                    </h3>
-                    <p className="text-sm text-blue-600">
-                      {processingProgress.currentStep}
-                    </p>
+                    <h3 className="text-sm font-medium text-blue-800">Processing Selected Invoices</h3>
+                    <p className="text-sm text-blue-600">{processingProgress.currentStep}</p>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <div className="flex justify-between text-sm text-blue-700">
                     <span>Progress</span>
-                    <span>
-                      {processingProgress.current} of {processingProgress.total}
-                    </span>
+                    <span>{processingProgress.current} of {processingProgress.total}</span>
                   </div>
                   <Progress
-                    value={
-                      processingProgress.total > 0
-                        ? (processingProgress.current /
-                            processingProgress.total) *
-                          100
-                        : 0
-                    }
+                    value={processingProgress.total > 0 ? (processingProgress.current / processingProgress.total) * 100 : 0}
                     className="w-full h-2"
                   />
                 </div>
@@ -1440,9 +1041,7 @@ export default function Invoices() {
 
         {/* Processing Complete Status */}
         {processingComplete.show && (
-          <Card
-            className={`border-2 ${processingComplete.success ? "border-green-200 bg-green-50" : "border-red-200 bg-red-50"}`}
-          >
+          <Card className={`border-2 ${processingComplete.success ? 'border-green-200 bg-green-50' : 'border-red-200 bg-red-50'}`}>
             <CardContent className="py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
@@ -1452,16 +1051,10 @@ export default function Invoices() {
                     <XCircle className="h-5 w-5 text-red-600" />
                   )}
                   <div>
-                    <h3
-                      className={`text-sm font-medium ${processingComplete.success ? "text-green-800" : "text-red-800"}`}
-                    >
-                      {processingComplete.success
-                        ? "Processing Complete"
-                        : "Processing Failed"}
+                    <h3 className={`text-sm font-medium ${processingComplete.success ? 'text-green-800' : 'text-red-800'}`}>
+                      {processingComplete.success ? 'Processing Complete' : 'Processing Failed'}
                     </h3>
-                    <p
-                      className={`text-sm ${processingComplete.success ? "text-green-600" : "text-red-600"}`}
-                    >
+                    <p className={`text-sm ${processingComplete.success ? 'text-green-600' : 'text-red-600'}`}>
                       {processingComplete.message}
                     </p>
                   </div>
@@ -1469,13 +1062,7 @@ export default function Invoices() {
                 <Button
                   variant="ghost"
                   size="sm"
-                  onClick={() =>
-                    setProcessingComplete({
-                      show: false,
-                      success: false,
-                      message: "",
-                    })
-                  }
+                  onClick={() => setProcessingComplete({show: false, success: false, message: ''})}
                 >
                   <X className="h-4 w-4" />
                 </Button>
@@ -1491,29 +1078,21 @@ export default function Invoices() {
                 <div className="flex items-center space-x-2">
                   <AlertTriangle className="h-5 w-5 text-red-600" />
                   <div>
-                    <h3 className="text-sm font-medium text-red-800">
-                      Error loading invoices
-                    </h3>
-                    <p className="text-sm text-red-600 mt-1">
-                      {(error as Error).message}
-                    </p>
+                    <h3 className="text-sm font-medium text-red-800">Error loading invoices</h3>
+                    <p className="text-sm text-red-600 mt-1">{(error as Error).message}</p>
                     <Button
                       variant="outline"
                       size="sm"
                       className="mt-2"
                       onClick={async () => {
-                        console.log("Retry triggered from error state");
+                        console.log('Retry triggered from error state');
                         try {
                           // Clear cache and refetch
-                          queryClient.removeQueries({
-                            queryKey: ["/api/invoices"],
-                          });
+                          queryClient.removeQueries({ queryKey: ["/api/invoices"] });
                           await refetch();
-                          queryClient.invalidateQueries({
-                            queryKey: ["/api/invoices"],
-                          });
+                          queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
                         } catch (retryError) {
-                          console.error("Retry failed:", retryError);
+                          console.error('Retry failed:', retryError);
                         }
                       }}
                       disabled={isLoading}
@@ -1530,30 +1109,19 @@ export default function Invoices() {
             <Card>
               <CardContent className="py-12 text-center">
                 <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-                <h3 className="text-lg font-medium text-gray-900 mb-2">
-                  No invoices found
-                </h3>
-                <p className="text-gray-600">
-                  Upload your first invoice to get started.
-                </p>
+                <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
+                <p className="text-gray-600">Upload your first invoice to get started.</p>
                 <Button
                   variant="outline"
                   className="mt-4"
                   onClick={async () => {
-                    console.log("Refresh triggered from empty state");
+                    console.log('Refresh triggered from empty state');
                     try {
-                      queryClient.removeQueries({
-                        queryKey: ["/api/invoices"],
-                      });
+                      queryClient.removeQueries({ queryKey: ["/api/invoices"] });
                       await refetch();
-                      queryClient.invalidateQueries({
-                        queryKey: ["/api/invoices"],
-                      });
+                      queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
                     } catch (refreshError) {
-                      console.error(
-                        "Refresh from empty state failed:",
-                        refreshError,
-                      );
+                      console.error('Refresh from empty state failed:', refreshError);
                     }
                   }}
                   disabled={isLoading}
@@ -1597,614 +1165,418 @@ export default function Invoices() {
               </Card>
 
               <div className="grid gap-6">
-                {filteredInvoices
-                  .map((invoice) => {
-                    if (!invoice || !invoice.id) {
-                      console.warn("Invalid invoice data:", invoice);
-                      return null;
-                    }
+              {filteredInvoices.map((invoice) => {
+                if (!invoice || !invoice.id) {
+                  console.warn('Invalid invoice data:', invoice);
+                  return null;
+                }
 
-                    return (
-                      <Card
-                        key={invoice.id}
-                        className="hover:shadow-md transition-shadow"
-                      >
-                        <CardHeader>
-                          <div className="flex justify-between items-start">
-                            <div className="flex items-start space-x-3">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleSelectInvoice(invoice.id)}
-                                className="p-1 h-auto"
-                              >
-                                {selectedInvoices.includes(invoice.id) ? (
-                                  <CheckSquare className="h-4 w-4" />
-                                ) : (
-                                  <Square className="h-4 w-4" />
-                                )}
-                              </Button>
-                              <div className="space-y-2">
-                                <CardTitle className="flex items-center space-x-2">
-                                  <FileText
-                                    className="text-blue-600"
-                                    size={20}
-                                  />
-                                  <span>
-                                    Invoice #{invoice.invoiceNumber || "N/A"}
-                                  </span>
-                                </CardTitle>
-                                <div className="flex items-center space-x-4 text-sm text-gray-600">
-                                  <span>
-                                    Uploaded {formatDate(invoice.createdAt)}
-                                  </span>
-                                  {linkedFilesMap[invoice.id]
-                                    ?.hasLinkedFiles && (
-                                    <div className="flex items-center space-x-1 text-blue-600">
-                                      <Link size={14} />
-                                      <span>
-                                        {
-                                          linkedFilesMap[invoice.id].linkedFiles
-                                            .length
-                                        }{" "}
-                                        linked file(s)
-                                      </span>
-                                    </div>
-                                  )}
-                                  {/* Debug indicator for RPA invoices */}
-                                  {invoice.userId === "rpa-system" && (
-                                    <div className="flex items-center space-x-1 text-purple-600 text-xs">
-                                      <span>RPA</span>
-                                      {linkedFilesMap[invoice.id] ? (
-                                        <span>
-                                          (
-                                          {linkedFilesMap[invoice.id]
-                                            .hasLinkedFiles
-                                            ? "HAS"
-                                            : "NO"}
-                                          )
-                                        </span>
-                                      ) : (
-                                        <span>(loading...)</span>
-                                      )}
-                                    </div>
+                return (
+                  <Card key={invoice.id} className="hover:shadow-md transition-shadow">
+                    <CardHeader>
+                      <div className="flex justify-between items-start">
+                        <div className="flex items-start space-x-3">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => handleSelectInvoice(invoice.id)}
+                            className="p-1 h-auto"
+                          >
+                            {selectedInvoices.includes(invoice.id) ? (
+                              <CheckSquare className="h-4 w-4" />
+                            ) : (
+                              <Square className="h-4 w-4" />
+                            )}
+                          </Button>
+                          <div className="space-y-2">
+                            <CardTitle className="flex items-center space-x-2">
+                              <FileText className="text-blue-600" size={20} />
+                              <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
+                            </CardTitle>
+                            <div className="flex items-center space-x-4 text-sm text-gray-600">
+                              <span>Uploaded {formatDate(invoice.createdAt)}</span>
+                              {linkedFilesMap[invoice.id]?.hasLinkedFiles && (
+                                <div className="flex items-center space-x-1 text-blue-600">
+                                  <Link size={14} />
+                                  <span>{linkedFilesMap[invoice.id].linkedFiles.length} linked file(s)</span>
+                                </div>
+                              )}
+                              {/* Debug indicator for RPA invoices */}
+                              {invoice.userId === 'rpa-system' && (
+                                <div className="flex items-center space-x-1 text-purple-600 text-xs">
+                                  <span>RPA</span>
+                                  {linkedFilesMap[invoice.id] ? (
+                                    <span>({linkedFilesMap[invoice.id].hasLinkedFiles ? 'HAS' : 'NO'})</span>
+                                  ) : (
+                                    <span>(loading...)</span>
                                   )}
                                 </div>
-                              </div>
+                              )}
                             </div>
-                            <div className="flex items-center space-x-2">
-                              <Badge className={getStatusColor(invoice.status)}>
-                                {invoice.status === "approved" &&
-                                invoice.userId === "rpa-system"
-                                  ? "Auto Approved"
-                                  : invoice.status === "approved"
-                                    ? "Manually Approved"
-                                    : invoice.status.charAt(0).toUpperCase() +
-                                      invoice.status.slice(1)}
-                              </Badge>
-                              {(invoice.status === "approved" ||
-                                invoice.status === "extracted") &&
-                                invoice.extractedData?.confidenceScore && (
-                                  <Badge
-                                    variant="outline"
-                                    className="text-xs bg-blue-50 text-blue-700 border-blue-200"
-                                  >
-                                    AI:{" "}
-                                    {Math.round(
-                                      parseFloat(
-                                        invoice.extractedData.confidenceScore,
-                                      ) * 100,
-                                    )}
-                                    %
+                          </div>
+                        </div>
+                        <div className="flex items-center space-x-2">
+                          <Badge className={getStatusColor(invoice.status)}>
+                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' ? 'Auto Approved' :
+                             invoice.status === 'approved' ? 'Manually Approved' :
+                             invoice.status.charAt(0).toUpperCase() + invoice.status.slice(1)}
+                          </Badge>
+                          {(invoice.status === 'approved' || invoice.status === 'extracted') && invoice.extractedData?.confidenceScore && (
+                            <Badge variant="outline" className="text-xs bg-blue-50 text-blue-700 border-blue-200">
+                              AI: {Math.round(parseFloat(invoice.extractedData.confidenceScore) * 100)}%
+                            </Badge>
+                          )}
+                        </div>
+                      </div>
+                    </CardHeader>
+                    <CardContent>
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-gray-500">Vendor</p>
+                          <p className="text-sm text-gray-900">{safeRenderText(invoice.vendorName)}</p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-gray-500">Amount</p>
+                          <p className="text-sm text-gray-900 flex items-center">
+                            <DollarSign size={14} className="mr-1" />
+                            {formatAmount(invoice.totalAmount, invoice.currency)}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-gray-500">Invoice Date</p>
+                          <p className="text-sm text-gray-900 flex items-center">
+                            <Calendar size={14} className="mr-1" />
+                            {formatDate(invoice.invoiceDate)}
+                          </p>
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-sm font-medium text-gray-500">Due Date</p>
+                          <p className="text-sm text-gray-900 flex items-center">
+                            <Calendar size={14} className="mr-1" />
+                            {formatDate(invoice.dueDate)}
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Processing Results Display - Show for both extracted and approved invoices */}
+                      {(invoice.status === 'extracted' || invoice.status === 'approved') && (
+                        <div className="border-t pt-4 mb-4">
+                          <h4 className="text-sm font-medium text-gray-700 mb-3">
+                            Processing Results
+                            {invoice.status === 'approved' && invoice.userId === 'rpa-system' && (
+                              <span className="ml-2 text-xs text-green-600 font-normal">(Auto-processed)</span>
+                            )}
+                            {invoice.status === 'approved' && invoice.userId !== 'rpa-system' && (
+                              <span className="ml-2 text-xs text-blue-600 font-normal">(Manually processed)</span>
+                            )}
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+
+                            {/* Item Classification */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Item Classification</p>
+                              <div className="flex flex-wrap gap-1">
+                                {(invoice.extractedData as any)?.lineItems?.length > 0 ? (
+                                  (() => {
+                                    const classifications = new Set();
+                                    (invoice.extractedData as any).lineItems.forEach((item: any) => {
+                                      if (item.classification) {
+                                        classifications.add(item.classification);
+                                      }
+                                    });
+                                    return Array.from(classifications).map((classification: any) => (
+                                      <Badge
+                                        key={classification}
+                                        variant="outline"
+                                        className={`text-xs ${
+                                          classification === 'consumable_materials' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                                          classification === 'non_consumable_materials' ? 'bg-green-50 text-green-700 border-green-200' :
+                                          classification === 'labor' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                          classification === 'tools_equipment' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                                          'bg-gray-50 text-gray-700 border-gray-200'
+                                        }`}
+                                      >
+                                        {classification?.replace('_', ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())}
+                                      </Badge>
+                                    ));
+                                  })()
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                    Not Classified
                                   </Badge>
                                 )}
+                              </div>
                             </div>
-                          </div>
-                        </CardHeader>
-                        <CardContent>
-                          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-gray-500">
-                                Vendor
-                              </p>
-                              <p className="text-sm text-gray-900">
-                                {safeRenderText(invoice.vendorName)}
-                              </p>
+
+                            {/* Petty Cash Status */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Petty Cash</p>
+                              <div>
+                                {(() => {
+                                  const amount = parseFloat(invoice.totalAmount || '0');
+                                  const isPettyCash = amount <= 1000; // $1000 USD threshold as implemented in backend
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
+                                  return (
+                                    <Badge
+                                      variant={isPettyCash ? "default" : "outline"}
+                                      className={`text-xs ${
+                                        isPettyCash
+                                          ? 'bg-green-100 text-green-800 border-green-200'
+                                          : 'bg-red-50 text-red-700 border-red-200'
+                                      }`}
+                                    >
+                                      {isPettyCash ? `Yes (≤$1,000)` : 'No'}
+                                      {isAutoProcessed && (
+                                        <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                      )}
+                                    </Badge>
+                                  );
+                                })()}
+                              </div>
                             </div>
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-gray-500">
-                                Amount
-                              </p>
-                              <p className="text-sm text-gray-900 flex items-center">
-                                <DollarSign size={14} className="mr-1" />
-                                {formatAmount(
-                                  invoice.totalAmount,
-                                  invoice.currency,
-                                )}
-                              </p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-gray-500">
-                                Invoice Date
-                              </p>
-                              <p className="text-sm text-gray-900 flex items-center">
-                                <Calendar size={14} className="mr-1" />
-                                {formatDate(invoice.invoiceDate)}
-                              </p>
-                            </div>
-                            <div className="space-y-1">
-                              <p className="text-sm font-medium text-gray-500">
-                                Due Date
-                              </p>
-                              <p className="text-sm text-gray-900 flex items-center">
-                                <Calendar size={14} className="mr-1" />
-                                {formatDate(invoice.dueDate)}
-                              </p>
-                            </div>
-                          </div>
 
-                          {/* Processing Results Display - Show for both extracted and approved invoices */}
-                          {(invoice.status === "extracted" ||
-                            invoice.status === "approved") && (
-                            <div className="border-t pt-4 mb-4">
-                              <h4 className="text-sm font-medium text-gray-700 mb-3">
-                                Processing Results
-                                {invoice.status === "approved" &&
-                                  invoice.userId === "rpa-system" && (
-                                    <span className="ml-2 text-xs text-green-600 font-normal">
-                                      (Auto-processed)
-                                    </span>
-                                  )}
-                                {invoice.status === "approved" &&
-                                  invoice.userId !== "rpa-system" && (
-                                    <span className="ml-2 text-xs text-blue-600 font-normal">
-                                      (Manually processed)
-                                    </span>
-                                  )}
-                              </h4>
-                              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-                                {/* Item Classification */}
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    Item Classification
-                                  </p>
-                                  <div className="flex flex-wrap gap-1">
-                                    {(invoice.extractedData as any)
-                                      ?.lineItems
-                                      ?.length > 0 ? (
-                                      (() => {
-                                        const classifications = new Set();
-                                        (
-                                          invoice.extractedData as any
-                                        ).lineItems.forEach((item: any) => {
-                                          if (item.classification) {
-                                            classifications.add(
-                                              item.classification,
-                                            );
-                                          }
-                                        });
-                                        return Array.from(classifications).map(
-                                          (classification: any) => (
-                                            <Badge
-                                              key={classification}
-                                              variant="outline"
-                                              className={`text-xs ${
-                                                classification ===
-                                                "consumable_materials"
-                                                  ? "bg-blue-50 text-blue-700 border-blue-200"
-                                                  : classification ===
-                                                      "non_consumable_materials"
-                                                    ? "bg-green-50 text-green-700 border-green-200"
-                                                    : classification === "labor"
-                                                      ? "bg-purple-50 text-purple-700 border-purple-200"
-                                                      : classification ===
-                                                          "tools_equipment"
-                                                        ? "bg-orange-50 text-orange-700 border-orange-200"
-                                                        : "bg-gray-50 text-gray-700 border-gray-200"
-                                              }`}
-                                            >
-                                              {classification
-                                                ?.replace("_", " ")
-                                                .replace(/\b\w/g, (l: string) =>
-                                                  l.toUpperCase(),
-                                                )}
-                                            </Badge>
-                                          ),
-                                        );
-                                      })()
-                                    ) : (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs bg-gray-50 text-gray-500"
-                                      >
-                                        Not Classified
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
+                            {/* Project Match */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Project Match</p>
+                              <div>
+                                {(() => {
+                                  const amount = parseFloat(invoice.totalAmount || '0');
+                                  const isPettyCash = amount <= 1000; // $1000 USD threshold
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
 
-                                {/* Petty Cash Status */}
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    Petty Cash
-                                  </p>
-                                  <div>
-                                    {(() => {
-                                      const amount = parseFloat(
-                                        invoice.totalAmount || "0",
-                                      );
-                                      const isPettyCash = amount <= 1000; // $1000 USD threshold as implemented in backend
-                                      const isAutoProcessed =
-                                        invoice.status === "approved" &&
-                                        invoice.userId === "rpa-system";
-                                      return (
-                                        <Badge
-                                          variant={
-                                            isPettyCash ? "default" : "outline"
-                                          }
-                                          className={`text-xs ${
-                                            isPettyCash
-                                              ? "bg-green-100 text-green-800 border-green-200"
-                                              : "bg-red-50 text-red-700 border-red-200"
-                                          }`}
-                                        >
-                                          {isPettyCash ? `Yes (≤$1,000)` : "No"}
-                                          {isAutoProcessed && (
-                                            <span className="ml-1 text-xs opacity-75">
-                                              (Auto)
-                                            </span>
-                                          )}
-                                        </Badge>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-
-                                {/* Project Match */}
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    Project Match
-                                  </p>
-                                  <div>
-                                    {(() => {
-                                      const amount = parseFloat(
-                                        invoice.totalAmount || "0",
-                                      );
-                                      const isPettyCash = amount <= 1000; // $1000 USD threshold
-                                      const isAutoProcessed =
-                                        invoice.status === "approved" &&
-                                        invoice.userId === "rpa-system";
-
-                                      if (isPettyCash) {
-                                        return (
-                                          <Badge
-                                            variant="default"
-                                            className="text-xs bg-green-100 text-green-800 border-green-200"
-                                          >
-                                            Petty Cash
-                                            {isAutoProcessed && (
-                                              <span className="ml-1 text-xs opacity-75">
-                                                (Auto)
-                                              </span>
-                                            )}
-                                          </Badge>
-                                        );
-                                      }
-
-                                      if (
-                                        (invoice.extractedData as any)
-                                          ?.projectName ||
-                                        invoice.projectName
-                                      ) {
-                                        return (
-                                          <Badge
-                                            variant="default"
-                                            className="text-xs bg-blue-100 text-blue-800 border-blue-200"
-                                          >
-                                            {(invoice.extractedData as any)
-                                              ?.projectName ||
-                                              invoice.projectName}
-                                            {isAutoProcessed && (
-                                              <span className="ml-1 text-xs opacity-75">
-                                                (Auto)
-                                              </span>
-                                            )}
-                                          </Badge>
-                                        );
-                                      }
-
-                                      return (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs bg-gray-50 text-gray-500"
-                                        >
-                                          No Match
-                                          {isAutoProcessed && (
-                                            <span className="ml-1 text-xs opacity-75">
-                                              (Auto)
-                                            </span>
-                                          )}
-                                        </Badge>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-
-                                {/* Validation Results */}
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    Validation
-                                  </p>
-                                  <div>
-                                    {(() => {
-                                      const validationResults = (
-                                        invoice.extractedData as any
-                                      )?.validationResults;
-                                      const isAutoProcessed =
-                                        invoice.status === "approved" &&
-                                        invoice.userId === "rpa-system";
-
-                                      // If approved status, assume validation passed
-                                      const hasValidation =
-                                        validationResults ||
-                                        invoice.status === "approved";
-                                      const isValid =
-                                        validationResults?.isValid ||
-                                        invoice.status === "approved";
-
-                                      if (hasValidation) {
-                                        return (
-                                          <Badge
-                                            variant={
-                                              isValid
-                                                ? "default"
-                                                : "destructive"
-                                            }
-                                            className={`text-xs ${
-                                              isValid
-                                                ? "bg-green-100 text-green-800"
-                                                : "bg-red-100 text-red-800"
-                                            }`}
-                                          >
-                                            {isValid ? (
-                                              <>
-                                                <CheckCircle className="w-3 h-3 mr-1" />
-                                                Passed
-                                                {isAutoProcessed && (
-                                                  <span className="ml-1 text-xs opacity-75">
-                                                    (Auto)
-                                                  </span>
-                                                )}
-                                              </>
-                                            ) : (
-                                              <>
-                                                <XCircle className="w-3 h-3 mr-1" />
-                                                {validationResults?.violations
-                                                  ?.length || 0}{" "}
-                                                Issues
-                                              </>
-                                            )}
-                                          </Badge>
-                                        );
-                                      }
-
-                                      return (
-                                        <Badge
-                                          variant="outline"
-                                          className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200"
-                                        >
-                                          <AlertTriangle className="w-3 h-3 mr-1" />
-                                          Pending
-                                        </Badge>
-                                      );
-                                    })()}
-                                  </div>
-                                </div>
-
-                                {/* PO Match Status */}
-                                <div className="space-y-2">
-                                  <p className="text-xs font-medium text-gray-500">
-                                    PO Match
-                                  </p>
-                                  <div>
-                                    {(invoice.extractedData as any)?.poMatch ? (
+                                  if (isPettyCash) {
+                                    return (
                                       <Badge
                                         variant="default"
                                         className="text-xs bg-green-100 text-green-800 border-green-200"
                                       >
-                                        <Package className="w-3 h-3 mr-1" />
-                                        PO-
-                                        {
-                                          (invoice.extractedData as any)
-                                            ?.poMatch?.poNumber
-                                        }
+                                        Petty Cash
+                                        {isAutoProcessed && (
+                                          <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                        )}
                                       </Badge>
-                                    ) : (
-                                      <Badge
-                                        variant="outline"
-                                        className="text-xs bg-gray-50 text-gray-500"
-                                      >
-                                        <X className="w-3 h-3 mr-1" />
-                                        No Match
-                                      </Badge>
-                                    )}
-                                  </div>
-                                </div>
-                              </div>
+                                    );
+                                  }
 
-                              {/* Detailed Results Summary */}
-                              {((invoice.extractedData as any)
-                                ?.validationResults?.violations?.length > 0 ||
-                                (invoice.extractedData as any)
-                                  ?.confidenceScore) && (
-                                <div className="mt-3 p-3 bg-gray-50 rounded-md">
-                                  <div className="flex items-center justify-between text-sm">
-                                    {(invoice.extractedData as any)
-                                      ?.confidenceScore && (
-                                      <span className="text-gray-600">
-                                        AI Confidence:{" "}
-                                        {(
-                                          parseFloat(
-                                            (invoice.extractedData as any)
-                                              .confidenceScore,
-                                          ) * 100
-                                        ).toFixed(1)}
-                                        %
-                                      </span>
-                                    )}
-                                    {(invoice.extractedData as any)
-                                      ?.validationResults?.violations?.length >
-                                      0 && (
-                                      <span className="text-red-600 text-xs">
-                                        Issues:{" "}
-                                        {(
-                                          invoice.extractedData as any
-                                        ).validationResults.violations
-                                          .map((v: any) => v.field)
-                                          .join(", ")}
-                                      </span>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
+                                  if ((invoice.extractedData as any)?.projectName || invoice.projectName) {
+                                    return (
+                                      <Badge
+                                        variant="default"
+                                        className="text-xs bg-blue-100 text-blue-800 border-blue-200"
+                                      >
+                                        {(invoice.extractedData as any)?.projectName || invoice.projectName}
+                                        {isAutoProcessed && (
+                                          <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                        )}
+                                      </Badge>
+                                    );
+                                  }
+
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                      No Match
+                                      {isAutoProcessed && (
+                                        <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                      )}
+                                    </Badge>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            {/* Validation Results */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">Validation</p>
+                              <div>
+                                {(() => {
+                                  const validationResults = (invoice.extractedData as any)?.validationResults;
+                                  const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
+
+                                  // If approved status, assume validation passed
+                                  const hasValidation = validationResults || invoice.status === 'approved';
+                                  const isValid = validationResults?.isValid || invoice.status === 'approved';
+
+                                  if (hasValidation) {
+                                    return (
+                                      <Badge
+                                        variant={isValid ? "default" : "destructive"}
+                                        className={`text-xs ${
+                                          isValid ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                                        }`}
+                                      >
+                                        {isValid ? (
+                                          <>
+                                            <CheckCircle className="w-3 h-3 mr-1" />
+                                            Passed
+                                            {isAutoProcessed && (
+                                              <span className="ml-1 text-xs opacity-75">(Auto)</span>
+                                            )}
+                                          </>
+                                        ) : (
+                                          <>
+                                            <XCircle className="w-3 h-3 mr-1" />
+                                            {validationResults?.violations?.length || 0} Issues
+                                          </>
+                                        )}
+                                      </Badge>
+                                    );
+                                  }
+
+                                  return (
+                                    <Badge variant="outline" className="text-xs bg-yellow-50 text-yellow-700 border-yellow-200">
+                                      <AlertTriangle className="w-3 h-3 mr-1" />
+                                      Pending
+                                    </Badge>
+                                  );
+                                })()}
+                              </div>
+                            </div>
+
+                            {/* PO Match Status */}
+                            <div className="space-y-2">
+                              <p className="text-xs font-medium text-gray-500">PO Match</p>
+                              <div>
+                                {(invoice.extractedData as any)?.poMatch ? (
+                                  <Badge
+                                    variant="default"
+                                    className="text-xs bg-green-100 text-green-800 border-green-200"
+                                  >
+                                    <Package className="w-3 h-3 mr-1" />
+                                    PO-{(invoice.extractedData as any)?.poMatch?.poNumber}
+                                  </Badge>
+                                ) : (
+                                  <Badge variant="outline" className="text-xs bg-gray-50 text-gray-500">
+                                    <X className="w-3 h-3 mr-1" />
+                                    No Match
+                                  </Badge>
+                                )}
+                              </div>
+                            </div>
+
+                          </div>
+
+                          {/* Detailed Results Summary */}
+                          {((invoice.extractedData as any)?.validationResults?.violations?.length > 0 ||
+                            (invoice.extractedData as any)?.confidenceScore) && (
+                            <div className="mt-3 p-3 bg-gray-50 rounded-md">
+                              <div className="flex items-center justify-between text-sm">
+                                {(invoice.extractedData as any)?.confidenceScore && (
+                                  <span className="text-gray-600">
+                                    AI Confidence: {(parseFloat((invoice.extractedData as any).confidenceScore) * 100).toFixed(1)}%
+                                  </span>
+                                )}
+                                {(invoice.extractedData as any)?.validationResults?.violations?.length > 0 && (
+                                  <span className="text-red-600 text-xs">
+                                    Issues: {(invoice.extractedData as any).validationResults.violations.map((v: any) => v.field).join(', ')}
+                                  </span>
+                                )}
+                              </div>
                             </div>
                           )}
-                          <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
+                        </div>
+                      )}
+                      <div className="flex justify-end space-x-2 flex-wrap gap-y-2">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => {
+                            setSelectedInvoice(invoice);
+                            setShowDetailsModal(true);
+                          }}
+                        >
+                          <Eye size={16} className="mr-2" />
+                          View Details
+                        </Button>
+                        {(isPDFFile(invoice.fileName) || linkedFilesMap[invoice.id]?.hasLinkedFiles) && (
+                          <>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => {
-                                setSelectedInvoice(invoice);
-                                setShowDetailsModal(true);
-                              }}
+                              onClick={() => handlePreviewClick(invoice)}
+                              className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                             >
-                              <Eye size={16} className="mr-2" />
-                              View Details
+                              <FileIcon size={16} className="mr-2" />
+                              {linkedFilesMap[invoice.id]?.hasLinkedFiles ? "Preview PDF" : "Preview"}
                             </Button>
-                            {(isPDFFile(invoice.fileName) ||
-                              linkedFilesMap[invoice.id]?.hasLinkedFiles) && (
-                              <>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  onClick={() => handlePreviewClick(invoice)}
-                                  className={
-                                    linkedFilesMap[invoice.id]?.hasLinkedFiles
-                                      ? "text-purple-600 border-purple-300"
-                                      : ""
-                                  }
-                                >
-                                  <FileIcon size={16} className="mr-2" />
-                                  {linkedFilesMap[invoice.id]?.hasLinkedFiles
-                                    ? "Preview PDF"
-                                    : "Preview"}
-                                </Button>
-                              </>
-                            )}
+                          </>
+                        )}
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleDownload(invoice)}
+                          className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-blue-600 border-blue-300" : ""}
+                        >
+                          {linkedFilesMap[invoice.id]?.hasLinkedFiles ? (
+                            <>
+                              <Package size={16} className="mr-2" />
+                              Download Package ({linkedFilesMap[invoice.id].linkedFiles.length + 1} files)
+                            </>
+                          ) : (
+                            <>
+                              <Download size={16} className="mr-2" />
+                              Download
+                            </>
+                          )}
+                        </Button>
+                        {invoice.status === 'extracted' && isAIExtractedInvoice(invoice) && (
+                          <>
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleDownload(invoice)}
-                              className={
-                                linkedFilesMap[invoice.id]?.hasLinkedFiles
-                                  ? "text-blue-600 border-blue-300"
-                                  : ""
-                              }
+                              onClick={() => handlePositiveFeedback(invoice.id)}
+                              className="text-green-600 border-green-300 hover:bg-green-50"
                             >
-                              {linkedFilesMap[invoice.id]?.hasLinkedFiles ? (
-                                <>
-                                  <Package size={16} className="mr-2" />
-                                  Download Package (
-                                  {linkedFilesMap[invoice.id].linkedFiles
-                                    .length + 1}{" "}
-                                  files)
-                                </>
-                              ) : (
-                                <>
-                                  <Download size={16} className="mr-2" />
-                                  Download
-                                </>
-                              )}
+                              <ThumbsUp size={14} className="mr-1" />
+                              Good Job AI!
                             </Button>
-                            {invoice.status === "extracted" &&
-                              isAIExtractedInvoice(invoice) && (
-                                <>
-                                  <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() =>
-                                      handlePositiveFeedback(invoice.id)
-                                    }
-                                    className="text-green-600 border-green-300 hover:bg-green-50"
-                                  >
-                                    <ThumbsUp size={14} className="mr-1" />
-                                    Good Job AI!
-                                  </Button>
 
-                                  {/* Report Error button - show for all eligible PDF invoices */}
-                                  {isEligibleForProblemReport(invoice) && (
-                                    <Button
-                                      variant="outline"
-                                      size="sm"
-                                      onClick={() => handleFeedback(invoice)}
-                                      className="text-orange-600 border-orange-300 hover:bg-orange-50"
-                                    >
-                                      <AlertTriangle
-                                        size={16}
-                                        className="mr-2"
-                                      />
-                                      Report Error
-                                    </Button>
-                                  )}
-                                </>
-                              )}
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button
-                                  variant="outline"
-                                  size="sm"
-                                  className="text-red-600 hover:text-red-700"
-                                >
-                                  <Trash2 size={16} className="mr-2" />
-                                  Delete
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>
-                                    Delete Invoice
-                                  </AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Are you sure you want to delete this
-                                    invoice? This action cannot be undone. This
-                                    will permanently delete the invoice "
-                                    {invoice.fileName}" and all its associated
-                                    data.
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancel</AlertDialogCancel>
-                                  <AlertDialogAction
-                                    onClick={() =>
-                                      deleteMutation.mutate(invoice.id)
-                                    }
-                                    className="bg-red-600 hover:bg-red-700"
-                                    disabled={deleteMutation.isPending}
-                                  >
-                                    {deleteMutation.isPending
-                                      ? "Deleting..."
-                                      : "Delete"}
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          </div>
-                        </CardContent>
-                      </Card>
-                    );
-                  })
-                  .filter(Boolean)}
-              </div>
+                            {/* Report Error button - show for all eligible PDF invoices */}
+                            {isEligibleForProblemReport(invoice) && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                onClick={() => handleFeedback(invoice)}
+                                className="text-orange-600 border-orange-300 hover:bg-orange-50"
+                              >
+                                <AlertTriangle size={16} className="mr-2" />
+                                Report Error
+                              </Button>
+                            )}
+                          </>
+                        )}
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="outline" size="sm" className="text-red-600 hover:text-red-700">
+                              <Trash2 size={16} className="mr-2" />
+                              Delete
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Delete Invoice</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Are you sure you want to delete this invoice? This action cannot be undone.
+                                This will permanently delete the invoice "{invoice.fileName}" and all its associated data.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => deleteMutation.mutate(invoice.id)}
+                                className="bg-red-600 hover:bg-red-700"
+                                disabled={deleteMutation.isPending}
+                              >
+                                {deleteMutation.isPending ? "Deleting..." : "Delete"}
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      </div>
+                    </CardContent>
+                  </Card>
+                );
+              }).filter(Boolean)}
+            </div>
             </div>
           ) : null}
         </div>
@@ -2222,183 +1594,99 @@ export default function Invoices() {
               <div className="space-y-6">
                 {/* Core Invoice Information */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-4">
-                    Core Invoice Information
-                  </h4>
+                  <h4 className="text-lg font-medium text-gray-900 mb-4">Core Invoice Information</h4>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        File Name
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {selectedInvoice.fileName}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">File Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.fileName}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Status
-                      </label>
+                      <label className="text-sm font-medium text-gray-700">Status</label>
                       <div className="mt-1">
-                        <Badge
-                          className={getStatusColor(selectedInvoice.status)}
-                        >
-                          {selectedInvoice.status === "approved" &&
-                          selectedInvoice.userId === "rpa-system"
-                            ? "Auto Approved"
-                            : selectedInvoice.status === "approved"
-                              ? "Manually Approved"
-                              : selectedInvoice.status.charAt(0).toUpperCase() +
-                                selectedInvoice.status.slice(1)}
+                        <Badge className={getStatusColor(selectedInvoice.status)}>
+                          {selectedInvoice.status === 'approved' && selectedInvoice.userId === 'rpa-system' ? 'Auto Approved' :
+                           selectedInvoice.status === 'approved' ? 'Manually Approved' :
+                           selectedInvoice.status.charAt(0).toUpperCase() + selectedInvoice.status.slice(1)}
                         </Badge>
                       </div>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Upload Date
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {formatDate(selectedInvoice.createdAt)}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Upload Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.createdAt)}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Currency
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {selectedInvoice.currency || "COP"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Currency</label>
+                      <p className="text-sm text-gray-900 mt-1">{selectedInvoice.currency || "COP"}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Vendor Details */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    • Vendor Details
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Vendor name and tax ID/VAT number
-                  </p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Vendor Details</h4>
+                  <p className="text-sm text-gray-600 mb-3">Vendor name and tax ID/VAT number</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Vendor Name
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {safeRenderText(
-                          selectedInvoice.vendorName,
-                          "Not extracted",
-                        )}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Vendor Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText(selectedInvoice.vendorName, "Not extracted")}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Tax ID/VAT Number
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {safeRenderText(
-                          (selectedInvoice as any).extractedData?.taxId,
-                          "Not extracted",
-                        )}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Tax ID/VAT Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText((selectedInvoice as any).extractedData?.taxId, "Not extracted")}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Invoice Identification */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    • Invoice Identification
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Invoice number, invoice date, due date
-                  </p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Invoice Identification</h4>
+                  <p className="text-sm text-gray-600 mb-3">Invoice number, invoice date, due date</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Invoice Number
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {safeRenderText(
-                          selectedInvoice.invoiceNumber,
-                          "Not extracted",
-                        )}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Invoice Number</label>
+                      <p className="text-sm text-gray-900 mt-1">{safeRenderText(selectedInvoice.invoiceNumber, "Not extracted")}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Invoice Date
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {formatDate(selectedInvoice.invoiceDate)}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Invoice Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.invoiceDate)}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Due Date
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {formatDate(selectedInvoice.dueDate)}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Due Date</label>
+                      <p className="text-sm text-gray-900 mt-1">{formatDate(selectedInvoice.dueDate)}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Financial Data */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    • Financial Data
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Total amount, tax amount, subtotal, and currency
-                  </p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Financial Data</h4>
+                  <p className="text-sm text-gray-600 mb-3">Total amount, tax amount, subtotal, and currency</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Total Amount
-                      </label>
+                      <label className="text-sm font-medium text-gray-700">Total Amount</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount(
-                          selectedInvoice.totalAmount,
-                          selectedInvoice.currency,
-                        )}
+                        {formatAmount(selectedInvoice.totalAmount, selectedInvoice.currency)}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Tax Amount
-                      </label>
+                      <label className="text-sm font-medium text-gray-700">Tax Amount</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {formatAmount(
-                          (selectedInvoice as any).taxAmount,
-                          selectedInvoice.currency,
-                        )}
+                        {formatAmount((selectedInvoice as any).taxAmount, selectedInvoice.currency)}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Subtotal
-                      </label>
+                      <label className="text-sm font-medium text-gray-700">Subtotal</label>
                       <p className="text-sm text-gray-900 mt-1">
                         {(() => {
-                          const subtotal =
-                            (selectedInvoice as any).subtotal ||
-                            selectedInvoice.extractedData?.subtotal;
-                          return formatAmount(
-                            subtotal,
-                            selectedInvoice.currency,
-                          );
+                          const subtotal = (selectedInvoice as any).subtotal || selectedInvoice.extractedData?.subtotal;
+                          return formatAmount(subtotal, selectedInvoice.currency);
                         })()}
                       </p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Confidence Score
-                      </label>
+                      <label className="text-sm font-medium text-gray-700">Confidence Score</label>
                       <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).confidenceScore
-                          ? `${(parseFloat((selectedInvoice as any).confidenceScore) * 100).toFixed(1)}%`
-                          : "Not available"}
+                        {(selectedInvoice as any).confidenceScore ? `${(parseFloat((selectedInvoice as any).confidenceScore) * 100).toFixed(1)}%` : "Not available"}
                       </p>
                     </div>
                   </div>
@@ -2406,210 +1694,103 @@ export default function Invoices() {
 
                 {/* Business Context */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    • Business Context
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Company name (buyer) and concept/description of services
-                  </p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Business Context</h4>
+                  <p className="text-sm text-gray-600 mb-3">Company name (buyer) and concept/description of services</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Company Name (Buyer)
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData?.companyName ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Company Name (Buyer)</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.companyName || "Not extracted"}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Buyer Tax ID
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData?.buyerTaxId ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Buyer Tax ID</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.buyerTaxId || "Not extracted"}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Project Name
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).projectName ||
-                          (selectedInvoice as any).extractedData?.projectName ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Project Name</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).projectName || (selectedInvoice as any).extractedData?.projectName || "Not extracted"}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Project City
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData?.projectCity ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Project City</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.projectCity || "Not extracted"}</p>
                     </div>
                     <div className="col-span-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        Concept/Description
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData?.concept ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Concept/Description</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.concept || "Not extracted"}</p>
                     </div>
                     <div className="col-span-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        Description Summary
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData
-                          ?.descriptionSummary || "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Description Summary</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.descriptionSummary || "Not extracted"}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Addresses */}
                 <div>
-                  <h4 className="text-lg font-medium text-gray-900 mb-2">
-                    • Address Information
-                  </h4>
-                  <p className="text-sm text-gray-600 mb-3">
-                    Vendor and buyer address details
-                  </p>
+                  <h4 className="text-lg font-medium text-gray-900 mb-2">• Address Information</h4>
+                  <p className="text-sm text-gray-600 mb-3">Vendor and buyer address details</p>
                   <div className="grid grid-cols-2 gap-4">
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Vendor Address
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData
-                          ?.vendorAddress || "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Vendor Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.vendorAddress || "Not extracted"}</p>
                     </div>
                     <div>
-                      <label className="text-sm font-medium text-gray-700">
-                        Buyer Address
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData?.buyerAddress ||
-                          "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Buyer Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.buyerAddress || "Not extracted"}</p>
                     </div>
                     <div className="col-span-2">
-                      <label className="text-sm font-medium text-gray-700">
-                        Project Address
-                      </label>
-                      <p className="text-sm text-gray-900 mt-1">
-                        {(selectedInvoice as any).extractedData
-                          ?.projectAddress || "Not extracted"}
-                      </p>
+                      <label className="text-sm font-medium text-gray-700">Project Address</label>
+                      <p className="text-sm text-gray-900 mt-1">{(selectedInvoice as any).extractedData?.projectAddress || "Not extracted"}</p>
                     </div>
                   </div>
                 </div>
 
                 {/* Line Items */}
-                {(selectedInvoice as any).extractedData?.lineItems &&
-                  Array.isArray(
-                    (selectedInvoice as any).extractedData.lineItems,
-                  ) &&
-                  (selectedInvoice as any).extractedData.lineItems.length >
-                    0 && (
-                    <div>
-                      <h4 className="text-lg font-medium text-gray-900 mb-2">
-                        • Line Items
-                      </h4>
-                      <p className="text-sm text-gray-600 mb-3">
-                        Detailed breakdown of services and materials
-                      </p>
-                      <div className="overflow-x-auto">
-                        <table className="min-w-full divide-y divide-gray-200">
-                          <thead className="bg-gray-50">
-                            <tr>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                Description
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                Qty
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                Unit Price
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                Total
-                              </th>
-                              <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">
-                                Type
-                              </th>
+                {(selectedInvoice as any).extractedData?.lineItems && Array.isArray((selectedInvoice as any).extractedData.lineItems) && (selectedInvoice as any).extractedData.lineItems.length > 0 && (
+                  <div>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">• Line Items</h4>
+                    <p className="text-sm text-gray-600 mb-3">Detailed breakdown of services and materials</p>
+                    <div className="overflow-x-auto">
+                      <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                          <tr>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Description</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Qty</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Unit Price</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Total</th>
+                            <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
+                          </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                          {(selectedInvoice as any).extractedData.lineItems.map((item: any, index: number) => (
+                            <tr key={index}>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.description || "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.quantity || "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.unitPrice ? formatAmount(item.unitPrice, selectedInvoice.currency) : "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.totalPrice ? formatAmount(item.totalPrice, selectedInvoice.currency) : "N/A"}</td>
+                              <td className="px-3 py-2 text-sm text-gray-900">{item.itemType || "N/A"}</td>
                             </tr>
-                          </thead>
-                          <tbody className="bg-white divide-y divide-gray-200">
-                            {(
-                              selectedInvoice as any
-                            ).extractedData.lineItems.map(
-                              (item: any, index: number) => (
-                                <tr key={index}>
-                                  <td className="px-3 py-2 text-sm text-gray-900">
-                                    {item.description || "N/A"}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-900">
-                                    {item.quantity || "N/A"}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-900">
-                                    {item.unitPrice
-                                      ? formatAmount(
-                                          item.unitPrice,
-                                          selectedInvoice.currency,
-                                        )
-                                      : "N/A"}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-900">
-                                    {item.totalPrice
-                                      ? formatAmount(
-                                          item.totalPrice,
-                                          selectedInvoice.currency,
-                                        )
-                                      : "N/A"}
-                                  </td>
-                                  <td className="px-3 py-2 text-sm text-gray-900">
-                                    {item.itemType || "N/A"}
-                                  </td>
-                                </tr>
-                              ),
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                          ))}
+                        </tbody>
+                      </table>
                     </div>
-                  )}
+                  </div>
+                )}
 
                 {/* Additional Notes */}
                 {(selectedInvoice as any).extractedData?.notes && (
                   <div>
-                    <h4 className="text-lg font-medium text-gray-900 mb-2">
-                      • Additional Notes
-                    </h4>
-                    <p className="text-sm text-gray-600 mb-3">
-                      Additional observations or terms
-                    </p>
+                    <h4 className="text-lg font-medium text-gray-900 mb-2">• Additional Notes</h4>
+                    <p className="text-sm text-gray-600 mb-3">Additional observations or terms</p>
                     <div className="bg-gray-50 p-3 rounded-md">
-                      <p className="text-sm text-gray-900">
-                        {(selectedInvoice as any).extractedData.notes}
-                      </p>
+                      <p className="text-sm text-gray-900">{(selectedInvoice as any).extractedData.notes}</p>
                     </div>
                   </div>
                 )}
                 <div className="flex justify-end space-x-2 pt-4 border-t">
-                  <Button
-                    variant="outline"
-                    onClick={() => setShowDetailsModal(false)}
-                  >
+                  <Button variant="outline" onClick={() => setShowDetailsModal(false)}>
                     Close
                   </Button>
-                  {(isPDFFile(selectedInvoice.fileName) ||
-                    linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles) && (
+                  {(isPDFFile(selectedInvoice.fileName) || linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles) && (
                     <>
                       <Button
                         variant="outline"
@@ -2617,16 +1798,10 @@ export default function Invoices() {
                           setShowDetailsModal(false);
                           handlePreviewClick(selectedInvoice);
                         }}
-                        className={
-                          linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles
-                            ? "text-purple-600 border-purple-300"
-                            : ""
-                        }
+                        className={linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                       >
                         <FileIcon size={16} className="mr-2" />
-                        {linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles
-                          ? "Preview Linked PDF"
-                          : "Preview PDF"}
+                        {linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "Preview Linked PDF" : "Preview PDF"}
                       </Button>
                     </>
                   )}
@@ -2649,7 +1824,7 @@ export default function Invoices() {
               setPreviewInvoice(null);
             }}
             invoiceId={previewInvoice.id}
-            fileName={previewInvoice.fileName || "Unknown File"}
+            fileName={previewInvoice.fileName || 'Unknown File'}
             invoiceNumber={previewInvoice.invoiceNumber || undefined}
             customPreviewUrl={(previewInvoice as any)._linkedPDFUrl}
           />

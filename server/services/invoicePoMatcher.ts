@@ -10,15 +10,11 @@ export interface POMatchResult {
   matchDetails: {
     vendorSimilarity: number;
     amountSimilarity: number;
-    lineItemsSimilarity: number;
+    projectSimilarity: number;
+    itemSimilarity: number;
     overallConfidence: number;
     matchedFields: string[];
     reasons: string[];
-    scoringBreakdown: {
-      vendorMatch: number;
-      amountMatch: number;
-      lineItemsMatch: number;
-    };
   };
 }
 
@@ -60,48 +56,6 @@ export class InvoicePOMatcherService {
     }
 
     return matrix[str2.length][str1.length];
-  }
-
-  /**
-   * Calculate quantity similarity between invoice and PO items
-   */
-  private calculateQuantitySimilarity(invoiceQty: any, poQty: any): number {
-    if (!invoiceQty || !poQty) return 0;
-    
-    try {
-      const invQty = parseFloat(invoiceQty.toString());
-      const poQtyNum = parseFloat(poQty.toString());
-      
-      if (isNaN(invQty) || isNaN(poQtyNum)) return 0;
-      
-      if (invQty === poQtyNum) return 100;
-      
-      const difference = Math.abs(invQty - poQtyNum) / Math.max(invQty, poQtyNum);
-      return Math.max(0, Math.round((1 - difference) * 100));
-    } catch {
-      return 0;
-    }
-  }
-
-  /**
-   * Calculate price similarity between invoice and PO items
-   */
-  private calculatePriceSimilarity(invoicePrice: any, poPrice: any): number {
-    if (!invoicePrice || !poPrice) return 0;
-    
-    try {
-      const invPrice = parseFloat(invoicePrice.toString());
-      const poPriceNum = parseFloat(poPrice.toString());
-      
-      if (isNaN(invPrice) || isNaN(poPriceNum)) return 0;
-      
-      if (invPrice === poPriceNum) return 100;
-      
-      const difference = Math.abs(invPrice - poPriceNum) / Math.max(invPrice, poPriceNum);
-      return Math.max(0, Math.round((1 - difference) * 100));
-    } catch {
-      return 0;
-    }
   }
 
   /**
@@ -222,15 +176,11 @@ export class InvoicePOMatcherService {
     const matchDetails = {
       vendorSimilarity: 0,
       amountSimilarity: 0,
-      lineItemsSimilarity: 0,
+      projectSimilarity: 0,
+      itemSimilarity: 0,
       overallConfidence: 0,
       matchedFields: [] as string[],
-      reasons: [] as string[],
-      scoringBreakdown: {
-        vendorMatch: 0,
-        amountMatch: 0,
-        lineItemsMatch: 0
-      }
+      reasons: [] as string[]
     };
 
     // Vendor matching (40% weight)
@@ -255,72 +205,52 @@ export class InvoicePOMatcherService {
       }
     }
 
-    // Line items matching (30% weight) - Enhanced algorithm
+    // Project matching (20% weight)
+    const invoiceProject = invoice.projectName || (invoice.extractedData as any)?.projectName;
+    if (invoiceProject && purchaseOrder.projectId) {
+      matchDetails.projectSimilarity = this.calculateStringSimilarity(invoiceProject, purchaseOrder.projectId);
+      if (matchDetails.projectSimilarity > 70) {
+        matchDetails.matchedFields.push('project');
+        matchDetails.reasons.push(`Project similarity: ${matchDetails.projectSimilarity}%`);
+      }
+    }
+
+    // Item matching (10% weight)
     const invoiceItems = (invoice.extractedData as any)?.lineItems || [];
     const poItems = purchaseOrder.items as any[] || [];
     if (invoiceItems.length > 0 && poItems.length > 0) {
       let totalItemSimilarity = 0;
       let matchedItems = 0;
-      let bestMatches: Array<{invoiceItem: any, poItem: any, similarity: number}> = [];
 
-      // Enhanced line item comparison with multiple matching strategies
       for (const invoiceItem of invoiceItems) {
-        let bestMatch = { poItem: null, similarity: 0 };
-        
         for (const poItem of poItems) {
-          // Calculate multiple similarity metrics
-          const descriptionSimilarity = this.calculateStringSimilarity(
+          const similarity = this.calculateStringSimilarity(
             invoiceItem.description || '',
             poItem.description || ''
           );
-          
-          const quantitySimilarity = this.calculateQuantitySimilarity(
-            invoiceItem.quantity,
-            poItem.quantity
-          );
-          
-          const priceSimilarity = this.calculatePriceSimilarity(
-            invoiceItem.unitPrice,
-            poItem.unitPrice
-          );
-          
-          // Weighted combination of similarities
-          const combinedSimilarity = (
-            descriptionSimilarity * 0.6 + 
-            quantitySimilarity * 0.2 + 
-            priceSimilarity * 0.2
-          );
-          
-          if (combinedSimilarity > bestMatch.similarity) {
-            bestMatch = { poItem, similarity: combinedSimilarity };
+          if (similarity > 60) {
+            totalItemSimilarity += similarity;
+            matchedItems++;
+            break;
           }
-        }
-        
-        if (bestMatch.similarity > 50) { // Lower threshold for better matching
-          totalItemSimilarity += bestMatch.similarity;
-          matchedItems++;
-          bestMatches.push({
-            invoiceItem,
-            poItem: bestMatch.poItem,
-            similarity: bestMatch.similarity
-          });
         }
       }
 
       if (matchedItems > 0) {
-        matchDetails.lineItemsSimilarity = Math.round(totalItemSimilarity / matchedItems);
-        if (matchDetails.lineItemsSimilarity > 50) {
-          matchDetails.matchedFields.push('lineItems');
-          matchDetails.reasons.push(`Line items similarity: ${matchDetails.lineItemsSimilarity}%`);
+        matchDetails.itemSimilarity = Math.round(totalItemSimilarity / matchedItems);
+        if (matchDetails.itemSimilarity > 60) {
+          matchDetails.matchedFields.push('items');
+          matchDetails.reasons.push(`Item similarity: ${matchDetails.itemSimilarity}%`);
         }
       }
     }
 
-    // Calculate overall match score with updated weights
+    // Calculate overall match score with weighted importance
     const weights = {
-      vendor: 0.4,        // 40% weight
-      amount: 0.3,        // 30% weight
-      lineItems: 0.3      // 30% weight (increased from 10%)
+      vendor: 0.4,     // 40% weight
+      amount: 0.3,     // 30% weight
+      project: 0.2,    // 20% weight
+      items: 0.1       // 10% weight
     };
 
     let weightedScore = 0;
@@ -334,20 +264,17 @@ export class InvoicePOMatcherService {
       weightedScore += matchDetails.amountSimilarity * weights.amount;
       totalWeight += weights.amount;
     }
-    if (matchDetails.lineItemsSimilarity > 0) {
-      weightedScore += matchDetails.lineItemsSimilarity * weights.lineItems;
-      totalWeight += weights.lineItems;
+    if (matchDetails.projectSimilarity > 0) {
+      weightedScore += matchDetails.projectSimilarity * weights.project;
+      totalWeight += weights.project;
+    }
+    if (matchDetails.itemSimilarity > 0) {
+      weightedScore += matchDetails.itemSimilarity * weights.items;
+      totalWeight += weights.items;
     }
 
     const matchScore = totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 0;
     matchDetails.overallConfidence = matchScore;
-    
-    // Populate scoring breakdown
-    matchDetails.scoringBreakdown = {
-      vendorMatch: matchDetails.vendorSimilarity,
-      amountMatch: matchDetails.amountSimilarity,
-      lineItemsMatch: matchDetails.lineItemsSimilarity
-    };
 
     return {
       purchaseOrder,
