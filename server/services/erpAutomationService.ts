@@ -427,8 +427,8 @@ class ERPAutomationService {
 
           // Take screenshot on error
           try {
-            const screenshot = await page.screenshot({ encoding: 'base64' });
-            screenshots.push(screenshot);
+            const screenshot = await page.screenshot({});
+            screenshots.push(screenshot.toString('base64'));
             logs.push('Error screenshot captured');
           } catch (screenshotError) {
             logs.push('Failed to capture error screenshot');
@@ -558,7 +558,7 @@ class ERPAutomationService {
         }
 
         const typeElement = await this.waitForElementWithFallback(page, step.selector, timeout);
-        await typeElement.clear();
+        await typeElement.fill(''); // Clear by setting empty value
         await typeElement.fill(step.value);
         break;
 
@@ -569,10 +569,9 @@ class ERPAutomationService {
       case 'screenshot':
         try {
           const screenshot = await page.screenshot({ 
-            encoding: 'base64',
             fullPage: false 
           });
-          screenshots.push(screenshot);
+          screenshots.push(screenshot.toString('base64'));
           logs.push('Screenshot captured');
         } catch (screenshotError) {
           logs.push('Screenshot failed (continuing...)');
@@ -1156,248 +1155,6 @@ const moduleText = originalSelector.match(/href\*=['"]([^'"]*)['"]/)?.[1] || 'FE
     // If all selectors fail, throw the original error
     throw new Error(`Could not find element with selector: ${originalSelector} or any fallbacks`);
   }
-  
-    async testConnection(connection: ERPConnection): Promise<{ success: boolean; message?: string; details?: any }> {
-        try {
-            this.browser = await chromium.launch({
-                headless: true,
-                executablePath: getChromiumPath(),
-                args: [
-                    '--no-sandbox',
-                    '--disable-setuid-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-extensions',
-                    '--disable-gpu',
-                    '--no-first-run',
-                    '--disable-default-apps',
-                    '--disable-features=TranslateUI'
-                ]
-            });
-
-            const context = await this.browser.newContext({
-                viewport: { width: 1366, height: 768 },
-                userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-                ignoreHTTPSErrors: true,
-                acceptDownloads: false
-            });
-
-            const page = await context.newPage();
-
-            // Block resources for faster connection testing
-            await page.route('**/*.{png,jpg,jpeg,gif,svg,css,woff,woff2}', route => route.abort());
-
-            // Test basic URL accessibility with faster timeout
-            console.log(`Testing connection to: ${connection.baseUrl}`);
-            const response = await page.goto(connection.baseUrl, {
-                waitUntil: 'domcontentloaded',
-                timeout: 15000
-            });
-
-            if (!response) {
-                throw new Error('No response received from server');
-            }
-
-            const status = response.status();
-            console.log(`Response status: ${status}`);
-
-            if (status >= 400) {
-                throw new Error(`Server returned error status: ${status}`);
-            }
-
-            // Wait for page to stabilize (reduced time)
-            await page.waitForTimeout(2000);
-
-            // Try to find common login elements to verify it's an ERP system
-            const pageTitle = await page.title();
-            console.log(`Page title: ${pageTitle}`);
-
-            // Enhanced login form detection for SINCO
-            const hasPasswordField = await page.locator('input[type="password"]').count() > 0;
-            const hasUsernameField = await page.locator('input[type="text"], input[type="email"], input[name*="user"], input[name*="usuario"], input[placeholder*="usuario"]').count() > 0;
-
-            // Check for SINCO-specific elements
-            const hasSincoElements = await page.locator('*:has-text("SINCO"), *:has-text("SincoDycon"), *:has-text("Usuario"), *:has-text("Contraseña")').count() > 0;
-
-            // Test actual login with provided credentials
-            let loginTestResult = null;
-            if (hasPasswordField && hasUsernameField) {
-                try {
-                    console.log('Testing login credentials...');
-                    console.log(`🔐 Test connection - Using username: ${connection.username}`);
-                    console.log(`🔐 Test connection - Using password: ${connection.password}`);
-                    console.log(`🔐 Test connection - Password length: ${connection.password ? connection.password.length : 0}`);
-                    console.log(`🔐 Test connection - Password type: ${typeof connection.password}`);
-
-                    // Find username field using comprehensive selectors
-                    const usernameSelector = await this.findUsernameField(page);
-                    const passwordSelector = await this.findPasswordField(page);
-
-                    if (usernameSelector && passwordSelector) {
-                        await page.fill(usernameSelector, connection.username);
-                        await page.fill(passwordSelector, connection.password);
-
-                        // Find and click login button
-                        const loginButtonSelector = await this.findLoginButton(page);
-                        if (loginButtonSelector) {
-                            await page.click(loginButtonSelector);
-                            await page.waitForTimeout(3000);
-
-                            // Check if login was successful
-                            const currentUrl = page.url();
-                            const hasError = await page.locator('*:has-text("Error"), *:has-text("Incorrect"), *:has-text("Invalid"), *:has-text("Usuario"), *:has-text("credenciales")').count() > 0;
-
-                            loginTestResult = {
-                                attempted: true,
-                                urlChanged: currentUrl !== connection.baseUrl,
-                                hasError: hasError,
-                                currentUrl: currentUrl
-                            };
-                        }
-                    }
-                } catch (loginError) {
-                    console.warn('Login test failed:', loginError);
-                    loginTestResult = {
-                        attempted: true,
-                        error: loginError instanceof Error ? loginError.message : 'Unknown login error'
-                    };
-                }
-            }
-
-            await this.browser.close();
-            this.browser = null;
-
-            const details = {
-                status,
-                title: pageTitle,
-                hasLoginForm: hasPasswordField,
-                hasUsernameField,
-                hasSincoElements,
-                loginTest: loginTestResult,
-                url: connection.baseUrl
-            };
-
-            if (hasPasswordField && hasUsernameField) {
-                if (loginTestResult?.attempted && !loginTestResult?.hasError && loginTestResult?.urlChanged) {
-                    return {
-                        success: true,
-                        message: 'Successfully connected to ERP system and login credentials appear to be working.',
-                        details
-                    };
-                } else if (loginTestResult?.attempted && loginTestResult?.hasError) {
-                    return {
-                        success: false,
-                        message: 'Connection successful but login credentials appear to be invalid. Please check username and password.',
-                        details
-                    };
-                } else {
-                    return {
-                        success: true,
-                        message: 'Successfully connected to ERP system. Login form detected but credentials not fully tested.',
-                        details
-                    };
-                }
-            } else if (status < 400) {
-                return {
-                    success: true,
-                    message: 'Successfully connected to URL, but login form not detected. Please verify this is the correct ERP login page.',
-                    details
-                };
-            } else {
-                return {
-                    success: false,
-                    message: `Connection failed with status ${status}`,
-                    details
-                };
-            }
-
-        } catch (error) {
-            if (this.browser) {
-                await this.browser.close();
-                this.browser = null;
-            }
-
-            const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-            console.error('ERP connection test failed:', errorMessage);
-
-            return {
-                success: false,
-                message: `Connection test failed: ${errorMessage}`,
-                details: {
-                    error: errorMessage,
-                    url: connection.baseUrl
-                }
-            };
-        }
-    }
-
-    private async findUsernameField(page: any): Promise<string | null> {
-        const selectors = [
-            'input[name*="usuario" i]',
-            'input[placeholder*="usuario" i]',
-            'input[id*="usuario" i]',
-            'input[name*="user" i]',
-            'input[placeholder*="user" i]',
-            'input[type="text"]:visible',
-            'input[type="email"]:visible',
-            'form input:first-of-type'
-        ];
-
-        for (const selector of selectors) {
-            try {
-                if (await page.locator(selector).count() > 0) {
-                    return selector;
-                }
-            } catch (error) {
-                continue;
-            }
-        }
-        return null;
-    }
-
-    private async findPasswordField(page: any): Promise<string | null> {
-        const selectors = [
-            'input[type="password"]',
-            'input[name*="clave" i]',
-            'input[name*="contrasena" i]',
-            'input[name*="contraseña" i]',
-            'input[placeholder*="contraseña" i]'
-        ];
-
-        for (const selector of selectors) {
-            try {
-                if (await page.locator(selector).count() > 0) {
-                    return selector;
-                }
-            } catch (error) {
-                continue;
-            }
-        }
-        return null;
-    }
-
-    private async findLoginButton(page: any): Promise<string | null> {
-        const selectors = [
-            'button:has-text("Iniciar sesión")',
-            'button:has-text("Iniciar")',
-            'button:has-text("Login")',
-            'button:has-text("Entrar")',
-            'input[type="submit"]',
-            'button[type="submit"]',
-            'button:visible',
-            'form button:last-of-type'
-        ];
-
-        for (const selector of selectors) {
-            try {
-                if (await page.locator(selector).count() > 0) {
-                    return selector;
-                }
-            } catch (error) {
-                continue;
-            }
-        }
-        return null;
-    }
 }
 
 export const erpAutomationService = new ERPAutomationService();

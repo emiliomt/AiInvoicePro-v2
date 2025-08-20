@@ -1,4 +1,4 @@
-import { ErpConnection, RpaExtractionJob, RpaJobExecution, RpaDocumentQueue, InsertRpaJobExecution, InsertRpaDocumentQueue } from "../../shared/schema.js";
+import { ErpConnection } from "../../shared/schema.js";
 import { extractInvoiceData, extractPurchaseOrderData } from "./aiService.js";
 import { ocrService } from "./ocrService.js";
 
@@ -30,7 +30,7 @@ export class RPAService {
   /**
    * Test ERP connection and validate credentials
    */
-  async testERPConnection(connection: ErpConnection): Promise<{ success: boolean; error?: string }> {
+  async testERPConnection(connection: any): Promise<{ success: boolean; error?: string }> {
     try {
       const config = connection.connectionConfig as any;
       
@@ -60,8 +60,8 @@ export class RPAService {
    * Execute an RPA extraction job
    */
   async executeExtractionJob(
-    job: RpaExtractionJob,
-    connection: ErpConnection
+    job: any,
+    connection: any
   ): Promise<ERPExtractionResult> {
     const executionId = `exec_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     const startTime = new Date();
@@ -336,12 +336,7 @@ export class RPAService {
               metadata: {
                 lastModified: doc.lastModified,
                 fileSize: doc.size || doc.content?.length,
-                format: 'xml',
-                xmlExtracted: true,
-                vendorName: extractedData.vendorName,
-                invoiceNumber: extractedData.invoiceNumber,
-                totalAmount: extractedData.totalAmount,
-                currency: extractedData.currency
+                format: 'xml'
               }
             });
           } else {
@@ -547,7 +542,16 @@ export class RPAService {
       };
       
       // Note: Save to database using storage service
-
+      const { storage } = await import('../storage.js');
+      const savedInvoice = await storage.createInvoice(invoiceData);
+      
+      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
+      
+    } catch (error: any) {
+      console.error(`Failed to process invoice document ${document.id}:`, error);
+      throw error;
+    }
+  }
 
   /**
    * Batch process XML invoices from multiple sources
@@ -642,17 +646,6 @@ export class RPAService {
     };
   }
 
-      const { storage } = await import('../storage.js');
-      const savedInvoice = await storage.createInvoice(invoiceData);
-      
-      console.log(`Successfully processed invoice ${savedInvoice.id} from document ${document.id}`);
-      
-    } catch (error: any) {
-      console.error(`Failed to process invoice document ${document.id}:`, error);
-      throw error;
-    }
-  }
-
   private async processPurchaseOrderDocument(
     document: ERPDocument,
     jobExecutionId: number,
@@ -715,7 +708,7 @@ export class RPAService {
   /**
    * Schedule automatic job execution based on cron-like schedule
    */
-  async scheduleJob(job: RpaExtractionJob): Promise<void> {
+  async scheduleJob(job: any): Promise<void> {
     const scheduleConfig = job.scheduleConfig as any;
     
     if (!scheduleConfig || !scheduleConfig.enabled) {

@@ -1,4 +1,4 @@
-import { getStorage, getDb } from "../storage";
+import { storage, getDb } from "../storage";
 import { classificationKeywords, lineItemClassifications, lineItems, invoices } from "../../shared/schema";
 import { eq, and, or, like, inArray } from "drizzle-orm";
 import type { InsertClassificationKeyword, InsertLineItemClassification, LineItem } from "../../shared/schema";
