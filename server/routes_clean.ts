@@ -1839,17 +1839,25 @@ export async function registerRoutes(app: Express): Promise<Server> {
     console.log('Body Buffer Length:', req.body ? Buffer.byteLength(JSON.stringify(req.body)) : 'No body');
     console.log('Raw Headers:', JSON.stringify(req.headers, null, 2));
     
-    // Check if this is actually multipart data
-    const contentType = req.headers['content-type'] || '';
-    const isMultipart = contentType.includes('multipart/form-data');
-    console.log('Is Multipart:', isMultipart);
+
+    const files = req.files as Express.Multer.File[];
+
+    // Get userId and user's company ID from authenticated request
+    const userId = (req.user as any).claims.sub;
     
-    if (!isMultipart) {
-      console.error('❌ NOT MULTIPART DATA - Content-Type should include multipart/form-data');
-      return res.status(400).json({ 
-        message: "Invalid content type. Expected multipart/form-data",
-        received: contentType
-      });
+    console.log('Upload request details:', {
+      authenticated: !!req.user,
+      userId: userId,
+      hasFiles: !!(files && files.length > 0),
+      fileCount: files?.length || 0,
+      files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
+      body: req.body
+    });
+
+    // Validate authentication
+    if (!userId) {
+      console.error('No userId found in authenticated request');
+      return res.status(401).json({ message: "Authentication required" });
     }
     
     next();
@@ -1876,26 +1884,56 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: `Upload error: ${err.message}` });
       }
 
-      try {
-        const userId = (req.user as any).claims.sub;
-        const files = req.files as Express.Multer.File[];
+    // Get user's company ID
+    const user = await storage.getUser(userId);
+    if (!user) {
+      console.error('User not found in database:', userId);
+      return res.status(404).json({ message: "User not found" });
+    }
 
-        console.log('=== POST-MULTER DEBUG ===');
-        console.log("User ID:", userId);
-        console.log("Files received:", files ? files.length : 0);
-        console.log("Request body:", req.body);
-        
-        // Enhanced file debugging
-        if (files && files.length > 0) {
-          console.log('✅ FILES SUCCESSFULLY RECEIVED:');
-          files.forEach((file, index) => {
-            console.log(`File ${index + 1}:`, {
-              originalname: file.originalname,
-              mimetype: file.mimetype,
-              size: file.size,
-              fieldname: file.fieldname,
-              bufferLength: file.buffer ? file.buffer.length : 'No buffer'
-            });
+    const companyId = user.companyId;
+    console.log('User company ID:', companyId);
+
+    if (!files || files.length === 0) {
+      return res.status(400).json({ message: "No files uploaded" });
+    }
+
+    // Filter only invoice files
+    const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
+    if (invoiceFiles.length === 0) {
+      return res.status(400).json({ message: "No invoice files found" });
+    }
+
+    const fs = await import('fs');
+    const path = await import('path');
+    const uploadsDir = path.join(process.cwd(), 'uploads');
+
+    // Ensure uploads directory exists
+    if (!fs.existsSync(uploadsDir)) {
+      fs.mkdirSync(uploadsDir, { recursive: true });
+    }
+
+    const uploadedInvoices: any[] = [];
+
+    try {
+      // Process invoice files in parallel for better performance
+      const processPromises = invoiceFiles.map(async (file) => {
+        try {
+          // Generate unique filename
+          const fileExt = path.extname(file.originalname);
+          const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
+          const filePath = path.join(uploadsDir, uniqueFileName);
+
+          // Write file to disk
+          fs.writeFileSync(filePath, file.buffer);
+
+          // Create initial invoice record with file path
+          const invoice = await storage.createInvoice({
+            userId,  // Keep userId for tracking who uploaded
+            companyId, // Use companyId for multi-tenant data scoping
+            fileName: file.originalname,
+            status: "processing",
+            fileUrl: filePath,
           });
         } else {
           console.error('❌ NO FILES RECEIVED BY MULTER');
