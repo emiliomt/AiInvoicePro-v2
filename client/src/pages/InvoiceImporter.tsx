@@ -212,13 +212,16 @@ export default function InvoiceImporter() {
           websocket.onmessage = (event) => {
             try {
               const data = JSON.parse(event.data);
+              console.log('📨 WebSocket message received:', data);
 
-              if (data.type === 'progress') {
+              if (data.type === 'progress' || data.type === 'rpa_progress') {
                 handleRealTimeProgressUpdate(data);
               } else if (data.type === 'task_complete') {
                 handleTaskComplete(data);
               } else if (data.type === 'logs') {
                 handleRealTimeLogs(data);
+              } else {
+                console.log('📨 Unhandled WebSocket message type:', data.type);
               }
             } catch (error) {
               console.error('Error parsing WebSocket message:', error);
@@ -263,9 +266,10 @@ export default function InvoiceImporter() {
 
   // Handle real-time progress updates
   const handleRealTimeProgressUpdate = (data: any) => {
-    const configId = data.data?.configId || data.taskId;
-    const currentStep = data.data?.currentStep || data.message;
-    const progress = data.data?.progress || data.step || 0;
+    console.log('📊 Processing progress update:', data);
+    const configId = data.configId || data.data?.configId || data.taskId;
+    const currentStep = data.currentStep || data.data?.currentStep || data.message;
+    const progress = data.progress || data.data?.progress || data.step || 0;
 
     setConfigs(prevConfigs => 
       prevConfigs.map(config => {
