@@ -5741,19 +5741,21 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       console.log(`🔄 PRIORITY EXTRACTION: Processing RPA XML file: ${filename} (config: ${configId})`);
 
-      // Get import configuration to determine company ID
+      // Get import configuration to determine company ID and user ID
       let companyId = null;
+      let userId = 'rpa-system'; // Fallback
       if (configId) {
         try {
           const config = await storage.getInvoiceImporterConfig(configId);
           if (config) {
             companyId = config.companyId;
-            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+            userId = config.userId;
+            console.log(`📋 Retrieved company ID ${companyId} and user ID ${userId} from config ${configId}`);
           } else {
             console.warn(`⚠️ Config ${configId} not found`);
           }
         } catch (error) {
-          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
+          console.warn(`❌ Could not retrieve config ${configId} for company/user ID:`, error);
         }
       }
 
@@ -5797,7 +5799,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
         fileName: filename,
         fileSize: fileSize || fileBuffer.length,
         uploadedAt: new Date(),
-        userId: 'rpa-system',
+        userId: userId,
         companyId: companyId,
         originalFileName: filename,
         extractedInvoiceNumber: documentNumber,
@@ -5848,19 +5850,21 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       console.log(`🔄 PRIORITY EXTRACTION: Request body:`, req.body);
       console.log(`🔄 PRIORITY EXTRACTION: Processing RPA PDF file: ${filename} (config: ${configId})`);
 
-      // Get import configuration to determine company ID
+      // Get import configuration to determine company ID and user ID
       let companyId = null;
+      let userId = 'rpa-system'; // Fallback
       if (configId) {
         try {
           const config = await storage.getInvoiceImporterConfig(configId);
           if (config) {
             companyId = config.companyId;
-            console.log(`📋 Retrieved company ID ${companyId} from config ${configId}`);
+            userId = config.userId;
+            console.log(`📋 Retrieved company ID ${companyId} and user ID ${userId} from config ${configId}`);
           } else {
             console.warn(`⚠️ Config ${configId} not found`);
           }
         } catch (error) {
-          console.warn(`❌ Could not retrieve config ${configId} for company ID:`, error);
+          console.warn(`❌ Could not retrieve config ${configId} for company/user ID:`, error);
         }
       } else {
         console.warn(`⚠️ No configId provided for PDF processing`);
@@ -5903,7 +5907,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       // Create invoice record in the same way as manual upload
       const invoiceData = {
-        userId: 'rpa-system', // Special user for RPA imports
+        userId: userId, // Use the user ID from the import configuration
         companyId: companyId, // Set company ID from import configuration
         fileName: filename,
         fileSize: fileSize,  
