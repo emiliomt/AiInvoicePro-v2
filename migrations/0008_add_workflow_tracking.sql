@@ -1,7 +1,7 @@
--- Migration: Add workflow management fields and table
--- Date: 2024-12-19
+-- Migration: Add workflow tracking fields
+-- Date: 2024-01-XX
 
--- Add workflow management fields to invoices table
+-- Add workflow tracking fields to invoices table
 ALTER TABLE invoices 
 ADD COLUMN workflow_mode VARCHAR(20) DEFAULT 'automatic',
 ADD COLUMN current_workflow_step INTEGER DEFAULT 1,
@@ -11,8 +11,8 @@ ADD COLUMN workflow_completed_at TIMESTAMP;
 CREATE TABLE workflow_execution_log (
   id SERIAL PRIMARY KEY,
   invoice_id INTEGER NOT NULL REFERENCES invoices(id),
-  step_number INTEGER NOT NULL,
   step_name VARCHAR(100) NOT NULL,
+  step_number INTEGER NOT NULL,
   execution_mode VARCHAR(20) DEFAULT 'automatic',
   status VARCHAR(50) NOT NULL,
   result JSONB,

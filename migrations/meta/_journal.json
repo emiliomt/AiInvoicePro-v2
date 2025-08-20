@@ -8,69 +8,6 @@
       "when": 1750703645770,
       "tag": "0000_shocking_scorpion",
       "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1750703645770,
-      "tag": "0001_add_po_fields",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0002_fix_erp_connections",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0003_add_invoice_importer_tables",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0004_add_manual_config_flag",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0005_allow_null_connection_id",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0006_add_headless_field",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0007_add_classification_keywords",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "dialect": "postgresql",
-      "when": 1750703645770,
-      "tag": "0008_add_workflow_management",
-      "breakpoints": true
     }
   ]
 }

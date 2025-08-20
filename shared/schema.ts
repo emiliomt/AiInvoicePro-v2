@@ -107,7 +107,7 @@ export const invoices = pgTable("invoices", {
   uploadedAt: timestamp("uploaded_at").defaultNow(), // Track when invoice was uploaded
   // Processing status tracking
   processingStatus: varchar("processing_status", { length: 50 }).default("pending"), // extracted, classified, matched, validated, approved
-  // Workflow management fields
+  // Workflow tracking fields
   workflowMode: varchar("workflow_mode", { length: 20 }).default("automatic"),
   currentWorkflowStep: integer("current_workflow_step").default(1),
   workflowCompletedAt: timestamp("workflow_completed_at"),
@@ -1155,8 +1155,8 @@ export const validationRulesSelectSchema = createSelectSchema(validationRules);
 export const workflowExecutionLog = pgTable("workflow_execution_log", {
   id: serial("id").primaryKey(),
   invoiceId: integer("invoice_id").notNull().references(() => invoices.id),
-  stepNumber: integer("step_number").notNull(),
   stepName: varchar("step_name", { length: 100 }).notNull(),
+  stepNumber: integer("step_number").notNull(),
   executionMode: varchar("execution_mode", { length: 20 }).default("automatic"),
   status: varchar("status", { length: 50 }).notNull(),
   result: jsonb("result"),
@@ -1166,6 +1166,6 @@ export const workflowExecutionLog = pgTable("workflow_execution_log", {
   completedAt: timestamp("completed_at"),
 });
 
-// Workflow execution log types
-export type WorkflowExecutionLog = typeof workflowExecutionLog.$inferSelect;
-export type InsertWorkflowExecutionLog = typeof workflowExecutionLog.$inferInsert;
+// Workflow execution log schemas
+export const workflowExecutionLogSchema = createInsertSchema(workflowExecutionLog);
+export const workflowExecutionLogSelectSchema = createSelectSchema(workflowExecutionLog);

@@ -1,9 +1,10 @@
-import { getDb } from "../db";
-import { invoices, workflowExecutionLog } from "../../shared/schema";
-import { eq, and, desc } from "drizzle-orm";
+import { getDb } from "../storage";
+import { sql, eq, and, desc } from "drizzle-orm";
+import { invoices, workflowExecutionLog } from "@shared/schema";
 import { extractInvoiceData } from "./aiService";
 import { projectMatcher } from "../projectMatcher";
 import { invoicePOMatcher } from "./invoicePoMatcher";
+import { lineItemClassificationService } from "./lineItemClassificationService";
 import { storage } from "../storage";
 
 export interface WorkflowStep {
@@ -12,10 +13,10 @@ export interface WorkflowStep {
   description: string;
   status: 'pending' | 'in_progress' | 'completed' | 'failed' | 'skipped';
   result?: any;
-  errorMessage?: string;
-  executionTimeMs?: number;
+  error?: string;
   startedAt?: Date;
   completedAt?: Date;
+  executionTimeMs?: number;
 }
 
 export interface WorkflowStatus {
@@ -36,7 +37,17 @@ export interface WorkflowConfig {
 }
 
 export class WorkflowOrchestrator {
-  private db = getDb();
+  private config: WorkflowConfig;
+
+  constructor(config: Partial<WorkflowConfig> = {}) {
+    this.config = {
+      mode: 'automatic',
+      autoRetryAttempts: 3,
+      failFast: false,
+      loggingLevel: 'detailed',
+      ...config
+    };
+  }
 
   /**
    * Execute a specific workflow step
@@ -45,16 +56,14 @@ export class WorkflowOrchestrator {
     invoiceId: number, 
     stepNumber: number, 
     mode: 'manual' | 'automatic' = 'automatic'
-  ): Promise<WorkflowStep> {
+  ): Promise<{ success: boolean; result?: any; error?: string }> {
     const startTime = Date.now();
     
     try {
-      // Log step start
+      // Log step execution start
       await this.logStepExecution(invoiceId, stepNumber, 'in_progress', mode);
       
-      // Execute the specific step
       let result: any;
-      let status: 'completed' | 'failed' | 'skipped' = 'completed';
       
       switch (stepNumber) {
         case 1:
@@ -62,11 +71,6 @@ export class WorkflowOrchestrator {
           break;
         case 2:
           result = await this.executePettyCashClassification(invoiceId);
-          if (result.isPettyCash) {
-            status = 'skipped';
-            // Skip remaining steps for petty cash
-            await this.markStepsAsSkipped(invoiceId, [3, 4, 5, 6, 7]);
-          }
           break;
         case 3:
           result = await this.executeLineItemClassification(invoiceId);
@@ -86,135 +90,146 @@ export class WorkflowOrchestrator {
         default:
           throw new Error(`Invalid step number: ${stepNumber}`);
       }
-      
+
       const executionTime = Date.now() - startTime;
       
-      // Log step completion
-      await this.logStepExecution(invoiceId, stepNumber, status, mode, result, executionTime);
-      
-      // Update invoice workflow status
-      await this.updateInvoiceWorkflowStatus(invoiceId, stepNumber, status);
-      
-      return {
-        stepNumber,
-        name: this.getStepName(stepNumber),
-        description: this.getStepDescription(stepNumber),
-        status,
-        result,
-        executionTimeMs: executionTime,
-        startedAt: new Date(startTime),
-        completedAt: new Date()
-      };
-      
+      // Log successful step completion
+      await this.logStepExecution(
+        invoiceId, 
+        stepNumber, 
+        'completed', 
+        mode, 
+        result, 
+        undefined, 
+        executionTime
+      );
+
+      // Update invoice workflow step
+      await this.updateInvoiceWorkflowStep(invoiceId, stepNumber + 1);
+
+      return { success: true, result };
+
     } catch (error) {
       const executionTime = Date.now() - startTime;
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       
       // Log step failure
-      await this.logStepExecution(invoiceId, stepNumber, 'failed', mode, null, executionTime, errorMessage);
-      
-      // Update invoice workflow status
-      await this.updateInvoiceWorkflowStatus(invoiceId, stepNumber, 'failed');
-      
-      throw error;
+      await this.logStepExecution(
+        invoiceId, 
+        stepNumber, 
+        'failed', 
+        mode, 
+        undefined, 
+        errorMessage, 
+        executionTime
+      );
+
+      return { success: false, error: errorMessage };
     }
   }
 
   /**
-   * Execute the complete workflow automatically
+   * Execute complete workflow automatically
    */
   async executeCompleteWorkflow(
     invoiceId: number, 
-    config: WorkflowConfig = { mode: 'automatic', autoRetryAttempts: 3, failFast: false, loggingLevel: 'detailed' }
-  ): Promise<WorkflowStatus> {
-    const startTime = Date.now();
-    
-    try {
-      // Initialize workflow
-      await this.initializeWorkflow(invoiceId, config.mode);
-      
-      // Execute steps sequentially
-      for (let step = 1; step <= 7; step++) {
-        try {
-          const stepResult = await this.executeWorkflowStep(invoiceId, step, config.mode);
+    config: Partial<WorkflowConfig> = {}
+  ): Promise<{ success: boolean; results: any[]; errors: string[] }> {
+    const workflowConfig = { ...this.config, ...config };
+    const results: any[] = [];
+    const errors: string[] = [];
+
+    // Update invoice to show workflow in progress
+    await this.updateInvoiceWorkflowStep(invoiceId, 1);
+
+    for (let step = 1; step <= 7; step++) {
+      try {
+        const stepResult = await this.executeWorkflowStep(invoiceId, step, 'automatic');
+        
+        if (stepResult.success) {
+          results.push({ step, result: stepResult.result });
           
-          if (stepResult.status === 'failed' && config.failFast) {
-            throw new Error(`Step ${step} failed: ${stepResult.errorMessage}`);
-          }
-          
-          // If petty cash detected at step 2, workflow is complete
+          // Check if we should skip remaining steps (e.g., petty cash)
           if (step === 2 && stepResult.result?.isPettyCash) {
+            console.log(`Invoice ${invoiceId} is petty cash, skipping remaining steps`);
             break;
           }
-          
-        } catch (error) {
-          // Retry logic for failed steps
-          if (config.autoRetryAttempts > 0) {
-            for (let attempt = 1; attempt <= config.autoRetryAttempts; attempt++) {
-              try {
-                await this.executeWorkflowStep(invoiceId, step, config.mode);
-                break;
-              } catch (retryError) {
-                if (attempt === config.autoRetryAttempts) {
-                  throw retryError;
-                }
-                // Wait before retry
-                await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
-              }
-            }
-          } else {
-            throw error;
+        } else {
+          errors.push(`Step ${step}: ${stepResult.error}`);
+          if (workflowConfig.failFast) {
+            break;
           }
         }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`Step ${step}: ${errorMessage}`);
+        
+        if (workflowConfig.failFast) {
+          break;
+        }
       }
-      
-      // Mark workflow as completed
-      await this.completeWorkflow(invoiceId);
-      
-      return await this.getWorkflowStatus(invoiceId);
-      
-    } catch (error) {
-      // Mark workflow as failed
-      await this.failWorkflow(invoiceId, error instanceof Error ? error.message : 'Unknown error');
-      throw error;
     }
+
+    const success = errors.length === 0;
+    
+    if (success) {
+      await this.updateInvoiceWorkflowStep(invoiceId, 8); // Mark as completed
+    }
+
+    return { success, results, errors };
   }
 
   /**
    * Get current workflow status
    */
   async getWorkflowStatus(invoiceId: number): Promise<WorkflowStatus> {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(invoices.id, invoiceId)
-    });
+    const db = await getDb();
     
+    // Get invoice workflow info
+    const [invoice] = await db.select({
+      currentWorkflowStep: invoices.currentWorkflowStep,
+      workflowMode: invoices.workflowMode,
+      createdAt: invoices.createdAt,
+      updatedAt: invoices.updatedAt
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
     if (!invoice) {
       throw new Error(`Invoice ${invoiceId} not found`);
     }
-    
-    const executionLogs = await this.db.query.workflowExecutionLog.findMany({
-      where: eq(workflowExecutionLog.invoiceId, invoiceId),
-      orderBy: [desc(workflowExecutionLog.stepNumber)]
-    });
-    
+
+    // Get step execution logs
+    const stepLogs = await db.select().from(workflowExecutionLog)
+      .where(eq(workflowExecutionLog.invoiceId, invoiceId))
+      .orderBy(workflowExecutionLog.stepNumber);
+
     const steps: WorkflowStep[] = [];
     for (let i = 1; i <= 7; i++) {
-      const log = executionLogs.find(l => l.stepNumber === i);
-      steps.push({
-        stepNumber: i,
-        name: this.getStepName(i),
-        description: this.getStepDescription(i),
-        status: log?.status || 'pending',
-        result: log?.result,
-        errorMessage: log?.errorMessage || undefined,
-        executionTimeMs: log?.executionTimeMs || undefined,
-        startedAt: log?.startedAt || undefined,
-        completedAt: log?.completedAt || undefined
-      });
+      const stepLog = stepLogs.find(log => log.stepNumber === i);
+      
+      if (stepLog) {
+        steps.push({
+          stepNumber: i,
+          name: this.getStepName(i),
+          description: this.getStepDescription(i),
+          status: stepLog.status as any,
+          result: stepLog.result,
+          error: stepLog.errorMessage || undefined,
+          startedAt: stepLog.startedAt,
+          completedAt: stepLog.completedAt,
+          executionTimeMs: stepLog.executionTimeMs || undefined
+        });
+      } else {
+        steps.push({
+          stepNumber: i,
+          name: this.getStepName(i),
+          description: this.getStepDescription(i),
+          status: 'pending'
+        });
+      }
     }
-    
+
     const overallStatus = this.calculateOverallStatus(steps);
-    
+
     return {
       invoiceId,
       currentStep: invoice.currentWorkflowStep || 1,
@@ -230,198 +245,246 @@ export class WorkflowOrchestrator {
    * Reset workflow to specific step
    */
   async resetWorkflowToStep(invoiceId: number, stepNumber: number): Promise<void> {
-    // Reset invoice workflow status
-    await this.db.update(invoices)
-      .set({
-        currentWorkflowStep: stepNumber,
-        workflowCompletedAt: null
-      })
-      .where(eq(invoices.id, invoiceId));
+    const db = await getDb();
     
+    // Update invoice workflow step
+    await db.update(invoices)
+      .set({ currentWorkflowStep: stepNumber })
+      .where(eq(invoices.id, invoiceId));
+
     // Mark subsequent steps as pending
-    for (let step = stepNumber + 1; step <= 7; step++) {
-      await this.logStepExecution(invoiceId, step, 'pending', 'manual');
-    }
+    await db.update(workflowExecutionLog)
+      .set({ status: 'pending' })
+      .where(and(
+        eq(workflowExecutionLog.invoiceId, invoiceId),
+        sql`${workflowExecutionLog.stepNumber} > ${stepNumber}`
+      ));
   }
 
   /**
    * Validate step prerequisites
    */
-  async validateStepPrerequisites(invoiceId: number, stepNumber: number): Promise<boolean> {
-    const invoice = await this.db.query.invoices.findFirst({
-      where: eq(invoices.id, invoiceId)
-    });
-    
-    if (!invoice) {
-      throw new Error(`Invoice ${invoiceId} not found`);
-    }
+  async validateStepPrerequisites(invoiceId: number, stepNumber: number): Promise<{ valid: boolean; issues: string[] }> {
+    const issues: string[] = [];
     
     // Check if previous steps are completed
-    for (let step = 1; step < stepNumber; step++) {
-      const log = await this.db.query.workflowExecutionLog.findFirst({
-        where: and(
-          eq(workflowExecutionLog.invoiceId, invoiceId),
-          eq(workflowExecutionLog.stepNumber, step)
-        )
-      });
-      
-      if (!log || log.status !== 'completed') {
-        return false;
+    for (let i = 1; i < stepNumber; i++) {
+      const stepStatus = await this.getStepStatus(invoiceId, i);
+      if (stepStatus !== 'completed') {
+        issues.push(`Step ${i} (${this.getStepName(i)}) must be completed before step ${stepNumber}`);
       }
     }
-    
-    return true;
+
+    return { valid: issues.length === 0, issues };
   }
 
   // Private helper methods
+
   private async logStepExecution(
     invoiceId: number,
     stepNumber: number,
     status: string,
     mode: string,
     result?: any,
-    executionTimeMs?: number,
-    errorMessage?: string
+    errorMessage?: string,
+    executionTimeMs?: number
   ): Promise<void> {
-    await this.db.insert(workflowExecutionLog).values({
+    const db = await getDb();
+    
+    const logData: any = {
       invoiceId,
-      stepNumber,
       stepName: this.getStepName(stepNumber),
+      stepNumber,
       executionMode: mode,
       status,
-      result: result ? JSON.stringify(result) : null,
-      errorMessage,
-      executionTimeMs,
-      startedAt: new Date(),
-      completedAt: status !== 'in_progress' ? new Date() : null
-    });
-  }
-
-  private async updateInvoiceWorkflowStatus(
-    invoiceId: number,
-    stepNumber: number,
-    status: string
-  ): Promise<void> {
-    const updateData: any = {
-      currentWorkflowStep: stepNumber
+      startedAt: new Date()
     };
-    
-    if (status === 'completed' && stepNumber === 7) {
-      updateData.workflowCompletedAt = new Date();
+
+    if (result) logData.result = result;
+    if (errorMessage) logData.errorMessage = errorMessage;
+    if (executionTimeMs) logData.executionTimeMs = executionTimeMs;
+
+    if (status === 'completed' || status === 'failed') {
+      logData.completedAt = new Date();
     }
+
+    await db.insert(workflowExecutionLog).values(logData);
+  }
+
+  private async updateInvoiceWorkflowStep(invoiceId: number, stepNumber: number): Promise<void> {
+    const db = await getDb();
     
-    await this.db.update(invoices)
-      .set(updateData)
-      .where(eq(invoices.id, invoiceId));
-  }
-
-  private async initializeWorkflow(invoiceId: number, mode: string): Promise<void> {
-    await this.db.update(invoices)
-      .set({
-        workflowMode: mode,
-        currentWorkflowStep: 1,
-        workflowCompletedAt: null
+    await db.update(invoices)
+      .set({ 
+        currentWorkflowStep: stepNumber,
+        updatedAt: new Date()
       })
       .where(eq(invoices.id, invoiceId));
   }
 
-  private async completeWorkflow(invoiceId: number): Promise<void> {
-    await this.db.update(invoices)
-      .set({
-        currentWorkflowStep: 7,
-        workflowCompletedAt: new Date()
-      })
-      .where(eq(invoices.id, invoiceId));
-  }
+  private async getStepStatus(invoiceId: number, stepNumber: number): Promise<string> {
+    const db = await getDb();
+    
+    const [log] = await db.select({ status: workflowExecutionLog.status })
+      .from(workflowExecutionLog)
+      .where(and(
+        eq(workflowExecutionLog.invoiceId, invoiceId),
+        eq(workflowExecutionLog.stepNumber, stepNumber)
+      ))
+      .orderBy(desc(workflowExecutionLog.startedAt))
+      .limit(1);
 
-  private async failWorkflow(invoiceId: number, errorMessage: string): Promise<void> {
-    await this.db.update(invoices)
-      .set({
-        status: 'rejected'
-      })
-      .where(eq(invoices.id, invoiceId));
-  }
-
-  private async markStepsAsSkipped(invoiceId: number, stepNumbers: number[]): Promise<void> {
-    for (const step of stepNumbers) {
-      await this.logStepExecution(invoiceId, step, 'skipped', 'automatic');
-    }
+    return log?.status || 'pending';
   }
 
   private calculateOverallStatus(steps: WorkflowStep[]): 'pending' | 'in_progress' | 'completed' | 'failed' {
-    if (steps.some(s => s.status === 'failed')) return 'failed';
-    if (steps.every(s => s.status === 'completed' || s.status === 'skipped')) return 'completed';
-    if (steps.some(s => s.status === 'in_progress')) return 'in_progress';
-    return 'pending';
+    if (steps.every(step => step.status === 'pending')) return 'pending';
+    if (steps.some(step => step.status === 'failed')) return 'failed';
+    if (steps.every(step => step.status === 'completed' || step.status === 'skipped')) return 'completed';
+    return 'in_progress';
   }
 
   private getStepName(stepNumber: number): string {
-    const stepNames = {
-      1: 'Data Extraction',
-      2: 'Petty Cash Classification',
-      3: 'Line Item Classification',
-      4: 'Project Matching',
-      5: 'Validation Rules',
-      6: 'PO Matching',
-      7: 'Final Database Preparation'
-    };
-    return stepNames[stepNumber as keyof typeof stepNames] || 'Unknown Step';
+    const stepNames = [
+      'Data Extraction',
+      'Petty Cash Classification',
+      'Line Item Classification',
+      'Project Matching',
+      'Validation Rules',
+      'PO Matching',
+      'Final Database Preparation'
+    ];
+    return stepNames[stepNumber - 1] || 'Unknown Step';
   }
 
   private getStepDescription(stepNumber: number): string {
-    const descriptions = {
-      1: 'Extract data from invoice using XML parser if XML exists, otherwise use OCR extraction from PDF',
-      2: 'Check if invoice is petty cash based on threshold and skip remaining steps if true',
-      3: 'Perform line item classification only for non-petty cash invoices',
-      4: 'Match invoices to projects based on project validation list',
-      5: 'Apply validation rules to matched projects',
-      6: 'Match invoices to POs based on vendor name, amount, and line items',
-      7: 'Prepare final database with matched Invoice-PO and all relevant information'
-    };
-    return descriptions[stepNumber as keyof typeof descriptions] || 'No description available';
+    const descriptions = [
+      'Extract data from invoice using XML parser or OCR',
+      'Check if invoice is petty cash based on threshold',
+      'Perform line item classification for non-petty cash invoices',
+      'Match invoices to projects based on validation list',
+      'Apply validation rules to matched projects',
+      'Match invoices to POs based on vendor, amount, and line items',
+      'Prepare final database with all workflow results'
+    ];
+    return descriptions[stepNumber - 1] || 'No description available';
   }
 
   // Step execution methods
+
   private async executeDataExtraction(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'Data extraction completed' };
+    // This step is typically done during initial invoice upload
+    // Return existing extracted data
+    const db = await getDb();
+    const [invoice] = await db.select({
+      extractedData: invoices.extractedData,
+      ocrText: invoices.ocrText
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
+    return {
+      hasData: !!invoice.extractedData,
+      hasOcrText: !!invoice.ocrText,
+      extractedData: invoice.extractedData
+    };
   }
 
   private async executePettyCashClassification(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { isPettyCash: false };
+    const db = await getDb();
+    const [invoice] = await db.select({
+      totalAmount: invoices.totalAmount,
+      vendorName: invoices.vendorName
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
+    // Simple petty cash classification based on amount threshold
+    const amount = parseFloat(invoice.totalAmount?.toString() || '0');
+    const isPettyCash = amount <= 100; // Configurable threshold
+
+    if (isPettyCash) {
+      // Create petty cash log entry
+      await storage.createPettyCashLog({
+        invoiceId,
+        amount,
+        vendorName: invoice.vendorName || 'Unknown',
+        status: 'pending_approval',
+        createdAt: new Date()
+      });
+    }
+
+    return { isPettyCash, amount, threshold: 100 };
   }
 
   private async executeLineItemClassification(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'Line item classification completed' };
+    // Use existing line item classification service
+    const result = await lineItemClassificationService.classifyInvoiceLineItems(invoiceId);
+    return result;
   }
 
   private async executeProjectMatching(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'Project matching completed' };
+    const db = await getDb();
+    const [invoice] = await db.select({
+      vendorName: invoices.vendorName,
+      totalAmount: invoices.totalAmount
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
+    // Use existing project matcher
+    const projectMatch = await projectMatcher.findBestProjectMatch(invoice);
+    return { projectMatch };
   }
 
   private async executeValidationRules(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'Validation rules applied' };
+    // Use existing validation logic
+    const db = await getDb();
+    const [invoice] = await db.select({
+      totalAmount: invoices.totalAmount,
+      taxAmount: invoices.taxAmount,
+      vendorName: invoices.vendorName
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
+    // Basic validation rules
+    const validations = [];
+    
+    if (invoice.totalAmount && invoice.totalAmount > 0) {
+      validations.push({ rule: 'amount_positive', status: 'passed' });
+    } else {
+      validations.push({ rule: 'amount_positive', status: 'failed' });
+    }
+
+    if (invoice.vendorName && invoice.vendorName.trim().length > 0) {
+      validations.push({ rule: 'vendor_name_present', status: 'passed' });
+    } else {
+      validations.push({ rule: 'vendor_name_present', status: 'failed' });
+    }
+
+    return { validations, passed: validations.every(v => v.status === 'passed') };
   }
 
   private async executePOMatching(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'PO matching completed' };
+    const db = await getDb();
+    const [invoice] = await db.select({
+      vendorName: invoices.vendorName,
+      totalAmount: invoices.totalAmount
+    }).from(invoices).where(eq(invoices.id, invoiceId));
+
+    // Use existing PO matcher
+    const poMatches = await invoicePOMatcher.findMatches(invoice);
+    return { poMatches };
   }
 
   private async executeFinalDatabasePreparation(invoiceId: number): Promise<any> {
-    // This will be implemented in the main workflow function
-    // For now, return a placeholder
-    return { message: 'Final database preparation completed' };
+    // Mark workflow as completed
+    const db = await getDb();
+    await db.update(invoices)
+      .set({ 
+        workflowCompletedAt: new Date(),
+        status: 'matched'
+      })
+      .where(eq(invoices.id, invoiceId));
+
+    return { 
+      workflowCompleted: true,
+      completedAt: new Date(),
+      finalStatus: 'matched'
+    };
   }
 }
 

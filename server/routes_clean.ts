@@ -38,10 +38,7 @@ import { lineItemClassificationService } from "./services/lineItemClassification
 import { BulkClassificationService } from "./services/bulkClassificationService.js";
 import { ProgressTracker } from './services/progressTracker';
 import * as progressTracker from './services/progressTracker'; // Import for progress tracking functions
-import { InvoiceProcessingService } from './services/invoiceProcessingService.js';
-
-// Initialize services
-const invoiceProcessingService = new InvoiceProcessingService();
+import { workflowOrchestrator } from "./services/workflowOrchestrator";
 
 // Configure multer for file uploads
 const upload = multer({
@@ -86,52 +83,14 @@ const excelUpload = multer({
 
 // Using isAuthenticated from replitAuth.ts
 
-// Async processing function for invoice handling - 7-Step Workflow
+// Async processing function for invoice handling
 async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
   try {
-    console.log(`🚀 Starting 7-step workflow for invoice ${invoice.id} (${invoice.fileName})`);
+    console.log(`Starting OCR processing for invoice ${invoice.id} (${invoice.fileName})`);
 
     // Update status to show processing in progress
     await storage.updateInvoice(invoice.id, { status: "processing" });
 
-    // STEP 1: Data Extraction
-    console.log(`📋 Step 1: Data Extraction for invoice ${invoice.id}`);
-    const { ocrText, extractedData } = await executeDataExtraction(invoice, fileBuffer);
-    
-    if (!extractedData) {
-      throw new Error("Data extraction failed");
-    }
-
-    // Execute the remaining workflow steps
-    await executePostExtractionWorkflow(invoice.id, extractedData, ocrText);
-
-    console.log(`✅ Invoice ${invoice.id} workflow completed successfully`);
-    
-  } catch (error) {
-    console.error(`❌ Error in workflow for invoice ${invoice.id}:`, error);
-    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-
-    try {
-      await storage.updateInvoice(invoice.id, { 
-        status: "rejected",
-        extractedData: { 
-          error: errorMessage,
-          timestamp: new Date().toISOString(),
-          processStep: 'workflow_execution'
-        }
-      });
-    } catch (updateError) {
-      console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
-    }
-  }
-}
-
-/**
- * Execute Step 1: Data Extraction
- * Extract data from invoice using XML parser if XML exists, otherwise use OCR extraction from PDF
- */
-async function executeDataExtraction(invoice: any, fileBuffer: Buffer): Promise<{ ocrText: string; extractedData: any }> {
-  try {
     // Add timeout for OCR processing
     const ocrPromise = processInvoiceOCR(fileBuffer, invoice.id);
     const timeoutPromise = new Promise((_, reject) => 
@@ -145,15 +104,18 @@ async function executeDataExtraction(invoice: any, fileBuffer: Buffer): Promise<
       throw new Error("OCR did not extract sufficient text from the document");
     }
 
+    // Extract structured data using AI with timeout or XML parser for XML files
+    console.log(`Starting AI extraction for invoice ${invoice.id}`);
+
+    let extractedData: any;
+
     // Check if this is XML content that should use our XML parser instead of AI
     const isXmlContent = ocrText.trim().startsWith('<?xml') && 
                         (ocrText.includes('<Invoice') || ocrText.includes('<CreditNote') || ocrText.includes('<AttachedDocument'));
 
-    let extractedData: any;
-
     if (isXmlContent) {
-      console.log(`XML content detected for invoice ${invoice.id}, using XML parser`);
-      
+      console.log(`XML content detected for invoice ${invoice.id}, using XML parser instead of AI`);
+
       // Import XML parser
       const { parseInvoiceXML } = await import('./services/xmlParser');
 
@@ -166,7 +128,7 @@ async function executeDataExtraction(invoice: any, fileBuffer: Buffer): Promise<
           lineItems: xmlData.lineItems?.length || 0
         });
 
-        // Convert XML parser output to expected format
+        // Convert XML parser output to expected AI format
         extractedData = {
           vendorName: xmlData.vendorName,
           invoiceNumber: xmlData.invoiceNumber,
@@ -185,41 +147,39 @@ async function executeDataExtraction(invoice: any, fileBuffer: Buffer): Promise<
       } catch (xmlError) {
         console.error(`XML parsing failed for invoice ${invoice.id}, falling back to AI:`, xmlError);
         // Fallback to AI if XML parsing fails
-        extractedData = await extractInvoiceData(ocrText);
+        const aiPromise = extractInvoiceData(ocrText);
+        const aiTimeoutPromise = new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+        );
+        extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
       }
     } else {
       // Use AI for non-XML content
-      console.log(`Using AI extraction for invoice ${invoice.id}`);
-      extractedData = await extractInvoiceData(ocrText);
+      const aiPromise = extractInvoiceData(ocrText);
+      const aiTimeoutPromise = new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('AI extraction timeout')), 30000)
+      );
+      extractedData = await Promise.race([aiPromise, aiTimeoutPromise]) as any;
     }
-
-    console.log(`Data extraction completed for invoice ${invoice.id}:`, {
+    console.log(`AI extraction completed for invoice ${invoice.id}:`, {
       vendor: extractedData.vendorName,
       amount: extractedData.totalAmount,
       invoiceNumber: extractedData.invoiceNumber
     });
 
-    return { ocrText, extractedData };
-    
-  } catch (error) {
-    console.error(`Data extraction failed for invoice ${invoice.id}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Execute the remaining workflow steps (2-7) after data extraction
- */
-async function executePostExtractionWorkflow(invoiceId: number, extractedData: any, ocrText: string) {
-  try {
     // Sanitize and validate extracted data
     const sanitizeText = (text: any) => {
       if (!text || typeof text !== 'string') return null;
+
+      // Remove HTML tags and excessive special characters
       const cleaned = text.replace(/<[^>]*>/g, '').trim();
+
+      // Check if text is mostly corrupted (high ratio of special characters)
       const specialCharRatio = (cleaned.match(/[^a-zA-Z0-9\s\-_.,]/g) || []).length / cleaned.length;
       if (specialCharRatio > 0.3 || cleaned.length > 500) {
         return null;
       }
+
       return cleaned;
     };
 
@@ -234,251 +194,111 @@ async function executePostExtractionWorkflow(invoiceId: number, extractedData: a
     };
 
     // Update invoice with extracted data
-    await storage.updateInvoice(invoiceId, {
+    await storage.updateInvoice(invoice.id, {
       ocrText,
       extractedData,
       ...cleanedData
     });
 
-    // STEP 2: Petty Cash Classification
-    console.log(`💰 Step 2: Petty Cash Classification for invoice ${invoiceId}`);
-    const pettyCashResult = await executePettyCashClassification(invoiceId, extractedData);
-    
-    if (pettyCashResult.isPettyCash) {
-      console.log(`✅ Invoice ${invoiceId} classified as petty cash, skipping remaining steps`);
-      await storage.updateInvoice(invoiceId, { 
-        status: "approved",
-        processingStatus: 'petty_cash_approved'
+    // Automatically validate the invoice after extraction
+    try {
+      console.log(`🔍 Starting validation for invoice ${invoice.id}...`);
+
+      // Prepare complete validation data including extractedData for rule processing
+      const validationData = {
+        ...cleanedData,
+        totalAmount: cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount.toString()) : 0,
+        taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0,
+        extractedData: extractedData // This includes buyerTaxId for NIT validation
+      };
+
+      const validationResult = await storage.validateInvoiceData(validationData);
+
+      // Determine the status based on validation results
+      let status: "pending" | "processing" | "extracted" | "approved" | "rejected" | "paid" | "matched" = 'extracted';
+      if (validationResult.isValid) {
+        status = 'approved'; // Automatically approve if validation passes
+      } else if (validationResult.criticalViolations > 0) {
+        status = 'rejected'; // Reject if critical violations
+      } else {
+        status = 'extracted'; // Keep extracted status for review if only warnings
+      }
+
+      // Store comprehensive validation results in the database
+      await storage.updateInvoice(invoice.id, {
+        status,
+        validationResults: validationResult, // Store complete validation results
+        validationStatus: validationResult.status,
+        isValidated: true, // Mark as validated regardless of pass/fail
+        validationScore: validationResult.validationScore?.toString() || "0",
+        processingStatus: 'validated' // Update processing status
       });
-      return; // Early exit for petty cash invoices
-    }
 
-    // STEP 3: Line Item Classification
-    console.log(`🏷️ Step 3: Line Item Classification for invoice ${invoiceId}`);
-    await executeLineItemClassification(invoiceId, extractedData);
+      console.log(`✅ Invoice ${invoice.id} validation completed:`, {
+        status: validationResult.status,
+        score: validationResult.validationScore,
+        violations: validationResult.violations.length,
+        finalStatus: status
+      });
 
-    // STEP 4: Project Matching
-    console.log(`🏗️ Step 4: Project Matching for invoice ${invoiceId}`);
-    await executeProjectMatching(invoiceId, extractedData);
-
-    // STEP 5: Validation Rules
-    console.log(`✅ Step 5: Validation Rules for invoice ${invoiceId}`);
-    await executeValidationRules(invoiceId, cleanedData);
-
-    // STEP 6: PO Matching
-    console.log(`📋 Step 6: PO Matching for invoice ${invoiceId}`);
-    await executePOMatching(invoiceId, extractedData);
-
-    // STEP 7: Final Database Preparation
-    console.log(`💾 Step 7: Final Database Preparation for invoice ${invoiceId}`);
-    await executeFinalDatabasePreparation(invoiceId);
-
-    console.log(`🎉 All workflow steps completed for invoice ${invoiceId}`);
-
-  } catch (error) {
-    console.error(`Workflow execution failed for invoice ${invoiceId}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Execute Step 2: Petty Cash Classification
- * Check if invoice is petty cash based on threshold and skip remaining steps if true
- */
-async function executePettyCashClassification(invoiceId: number, extractedData: any): Promise<{ isPettyCash: boolean; confidence: number; reason: string }> {
-  try {
-    const { classifyPettyCash } = await import('./services/aiService');
-    const result = await classifyPettyCash(extractedData);
-    
-    console.log(`Petty cash classification for invoice ${invoiceId}:`, result);
-    return result;
-    
-  } catch (error) {
-    console.error(`Petty cash classification failed for invoice ${invoiceId}:`, error);
-    return { isPettyCash: false, confidence: 0, reason: 'Classification error' };
-  }
-}
-
-/**
- * Execute Step 3: Line Item Classification
- * Perform line item classification only for non-petty cash invoices
- */
-async function executeLineItemClassification(invoiceId: number, extractedData: any): Promise<void> {
-  try {
-    const { classifyLineItems } = await import('./services/aiService');
-    const lineItems = extractedData.lineItems || [];
-    
-    if (lineItems.length > 0) {
-      const classifications = await classifyLineItems(lineItems);
-      
-      // Store classifications in database
-      for (const classification of classifications) {
-        await storage.createLineItemClassification({
-          invoiceId,
-          description: classification.description,
-          category: classification.category,
-          confidence: classification.confidence.toString(),
-          keywords: classification.keywords,
-          suggestedCategory: classification.suggestedCategory
-        });
+      // Log detailed validation results for debugging
+      if (validationResult.violations.length > 0) {
+        console.log(`❌ Validation violations for invoice ${invoice.id}:`, validationResult.violations);
       }
-      
-      console.log(`Line item classification completed for invoice ${invoiceId}: ${classifications.length} items classified`);
-    } else {
-      console.log(`No line items to classify for invoice ${invoiceId}`);
-    }
-    
-  } catch (error) {
-    console.error(`Line item classification failed for invoice ${invoiceId}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Execute Step 4: Project Matching
- * Match invoices to projects based on project validation list
- */
-async function executeProjectMatching(invoiceId: number, extractedData: any): Promise<void> {
-  try {
-    const { projectMatcher } = await import('../projectMatcher');
-    
-    // Get validated projects from database
-    const projects = await storage.getValidatedProjects();
-    
-    if (projects.length > 0) {
-      const matchResult = await projectMatcher.matchInvoiceWithProjects(extractedData, projects);
-      
-      if (matchResult && matchResult.project) {
-        // Store project match
-        await storage.createInvoiceProjectMatch({
-          invoiceId,
-          projectId: matchResult.project.id,
-          matchScore: matchResult.matchScore.toString(),
-          status: 'auto',
-          matchDetails: matchResult.matchDetails
-        });
-        
-        console.log(`Project matching completed for invoice ${invoiceId}: matched to project ${matchResult.project.name}`);
-      } else {
-        console.log(`No project match found for invoice ${invoiceId}`);
+      if (validationResult.warnings.length > 0) {
+        console.log(`⚠️ Validation warnings for invoice ${invoice.id}:`, validationResult.warnings);
       }
-    } else {
-      console.log(`No validated projects available for matching invoice ${invoiceId}`);
+
+    } catch (validationError) {
+      console.error(`❌ Validation failed for invoice ${invoice.id}:`, validationError);
+
+      // Store validation error in results
+      const errorResult = {
+        isValid: false,
+        validationScore: 0,
+        violations: [{
+          ruleId: null,
+          fieldName: 'system',
+          ruleType: 'validation_error',
+          expected: 'successful_validation',
+          actual: 'validation_system_error',
+          severity: 'critical',
+          message: validationError instanceof Error ? validationError.message : 'Unknown validation error',
+          timestamp: new Date().toISOString()
+        }],
+        warnings: [],
+        status: 'error',
+        timestamp: new Date().toISOString()
+      };
+
+      await storage.updateInvoice(invoice.id, {
+        status: 'extracted', // Keep as extracted for manual review
+        validationResults: errorResult,
+        validationStatus: 'error',
+        isValidated: false,
+        validationScore: "0"
+      });
     }
-    
+
+    console.log(`Invoice ${invoice.id} processing completed successfully`);
   } catch (error) {
-    console.error(`Project matching failed for invoice ${invoiceId}:`, error);
-    throw error;
-  }
-}
+    console.error(`Error processing invoice ${invoice.id}:`, error);
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
 
-/**
- * Execute Step 5: Validation Rules
- * Apply validation rules to matched projects
- */
-async function executeValidationRules(invoiceId: number, cleanedData: any): Promise<void> {
-  try {
-    // Prepare complete validation data
-    const validationData = {
-      ...cleanedData,
-      totalAmount: cleanedData.totalAmount ? parseFloat(cleanedData.totalAmount.toString()) : 0,
-      taxAmount: cleanedData.taxAmount ? parseFloat(cleanedData.taxAmount.toString()) : 0
-    };
-
-    const validationResult = await storage.validateInvoiceData(validationData);
-
-    // Determine the status based on validation results
-    let status: "pending" | "processing" | "extracted" | "approved" | "rejected" | "paid" | "matched" = 'extracted';
-    if (validationResult.isValid) {
-      status = 'extracted'; // Keep as extracted for manual review
-    } else if (validationResult.criticalViolations > 0) {
-      status = 'rejected';
+    try {
+      await storage.updateInvoice(invoice.id, { 
+        status: "rejected",
+        extractedData: { 
+          error: errorMessage,
+          timestamp: new Date().toISOString(),
+          processStep: 'extraction'
+        }
+      });
+    } catch (updateError) {
+      console.error(`Failed to update invoice ${invoice.id} with error status:`, updateError);
     }
-
-    // Store comprehensive validation results
-    await storage.updateInvoice(invoiceId, {
-      status,
-      validationResults: validationResult,
-      validationStatus: validationResult.status,
-      isValidated: true,
-      validationScore: validationResult.validationScore?.toString() || "0",
-      processingStatus: 'validated'
-    });
-
-    console.log(`Validation rules applied for invoice ${invoiceId}:`, {
-      status: validationResult.status,
-      score: validationResult.validationScore,
-      violations: validationResult.violations.length
-    });
-
-  } catch (error) {
-    console.error(`Validation rules failed for invoice ${invoiceId}:`, error);
-    throw error;
   }
 }
-
-/**
- * Execute Step 6: PO Matching
- * Match invoices to POs based on vendor name, amount, and line items
- */
-async function executePOMatching(invoiceId: number, extractedData: any): Promise<void> {
-  try {
-    const { invoicePOMatcher } = await import('./services/invoicePoMatcher');
-    
-    // Get all purchase orders for matching
-    const purchaseOrders = await storage.getAllPurchaseOrders();
-    
-    if (purchaseOrders.length > 0) {
-      const matchResult = await invoicePOMatcher.findMatches(extractedData, purchaseOrders);
-      
-      if (matchResult && matchResult.length > 0) {
-        // Store the best match
-        const bestMatch = matchResult[0];
-        await storage.createInvoicePOMatch({
-          invoiceId,
-          poId: bestMatch.purchaseOrder.id,
-          matchScore: bestMatch.matchScore.toString(),
-          status: 'auto',
-          matchDetails: bestMatch.matchDetails
-        });
-        
-        console.log(`PO matching completed for invoice ${invoiceId}: matched to PO ${bestMatch.purchaseOrder.poId} with score ${bestMatch.matchScore}%`);
-      } else {
-        console.log(`No PO match found for invoice ${invoiceId}`);
-      }
-    } else {
-      console.log(`No purchase orders available for matching invoice ${invoiceId}`);
-    }
-    
-  } catch (error) {
-    console.error(`PO matching failed for invoice ${invoiceId}:`, error);
-    throw error;
-  }
-}
-
-/**
- * Execute Step 7: Final Database Preparation
- * Prepare final database with matched Invoice-PO and all relevant information
- */
-async function executeFinalDatabasePreparation(invoiceId: number): Promise<void> {
-  try {
-    // Update invoice status to indicate workflow completion
-    await storage.updateInvoice(invoiceId, {
-      status: 'extracted',
-      processingStatus: 'workflow_completed',
-      currentWorkflowStep: 7,
-      workflowCompletedAt: new Date()
-    });
-    
-    console.log(`Final database preparation completed for invoice ${invoiceId}`);
-    
-  } catch (error) {
-    console.error(`Final database preparation failed for invoice ${invoiceId}:`, error);
-    throw error;
-  }
-}
-
-// Orphaned code removed to fix syntax errors
 
 // Helper function to process line items for a single invoice
 async function processInvoiceLineItems(invoice: any, vendorContext: any, userId: string): Promise<{ success: boolean; error?: string }> {
@@ -1212,7 +1032,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/invoices/:id/matches', isAuthenticated, async (req, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
-      const matches = await storage.getInvoicePoMatchesByInvoiceId(invoiceId);
+      const matches = await storage.getInvoicePoMatches(invoiceId);
       res.json(matches);
     } catch (error) {
       console.error("Error fetching invoice matches:", error);
@@ -1445,7 +1265,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (projectMatch) finalStatus = 'matched';
       if (validationStatus) finalStatus = 'validated';
 
-      await storage.updateInvoice(invoiceId, {
+      await storage.updateInvoice(invoice.id, {
         processingStatus: finalStatus
       });
 
@@ -1551,10 +1371,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const validationStatus = action === "validate" ? "validated" : "rejected";
       const isValidated = action === "validate";
 
-      // Get all projects and find the one with matching projectId
-      const projects = await storage.getProjects();
-      const project = projects.find(p => p.projectId === projectId);
-      
+      // First find the project by projectId to get the integer id
+      const project = await storage.getProjectByProjectId(projectId);
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
@@ -1567,9 +1385,8 @@ export async function registerRoutes(app: Express): Promise<Server> {
         validatedAt: new Date()
       });
 
-      // Return the updated project by getting it again
-      const updatedProjects = await storage.getProjects();
-      const updatedProject = updatedProjects.find(p => p.id === project.id);
+      // Return the updated project
+      const updatedProject = await storage.getProjectByProjectId(projectId);
       res.json(updatedProject);
     } catch (error) {
       console.error("Error validating project:", error);
@@ -2211,14 +2028,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       }
 
       // Clear AI service cache if it exists
-      try {
-        const aiModule = await import('./services/aiService');
-        if (aiModule && typeof aiModule.clearCache === 'function') {
-          aiModule.clearCache();
-          console.log('AI service cache cleared');
-        }
-      } catch (error) {
-        console.log('AI service cache clear skipped:', error);
+      const { aiService } = await import('./services/aiService');
+      if (aiService && typeof aiService.clearCache === 'function') {
+        aiService.clearCache();
+        console.log('AI service cache cleared');
       }
 
       // Clear any cached extraction results
@@ -2298,129 +2111,6 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error starting invoice processing:", error);
       res.status(500).json({ message: "Failed to start processing" });
-    }
-  });
-
-  // Workflow Management Endpoints
-  
-  // Execute a specific workflow step manually
-  app.post('/api/invoices/:id/workflow/execute-step', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { stepNumber, mode = 'manual' } = req.body;
-
-      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
-        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
-      }
-
-      const { workflowOrchestrator } = await import('./services/workflowOrchestrator');
-      
-      // Validate prerequisites
-      const canExecute = await workflowOrchestrator.validateStepPrerequisites(invoiceId, stepNumber);
-      if (!canExecute) {
-        return res.status(400).json({ error: 'Cannot execute step. Previous steps must be completed first.' });
-      }
-
-      // Execute the step
-      const stepResult = await workflowOrchestrator.executeWorkflowStep(invoiceId, stepNumber, mode);
-      
-      res.json({
-        message: `Step ${stepNumber} executed successfully`,
-        step: stepResult
-      });
-
-    } catch (error: any) {
-      console.error('Error executing workflow step:', error);
-      res.status(500).json({ 
-        error: 'Failed to execute workflow step',
-        message: error.message 
-      });
-    }
-  });
-
-  // Get current workflow status
-  app.get('/api/invoices/:id/workflow/status', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { workflowOrchestrator } = await import('./services/workflowOrchestrator');
-      
-      const workflowStatus = await workflowOrchestrator.getWorkflowStatus(invoiceId);
-      
-      res.json(workflowStatus);
-
-    } catch (error: any) {
-      console.error('Error getting workflow status:', error);
-      res.status(500).json({ 
-        error: 'Failed to get workflow status',
-        message: error.message 
-      });
-    }
-  });
-
-  // Reset workflow to specific step
-  app.post('/api/invoices/:id/workflow/reset', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { stepNumber } = req.body;
-
-      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
-        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
-      }
-
-      const { workflowOrchestrator } = await import('./services/workflowOrchestrator');
-      
-      await workflowOrchestrator.resetWorkflowToStep(invoiceId, stepNumber);
-      
-      res.json({
-        message: `Workflow reset to step ${stepNumber}`,
-        invoiceId,
-        currentStep: stepNumber
-      });
-
-    } catch (error: any) {
-      console.error('Error resetting workflow:', error);
-      res.status(500).json({ 
-        error: 'Failed to reset workflow',
-        message: error.message 
-      });
-    }
-  });
-
-  // Execute complete workflow automatically
-  app.post('/api/invoices/:id/workflow/execute-complete', isAuthenticated, async (req: any, res) => {
-    try {
-      const invoiceId = parseInt(req.params.id);
-      const { config = {} } = req.body;
-
-      const { workflowOrchestrator } = await import('./services/workflowOrchestrator');
-      
-      const workflowStatus = await workflowOrchestrator.executeCompleteWorkflow(invoiceId, config);
-      
-      res.json({
-        message: 'Complete workflow executed successfully',
-        workflow: workflowStatus
-      });
-
-    } catch (error: any) {
-      console.error('Error executing complete workflow:', error);
-      res.status(500).json({ 
-        error: 'Failed to execute complete workflow',
-        message: error.message 
-      });
-    }
-  });
-
-  // Get validated projects for matching
-  app.get('/api/projects/validated', isAuthenticated, async (req: any, res) => {
-    try {
-      const projects = await storage.getValidatedProjects();
-      res.json(projects);
-    } catch (error: any) {
-      console.error('Error getting validated projects:', error);
-      res.status(500).json({ 
-        error: 'Failed to get validated projects',
-        message: error.message 
-      });
     }
   });
 
@@ -7419,6 +7109,144 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
       console.error(`Import task ${configId} failed:`, error);
     }
   }
+
+  // Workflow management endpoints
+  app.post('/api/invoices/:id/workflow/execute-step', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { stepNumber, mode = 'manual' } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
+        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
+      }
+
+      // Validate step prerequisites
+      const prerequisites = await workflowOrchestrator.validateStepPrerequisites(invoiceId, stepNumber);
+      if (!prerequisites.valid) {
+        return res.status(400).json({ 
+          error: 'Step prerequisites not met', 
+          issues: prerequisites.issues 
+        });
+      }
+
+      // Execute the workflow step
+      const result = await workflowOrchestrator.executeWorkflowStep(invoiceId, stepNumber, mode);
+      
+      if (result.success) {
+        res.json({ 
+          success: true, 
+          step: stepNumber, 
+          result: result.result,
+          message: `Step ${stepNumber} executed successfully`
+        });
+      } else {
+        res.status(500).json({ 
+          success: false, 
+          step: stepNumber, 
+          error: result.error 
+        });
+      }
+    } catch (error) {
+      console.error('Error executing workflow step:', error);
+      res.status(500).json({ 
+        error: 'Failed to execute workflow step',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/invoices/:id/workflow/status', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const workflowStatus = await workflowOrchestrator.getWorkflowStatus(invoiceId);
+      res.json(workflowStatus);
+    } catch (error) {
+      console.error('Error getting workflow status:', error);
+      res.status(500).json({ 
+        error: 'Failed to get workflow status',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.post('/api/invoices/:id/workflow/reset', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { stepNumber } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      if (!stepNumber || stepNumber < 1 || stepNumber > 7) {
+        return res.status(400).json({ error: 'Invalid step number. Must be between 1 and 7.' });
+      }
+
+      await workflowOrchestrator.resetWorkflowToStep(invoiceId, stepNumber);
+      
+      res.json({ 
+        success: true, 
+        message: `Workflow reset to step ${stepNumber}`,
+        currentStep: stepNumber
+      });
+    } catch (error) {
+      console.error('Error resetting workflow:', error);
+      res.status(500).json({ 
+        error: 'Failed to reset workflow',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.post('/api/invoices/:id/workflow/execute-complete', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const { config = {} } = req.body;
+      const userId = (req.user as any).claims.sub;
+
+      // Execute complete workflow automatically
+      const result = await workflowOrchestrator.executeCompleteWorkflow(invoiceId, config);
+      
+      res.json({
+        success: result.success,
+        results: result.results,
+        errors: result.errors,
+        message: result.success ? 'Workflow completed successfully' : 'Workflow completed with errors'
+      });
+    } catch (error) {
+      console.error('Error executing complete workflow:', error);
+      res.status(500).json({ 
+        error: 'Failed to execute complete workflow',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
+
+  app.get('/api/projects/validated', isAuthenticated, async (req: any, res) => {
+    try {
+      const db = await getDb();
+      const { projects } = await import('@shared/schema');
+      
+      // Get validated projects for matching
+      const validatedProjects = await db.select({
+        id: projects.id,
+        name: projects.name,
+        address: projects.address,
+        city: projects.city,
+        vatNumber: projects.vatNumber,
+        isValidated: projects.isValidated
+      })
+      .from(projects)
+      .where(eq(projects.isValidated, true))
+      .orderBy(projects.name);
+
+      res.json(validatedProjects);
+    } catch (error) {
+      console.error('Error fetching validated projects:', error);
+      res.status(500).json({ 
+        error: 'Failed to fetch validated projects',
+        details: error instanceof Error ? error.message : 'Unknown error'
+      });
+    }
+  });
 
   // Add health check endpoint for deployment monitoring
   app.get('/api/health', (req, res) => {
