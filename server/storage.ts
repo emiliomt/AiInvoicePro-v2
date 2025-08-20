@@ -910,32 +910,60 @@ class PostgresStorage implements IStorage {
   }
 
   async deleteInvoiceImporterConfigCascade(configId: number): Promise<void> {
-    try {
-      // First delete all imported invoices for logs related to this config
-      const logs = await db
-        .select({ id: invoiceImporterLogs.id })
-        .from(invoiceImporterLogs)
-        .where(eq(invoiceImporterLogs.configId, configId));
+    // Execute the cascading delete within a database transaction
+    await db.transaction(async (tx) => {
+      try {
+        console.log(`🗑️ Starting cascading delete for invoice importer config ${configId}`);
+        
+        // First, get all logs related to this config to understand the scope
+        const logs = await tx
+          .select({ id: invoiceImporterLogs.id })
+          .from(invoiceImporterLogs)
+          .where(eq(invoiceImporterLogs.configId, configId));
 
-      for (const log of logs) {
-        await db
-          .delete(importedInvoices)
-          .where(eq(importedInvoices.logId, log.id));
+        console.log(`🔍 Found ${logs.length} logs to process for config ${configId}`);
+
+        // Delete all imported invoices for each log (with count tracking)
+        let totalDeletedInvoices = 0;
+        for (const log of logs) {
+          // First count how many invoices we have for this log
+          const invoiceCount = await tx
+            .select({ count: sql<number>`count(*)` })
+            .from(importedInvoices)
+            .where(eq(importedInvoices.logId, log.id));
+          
+          const count = invoiceCount[0]?.count || 0;
+          
+          if (count > 0) {
+            await tx
+              .delete(importedInvoices)
+              .where(eq(importedInvoices.logId, log.id));
+            
+            totalDeletedInvoices += count;
+            console.log(`🗑️ Deleted ${count} imported invoices for log ${log.id}`);
+          }
+        }
+        
+        console.log(`📊 Total deleted imported invoices: ${totalDeletedInvoices}`);
+
+        // Delete all logs for this config
+        const deletedLogs = await tx
+          .delete(invoiceImporterLogs)
+          .where(eq(invoiceImporterLogs.configId, configId));
+        console.log(`🗑️ Deleted ${logs.length} logs for config ${configId}`);
+
+        // Finally delete the config itself
+        const deletedConfig = await tx
+          .delete(invoiceImporterConfigs)
+          .where(eq(invoiceImporterConfigs.id, configId));
+        console.log(`🗑️ Deleted invoice importer config ${configId}`);
+
+        console.log(`✅ Successfully completed cascading delete for config ${configId}`);
+      } catch (error) {
+        console.error(`❌ Error in cascading delete transaction for config ${configId}:`, error);
+        throw error;
       }
-
-      // Then delete all logs for this config
-      await db
-        .delete(invoiceImporterLogs)
-        .where(eq(invoiceImporterLogs.configId, configId));
-
-      // Finally delete the config itself
-      await db
-        .delete(invoiceImporterConfigs)
-        .where(eq(invoiceImporterConfigs.id, configId));
-    } catch (error) {
-      console.error("Error in cascading delete:", error);
-      throw error;
-    }
+    });
   }
 
   async cleanupInactiveConfigurations(): Promise<void> {
@@ -1955,7 +1983,7 @@ class PostgresStorage implements IStorage {
         processedInvoices: invoiceImporterLogs.processedInvoices,
         successfulImports: invoiceImporterLogs.successfulImports,
         failedImports: invoiceImporterLogs.failedImports,
-        skippedImports: invoiceImporterLogs.skippedImports,
+        skippedImports: invoiceImporterLogs.skippedInvoices,
         fileType: invoiceImporterConfigs.fileTypes,
         logs: invoiceImporterLogs.logs,
         errorMessage: invoiceImporterLogs.errorMessage,

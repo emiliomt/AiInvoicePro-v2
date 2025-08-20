@@ -25,11 +25,12 @@ The platform is built with a microservices-oriented approach, emphasizing modula
 - **Invoice Rejection Debugging:** Comprehensive tools for analyzing and debugging invoice rejections, including API endpoints for detailed analysis and a dedicated UI.
 - **Line Item Classification Integration:** Automatic processing workflow includes comprehensive line item classification at Step 3, creating line items from extracted data and automatically classifying them using AI-powered categorization with proper error handling and database storage.
 - **Real-Time Progress Tracking:** Implemented comprehensive WebSocket-based progress tracking system for line item classification processing, featuring visual progress indicators, detailed step tracking, real-time metrics updates, and automatic completion handling with seamless user experience.
+- **Database Integrity Management:** Comprehensive database connection handling with transaction-based cascading deletions for invoice import configurations, ensuring proper foreign key constraint handling and data consistency.
 
 **System Design Choices:**
 - **Frontend:** React with TypeScript, utilizing Tailwind CSS and shadcn/ui components for a modern and efficient user interface.
 - **Backend:** Express.js with TypeScript for a robust and scalable server-side.
-- **Database:** PostgreSQL with Drizzle ORM for data storage and management, including fields for validation status, results, score, and timestamps.
+- **Database:** PostgreSQL with Drizzle ORM for data storage and management, including fields for validation status, results, score, and timestamps. Implements transaction-based cascading deletions to ensure data integrity.
 - **Authentication:** Integrated with Replit Auth for secure user authentication.
 - **UI/UX Decisions:** Focuses on a modern, component-based design with an emphasis on functional and clean aesthetics, exemplified by the Invoice Verification dashboard.
 
