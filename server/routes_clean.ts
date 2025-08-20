@@ -412,6 +412,41 @@ export async function registerRoutes(app: Express): Promise<Server> {
   // Auth middleware
   await setupAuth(app);
 
+  // 5. MIDDLEWARE DEBUGGING
+  // Add this before all routes to debug middleware order
+  app.use((req, res, next) => {
+    if (req.url.includes('/upload')) {
+      console.log('=== MIDDLEWARE ORDER DEBUG ===');
+      console.log('URL:', req.url);
+      console.log('Method:', req.method);
+      console.log('Content-Type:', req.headers['content-type']);
+      console.log('Has body:', !!req.body);
+      console.log('Body type:', typeof req.body);
+    }
+    next();
+  });
+
+  // 6. BODY PARSER DEBUGGING
+  // Add this to check if body-parser is interfering
+  app.use('/api/invoices/upload', (req, res, next) => {
+    console.log('=== BODY PARSER DEBUG ===');
+    console.log('Body parsed:', !!req.body);
+    console.log('Body keys:', Object.keys(req.body || {}));
+    console.log('Raw body available:', !!(req as any).rawBody);
+    next();
+  });
+
+  // 7. POTENTIAL FIX: Ensure body parser doesn't interfere
+  // Add this BEFORE the upload route and AFTER body parser middleware
+  app.use('/api/invoices/upload*', (req, res, next) => {
+    // Skip body parsing for upload routes
+    if (req.headers['content-type']?.includes('multipart/form-data')) {
+      console.log('Skipping body parser for multipart upload');
+      return next();
+    }
+    next();
+  });
+
   // Auth routes
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
@@ -1796,126 +1831,227 @@ export async function registerRoutes(app: Express): Promise<Server> {
     }
   });
 
-  // Invoice upload and processing
-  app.post('/api/invoices/upload', isAuthenticated, upload.array('invoice', 10), async (req: any, res) => {
-    console.log('=== INVOICE UPLOAD DEBUG ===');
-    console.log('Request headers:', req.headers);
-    console.log('Request body keys:', Object.keys(req.body || {}));
-    console.log('Request files:', req.files);
-    console.log('Request file count:', req.files?.length || 0);
+  // 1. ENHANCED DEBUG MIDDLEWARE - Add before the upload route
+  app.post('/api/invoices/upload', isAuthenticated, (req: any, res, next) => {
+    console.log('=== ENHANCED UPLOAD DEBUG ===');
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Content-Length:', req.headers['content-length']);
+    console.log('Body Buffer Length:', req.body ? Buffer.byteLength(JSON.stringify(req.body)) : 'No body');
+    console.log('Raw Headers:', JSON.stringify(req.headers, null, 2));
     
-    const files = req.files as Express.Multer.File[];
-
-    // 🔥 FIX: Get userId from authenticated request properly
-    const userId = (req.user as any).claims.sub;
-
-    console.log('Upload request details:', {
-      authenticated: !!req.user,
-      userId: userId,  // ✅ Now properly defined
-      hasFiles: !!(files && files.length > 0),
-      fileCount: files?.length || 0,
-      files: files?.map(f => ({ name: f.originalname, size: f.size, type: f.mimetype, fieldname: f.fieldname })),
-      body: req.body
-    });
-
-    // Validate authentication
-    if (!userId) {
-      console.error('No userId found in authenticated request');
-      return res.status(401).json({ message: "Authentication required" });
+    // Check if this is actually multipart data
+    const contentType = req.headers['content-type'] || '';
+    const isMultipart = contentType.includes('multipart/form-data');
+    console.log('Is Multipart:', isMultipart);
+    
+    if (!isMultipart) {
+      console.error('❌ NOT MULTIPART DATA - Content-Type should include multipart/form-data');
+      return res.status(400).json({ 
+        message: "Invalid content type. Expected multipart/form-data",
+        received: contentType
+      });
     }
+    
+    next();
+  }, (req: any, res) => {
+    // 2. USE upload.any() WITH ENHANCED ERROR HANDLING
+    upload.any()(req, res, async (err) => {
+      console.log('=== MULTER PROCESSING RESULT ===');
+      
+      if (err) {
+        console.error("❌ Multer error:", err);
+        console.error("Error type:", typeof err);
+        console.error("Error message:", err.message);
+        console.error("Error stack:", err.stack);
+        
+        // Check specific multer error types
+        if (err.code === 'LIMIT_FILE_SIZE') {
+          return res.status(400).json({ message: "File too large. Maximum size is 10MB" });
+        } else if (err.code === 'LIMIT_UNEXPECTED_FILE') {
+          return res.status(400).json({ message: "Unexpected file field" });
+        } else if (err.message.includes('Only PDF, JPEG, PNG, and XML files are allowed')) {
+          return res.status(400).json({ message: err.message });
+        }
+        
+        return res.status(400).json({ message: `Upload error: ${err.message}` });
+      }
 
-    if (!files || files.length === 0) {
-      return res.status(400).json({ message: "No files uploaded" });
-    }
+      try {
+        const userId = (req.user as any).claims.sub;
+        const files = req.files as Express.Multer.File[];
 
-    // Filter only invoice files
-    const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
-    if (invoiceFiles.length === 0) {
-      return res.status(400).json({ message: "No invoice files found" });
-    }
-
-    const fs = await import('fs');
-    const path = await import('path');
-    const uploadsDir = path.join(process.cwd(), 'uploads');
-
-    // Ensure uploads directory exists
-    if (!fs.existsSync(uploadsDir)) {
-      fs.mkdirSync(uploadsDir, { recursive: true });
-    }
-
-    const uploadedInvoices: any[] = [];
-
-    try {
-      // Process invoice files in parallel for better performance
-      const processPromises = invoiceFiles.map(async (file) => {
-        try {
-          // Generate unique filename
-          const fileExt = path.extname(file.originalname);
-          const uniqueFileName = `${Date.now()}-${Math.random().toString(36).substring(2)}${fileExt}`;
-          const filePath = path.join(uploadsDir, uniqueFileName);
-
-          // Write file to disk
-          fs.writeFileSync(filePath, file.buffer);
-
-          // Create initial invoice record with file path
-          const invoice = await storage.createInvoice({
-            userId,  // ✅ Now properly defined
-            fileName: file.originalname,
-            status: "processing",
-            fileUrl: filePath,
+        console.log('=== POST-MULTER DEBUG ===');
+        console.log("User ID:", userId);
+        console.log("Files received:", files ? files.length : 0);
+        console.log("Request body:", req.body);
+        
+        // Enhanced file debugging
+        if (files && files.length > 0) {
+          console.log('✅ FILES SUCCESSFULLY RECEIVED:');
+          files.forEach((file, index) => {
+            console.log(`File ${index + 1}:`, {
+              originalname: file.originalname,
+              mimetype: file.mimetype,
+              size: file.size,
+              fieldname: file.fieldname,
+              bufferLength: file.buffer ? file.buffer.length : 'No buffer'
+            });
           });
-
-          console.log(`Created invoice record ${invoice.id} for file ${file.originalname}`);
-
-          // Start processing immediately using setImmediate to avoid blocking
-          setImmediate(async () => {
-            try {
-              console.log(`Starting background processing for invoice ${invoice.id}`);
-              await processInvoiceAsync(invoice, file.buffer);
-              console.log(`Completed background processing for invoice ${invoice.id}`);
-            } catch (error) {
-              console.error(`Failed to process invoice ${invoice.id}:`, error);
-              // Update invoice with error status
-              try {
-                await storage.updateInvoice(invoice.id, {
-                  status: "rejected",
-                  extractedData: { 
-                    error: error instanceof Error ? error.message : 'Unknown error',
-                    timestamp: new Date().toISOString(),
-                    processStep: 'background_processing'
-                  }
-                });
-              } catch (updateError) {
-                console.error(`Failed to update invoice ${invoice.id} with error:`, updateError);
-              }
+        } else {
+          console.error('❌ NO FILES RECEIVED BY MULTER');
+          console.log('Request object keys:', Object.keys(req));
+          console.log('Req.files type:', typeof req.files);
+          console.log('Req.files value:', req.files);
+          console.log('Req.file:', req.file);
+          console.log('Body keys:', Object.keys(req.body || {}));
+          
+          return res.status(400).json({ 
+            message: "No files uploaded. Please select files to upload.",
+            debug: {
+              filesReceived: files ? files.length : 0,
+              bodyKeys: Object.keys(req.body || {}),
+              hasFiles: !!files,
+              requestKeys: Object.keys(req)
             }
           });
-
-          return invoice;
-        } catch (fileError) {
-          console.error(`Error processing file ${file.originalname}:`, fileError);
-          return null;
         }
-      });
 
-      const results = await Promise.allSettled(processPromises);
-      results.forEach(result => {
-        if (result.status === 'fulfilled' && result.value) {
-          uploadedInvoices.push(result.value);
+        // Validate authentication
+        if (!userId) {
+          console.error('No userId found in authenticated request');
+          return res.status(401).json({ message: "Authentication required" });
         }
-      });
 
-      console.log(`Successfully created ${uploadedInvoices.length} invoice records`);
+        // Filter only invoice files
+        const invoiceFiles = files.filter(f => f.fieldname === 'invoice');
+        if (invoiceFiles.length === 0) {
+          return res.status(400).json({ message: "No invoice files found" });
+        }
 
-      res.json({ 
-        message: `Successfully uploaded ${uploadedInvoices.length} invoice(s). Processing started.`,
-        invoices: uploadedInvoices.map(inv => ({ id: inv.id, fileName: inv.fileName }))
-      });
-    } catch (error) {
-      console.error("Error uploading invoices:", error);
-      res.status(500).json({ message: "Failed to upload invoices" });
-    }
+        // Rest of your existing upload logic...
+        const { storage } = await import('./storage');
+        const user = await storage.getUser(userId);
+        const companyId = user?.companyId;
+
+        // Process each file
+        const results = [];
+        for (const file of invoiceFiles) {
+          try {
+            console.log(`Processing file: ${file.originalname}`);
+            
+            // Validate file
+            if (!file.buffer || file.buffer.length === 0) {
+              throw new Error(`File ${file.originalname} has no content`);
+            }
+
+            // Create invoice record
+            const invoice = await storage.createInvoice({
+              userId,
+              companyId,
+              fileName: file.originalname,
+              status: 'pending',
+            });
+
+            console.log(`Created invoice record ${invoice.id} for ${file.originalname}`);
+
+            // Start async processing
+            processInvoiceAsync(invoice, file.buffer);
+
+            results.push({
+              invoiceId: invoice.id,
+              fileName: file.originalname,
+              status: 'uploaded'
+            });
+
+          } catch (fileError) {
+            console.error(`Error processing file ${file.originalname}:`, fileError);
+            results.push({
+              fileName: file.originalname,
+              status: 'error',
+              error: fileError instanceof Error ? fileError.message : 'Unknown error'
+            });
+          }
+        }
+
+        const successCount = results.filter(r => r.status === 'uploaded').length;
+        const errorCount = results.filter(r => r.status === 'error').length;
+
+        console.log(`✅ Upload completed: ${successCount} successful, ${errorCount} errors`);
+
+        res.json({
+          message: `Successfully uploaded ${successCount} file(s)${errorCount > 0 ? `, ${errorCount} failed` : ''}`,
+          uploadedCount: successCount,
+          results
+        });
+
+      } catch (error) {
+        console.error("❌ Upload processing error:", error);
+        res.status(500).json({ 
+          message: "Server error during upload processing",
+          error: error instanceof Error ? error.message : 'Unknown error'
+        });
+      }
+    });
   });
+
+  // 3. ALTERNATIVE UPLOAD ROUTE WITH DIFFERENT MULTER CONFIG
+  // Add this as a fallback route to test different configurations
+  app.post('/api/invoices/upload-test', isAuthenticated, (req: any, res) => {
+    console.log('=== TESTING ALTERNATIVE MULTER CONFIG ===');
+    
+    // Alternative multer configuration
+    const testUpload = multer({
+      storage: multer.memoryStorage(),
+      limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB
+        files: 10, // Max 10 files
+        fields: 10 // Max 10 non-file fields
+      },
+      fileFilter: (req, file, cb) => {
+        console.log('File filter check:', {
+          originalname: file.originalname,
+          mimetype: file.mimetype
+        });
+        
+        // More permissive file filter for testing
+        const allowedMimes = [
+          'application/pdf',
+          'image/jpeg',
+          'image/jpg', 
+          'image/png',
+          'application/xml',
+          'text/xml'
+        ];
+        
+        if (allowedMimes.includes(file.mimetype)) {
+          cb(null, true);
+        } else {
+          console.log('File rejected by filter:', file.mimetype);
+          cb(new Error(`File type ${file.mimetype} not allowed`));
+        }
+      },
+    });
+
+    testUpload.any()(req, res, (err) => {
+      if (err) {
+        console.error('Test upload error:', err);
+        return res.status(400).json({ message: `Test upload failed: ${err.message}` });
+      }
+
+      const files = req.files as Express.Multer.File[];
+      console.log('Test upload successful, files:', files?.length || 0);
+      
+      res.json({
+        message: `Test upload received ${files?.length || 0} files`,
+        files: files?.map(f => ({
+          name: f.originalname,
+          size: f.size,
+          type: f.mimetype
+        })) || []
+      });
+    });
+  });
+
   // Clean corrupted invoice data
   app.post('/api/invoices/clean-data', isAuthenticated, async (req: any, res) => {
     try {

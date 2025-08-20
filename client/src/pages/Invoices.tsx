@@ -423,17 +423,49 @@ export default function Invoices() {
 
   const uploadMutation = useMutation({
     mutationFn: async (files: FileList) => {
+      console.log('=== FRONTEND UPLOAD DEBUG ===');
+      console.log('Files to upload:', files.length);
+      
+      // Debug each file
+      Array.from(files).forEach((file, index) => {
+        console.log(`Frontend File ${index + 1}:`, {
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          lastModified: file.lastModified
+        });
+      });
+
       const formData = new FormData();
-      Array.from(files).forEach((file) => {
+      
+      // Add files with detailed logging
+      Array.from(files).forEach((file, index) => {
+        console.log(`Adding file ${index + 1} to FormData:`, file.name);
         formData.append('invoice', file);
       });
 
+      // Debug FormData contents
+      console.log('FormData entries:');
+      for (const [key, value] of formData.entries()) {
+        console.log(`  ${key}:`, value instanceof File ? `File: ${value.name}` : value);
+      }
+
+      console.log('Sending request to /api/invoices/upload');
+      
       const response = await apiRequest('POST', '/api/invoices/upload', formData);
+      
+      console.log('Response status:', response.status);
+      console.log('Response headers:', response.headers);
+      
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`Upload failed: ${response.status} ${response.statusText}`);
+        console.error('Upload failed:', errorText);
+        throw new Error(`Upload failed: ${response.status} ${response.statusText} - ${errorText}`);
       }
-      return response.json();
+      
+      const result = await response.json();
+      console.log('Upload success:', result);
+      return result;
     },
     onSuccess: (data) => {
       toast({
