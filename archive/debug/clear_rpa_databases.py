@@ -27,9 +27,14 @@ def clear_sqlite_database(db_path, db_type):
             if tables:
                 for table in tables:
                     table_name = table[0]
-                    # Validate table name to prevent SQL injection
+                    # Validate table name to prevent SQL injection (identifiers cannot be parameterized)
                     if not table_name.replace('_', '').replace('-', '').isalnum():
                         print(f"⚠️  Skipping table with invalid name: {table_name}")
+                        continue
+                    # Additional safety: only allow expected table patterns for this debug script
+                    allowed_prefixes = ['invoice', 'user', 'rpa', 'import', 'log', 'temp', 'debug']
+                    if not any(table_name.lower().startswith(prefix) for prefix in allowed_prefixes):
+                        print(f"⚠️  Skipping unexpected table: {table_name}")
                         continue
                     cursor.execute(f"DELETE FROM `{table_name}`")
                     print(f"Cleared SQLite table: {table_name}")
@@ -91,7 +96,7 @@ def clear_postgresql_tables():
                 """, (table,))
 
                 if cursor.fetchone()[0]:
-                    # Validate table name to prevent SQL injection
+                    # Validate table name to prevent SQL injection (identifiers cannot be parameterized)
                     if not table.replace('_', '').replace('-', '').isalnum():
                         print(f"⚠️  Skipping table with invalid name: {table}")
                         continue
