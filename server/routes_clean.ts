@@ -5850,12 +5850,12 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const invoice = await storage.createInvoice(invoiceData);
       console.log(`✅ Created invoice ${invoice.id} for XML file ${filename}`);
 
-      // Queue for processing (async, don't wait for completion)
+      // Queue for processing using the standard manual processing pipeline (async, don't wait for completion)
       setImmediate(async () => {
         try {
-          const { rpaService } = await import('./services/rpaService');
-          await rpaService.processInvoiceBuffer(invoice.id, fileBuffer, filename);
-          console.log(`✅ RPA XML invoice ${invoice.id} processed successfully`);
+          console.log(`🔄 Starting XML processing for RPA invoice ${invoice.id} (${filename})`);
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ RPA XML invoice ${invoice.id} processed successfully through manual pipeline`);
         } catch (error) {
           console.error(`❌ RPA XML invoice ${invoice.id} processing failed:`, error);
         }
@@ -5968,6 +5968,45 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     } catch (error) {
       console.error('Error processing RPA PDF:', error);
       res.status(500).json({ error: 'Failed to process RPA PDF file' });
+    }
+  });
+
+  // Reprocess an invoice (for RPA imports that failed to process)
+  app.post('/api/invoices/:id/reprocess', isAuthenticated, async (req: any, res) => {
+    try {
+      const invoiceId = parseInt(req.params.id);
+      const invoice = await storage.getInvoice(invoiceId);
+      
+      if (!invoice) {
+        return res.status(404).json({ error: 'Invoice not found' });
+      }
+      
+      // Check if file exists
+      const fs = await import('fs');
+      const filePath = invoice.fileUrl || `uploads/${invoice.fileName}`;
+      
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({ error: 'Invoice file not found' });
+      }
+      
+      const fileBuffer = fs.readFileSync(filePath);
+      
+      // Trigger reprocessing
+      setImmediate(async () => {
+        try {
+          console.log(`🔄 Reprocessing invoice ${invoiceId}: ${invoice.fileName}`);
+          await processInvoiceAsync(invoice, fileBuffer);
+          console.log(`✅ Invoice ${invoiceId} reprocessed successfully`);
+        } catch (error) {
+          console.error(`❌ Invoice ${invoiceId} reprocessing failed:`, error);
+        }
+      });
+      
+      res.json({ success: true, message: `Invoice ${invoiceId} queued for reprocessing` });
+      
+    } catch (error) {
+      console.error('Error reprocessing invoice:', error);
+      res.status(500).json({ error: 'Failed to reprocess invoice' });
     }
   });
 
