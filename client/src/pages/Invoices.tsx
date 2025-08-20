@@ -167,7 +167,9 @@ export default function Invoices() {
     retry: 3,
     retryDelay: 1000,
     staleTime: 0, // Always consider data stale to ensure fresh fetches
+    gcTime: 0, // Don't cache the data (React Query v5)
     refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -208,8 +210,14 @@ export default function Invoices() {
         title: "Success",
         description: "Invoice deleted successfully",
       });
+      // Force immediate refetch of invoices data
+      queryClient.removeQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      // Force refetch after short delay to ensure invalidation completes
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
@@ -235,8 +243,13 @@ export default function Invoices() {
         title: "Success",
         description: "All invoices have been deleted successfully",
       });
+      // Force immediate refresh for delete all
+      queryClient.removeQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
       queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
+      setTimeout(() => {
+        queryClient.refetchQueries({ queryKey: ["/api/invoices"] });
+      }, 100);
     },
     onError: (error: Error) => {
       toast({
