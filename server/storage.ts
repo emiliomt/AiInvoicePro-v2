@@ -2262,7 +2262,7 @@ export async function deduplicateLineItems(invoiceId: number) {
     let totalRemoved = 0;
     const details: Array<{ description: string | null, duplicateCount: number, removedIds: number[] }> = [];
 
-    for (const [description, items] of grouped.entries()) {
+    for (const [description, items] of Array.from(grouped.entries())) {
       if (items.length > 1) {
         console.log(`🔄 Found ${items.length} duplicates of: ${description}`);
 
