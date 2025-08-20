@@ -1630,8 +1630,8 @@ class PostgresStorage implements IStorage {
         const defaultSettings: Record<string, any> = {
           petty_cash_threshold: {
             key,
-            value: "1000",
-            description: "Petty cash threshold amount",
+            value: "400000",
+            description: "Petty cash threshold amount (in COP)",
           },
           user_preferences: {
             key,
@@ -1935,19 +1935,120 @@ class PostgresStorage implements IStorage {
 
   // Missing methods implementations
   async createPettyCashLog(log: any): Promise<any> {
-    return { id: Date.now(), ...log, createdAt: new Date() };
+    try {
+      const [result] = await db
+        .insert(pettyCashLog)
+        .values({
+          ...log,
+          createdAt: new Date(),
+          updatedAt: new Date()
+        })
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error creating petty cash log:', error);
+      throw error;
+    }
   }
 
   async updatePettyCashLog(id: number, updates: any): Promise<any> {
-    return { id, ...updates, updatedAt: new Date() };
+    try {
+      const [result] = await db
+        .update(pettyCashLog)
+        .set({
+          ...updates,
+          updatedAt: new Date()
+        })
+        .where(eq(pettyCashLog.id, id))
+        .returning();
+      return result;
+    } catch (error) {
+      console.error('Error updating petty cash log:', error);
+      throw error;
+    }
   }
 
   async getPettyCashLogs(status?: string): Promise<any[]> {
-    return [];
+    try {
+      let query = db
+        .select({
+          id: pettyCashLog.id,
+          invoiceId: pettyCashLog.invoiceId,
+          projectId: pettyCashLog.projectId,
+          costCenter: pettyCashLog.costCenter,
+          approvedBy: pettyCashLog.approvedBy,
+          approvalFileUrl: pettyCashLog.approvalFileUrl,
+          status: pettyCashLog.status,
+          approvalNotes: pettyCashLog.approvalNotes,
+          approvedAt: pettyCashLog.approvedAt,
+          isPettyCash: pettyCashLog.isPettyCash,
+          classificationMethod: pettyCashLog.classificationMethod,
+          confidenceScore: pettyCashLog.confidenceScore,
+          createdAt: pettyCashLog.createdAt,
+          updatedAt: pettyCashLog.updatedAt,
+          invoice: {
+            id: invoices.id,
+            vendorName: invoices.vendorName,
+            invoiceNumber: invoices.invoiceNumber,
+            totalAmount: invoices.totalAmount,
+            fileName: invoices.fileName,
+            createdAt: invoices.createdAt,
+          }
+        })
+        .from(pettyCashLog)
+        .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id))
+        .where(eq(pettyCashLog.isPettyCash, true)); // Only get invoices classified as petty cash
+
+      // Apply status filter if provided
+      if (status && status !== 'all') {
+        query = query.where(eq(pettyCashLog.status, status as any));
+      }
+
+      const results = await query;
+      return results;
+    } catch (error) {
+      console.error('Error fetching petty cash logs:', error);
+      return [];
+    }
   }
 
   async getPettyCashLogByInvoiceId(invoiceId: number): Promise<any> {
-    return null;
+    try {
+      const result = await db
+        .select({
+          id: pettyCashLog.id,
+          invoiceId: pettyCashLog.invoiceId,
+          projectId: pettyCashLog.projectId,
+          costCenter: pettyCashLog.costCenter,
+          approvedBy: pettyCashLog.approvedBy,
+          approvalFileUrl: pettyCashLog.approvalFileUrl,
+          status: pettyCashLog.status,
+          approvalNotes: pettyCashLog.approvalNotes,
+          approvedAt: pettyCashLog.approvedAt,
+          isPettyCash: pettyCashLog.isPettyCash,
+          classificationMethod: pettyCashLog.classificationMethod,
+          confidenceScore: pettyCashLog.confidenceScore,
+          createdAt: pettyCashLog.createdAt,
+          updatedAt: pettyCashLog.updatedAt,
+          invoice: {
+            id: invoices.id,
+            vendorName: invoices.vendorName,
+            invoiceNumber: invoices.invoiceNumber,
+            totalAmount: invoices.totalAmount,
+            fileName: invoices.fileName,
+            createdAt: invoices.createdAt,
+          }
+        })
+        .from(pettyCashLog)
+        .innerJoin(invoices, eq(pettyCashLog.invoiceId, invoices.id))
+        .where(eq(pettyCashLog.invoiceId, invoiceId))
+        .limit(1);
+
+      return result[0] || null;
+    } catch (error) {
+      console.error('Error fetching petty cash log by invoice ID:', error);
+      return null;
+    }
   }
 
   async deleteAllProjects(): Promise<void> {

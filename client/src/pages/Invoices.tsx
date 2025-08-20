@@ -3,7 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw, Filter } from "lucide-react";
-import { useState, useCallback, useRef, useMemo } from "react";
+import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -136,6 +136,33 @@ export default function Invoices() {
   const [processing, setProcessing] = useState({ show: false, message: '', progress: 0, total: 0, processed: 0 }); // State for the processing bar
   const [searchTerm, setSearchTerm] = useState('');
   const [classificationFilter, setClassificationFilter] = useState('all');
+  const [pettyCashThreshold, setPettyCashThreshold] = useState<number>(400000); // Default to 400,000 COP
+
+  // Fetch petty cash threshold setting
+  const { data: thresholdData } = useQuery({
+    queryKey: ['pettyCashThreshold'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/settings/petty_cash_threshold');
+        if (response.ok) {
+          const data = await response.json();
+          return parseFloat(data.value) || 400000; // Default to 400,000 COP
+        }
+        return 400000; // Default fallback
+      } catch (error) {
+        console.error('Error fetching petty cash threshold:', error);
+        return 400000; // Default fallback
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Update threshold when data is loaded
+  useEffect(() => {
+    if (thresholdData) {
+      setPettyCashThreshold(thresholdData);
+    }
+  }, [thresholdData]);
 
   const { data: invoices = [], isLoading, error, refetch } = useQuery<Invoice[]>({
     queryKey: ["/api/invoices"],
@@ -1314,8 +1341,30 @@ export default function Invoices() {
                               <div>
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
-                                  const isPettyCash = amount <= 1000; // $1000 USD threshold as implemented in backend
+                                  const currency = invoice.currency || 'USD';
+                                  
+                                  // Calculate petty cash status using configurable threshold and proper currency handling
+                                  const calculatePettyCashStatus = () => {
+                                    if (!amount || amount <= 0) return false;
+                                    
+                                    // For COP invoices, use the configurable threshold directly
+                                    if (currency === 'COP') {
+                                      return amount <= pettyCashThreshold;
+                                    }
+                                    
+                                    // For USD invoices, convert threshold to USD equivalent (rough conversion)
+                                    // 400,000 COP ≈ $100 USD
+                                    const usdThreshold = currency === 'USD' ? 100 : pettyCashThreshold;
+                                    return amount <= usdThreshold;
+                                  };
+                                  
+                                  const isPettyCash = calculatePettyCashStatus();
                                   const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
+                                  
+                                  const thresholdDisplay = currency === 'COP' 
+                                    ? `≤${pettyCashThreshold.toLocaleString()} COP`
+                                    : `≤$${currency === 'USD' ? '100' : '100'} USD`;
+                                  
                                   return (
                                     <Badge
                                       variant={isPettyCash ? "default" : "outline"}
@@ -1325,7 +1374,7 @@ export default function Invoices() {
                                           : 'bg-red-50 text-red-700 border-red-200'
                                       }`}
                                     >
-                                      {isPettyCash ? `Yes (≤$1,000)` : 'No'}
+                                      {isPettyCash ? `Yes (${thresholdDisplay})` : 'No'}
                                       {isAutoProcessed && (
                                         <span className="ml-1 text-xs opacity-75">(Auto)</span>
                                       )}
@@ -1341,7 +1390,24 @@ export default function Invoices() {
                               <div>
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
-                                  const isPettyCash = amount <= 1000; // $1000 USD threshold
+                                  const currency = invoice.currency || 'USD';
+                                  
+                                  // Calculate petty cash status using configurable threshold and proper currency handling
+                                  const calculatePettyCashStatus = () => {
+                                    if (!amount || amount <= 0) return false;
+                                    
+                                    // For COP invoices, use the configurable threshold directly
+                                    if (currency === 'COP') {
+                                      return amount <= pettyCashThreshold;
+                                    }
+                                    
+                                    // For USD invoices, convert threshold to USD equivalent (rough conversion)
+                                    // 400,000 COP ≈ $100 USD
+                                    const usdThreshold = currency === 'USD' ? 100 : pettyCashThreshold;
+                                    return amount <= usdThreshold;
+                                  };
+                                  
+                                  const isPettyCash = calculatePettyCashStatus();
                                   const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
 
                                   if (isPettyCash) {

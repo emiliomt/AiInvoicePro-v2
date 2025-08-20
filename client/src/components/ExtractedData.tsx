@@ -1,4 +1,4 @@
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Textarea } from "@/components/ui/textarea";
 import { useToast } from "@/hooks/use-toast";
-import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle, ThumbsUp } from "lucide-react";
+import { Eye, Download, Trash2, FileText, Calendar, DollarSign, Building2, Hash, User, AlertTriangle, Info, CheckCircle, XCircle, ThumbsUp, MapPin, Edit3, Save, X, EyeOff, Upload, AlertCircle, Clock } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,6 +25,9 @@ import { isUnauthorizedError } from "@/lib/authUtils";
 import PettyCashManager from "@/components/PettyCashManager";
 import ProjectAssignment from "@/components/ProjectAssignment";
 import DiscrepancyDisplay from "@/components/DiscrepancyDisplay";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Separator } from "@/components/ui/separator";
 
 interface Invoice {
   id: number;
@@ -41,6 +44,8 @@ interface Invoice {
   currency?: string;
   fileName?: string;
   ocrText?: string | null;
+  extractedData?: any;
+  projectName?: string | null;
 }
 
 interface LineItem {
@@ -82,11 +87,55 @@ const isAIExtractedInvoice = (invoice: Invoice): boolean => {
   return isPDFImageFile || hasOCRText;
 };
 
-export default function ExtractedData() {
+interface ExtractedDataProps {
+  invoiceId: number;
+  invoiceDetails: Invoice | null;
+  invoiceToShow: Invoice | null;
+  onDataUpdate: () => void;
+  isReadOnly?: boolean;
+}
+
+export default function ExtractedData({ 
+  invoiceId, 
+  invoiceDetails, 
+  invoiceToShow, 
+  onDataUpdate,
+  isReadOnly = false 
+}: ExtractedDataProps) {
   const [selectedInvoiceId, setSelectedInvoiceId] = useState<number | null>(null);
   const [rejectionComments, setRejectionComments] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [isEditing, setIsEditing] = useState(false);
+  const [editedData, setEditedData] = useState<any>({});
+  const [showSensitiveData, setShowSensitiveData] = useState(false);
+  const [pettyCashThreshold, setPettyCashThreshold] = useState<number>(400000); // Default to 400,000 COP
+
+  // Fetch petty cash threshold setting
+  const { data: thresholdData } = useQuery({
+    queryKey: ['pettyCashThreshold'],
+    queryFn: async () => {
+      try {
+        const response = await fetch('/api/settings/petty_cash_threshold');
+        if (response.ok) {
+          const data = await response.json();
+          return parseFloat(data.value) || 400000; // Default to 400,000 COP
+        }
+        return 400000; // Default fallback
+      } catch (error) {
+        console.error('Error fetching petty cash threshold:', error);
+        return 400000; // Default fallback
+      }
+    },
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  // Update threshold when data is loaded
+  useEffect(() => {
+    if (thresholdData) {
+      setPettyCashThreshold(thresholdData);
+    }
+  }, [thresholdData]);
 
   // Get latest invoices
   const { data: invoices } = useQuery<Invoice[]>({
@@ -95,14 +144,14 @@ export default function ExtractedData() {
 
   // Get the latest extracted invoice
   const latestExtractedInvoice = invoices?.find(inv => inv.status === 'extracted');
-  const invoiceToShow = selectedInvoiceId
+  const invoiceToShowForDisplay = selectedInvoiceId
     ? invoices?.find(inv => inv.id === selectedInvoiceId)
     : latestExtractedInvoice;
 
   // Get detailed invoice data
-  const { data: invoiceDetails } = useQuery<Invoice>({
-    queryKey: ["/api/invoices", invoiceToShow?.id],
-    enabled: !!invoiceToShow?.id,
+  const { data: invoiceDetailsData } = useQuery<Invoice>({
+    queryKey: ["/api/invoices", invoiceToShowForDisplay?.id],
+    enabled: !!invoiceToShowForDisplay?.id,
   });
 
   // Simulated project matches (replace with actual API call)
@@ -244,24 +293,24 @@ export default function ExtractedData() {
   });
 
   const handleApprove = () => {
-    if (invoiceToShow) {
-      approveMutation.mutate(invoiceToShow.id);
+    if (invoiceToShowForDisplay) {
+      approveMutation.mutate(invoiceToShowForDisplay.id);
     }
   };
 
   const handleReject = () => {
-    if (invoiceToShow) {
-      rejectMutation.mutate({ invoiceId: invoiceToShow.id, comments: rejectionComments });
+    if (invoiceToShowForDisplay) {
+      rejectMutation.mutate({ invoiceId: invoiceToShowForDisplay.id, comments: rejectionComments });
     }
   };
 
   const handlePositiveFeedback = () => {
-    if (invoiceToShow) {
-      positiveFeedbackMutation.mutate(invoiceToShow.id);
+    if (invoiceToShowForDisplay) {
+      positiveFeedbackMutation.mutate(invoiceToShowForDisplay.id);
     }
   };
 
-  if (!invoiceToShow) {
+  if (!invoiceToShowForDisplay) {
     return (
       <Card className="bg-white shadow-sm border border-gray-200">
         <CardHeader>
@@ -279,9 +328,28 @@ export default function ExtractedData() {
     );
   }
 
-  const invoice = invoiceDetails || invoiceToShow;
+  const invoice = invoiceDetailsData || invoiceToShowForDisplay;
   const confidenceScore = invoice.confidenceScore ? parseFloat(invoice.confidenceScore) * 100 : 0;
-  const isPettyCash = invoice.totalAmount && parseFloat(invoice.totalAmount) < 1000;
+  
+  // Calculate petty cash status using configurable threshold and proper currency handling
+  const calculatePettyCashStatus = () => {
+    if (!invoice.totalAmount) return false;
+    
+    const amount = parseFloat(invoice.totalAmount);
+    const currency = invoice.currency || 'USD';
+    
+    // For COP invoices, use the configurable threshold directly
+    if (currency === 'COP') {
+      return amount <= pettyCashThreshold;
+    }
+    
+    // For USD invoices, convert threshold to USD equivalent (rough conversion)
+    // 400,000 COP ≈ $100 USD
+    const usdThreshold = currency === 'USD' ? 100 : pettyCashThreshold;
+    return amount <= usdThreshold;
+  };
+  
+  const isPettyCash = calculatePettyCashStatus();
 
   return (
     <div className="space-y-4">

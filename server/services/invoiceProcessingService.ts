@@ -8,6 +8,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { ClassificationService } from './classificationService.js';
 import { ProgressTracker } from './progressTracker';
+import { settings } from '../../shared/schema';
 
 export class InvoiceProcessingService {
   /**
@@ -696,13 +697,27 @@ export class InvoiceProcessingService {
       // Convert to number if it's a string
       const amount = typeof totalAmount === 'string' ? parseFloat(totalAmount) : totalAmount;
 
-      // Define petty cash threshold (configurable) - adjusted for COP
-      const PETTY_CASH_THRESHOLD = 200000; // 200,000 COP (approximately $50 USD)
+      // Get configurable petty cash threshold from settings
+      let pettyCashThreshold = 400000; // Default to 400,000 COP
+      try {
+        const db = await getDb();
+        const thresholdSetting = await db
+          .select()
+          .from(settings)
+          .where(eq(settings.key, 'petty_cash_threshold'))
+          .limit(1);
+        
+        if (thresholdSetting.length > 0) {
+          pettyCashThreshold = parseFloat(thresholdSetting[0].value) || 400000;
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not fetch petty cash threshold, using default: ${pettyCashThreshold}`);
+      }
 
-      const isPettyCash = amount <= PETTY_CASH_THRESHOLD;
+      const isPettyCash = amount <= pettyCashThreshold;
 
       if (isPettyCash) {
-        console.log(`📋 Invoice ${invoiceId} flagged as petty cash (Amount: $${amount})`);
+        console.log(`📋 Invoice ${invoiceId} flagged as petty cash (Amount: ${invoice.currency || 'COP'} ${amount}, Threshold: ${pettyCashThreshold})`);
 
         // Create petty cash log entry
         const db = await getDb();
@@ -716,7 +731,7 @@ export class InvoiceProcessingService {
 
         console.log(`✅ Petty cash log created for invoice ${invoiceId}`);
       } else {
-        console.log(`📋 Invoice ${invoiceId} not petty cash (Amount: $${amount})`);
+        console.log(`📋 Invoice ${invoiceId} not petty cash (Amount: ${invoice.currency || 'COP'} ${amount}, Threshold: ${pettyCashThreshold})`);
       }
     } else {
       console.log(`⚠️ No total amount found for invoice ${invoiceId}, skipping petty cash analysis`);

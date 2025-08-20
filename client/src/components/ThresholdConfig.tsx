@@ -27,13 +27,13 @@ export default function ThresholdConfig() {
             if (res.ok) {
               return res.json();
             } else {
-              // If threshold doesn't exist, create it with default value
+              // If threshold doesn't exist, create it with default value for COP
               const createResponse = await fetch('/api/settings/petty_cash_threshold', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ value: "100" }),
+                body: JSON.stringify({ value: "400000" }),
               });
-              return createResponse.ok ? createResponse.json() : { key: 'petty_cash_threshold', value: "100" };
+              return createResponse.ok ? createResponse.json() : { key: 'petty_cash_threshold', value: "400000" };
             }
           })
         ]);
@@ -48,7 +48,7 @@ export default function ThresholdConfig() {
         console.error('Error loading threshold config:', error);
         return {
           userSettings: { defaultCurrency: 'USD' },
-          threshold: { key: 'petty_cash_threshold', value: "100" }
+          threshold: { key: 'petty_cash_threshold', value: "400000" }
         };
       }
     },
@@ -104,7 +104,7 @@ export default function ThresholdConfig() {
     onError: (error: Error) => {
       console.error('Threshold update error:', error);
       // Reset to original value on error
-      setThresholdValue(configData?.threshold?.value || "100");
+      setThresholdValue(configData?.threshold?.value || "400000");
       toast({
         title: "Error", 
         description: `Failed to update threshold: ${error.message}`,
