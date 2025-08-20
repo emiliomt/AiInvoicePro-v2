@@ -176,6 +176,13 @@ export default function InvoiceImporter() {
         const userData = await response.json();
         console.log('👤 Fetched user data:', userData);
         setUser(userData);
+        
+        // Reconnect WebSocket with the correct user ID
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          console.log('🔄 Reconnecting WebSocket with new user ID:', userData.id);
+          wsRef.current.close();
+          setTimeout(() => initializeWebSocket(), 100);
+        }
       }
     } catch (error) {
       console.error('Failed to fetch user data:', error);
@@ -232,13 +239,16 @@ export default function InvoiceImporter() {
               console.log('📨 WebSocket message received:', data);
 
               if (data.type === 'progress' || data.type === 'rpa_progress') {
+                console.log('📈 Received progress update:', data);
                 handleRealTimeProgressUpdate(data);
               } else if (data.type === 'task_complete') {
                 handleTaskComplete(data);
               } else if (data.type === 'logs') {
                 handleRealTimeLogs(data);
+              } else if (data.type === 'welcome' || data.type === 'subscribed') {
+                console.log('📝 WebSocket status message:', data);
               } else {
-                console.log('📨 Unhandled WebSocket message type:', data.type);
+                console.log('📨 Unhandled WebSocket message type:', data.type, data);
               }
             } catch (error) {
               console.error('Error parsing WebSocket message:', error);
@@ -287,33 +297,43 @@ export default function InvoiceImporter() {
     const configId = data.configId || data.data?.configId || data.taskId;
     const currentStep = data.currentStep || data.data?.currentStep || data.message;
     const progress = data.progress || data.data?.progress || data.step || 0;
+    
+    console.log(`📈 Extracted values - configId: ${configId}, currentStep: ${currentStep}, progress: ${progress}`);
+    console.log(`📋 Current configs count: ${configs.length}`);
 
-    setConfigs(prevConfigs => 
-      prevConfigs.map(config => {
+    setConfigs(prevConfigs => {
+      const updatedConfigs = prevConfigs.map(config => {
         if (config.id === configId) {
+          console.log(`✅ Updating config ${configId} with progress ${progress}%`);
           // Enhanced stats update with proper field mapping
           const updatedStats = {
             ...config.stats,
-            ...data.data,
-            // Ensure proper field mapping for enhanced metrics
-            total_invoices: data.data?.total_invoices || data.data?.total || config.stats?.total_invoices || 0,
-            skipped_invoices: data.data?.skipped_invoices || data.data?.skipped || config.stats?.skipped_invoices || 0,
-            processed_invoices: data.data?.processed_invoices || data.data?.processed || config.stats?.processed_invoices || 0,
-            successful_imports: data.data?.successful_imports || data.data?.success || config.stats?.successful_imports || 0,
-            failed_imports: data.data?.failed_imports || data.data?.failed || config.stats?.failed_imports || 0
+            ...data,
+            // Map the direct properties from RPA progress
+            total_invoices: data.totalInvoices || data.data?.total_invoices || data.data?.total || config.stats?.total_invoices || 0,
+            skipped_invoices: data.skippedInvoices || data.data?.skipped_invoices || data.data?.skipped || config.stats?.skipped_invoices || 0,
+            processed_invoices: data.processedInvoices || data.data?.processed_invoices || data.data?.processed || config.stats?.processed_invoices || 0,
+            successful_imports: data.successfulImports || data.data?.successful_imports || data.data?.success || config.stats?.successful_imports || 0,
+            failed_imports: data.failedImports || data.data?.failed_imports || data.data?.failed || config.stats?.failed_imports || 0
           };
 
-          return {
+          const updatedConfig = {
             ...config,
-            status: data.status === 'completed' ? 'completed' : data.status === 'failed' ? 'failed' : 'running',
+            status: data.isComplete ? 'completed' as const : data.status === 'failed' ? 'failed' as const : 'running' as const,
             currentStep: currentStep || config.currentStep,
             progress: progress,
             stats: updatedStats
           };
+          
+          console.log(`📋 Config ${configId} updated:`, updatedConfig);
+          return updatedConfig;
         }
         return config;
-      })
-    );
+      });
+      
+      console.log(`📊 Configs after update:`, updatedConfigs.find(c => c.id === configId));
+      return updatedConfigs;
+    });
 
     // If console view is open for this config, update it with real-time logs
     if (consoleConfig && consoleConfig.id === configId) {
