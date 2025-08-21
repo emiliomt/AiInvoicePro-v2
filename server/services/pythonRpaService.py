@@ -2150,7 +2150,6 @@ class InvoiceRPAService:
 
                     # Check if this PDF is referenced by any existing invoice
                     try:
-                        import os
                         database_url = os.environ.get('DATABASE_URL')
                         if not database_url:
                             self.log("⚠️ DATABASE_URL not found, preserving all PDFs", "WARNING")
