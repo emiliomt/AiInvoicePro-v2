@@ -661,7 +661,8 @@ class PythonInvoiceImporter {
       pythonProcess.on('close', (code) => {
         console.log(`Python RPA process exited with code ${code}`);
 
-        if (code === 0 && result) {
+        // Consider successful if we have a result with successful imports, regardless of exit code
+        if (result && (result.success || (result.stats && result.stats.successful_imports > 0))) {
           // Update progress with final stats including skipped invoices
           progress.totalInvoices = result.stats.total_invoices;
           progress.skippedInvoices = result.stats.skipped_invoices || 0;
