@@ -15,7 +15,7 @@ import json
 import base64
 import psycopg2
 import defusedxml.ElementTree as ET
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Dict, Any, Optional
 
 from selenium import webdriver
@@ -2247,40 +2247,44 @@ class InvoiceRPAService:
             xml_files = {}
             pdf_files = {}
 
-            # Scan XML files (only those from current session)
+            # Scan XML files (current session OR within last 10 minutes for RPA-downloaded files)
             if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
                 xml_count = 0
+                recent_threshold = datetime.now() - timedelta(minutes=10)  # Files from last 10 minutes
                 for filename in os.listdir(self.xml_dir):
                     if filename.lower().endswith(".xml"):
                         file_path = os.path.join(self.xml_dir, filename)
-                        # Check if file was created after session start (current session file)
+                        # Check if file was created after session start OR within last 10 minutes (for RPA downloads)
                         file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-                        if file_mod_time >= self.session_start_time:
+                        if file_mod_time >= self.session_start_time or file_mod_time >= recent_threshold:
                             base_name = os.path.splitext(filename)[0]
                             xml_files[base_name] = filename
                             xml_count += 1
                             self.session_downloaded_files.add(filename)
+                            self.log(f"📁 Including XML file: {filename} (modified: {file_mod_time})")
                         else:
-                            self.log(f"⏭️ Ignoring pre-session XML file: {filename} (modified: {file_mod_time})")
-                self.log(f"📁 Found {xml_count} XML files from current session in {self.xml_dir}")
+                            self.log(f"⏭️ Ignoring old XML file: {filename} (modified: {file_mod_time})")
+                self.log(f"📁 Found {xml_count} XML files for processing in {self.xml_dir}")
 
-            # Scan PDF files with enhanced matching logic (only those from current session)
+            # Scan PDF files with enhanced matching logic (current session OR within last 10 minutes for RPA-downloaded files)
             pdf_dir = self.download_dir  # Already 'uploads/pdfs'
             if file_types in ['pdf', 'both'] and os.path.exists(pdf_dir):
                 pdf_count = 0
+                recent_threshold = datetime.now() - timedelta(minutes=10)  # Files from last 10 minutes
                 for filename in os.listdir(pdf_dir):
                     if filename.lower().endswith(".pdf"):
                         file_path = os.path.join(pdf_dir, filename)
-                        # Check if file was created after session start (current session file)
+                        # Check if file was created after session start OR within last 10 minutes (for RPA downloads)
                         file_mod_time = datetime.fromtimestamp(os.path.getmtime(file_path))
-                        if file_mod_time >= self.session_start_time:
+                        if file_mod_time >= self.session_start_time or file_mod_time >= recent_threshold:
                             base_name = os.path.splitext(filename)[0]
                             pdf_files[base_name] = filename
                             pdf_count += 1
                             self.session_downloaded_files.add(filename)
+                            self.log(f"📁 Including PDF file: {filename} (modified: {file_mod_time})")
                         else:
-                            self.log(f"⏭️ Ignoring pre-session PDF file: {filename} (modified: {file_mod_time})")
-                self.log(f"📁 Found {pdf_count} PDF files from current session in {pdf_dir}")
+                            self.log(f"⏭️ Ignoring old PDF file: {filename} (modified: {file_mod_time})")
+                self.log(f"📁 Found {pdf_count} PDF files for processing in {pdf_dir}")
 
             # Enhanced file matching: match PDFs to XMLs by invoice token
             matched_pairs = {}
