@@ -80,7 +80,7 @@ export class PythonRPAService {
       return result;
     } catch (error) {
       console.error('Error getting RPA status:', error);
-      return { status: 'error', message: error.message };
+      return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 }
