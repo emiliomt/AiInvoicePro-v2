@@ -48,14 +48,14 @@ class InvoiceRPAService:
         except Exception as e:
             # If decoding fails, use the raw password
             self.password = raw_password
-            self.log(f"Using raw password (decode failed: {e})")
+            self.log(f"Password decode failed, using raw format")
         self.download_dir = config.get('downloadPath',
                                        'uploads/pdfs')
         self.xml_dir = config.get('xmlPath', '/tmp/xml_invoices')
 
         # Get headless mode from config (default to False for easier debugging)
         self.headless_mode = config.get('headless', False)
-        
+
         # Get ZIP download timeout from config (default to 60 seconds)
         self.zip_download_timeout = config.get('zipDownloadTimeout', 60)
 
@@ -108,7 +108,7 @@ class InvoiceRPAService:
             'current_step': 'Initializing',
             'progress': 0
         }
-        
+
         # Global Progress Tracking for Multi-Page Processing
         self.global_progress = {
             'estimated_total_invoices': 0,     # Total estimated invoices across all pages
@@ -140,16 +140,16 @@ class InvoiceRPAService:
         - invoice_number (normalized and trimmed, converted to uppercase)
         - emisor_id (normalized and trimmed)
         - total_amount (optional, with 0.01 threshold validation)
-        
+
         Returns True if duplicate found (should skip), False if new invoice (should process)
         """
         try:
             cursor = conn.cursor()
-            
+
             # Normalize inputs as requested
             normalized_invoice_number = (invoice_number or "").strip().upper()
             normalized_emisor_id = (emisor_id or "").strip()
-            
+
             # Build the base SQL query using actual data structure (simpler and more reliable)
             # Skip invoices unless they are marked as 'failed' or need retry
             base_query = """
@@ -158,11 +158,11 @@ class InvoiceRPAService:
                     UPPER(TRIM(original_file_name)) LIKE %s
                     AND processing_status NOT IN ('failed')
             """
-            
+
             params = [
                 f"{normalized_invoice_number}%"  # filename pattern match
             ]
-            
+
             # Add total_amount validation if provided
             if total_amount and total_amount.strip() and total_amount != 'N/A':
                 try:
@@ -188,13 +188,13 @@ class InvoiceRPAService:
                     self.log(f"⚠️ Could not normalize total_amount '{total_amount}': {e}, skipping amount validation", "WARNING")
             else:
                 self.log("🔍 Checking duplicate without total_amount validation (not provided or empty)")
-            
+
             base_query += " LIMIT 1;"
-            
+
             # Execute the query
             cursor.execute(base_query, params)
             result = cursor.fetchone()
-            
+
             if result:
                 amount_msg = f" with total_amount validation" if (total_amount and total_amount.strip() and total_amount != 'N/A') else ""
                 self.log(f"✅ Duplicate found: Invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
@@ -203,7 +203,7 @@ class InvoiceRPAService:
                 amount_msg = f" (total_amount: {total_amount})" if total_amount else ""
                 self.log(f"🆕 No duplicate found for invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
                 return False
-                
+
         except Exception as e:
             self.log(f"❌ Error in is_duplicate_invoice: {e}", "ERROR")
             # On error, return False to be safe and allow processing
@@ -214,7 +214,7 @@ class InvoiceRPAService:
         Enhanced duplicate detection with processing status tracking
         Checks processing lifecycle: downloaded -> processing -> completed -> failed
         Only skips invoices that are successfully completed, allows retry of failed ones
-        
+
         Now uses the robust is_duplicate_invoice helper for initial duplicate checking
         """
         try:
@@ -224,16 +224,16 @@ class InvoiceRPAService:
             if not database_url:
                 self.log("DATABASE_URL not found, cannot check for processed invoices", "WARNING")
                 return False
-                
+
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
-            
+
             # First use the robust duplicate checking function
             if self.is_duplicate_invoice(pg_conn, numero_documento, emisor, valor_total):
                 self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor}")
                 pg_conn.close()
                 return True
-            
+
             # Additional check for processing_status = 'completed' (legacy check for backward compatibility)
             pg_cursor.execute("""
                 SELECT processing_status, metadata->>'processing_status' as metadata_status, id, original_file_name
@@ -250,7 +250,7 @@ class InvoiceRPAService:
                 f"%{numero_documento}.%", 
                 f"%{numero_documento}%"
             ))
-            
+
             completed_results = pg_cursor.fetchall()
             if completed_results:
                 for row in completed_results:
@@ -258,12 +258,12 @@ class InvoiceRPAService:
                     self.log(f"✅ Invoice {numero_documento} from {emisor} already completed (ID: {imp_id}, File: {imp_filename}, Status: {processing_status})")
                 pg_conn.close()
                 return True
-            
+
             # Normalize emisor for consistent comparison
             safe_emisor = re.sub(r'[\\/*?:"<>|\n\r]+', "_", emisor.replace(" ", "_").replace(".", ""))
             # Enhanced normalization to handle HTML entities and variations
             normalized_emisor = emisor.replace("_", " ").replace(".", "").replace("&AMP;", "&").replace("&amp;", "&").upper().strip()
-            
+
             # Additional normalization patterns for better matching
             def normalize_vendor_name(name):
                 """Normalize vendor name for consistent comparison"""
@@ -278,26 +278,26 @@ class InvoiceRPAService:
                 normalized = normalized.replace("S.A.", "SA").replace("S A ", "SA ")
                 normalized = re.sub(r'\s+', ' ', normalized)  # Multiple spaces to single
                 return normalized.strip()
-            
+
             # Helper function to validate valor_total when available
             def validate_total_amount(db_total: str) -> bool:
                 """Validate valor_total with 0.01 threshold if both values are available"""
                 if valor_total is None or valor_total == '' or valor_total == 'N/A':
                     return True  # No valor_total provided - skip anyway assuming same invoice
-                
+
                 if db_total is None or db_total == '' or db_total == 'N/A':
                     return True  # DB has no total but we have one - still skip assuming same invoice
-                
+
                 try:
                     input_total = float(valor_total.replace(',', '').replace('$', '').strip())
                     stored_total = float(db_total.replace(',', '').replace('$', '').strip())
                     return abs(input_total - stored_total) <= 0.01
                 except (ValueError, AttributeError):
                     return True  # If we can't parse either total, skip anyway
-            
+
             # Use improved normalization
             normalized_emisor = normalize_vendor_name(emisor)
-            
+
             # Check 1: Main invoices table (fully processed and completed invoices)
             pg_cursor.execute("""
                 SELECT id, file_name, extracted_data->>'totalAmount' as total_amount 
@@ -317,7 +317,7 @@ class InvoiceRPAService:
                 normalized_emisor,
                 normalized_emisor
             ))
-            
+
             result = pg_cursor.fetchone()
             if result:
                 db_id, db_filename, db_total = result
@@ -328,7 +328,7 @@ class InvoiceRPAService:
                     return True
                 else:
                     self.log(f"⚠️ Invoice {numero_documento} from {emisor} found but valor_total mismatch (Expected: {valor_total}, Found: {db_total}) - will process as different invoice")
-            
+
             # Check 2: imported_invoices table - check for completed status in metadata or processing_status
             # Only skip if any record has processing_status = 'completed'
             # Use more precise pattern matching for invoice numbers and vendor names
@@ -346,7 +346,7 @@ class InvoiceRPAService:
                 f"%{numero_documento}.%", # invoice number with extension
                 f"%{numero_documento}%"   # broader match as fallback
             ))
-            
+
             imported_results = pg_cursor.fetchall()
             if imported_results:
                 for row in imported_results:
@@ -357,7 +357,7 @@ class InvoiceRPAService:
                         self.log(f"✅ Invoice {numero_documento} from {emisor} already completed successfully (ID: {imp_id}, File: {imp_filename}){valor_msg}")
                         pg_conn.close()
                         return True
-                
+
                 # If we reach here, no completed records found - log details and continue processing
                 self.log(f"🔄 Invoice {numero_documento} from {emisor} found in imported_invoices but not completed - will process")
                 for row in imported_results:
@@ -367,9 +367,9 @@ class InvoiceRPAService:
             else:
                 self.log(f"🔄 Invoice {numero_documento} from {emisor} not found in imported_invoices - will process")
 
-            
+
             pg_conn.close()
-            
+
             # Log exact match conditions for debugging
             valor_info = f"(valor_total: {valor_total if valor_total else 'None - will not be used for validation'})"
             self.log(f"🔄 Invoice {numero_documento} from {emisor} {valor_info} not found or available for retry:")
@@ -378,7 +378,7 @@ class InvoiceRPAService:
             self.log(f"   - Config ID: {self.config_id}")
             self.log("   - Will process this invoice")
             return False
-                
+
         except Exception as e:
             self.log(f"❌ Error checking processed invoices: {e}", "ERROR")
             # If we can't check, assume not processed to be safe
@@ -395,21 +395,21 @@ class InvoiceRPAService:
                 password=os.getenv("PGPASSWORD"),
             )
             pg_cursor = pg_conn.cursor()
-            
+
             filename = file_info.get('original_file_name', file_info.get('upload_filename', file_info.get('filename', '')))
-            
+
             # Try multiple patterns to find the record - be more flexible with filename matching
             patterns = [
                 filename,  # exact match
                 filename.replace('.xml', '').replace('.pdf', ''),  # without extension
                 f"{filename.split('_')[0]}_{filename.split('_')[1]}" if '_' in filename else filename  # base pattern
             ]
-            
+
             updated = False
             for pattern in patterns:
                 if updated:
                     break
-                    
+
                 # Update status in imported_invoices table with pattern matching
                 if status == 'completed':
                     pg_cursor.execute("""
@@ -421,7 +421,7 @@ class InvoiceRPAService:
                     pg_cursor.execute("""
                         UPDATE imported_invoices 
                         SET processing_status = %s, processed_at = NOW(), 
-                            metadata = COALESCE(metadata, '{}')::jsonb || %s::jsonb
+                            metadata = COALESCE(metadata, '{}'::jsonb) || %s::jsonb
                         WHERE (original_file_name = %s OR original_file_name LIKE %s) AND log_id = %s
                     """, (status, json.dumps({'error_message': error_message}), pattern, f"{pattern}%", self.log_id))
                 elif status == 'processing':
@@ -430,23 +430,23 @@ class InvoiceRPAService:
                         SET processing_status = %s
                         WHERE (original_file_name = %s OR original_file_name LIKE %s) AND log_id = %s
                     """, (status, pattern, f"{pattern}%", self.log_id))
-                
+
                 rows_affected = pg_cursor.rowcount
                 if rows_affected > 0:
                     updated = True
                     self.log(f"📊 Updated {rows_affected} record(s) for {pattern} status: {status}" + (f" ({error_message})" if error_message else ""))
                     break
-                    
+
             if not updated:
                 self.log(f"⚠️ No records updated for {filename} status: {status} (tried patterns: {patterns})", "WARNING")
                 # Log available records for debugging
                 pg_cursor.execute("SELECT original_file_name FROM imported_invoices WHERE log_id = %s", (self.log_id,))
                 available_files = [row[0] for row in pg_cursor.fetchall()]
                 self.log(f"🔍 Available files in log_id {self.log_id}: {available_files}")
-            
+
             pg_conn.commit()
             pg_conn.close()
-                
+
         except Exception as e:
             self.log(f"❌ Error updating invoice status for {filename}: {e}", "ERROR")
 
@@ -455,7 +455,7 @@ class InvoiceRPAService:
         self.stats['current_step'] = step
         self.stats['progress'] = progress
         self.log(f"Progress: {progress}% - {step}")
-        
+
         # Output STATS for Node.js parser to capture with all enhanced metrics
         try:
             stats_data = {
@@ -467,7 +467,7 @@ class InvoiceRPAService:
                 'current_step': step,
                 'progress': progress
             }
-            
+
             import json
             print(f"STATS: {json.dumps(stats_data)}")
             sys.stdout.flush()
@@ -481,7 +481,7 @@ class InvoiceRPAService:
         try:
             # Ensure download directory exists and has proper permissions
             os.makedirs(self.download_dir, exist_ok=True)
-            
+
             # Test write permissions
             test_file = os.path.join(self.download_dir, "test_write_permission.tmp")
             try:
@@ -512,7 +512,7 @@ class InvoiceRPAService:
             # Ensure we use absolute path for download directory
             abs_download_dir = os.path.abspath(self.download_dir)
             self.log(f"📁 Setting download directory to: {abs_download_dir}")
-            
+
             prefs = {
                 "download.default_directory": abs_download_dir,
                 "download.prompt_for_download": False,
@@ -628,7 +628,7 @@ class InvoiceRPAService:
         self.log(f"⏳ Waiting for new ZIP download (timeout: {timeout}s)")
         self.log(f"📁 Download directory: {self.download_dir}")
         self.log(f"📦 Files before download: {len(before_files)}")
-        
+
         poll_count = 0
         while time.time() < deadline:
             poll_count += 1
@@ -644,23 +644,23 @@ class InvoiceRPAService:
                     if f.lower().endswith(".zip")
                 }
                 new_files = list(current_files - before_files)
-                
+
                 # Log every 10 seconds for debugging
                 if poll_count % 10 == 0:
                     remaining_time = int(deadline - time.time())
                     self.log(f"🔍 Poll #{poll_count}: {len(crdownloads)} .crdownload files, {len(current_files)} total ZIP files, {len(new_files)} new files (remaining: {remaining_time}s)")
-                
+
                 if crdownloads:
                     self.log(f"⏳ Download in progress: {crdownloads}")
-                    
+
                 if new_files and not crdownloads:
                     newest_file = max(new_files, key=os.path.getctime)
                     self.log(f"✅ New ZIP file downloaded: {os.path.basename(newest_file)}")
                     return newest_file
-                    
+
             except Exception as e:
                 self.log(f"⚠️ Error checking for downloads: {e}", "WARNING")
-                
+
             time.sleep(1)
 
         # Timeout reached - provide detailed debug info
@@ -680,7 +680,7 @@ class InvoiceRPAService:
         error_msg += f"Final state: {len(final_files)} ZIP files, {len(final_crdownloads)} .crdownload files"
         if final_crdownloads:
             error_msg += f". Incomplete downloads: {final_crdownloads}"
-            
+
         self.log(f"❌ Download timeout details: {error_msg}", "ERROR")
         raise TimeoutError(error_msg)
 
@@ -776,28 +776,28 @@ class InvoiceRPAService:
         """
         try:
             import re
-            
+
             # Remove Bearer tokens (matches the specific pattern found in the vulnerability)
             html_content = re.sub(
                 r'"token":"Bearer [^"]*"', 
                 '"token":"[REDACTED_BEARER_TOKEN]"', 
                 html_content
             )
-            
+
             # Remove other token patterns
             html_content = re.sub(
                 r'r\.dataset\.token = "[^"]*"', 
                 'r.dataset.token = "[REDACTED_TOKEN]"', 
                 html_content
             )
-            
+
             # Remove session IDs and sensitive identifiers
             html_content = re.sub(
                 r'var id_session = \'[^\']*\'', 
                 'var id_session = \'[REDACTED_SESSION]\'', 
                 html_content
             )
-            
+
             # Remove authentication headers in AJAX requests
             html_content = re.sub(
                 r'Authorization["\']?\s*:\s*["\']?Bearer [^"\'>\s]*', 
@@ -805,7 +805,7 @@ class InvoiceRPAService:
                 html_content, 
                 flags=re.IGNORECASE
             )
-            
+
             # Remove password field values
             html_content = re.sub(
                 r'(<input[^>]*type=["\']password["\'][^>]*value=["\'])[^"\']*(["\'][^>]*>)',
@@ -813,7 +813,7 @@ class InvoiceRPAService:
                 html_content,
                 flags=re.IGNORECASE
             )
-            
+
             # Remove API keys (common patterns)
             html_content = re.sub(
                 r'["\']apikey["\']?\s*:\s*["\'][^"\']*["\']',
@@ -821,13 +821,13 @@ class InvoiceRPAService:
                 html_content,
                 flags=re.IGNORECASE
             )
-            
+
             # Add security notice to sanitized files
             security_notice = '''
 <!-- SECURITY NOTICE: This debug capture file has been sanitized to remove sensitive authentication data -->
 <!-- Original tokens, passwords, and API keys have been replaced with [REDACTED] placeholders -->
 '''
-            
+
             # Insert notice after <html> tag if present
             if '<html' in html_content.lower():
                 html_content = re.sub(
@@ -838,9 +838,9 @@ class InvoiceRPAService:
                 )
             else:
                 html_content = security_notice + html_content
-                
+
             return html_content
-            
+
         except Exception as e:
             self.log(f"Error sanitizing HTML content: {e}", "ERROR")
             # Return a minimal safe version if sanitization fails
@@ -1019,7 +1019,7 @@ class InvoiceRPAService:
 
             # Debug capture after iframe switch
             self.debug_capture("15_after_iframe_switch")
-            
+
             # Estimate total invoices across all pages for global progress tracking
             self.estimate_total_invoices()
 
@@ -1081,14 +1081,14 @@ class InvoiceRPAService:
                         # Count total invoices encountered and update global index
                         self.stats['total_invoices'] += 1
                         self.global_progress['global_index'] += 1
-                        
+
                         # ROBUST PRE-DOWNLOAD DUPLICATE CHECK 
                         # Connect to PostgreSQL for duplicate checking
                         try:
                             database_url = os.environ.get('DATABASE_URL')
                             if database_url:
                                 pg_conn = psycopg2.connect(database_url)
-                                
+
                                 # Use robust duplicate detection BEFORE any download/processing
                                 if self.is_duplicate_invoice(pg_conn, numero_documento, emisor_raw, valor_total_raw):
                                     self.log(f"⏭️ Skipping already imported invoice: {numero_documento} from {emisor_raw}")
@@ -1097,7 +1097,7 @@ class InvoiceRPAService:
                                     self._output_download_progress(i + 1, len(rows), f"Skipped duplicate {numero_documento}")
                                     pg_conn.close()
                                     continue
-                                
+
                                 pg_conn.close()
                             else:
                                 self.log("DATABASE_URL not found, proceeding with download", "WARNING")
@@ -1107,10 +1107,10 @@ class InvoiceRPAService:
 
                         # Download and process invoice (only reached if no duplicate found)
                         self.log(f"🔄 Processing: {numero_documento} - {emisor_raw} - {valor_total_raw}")
-                        
+
                         # Count as processed since we're attempting to download
                         self.stats['processed_invoices'] += 1
-                        
+
                         # Output progress stats before download attempt
                         self._output_download_progress(i + 1, len(rows), f"Processing {numero_documento}")
 
@@ -1137,7 +1137,7 @@ class InvoiceRPAService:
                 if len(data_rows) > 0:
                     self.global_progress['invoices_per_page_samples'].append(len(data_rows))
                     self.refine_total_estimate()
-                
+
                 # Try to go to next page
                 try:
                     next_btn = self.driver.find_element(
@@ -1267,7 +1267,7 @@ class InvoiceRPAService:
             self.update_progress(f"Extracting {file_types} files from ZIP archives", 70)
 
             processed_files = []
-            
+
             for filename in os.listdir(self.download_dir):
                 if filename.lower().endswith('.zip'):
                     zip_path = os.path.join(self.download_dir, filename)
@@ -1282,7 +1282,7 @@ class InvoiceRPAService:
                             # Scan for XML and PDF files
                             xml_files = []
                             pdf_files = []
-                            
+
                             for f in os.listdir(temp_dir):
                                 if f.lower().endswith(".xml") and file_types in ['xml', 'both']:
                                     xml_files.append(f)
@@ -1296,16 +1296,16 @@ class InvoiceRPAService:
                                 # XML only - current behavior
                                 for xml_file in xml_files:
                                     self._process_xml_file(temp_dir, xml_file, base_name, processed_files)
-                                    
+
                             elif file_types == 'pdf':
                                 # PDF only - extract PDFs for OCR processing
                                 for pdf_file in pdf_files:
                                     self._process_pdf_file(temp_dir, pdf_file, base_name, processed_files)
-                                    
+
                             elif file_types == 'both':
                                 # Both - match by base filename and prioritize XML for data extraction
                                 matches = self._match_files_by_name(xml_files, pdf_files)
-                                
+
                                 for base_filename, file_pair in matches.items():
                                     if file_pair.get('xml'):
                                         # Use XML for data extraction, include matched PDF
@@ -1343,19 +1343,19 @@ class InvoiceRPAService:
         try:
             # Extract the base filename without extension
             base = filename.split('.')[0]
-            
+
             # Handle different naming patterns
-            parts = base.split('_')
-            
+            parts = base.split("_")
+
             if len(parts) == 1:
                 # Simple format like "FBOG16666" or long generated names
                 return base
-            
+
             elif len(parts) >= 2:
                 # Check for document_taxid pattern (most common)
                 doc_num = parts[0]
                 tax_id = parts[1]
-                
+
                 # If both parts are present and look like document/tax IDs
                 if doc_num and tax_id:
                     # Try multiple token formats for better matching
@@ -1365,10 +1365,10 @@ class InvoiceRPAService:
                         base                    # Full base name
                     ]
                     return tokens[0]  # Return primary token
-            
+
             # Fallback to full base name
             return base
-            
+
         except Exception as e:
             self.log(f"Error extracting token from filename '{filename}': {e}", "ERROR")
             return filename.split('.')[0] if '.' in filename else filename
@@ -1377,20 +1377,20 @@ class InvoiceRPAService:
         """Extract unique invoice token from filename with enhanced regex-based matching"""
         try:
             base_name = os.path.splitext(filename)[0]
-            
+
             # Try new dynamic normalization first
             normalized_token = self.extract_invoice_token(filename)
-            
+
             if normalized_token:
                 # Use the normalized invoice ID as the primary token
                 document_number = normalized_token
-                
+
                 # For XML files, try to extract additional metadata from content
                 if file_type == 'xml' and file_path and os.path.exists(file_path):
                     try:
                         tree = ET.parse(file_path)
                         root = tree.getroot()
-                        
+
                         # Find total amount in XML content (multiple possible tags)
                         total_amount = None
                         amount_tags = [
@@ -1399,7 +1399,7 @@ class InvoiceRPAService:
                             './/{*}LineExtensionAmount',
                             './/{*}TaxExclusiveAmount'
                         ]
-                        
+
                         for tag in amount_tags:
                             element = root.find(tag)
                             if element is not None and element.text:
@@ -1408,7 +1408,7 @@ class InvoiceRPAService:
                                     break
                                 except:
                                     continue
-                        
+
                         # Create composite token with amount if available
                         if total_amount is not None:
                             # Normalize amount to avoid floating point precision issues
@@ -1416,36 +1416,36 @@ class InvoiceRPAService:
                             token = f"{normalized_token}_{normalized_amount}"
                         else:
                             token = normalized_token
-                            
+
                     except Exception as e:
                         self.log(f"Warning: Could not parse XML content for {filename}: {e}")
                         token = normalized_token
                 else:
                     # For PDF files or when XML parsing fails, use normalized token
                     token = normalized_token
-                
+
                 self.log(f"🔗 Generated normalized token for {filename}: {token} (invoice ID: {normalized_token})")
                 return {
                     'token': token,
                     'document_number': normalized_token,
-                    'tax_id': '',  # Not used in normalized matching
+                    'tax_id': '',
                     'base_name': base_name,
                     'normalized_id': normalized_token
                 }
-            
+
             # Fallback to legacy parsing for backward compatibility
             parts = base_name.split("_", 2)
-            
+
             if len(parts) >= 2:
                 document_number = parts[0].strip()
                 tax_id = parts[1].strip()
-                
+
                 # For XML files, try to extract additional metadata from content
                 if file_type == 'xml' and file_path and os.path.exists(file_path):
                     try:
                         tree = ET.parse(file_path)
                         root = tree.getroot()
-                        
+
                         # Find total amount in XML content (multiple possible tags)
                         total_amount = None
                         amount_tags = [
@@ -1454,7 +1454,7 @@ class InvoiceRPAService:
                             './/{*}LineExtensionAmount',
                             './/{*}TaxExclusiveAmount'
                         ]
-                        
+
                         for tag in amount_tags:
                             element = root.find(tag)
                             if element is not None and element.text:
@@ -1463,7 +1463,7 @@ class InvoiceRPAService:
                                     break
                                 except:
                                     continue
-                        
+
                         # Create composite token with amount if available
                         if total_amount is not None:
                             # Normalize amount to avoid floating point precision issues
@@ -1471,14 +1471,14 @@ class InvoiceRPAService:
                             token = f"{document_number}_{tax_id}_{normalized_amount}"
                         else:
                             token = f"{document_number}_{tax_id}"
-                            
+
                     except Exception as e:
                         self.log(f"Warning: Could not parse XML content for {filename}: {e}")
                         token = f"{document_number}_{tax_id}"
                 else:
                     # For PDF files or when XML parsing fails, use filename-based token
                     token = f"{document_number}_{tax_id}"
-                
+
                 self.log(f"Generated legacy token for {filename}: {token}")
                 return {
                     'token': token,
@@ -1490,14 +1490,14 @@ class InvoiceRPAService:
                 # If neither normalized nor legacy parsing works, log and use base name
                 if not normalized_token:
                     self.log(f"Info: Using filename-based token for {filename} (no numeric pattern found)")
-                
+
                 return {
                     'token': base_name,
                     'document_number': base_name,
                     'tax_id': '',
                     'base_name': base_name
                 }
-                
+
         except Exception as e:
             self.log(f"Error extracting invoice token from {filename}: {e}", "ERROR")
             base_name = os.path.splitext(filename)[0]
@@ -1511,7 +1511,7 @@ class InvoiceRPAService:
     def _match_files_by_token(self, xml_files, pdf_files, temp_dir):
         """Match XML and PDF files by invoice token with enhanced normalized ID matching"""
         matches = {}
-        
+
         # Extract tokens for all XML files
         xml_tokens = {}
         xml_by_normalized_id = {}  # New: Track by normalized invoice ID
@@ -1522,14 +1522,14 @@ class InvoiceRPAService:
                 'filename': xml_file,
                 'token_info': token_info
             }
-            
+
             # Track by normalized ID if available
             if 'normalized_id' in token_info and token_info['normalized_id']:
                 xml_by_normalized_id[token_info['normalized_id']] = {
                     'filename': xml_file,
                     'token_info': token_info
                 }
-        
+
         # Extract tokens for all PDF files
         pdf_tokens = {}
         pdf_by_normalized_id = {}  # New: Track by normalized invoice ID
@@ -1539,23 +1539,23 @@ class InvoiceRPAService:
                 'filename': pdf_file,
                 'token_info': token_info
             }
-            
+
             # Track by normalized ID if available
             if 'normalized_id' in token_info and token_info['normalized_id']:
                 pdf_by_normalized_id[token_info['normalized_id']] = {
                     'filename': pdf_file,
                     'token_info': token_info
                 }
-        
+
         # Primary matching: Normalized invoice ID match (new priority)
         matched_tokens = set()
         matched_normalized_ids = set()
-        
+
         for normalized_id in xml_by_normalized_id:
             if normalized_id in pdf_by_normalized_id:
                 xml_data = xml_by_normalized_id[normalized_id]
                 pdf_data = pdf_by_normalized_id[normalized_id]
-                
+
                 base_name = xml_data['token_info']['base_name']
                 matches[base_name] = {
                     'xml': xml_data['filename'],
@@ -1566,9 +1566,9 @@ class InvoiceRPAService:
                 matched_tokens.add(xml_data['token_info']['token'])
                 matched_tokens.add(pdf_data['token_info']['token'])
                 matched_normalized_ids.add(normalized_id)
-                
+
                 self.log(f"🔗 Linked files using normalized token: {normalized_id} -> XML: {xml_data['filename']}, PDF: {pdf_data['filename']}")
-        
+
         # Secondary matching: Exact token match for remaining files
         for token in xml_tokens:
             if token not in matched_tokens and token in pdf_tokens:
@@ -1581,17 +1581,17 @@ class InvoiceRPAService:
                 }
                 matched_tokens.add(token)
                 self.log(f"✅ Exact token match: {token} -> XML: {xml_tokens[token]['filename']}, PDF: {pdf_tokens[token]['filename']}")
-        
+
         # Tertiary matching: Fallback to document_number + tax_id for unmatched files
         unmatched_xml = {k: v for k, v in xml_tokens.items() if k not in matched_tokens}
         unmatched_pdf = {k: v for k, v in pdf_tokens.items() if k not in matched_tokens}
-        
+
         for xml_token, xml_data in unmatched_xml.items():
             xml_doc_tax = f"{xml_data['token_info']['document_number']}_{xml_data['token_info']['tax_id']}"
-            
+
             for pdf_token, pdf_data in unmatched_pdf.items():
                 pdf_doc_tax = f"{pdf_data['token_info']['document_number']}_{pdf_data['token_info']['tax_id']}"
-                
+
                 if xml_doc_tax == pdf_doc_tax and pdf_token not in matched_tokens:
                     base_name = xml_data['token_info']['base_name']
                     matches[base_name] = {
@@ -1603,7 +1603,7 @@ class InvoiceRPAService:
                     matched_tokens.add(pdf_token)
                     self.log(f"🔄 Fallback match: {xml_doc_tax} -> XML: {xml_data['filename']}, PDF: {pdf_data['filename']}")
                     break
-        
+
         # Handle unmatched files (XML-only or PDF-only)
         for xml_token, xml_data in xml_tokens.items():
             if xml_token not in matched_tokens:
@@ -1615,7 +1615,7 @@ class InvoiceRPAService:
                     'match_type': 'xml_only'
                 }
                 self.log(f"📄 XML-only file: {xml_data['filename']}")
-        
+
         for pdf_token, pdf_data in pdf_tokens.items():
             if pdf_token not in matched_tokens:
                 base_name = pdf_data['token_info']['base_name']
@@ -1627,10 +1627,10 @@ class InvoiceRPAService:
                         'match_type': 'pdf_only'
                     }
                     self.log(f"📎 PDF-only file: {pdf_data['filename']}")
-        
+
         normalized_matches = sum(1 for m in matches.values() if m.get('match_type') == 'normalized_id')
         total_paired_matches = sum(1 for m in matches.values() if m['xml'] and m['pdf'])
-        
+
         self.log(f"Token-based matching completed: {len(matches)} file groups, {total_paired_matches} paired matches ({normalized_matches} using normalized IDs)")
         return matches
 
@@ -1649,12 +1649,12 @@ class InvoiceRPAService:
             src = os.path.join(temp_dir, xml_file)
             dst = os.path.join(self.xml_dir, new_name)
             shutil.move(src, dst)
-            
+
             # Track as session file
             self.session_downloaded_files.add(new_name)
-            
+
             self.log(f"📄 XML-ONLY PROCESSING: '{xml_file}' will be processed for structured data extraction")
-            
+
             processed_files.append({
                 'type': 'xml',
                 'original_name': xml_file,
@@ -1663,9 +1663,9 @@ class InvoiceRPAService:
                 'is_data_source': True,  # XML is always data source
                 'triggers_extraction': True  # XML always triggers processing
             })
-            
+
             self.log(f"✅ Extracted standalone XML: {new_name} (DATA SOURCE)")
-            
+
         except Exception as e:
             self.log(f"Error processing XML file {xml_file}: {e}", "ERROR")
 
@@ -1675,18 +1675,18 @@ class InvoiceRPAService:
             # Use download_dir directly as it's already 'uploads/pdfs'
             pdf_dir = self.download_dir  
             os.makedirs(pdf_dir, exist_ok=True)
-            
+
             # Keep the same naming convention as ZIP
             new_name = f"{zip_base_name}.pdf"
             src = os.path.join(temp_dir, pdf_file)
             dst = os.path.join(pdf_dir, new_name)
             shutil.move(src, dst)
-            
+
             # Track as session file
             self.session_downloaded_files.add(new_name)
-            
+
             self.log(f"📄 PDF-ONLY PROCESSING: '{pdf_file}' will be processed via OCR (no XML available)")
-            
+
             processed_files.append({
                 'type': 'pdf',
                 'original_name': pdf_file,
@@ -1695,9 +1695,9 @@ class InvoiceRPAService:
                 'is_data_source': True,  # PDF will be used for OCR when no XML
                 'triggers_extraction': True  # PDF triggers processing when standalone
             })
-            
+
             self.log(f"✅ Extracted standalone PDF: {new_name} (DATA SOURCE via OCR)")
-            
+
         except Exception as e:
             self.log(f"Error processing PDF file {pdf_file}: {e}", "ERROR")
 
@@ -1711,20 +1711,20 @@ class InvoiceRPAService:
             xml_file = file_pair['xml']
             pdf_file = file_pair.get('pdf')
             base_name = os.path.splitext(xml_file)[0]
-            
+
             self.log(f"🔄 PRIORITY PROCESSING: XML '{xml_file}' will be used for data extraction")
             if pdf_file:
                 self.log(f"📎 PDF '{pdf_file}' will be stored as visual reference only")
-            
+
             # Process XML first (for data extraction)
             xml_new_name = f"{zip_base_name}.xml"
             xml_src = os.path.join(temp_dir, xml_file)
             xml_dst = os.path.join(self.xml_dir, xml_new_name)
             shutil.move(xml_src, xml_dst)
-            
+
             # Track as session file
             self.session_downloaded_files.add(xml_new_name)
-            
+
             xml_entry = {
                 'type': 'xml',
                 'original_name': xml_file,
@@ -1734,20 +1734,20 @@ class InvoiceRPAService:
                 'matched_file': None,
                 'triggers_extraction': True  # Only XML triggers processing
             }
-            
+
             # Process PDF if available (for reference ONLY - no extraction)
             if pdf_file:
                 pdf_dir = self.download_dir  # Already 'uploads/pdfs'
                 os.makedirs(pdf_dir, exist_ok=True)
-                
+
                 pdf_new_name = f"{zip_base_name}.pdf"
                 pdf_src = os.path.join(temp_dir, pdf_file)
                 pdf_dst = os.path.join(pdf_dir, pdf_new_name)
                 shutil.move(pdf_src, pdf_dst)
-                
+
                 # Track as session file
                 self.session_downloaded_files.add(pdf_new_name)
-                
+
                 pdf_entry = {
                     'type': 'pdf',
                     'original_name': pdf_file,
@@ -1757,16 +1757,16 @@ class InvoiceRPAService:
                     'matched_file': xml_new_name,
                     'triggers_extraction': False  # PDF does NOT trigger processing
                 }
-                
+
                 xml_entry['matched_file'] = pdf_new_name
                 processed_files.append(pdf_entry)
-                
+
                 self.log(f"✅ Matched files processed: {xml_new_name} (DATA SOURCE) + {pdf_new_name} (REFERENCE)")
             else:
                 self.log(f"✅ XML only processed: {xml_new_name} (DATA SOURCE)")
-            
+
             processed_files.append(xml_entry)
-            
+
         except Exception as e:
             self.log(f"Error processing matched files: {e}", "ERROR")
 
@@ -1859,6 +1859,8 @@ class InvoiceRPAService:
                     # Create filename same as RPA processing logic
                     safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
                     original_filename = f"{numero_documento}_{safe_emisor}.xml"
+                    # Create a unique identifier based on filename and log_id
+                    unique_identifier = f"{log_id}_{original_filename}"
 
                     # Store XML file in the uploads directory to match manual upload pipeline
                     uploads_dir = 'uploads'
@@ -1935,19 +1937,19 @@ class InvoiceRPAService:
                 # Extract the CDATA content from Description tag
                 cdata_pattern = r'<cbc:Description><!\[CDATA\[(.*?)\]\]></cbc:Description>'
                 cdata_match = re.search(cdata_pattern, xml_content, re.DOTALL)
-                
+
                 if cdata_match and cdata_match.group(1):
                     embedded_xml = cdata_match.group(1).strip()
                     self.log(f"Found embedded XML in CDATA, length: {len(embedded_xml)}")
                     return self._extract_buyer_tax_id_from_xml(embedded_xml)  # Recursive call
-            
+
             # Extract buyer tax ID from AccountingCustomerParty
             customer_pattern = r'<cac:AccountingCustomerParty[^>]*>(.*?)</cac:AccountingCustomerParty>'
             customer_match = re.search(customer_pattern, xml_content, re.DOTALL | re.IGNORECASE)
-            
+
             if customer_match:
                 customer_content = customer_match.group(1)
-                
+
                 # Try different patterns for tax ID extraction
                 tax_id_patterns = [
                     r'<cbc:CompanyID[^>]*>([^<]+)</cbc:CompanyID>',
@@ -1955,7 +1957,7 @@ class InvoiceRPAService:
                     r'<cbc:IdentificationCode[^>]*>([^<]+)</cbc:IdentificationCode>',
                     r'<cbc:TaxSchemeID[^>]*>([^<]+)</cbc:TaxSchemeID>'
                 ]
-                
+
                 for pattern in tax_id_patterns:
                     match = re.search(pattern, customer_content, re.IGNORECASE)
                     if match and match.group(1).strip():
@@ -1964,11 +1966,11 @@ class InvoiceRPAService:
                         if tax_id and tax_id.upper() != 'CO' and len(tax_id) >= 6:
                             self.log(f"Found buyer tax ID: {tax_id}")
                             return tax_id
-            
+
             # If no buyer found, return None
             self.log("No buyer tax ID found in XML content")
             return None
-            
+
         except Exception as e:
             self.log(f"Error extracting buyer tax ID from XML: {e}", "ERROR")
             return None
@@ -1977,7 +1979,7 @@ class InvoiceRPAService:
         """Estimate total invoices across all pages for global progress tracking"""
         try:
             self.log("🔍 Estimating total invoices across all pages...")
-            
+
             # Try multiple selectors to find invoice rows more reliably
             row_selectors = [
                 "div.rt-tr-group",  # React Table rows
@@ -1987,7 +1989,7 @@ class InvoiceRPAService:
                 ".invoice-row",     # Custom invoice row class
                 "div[role='row']",  # ARIA role rows
             ]
-            
+
             data_rows = []
             for selector in row_selectors:
                 try:
@@ -2000,16 +2002,16 @@ class InvoiceRPAService:
                 except Exception as e:
                     self.log(f"Selector {selector} failed: {e}")
                     continue
-            
+
             first_page_count = len(data_rows)
-            
+
             if first_page_count == 0:
                 self.log("⚠️ No data rows found on first page with any selector")
                 # Try to get a more conservative estimate by looking at page elements
                 try:
                     # Look for any text that might indicate row count
                     page_text = self.driver.find_element(By.TAG_NAME, "body").text
-                    
+
                     # Look for patterns like "Showing 1-10 of 15" or similar
                     import re
                     count_patterns = [
@@ -2018,7 +2020,7 @@ class InvoiceRPAService:
                         r'total:\s*(\d+)',
                         r'(\d+)\s+results',
                     ]
-                    
+
                     for pattern in count_patterns:
                         match = re.search(pattern, page_text, re.IGNORECASE)
                         if match:
@@ -2026,31 +2028,31 @@ class InvoiceRPAService:
                                 total_count = int(match.group(2))
                             else:
                                 total_count = int(match.group(1))
-                            
+
                             self.global_progress['estimated_total_invoices'] = total_count
                             self.global_progress['initial_estimate_method'] = f'text_pattern_{pattern}'
                             self.log(f"📊 Found total count from page text: {total_count}")
                             return
-                    
+
                     # If no patterns match, use a very conservative fallback
                     self.global_progress['estimated_total_invoices'] = 10  # More realistic fallback
                     self.global_progress['initial_estimate_method'] = 'conservative_fallback'
                     self.log("⚠️ Using conservative fallback estimate of 10 invoices")
                     return
-                    
+
                 except Exception as e:
                     self.log(f"Could not analyze page text: {e}")
                     self.global_progress['estimated_total_invoices'] = 10  # Conservative fallback
                     self.global_progress['initial_estimate_method'] = 'error_fallback'
                     return
-            
+
             # If we found rows, continue with pagination analysis
             # Try to find pagination info to get total pages
             try:
                 # Look for pagination indicators (common patterns)
                 pagination_elements = self.driver.find_elements(By.CSS_SELECTOR, 
                     "span[class*='page'], div[class*='page'], button[class*='page']")
-                
+
                 total_pages = None
                 for elem in pagination_elements:
                     text = elem.text.strip()
@@ -2067,17 +2069,17 @@ class InvoiceRPAService:
                             break
                         except ValueError:
                             continue
-                
+
                 if total_pages and total_pages > 0:
                     estimated_total = first_page_count * total_pages
                     self.global_progress['estimated_total_invoices'] = estimated_total
                     self.global_progress['initial_estimate_method'] = f'pagination_info_{total_pages}_pages'
                     self.log(f"📊 Estimated {estimated_total} total invoices ({first_page_count} per page × {total_pages} pages)")
                     return
-                    
+
             except Exception as e:
                 self.log(f"⚠️ Could not find pagination info: {e}")
-            
+
             # Fallback: Use only the rows found on current page (most accurate for single page)
             if first_page_count <= 15:  # If small count, likely single page
                 self.global_progress['estimated_total_invoices'] = first_page_count
@@ -2090,26 +2092,26 @@ class InvoiceRPAService:
                 self.global_progress['estimated_total_invoices'] = estimated_total
                 self.global_progress['initial_estimate_method'] = f'conservative_estimate_{estimated_pages}_pages'
                 self.log(f"📊 Conservative estimate: {estimated_total} total invoices ({first_page_count} per page × {estimated_pages} estimated pages)")
-            
+
         except Exception as e:
             self.log(f"❌ Error estimating total invoices: {e}", "ERROR")
             # Ultra-conservative fallback
             self.global_progress['estimated_total_invoices'] = 10
             self.global_progress['initial_estimate_method'] = 'error_fallback'
-            
 
-    
+
+
     def refine_total_estimate(self):
         """Refine total invoice estimate based on actual page data"""
         try:
             if len(self.global_progress['invoices_per_page_samples']) < 2:
                 return  # Need at least 2 samples to refine
-                
+
             # Calculate average invoices per page from samples
             samples = self.global_progress['invoices_per_page_samples']
             avg_per_page = sum(samples) / len(samples)
             pages_processed = self.global_progress['pages_processed']
-            
+
             # If we've processed several pages, update estimate based on actual data
             if pages_processed >= 2:
                 # Extrapolate based on current progress vs. initial estimate
@@ -2118,13 +2120,13 @@ class InvoiceRPAService:
                     # Estimate remaining pages based on current pattern
                     estimated_remaining_pages = max(1, int(avg_per_page * 1.2))  # Add 20% buffer
                     refined_total = current_processed + (estimated_remaining_pages * avg_per_page)
-                    
+
                     # Only update if the refined estimate is significantly different
                     current_estimate = self.global_progress['estimated_total_invoices']
                     if abs(refined_total - current_estimate) > current_estimate * 0.2:  # 20% difference threshold
                         self.global_progress['estimated_total_invoices'] = int(refined_total)
                         self.log(f"📈 Refined total estimate to {int(refined_total)} invoices (avg {avg_per_page:.1f} per page)")
-                        
+
         except Exception as e:
             self.log(f"⚠️ Error refining estimate: {e}", "WARNING")
 
@@ -2132,20 +2134,20 @@ class InvoiceRPAService:
         """Clear download directories to prevent processing orphaned files from previous runs"""
         try:
             self.log("🧹 Clearing download directories to ensure clean session isolation...")
-            
+
             # Clear PDF directory - BUT PRESERVE files that are linked to existing invoices
             pdf_dir = self.download_dir
             if os.path.exists(pdf_dir):
                 pdf_files_cleared = 0
                 pdf_files_preserved = 0
-                
+
                 for filename in os.listdir(pdf_dir):
                     # Skip database files and processed folder
                     if filename.endswith('.db') or filename == 'processed':
                         continue
-                        
+
                     file_path = os.path.join(pdf_dir, filename)
-                    
+
                     # Check if this PDF is referenced by any existing invoice
                     try:
                         import os
@@ -2154,21 +2156,21 @@ class InvoiceRPAService:
                             self.log("⚠️ DATABASE_URL not found, preserving all PDFs", "WARNING")
                             pdf_files_preserved += 1
                             continue
-                            
+
                         import psycopg2
                         conn = psycopg2.connect(database_url)
                         cursor = conn.cursor()
-                        
+
                         # Check if any invoice references this PDF filename
                         cursor.execute(
                             "SELECT COUNT(*) FROM invoices WHERE file_name = %s OR file_url LIKE %s",
                             (filename, f"%{filename}%")
                         )
                         count = cursor.fetchone()[0]
-                        
+
                         cursor.close()
                         conn.close()
-                        
+
                         if count > 0:
                             # File is referenced by existing invoice - preserve it
                             pdf_files_preserved += 1
@@ -2177,14 +2179,14 @@ class InvoiceRPAService:
                             # File is not referenced - safe to remove
                             os.remove(file_path)
                             pdf_files_cleared += 1
-                            
+
                     except Exception as e:
                         # If database check fails, err on side of caution and preserve file
                         self.log(f"⚠️ Could not check PDF link status for {filename}: {e}, preserving file", "WARNING")
                         pdf_files_preserved += 1
-                        
+
                 self.log(f"✅ Cleared {pdf_files_cleared} orphaned PDF files, preserved {pdf_files_preserved} linked PDFs")
-            
+
             # Clear XML directory
             if os.path.exists(self.xml_dir):
                 xml_files_cleared = 0
@@ -2196,7 +2198,7 @@ class InvoiceRPAService:
                     except Exception as e:
                         self.log(f"⚠️ Could not remove XML file {filename}: {e}", "WARNING")
                 self.log(f"✅ Cleared {xml_files_cleared} orphaned XML files from {self.xml_dir}")
-            
+
             # Clear main download directory of any ZIP files
             if os.path.exists(self.download_dir):
                 zip_files_cleared = 0
@@ -2210,9 +2212,9 @@ class InvoiceRPAService:
                             self.log(f"⚠️ Could not remove ZIP file {filename}: {e}", "WARNING")
                 if zip_files_cleared > 0:
                     self.log(f"✅ Cleared {zip_files_cleared} orphaned ZIP files from {self.download_dir}")
-            
+
             self.log("🎯 Directory cleanup completed - only files downloaded in this session will be processed")
-            
+
         except Exception as e:
             self.log(f"❌ Error clearing download directories: {e}", "ERROR")
             # Don't fail the entire process if cleanup fails, but log the issue
@@ -2225,7 +2227,6 @@ class InvoiceRPAService:
                 self.log("WebDriver closed successfully")
             except Exception as e:
                 self.log(f"Error closing WebDriver: {e}", "ERROR")
-
 
 
     def process_files_through_manual_pipeline(self) -> bool:
@@ -2246,7 +2247,7 @@ class InvoiceRPAService:
             # Build file inventory first with enhanced filename matching
             xml_files = {}
             pdf_files = {}
-            
+
             # Scan XML files (only those from current session)
             if file_types in ['xml', 'both'] and os.path.exists(self.xml_dir):
                 xml_count = 0
@@ -2286,7 +2287,7 @@ class InvoiceRPAService:
             matched_pairs = {}
             unmatched_xmls = set(xml_files.keys())
             unmatched_pdfs = set(pdf_files.keys())
-            
+
             # First pass: exact base name matching
             for xml_base in list(unmatched_xmls):
                 if xml_base in unmatched_pdfs:
@@ -2297,14 +2298,14 @@ class InvoiceRPAService:
                     }
                     unmatched_xmls.remove(xml_base)
                     unmatched_pdfs.remove(xml_base)
-            
+
             # Second pass: Enhanced token-based matching for filename variations
             for xml_base in list(unmatched_xmls):
                 xml_token = self._extract_invoice_token_from_filename(xml_base)
                 if xml_token:
                     for pdf_base in list(unmatched_pdfs):
                         pdf_token = self._extract_invoice_token_from_filename(pdf_base)
-                        
+
                         # Enhanced matching logic with multiple strategies
                         if pdf_token and self._tokens_match(xml_token, pdf_token, xml_base, pdf_base):
                             matched_pairs[xml_base] = {
@@ -2320,12 +2321,12 @@ class InvoiceRPAService:
             # Build final processing list - count unique invoices, not individual files
             all_base_names = set(matched_pairs.keys()) | unmatched_xmls | unmatched_pdfs
             total_unique_invoices = len(all_base_names)  # This represents unique invoices, not file count
-            
+
             self.log(f"📊 Starting to process {total_unique_invoices} unique invoices...")
             self.log(f"   - Matched pairs (XML+PDF): {len(matched_pairs)}")
             self.log(f"   - XML-only invoices: {len(unmatched_xmls)}")
             self.log(f"   - PDF-only invoices: {len(unmatched_pdfs)}")
-            
+
             # Enhanced logging for debugging pairing issues
             if len(matched_pairs) > 0:
                 self.log("✅ Successfully paired files:")
@@ -2333,31 +2334,31 @@ class InvoiceRPAService:
                     self.log(f"   {pair_info['match_type']}: {pair_info['xml_file']} <-> {pair_info['pdf_file']}")
                 if len(matched_pairs) > 5:
                     self.log(f"   ... and {len(matched_pairs) - 5} more pairs")
-            
+
             if len(unmatched_pdfs) > 0:
                 self.log("⚠️ Unmatched PDF files (may be from previous processing):")
                 for pdf_base in list(unmatched_pdfs)[:3]:  # Show first 3
                     self.log(f"   - {pdf_files[pdf_base]}")
                 if len(unmatched_pdfs) > 3:
                     self.log(f"   ... and {len(unmatched_pdfs) - 3} more unmatched PDFs")
-            
+
             # Process each unique invoice (not individual files)
             for index, base_name in enumerate(all_base_names):
                 # Update progress with current unique invoice being processed
                 progress_percent = 90 + int((index / total_unique_invoices) * 8)  # 90-98% range
                 self.update_progress(f"Processing invoice {index + 1}/{total_unique_invoices}: {base_name}", progress_percent)
-                
+
                 invoice_processed_successfully = False
-                
+
                 if base_name in matched_pairs:
                     # ✅ MATCHED PAIR: Both XML and PDF present - ONLY process XML for data extraction
                     pair_info = matched_pairs[base_name]
                     xml_filename = pair_info['xml_file']
                     pdf_filename = pair_info['pdf_file']
                     match_type = pair_info['match_type']
-                    
+
                     self.log(f"🔄 PAIRED INVOICE ({match_type}): XML '{xml_filename}' → data source, PDF '{pdf_filename}' → reference only")
-                    
+
                     # Process ONLY XML for data extraction (counts as 1 invoice)
                     xml_info = self._process_xml_for_pipeline(xml_filename, uploads_dir, is_data_source=True)
                     if xml_info:
@@ -2368,10 +2369,10 @@ class InvoiceRPAService:
                         self.log(f"✅ Paired invoice processed: {xml_filename} (PDF {pdf_filename} linked as reference)")
                     else:
                         self.log(f"❌ Failed to process paired invoice: {xml_filename}")
-                    
+
                     # Store PDF as reference metadata ONLY - NO separate processing count
                     self._store_pdf_as_reference_metadata(pdf_filename, pdf_dir, xml_filename)
-                    
+
                 elif base_name in unmatched_xmls:
                     # Case: Only XML file present - process as single invoice
                     xml_filename = xml_files[base_name]
@@ -2384,7 +2385,7 @@ class InvoiceRPAService:
                         self.log(f"✅ XML-only invoice processed: {xml_filename}")
                     else:
                         self.log(f"❌ Failed to process XML-only invoice: {xml_filename}")
-                        
+
                 elif base_name in unmatched_pdfs:
                     # Case: Only PDF file present - process through OCR pipeline
                     pdf_filename = pdf_files[base_name]
@@ -2403,24 +2404,24 @@ class InvoiceRPAService:
                     successful_count += 1
                 else:
                     failed_count += 1
-                
+
                 # Send real-time progress update for this unique invoice
                 self._output_progress_stats(processed_count, successful_count, failed_count, total_unique_invoices)
-                
+
             # Update class-level stats to reflect unique invoices
             self.stats['total_invoices'] = total_unique_invoices
             self.stats['processed_invoices'] = processed_count
             self.stats['successful_imports'] = successful_count
             self.stats['failed_imports'] = failed_count
-            
+
             self.log(f"✅ Pipeline processing completed:")
             self.log(f"   - Total unique invoices: {total_unique_invoices}")
             self.log(f"   - Successfully processed: {successful_count}")
             self.log(f"   - Failed: {failed_count}")
             self.log(f"   - Paired files (XML+PDF): {len(matched_pairs)} invoices")
-            
+
             return True
-            
+
         except Exception as e:
             self.log(f"❌ Error in pipeline processing: {e}", "ERROR")
             return False
@@ -2431,16 +2432,16 @@ class InvoiceRPAService:
             # Move PDF to uploads directory for reference
             pdf_source = os.path.join(pdf_dir, pdf_filename)
             pdf_dest = os.path.join('uploads', pdf_filename)
-            
+
             if os.path.exists(pdf_source):
                 shutil.copy2(pdf_source, pdf_dest)
                 self.log(f"📎 PDF reference stored: {pdf_filename} (linked to XML: {xml_filename})")
-                
+
                 # Update imported_invoices table with reference linkage
                 self._update_imported_invoice_status({
-                    'original_file_name': pdf_filename
+                    'upload_filename': pdf_filename
                 }, 'reference_only', f'Linked as reference to XML: {xml_filename}')
-            
+
         except Exception as e:
             self.log(f"❌ Error storing PDF reference {pdf_filename}: {e}", "ERROR")
 
@@ -2448,12 +2449,12 @@ class InvoiceRPAService:
         """Process a PDF-only invoice through OCR pipeline"""
         try:
             self.log(f"📄 PDF-only invoice: {pdf_filename} (OCR required)")
-            
+
             # Check if this PDF should be processed or skipped
             if not self._should_process_orphaned_pdf(pdf_filename, base_name):
                 self.log(f"⏭️ Skipping already processed PDF: {pdf_filename}")
                 return True  # Consider as successful to avoid counting as failure
-            
+
             pdf_info = self._process_pdf_for_pipeline(pdf_filename, uploads_dir, pdf_dir, is_data_source=True)
             if pdf_info:
                 self.log(f"✅ PDF-only invoice processed (OCR): {pdf_filename}")
@@ -2461,276 +2462,10 @@ class InvoiceRPAService:
             else:
                 self.log(f"❌ Failed to process PDF-only invoice: {pdf_filename}")
                 return False
-                
+
         except Exception as e:
             self.log(f"❌ Error processing PDF-only invoice {pdf_filename}: {e}", "ERROR")
             return False
-    
-    def _store_conditional_files_to_database(self, processed_files: list):
-        """Store processed files with conditional logic - removed as handled by manual pipeline"""
-        # This method is no longer needed as files are processed through the manual pipeline
-        # which handles database storage automatically via the Node.js endpoints
-        self.log(f"📝 File processing handled by manual pipeline for {len(processed_files)} files")
-        
-    def _link_pdfs_to_main_invoices(self, processed_files: list):
-        """Link PDF references to main invoice records - removed as handled by manual pipeline"""
-        # This method is no longer needed as linking is handled by the manual pipeline
-        # The Node.js endpoints handle the creation of records in the main invoices table
-        self.log(f"🔗 File linking handled by manual pipeline for {len(processed_files)} files")
-
-    
-    def _tokens_match(self, xml_token: str, pdf_token: str, xml_base: str, pdf_base: str) -> bool:
-        """Enhanced token matching with multiple strategies"""
-        try:
-            # Strategy 1: Exact token match
-            if xml_token == pdf_token:
-                return True
-            
-            # Strategy 2: Check if one token is contained in the other
-            if xml_token in pdf_token or pdf_token in xml_token:
-                return True
-            
-            # Strategy 3: Check for document number match (first part)
-            xml_parts = xml_token.split('_')
-            pdf_parts = pdf_token.split('_')
-            
-            if xml_parts[0] == pdf_parts[0] and xml_parts[0]:
-                return True
-            
-            # Strategy 4: Handle cases where PDF has extra company name
-            # Example: XML="CTG12018_900525717", PDF="CTG12018_900525717_ALMACENES_LCC_SAS"
-            if xml_base in pdf_base or pdf_base in xml_base:
-                return True
-            
-            # Strategy 5: Check for common prefixes of significant length
-            min_length = min(len(xml_token), len(pdf_token))
-            if min_length >= 8:  # Only for reasonably long tokens
-                common_length = 0
-                for i in range(min_length):
-                    if xml_token[i] == pdf_token[i]:
-                        common_length += 1
-                    else:
-                        break
-                
-                # If they share at least 70% of characters from start
-                if common_length >= min_length * 0.7:
-                    return True
-            
-            return False
-            
-        except Exception as e:
-            self.log(f"Error in token matching: {e}", "ERROR")
-            return False
-    
-    def _should_process_orphaned_pdf(self, pdf_filename: str, base_name: str) -> bool:
-        """Determine if an orphaned PDF should be processed or skipped"""
-        try:
-            # Check if we already have an invoice record for this PDF in the database
-            import psycopg2
-            import os
-            
-            database_url = os.environ.get('DATABASE_URL')
-            if not database_url:
-                # If no database, process all PDFs as fallback
-                return True
-                
-            pg_conn = psycopg2.connect(database_url)
-            pg_cursor = pg_conn.cursor()
-            
-            # Extract potential invoice token from PDF name
-            pdf_token = self._extract_invoice_token_from_filename(pdf_filename)
-            
-            # Check if we already have records for this invoice
-            pg_cursor.execute("""
-                SELECT COUNT(*) 
-                FROM invoices 
-                WHERE user_id = 'rpa-system' 
-                AND (
-                    file_name LIKE %s OR
-                    file_name LIKE %s OR
-                    extracted_data->>'documentNumber' = %s
-                )
-            """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
-            
-            existing_invoice_count = pg_cursor.fetchone()[0]
-            
-            # Also check imported_invoices table
-            pg_cursor.execute("""
-                SELECT COUNT(*) 
-                FROM imported_invoices 
-                WHERE processing_status = 'completed'
-                AND (
-                    original_file_name LIKE %s OR
-                    original_file_name LIKE %s OR
-                    erp_document_id = %s
-                )
-            """, (f"%{pdf_token}%", f"%{base_name}%", pdf_token.split('_')[0] if '_' in pdf_token else pdf_token))
-            
-            existing_imported_count = pg_cursor.fetchone()[0]
-            
-            pg_conn.close()
-            
-            # If we already have records for this invoice, skip the orphaned PDF
-            if existing_invoice_count > 0 or existing_imported_count > 0:
-                self.log(f"🔍 PDF {pdf_filename} has existing records (invoices: {existing_invoice_count}, imported: {existing_imported_count}) - skipping")
-                return False
-            
-            # Otherwise, process it
-            return True
-            
-        except Exception as e:
-            self.log(f"Error checking orphaned PDF status for {pdf_filename}: {e}", "ERROR")
-            # On error, default to processing to be safe
-            return True
-
-    def _process_xml_for_pipeline(self, filename, uploads_dir, is_data_source=True):
-        """Process XML file for manual pipeline"""
-        try:
-            # Parse filename to get document info
-            base_name = os.path.splitext(filename)[0]
-            parts = base_name.split("_", 2)
-            if len(parts) < 2:
-                self.log(f"Skipping invalid filename: {filename}")
-                return None
-
-            numero = parts[0]
-            emisor = parts[1] if len(parts) > 1 else "unknown"
-            valor = parts[2] if len(parts) > 2 else "0"
-            xml_file_path = os.path.join(self.xml_dir, filename)
-
-            # Create standardized filename for manual pipeline
-            safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
-            upload_filename = f"{numero}_{safe_emisor}.xml"
-            upload_path = os.path.join(uploads_dir, upload_filename)
-
-            # Copy XML file to uploads directory and extract buyer tax ID
-            with open(xml_file_path, 'r', encoding='utf-8') as src:
-                xml_content = src.read()
-
-            with open(upload_path, 'w', encoding='utf-8') as dst:
-                dst.write(xml_content)
-                
-            # Extract buyer tax ID from XML content
-            buyer_tax_id = self._extract_buyer_tax_id_from_xml(xml_content)
-
-            # Mark as processing before triggering manual pipeline
-            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'processing')
-            
-            # Call Node.js endpoint to process the file through manual pipeline
-            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'xml', buyer_tax_id)
-            
-            if not success:
-                self.log(f"Failed to process XML {upload_filename} through manual pipeline", "ERROR")
-                self._update_imported_invoice_status({'upload_filename': upload_filename}, 'failed', 'Manual processing failed')
-                return None
-
-            # Update status to completed after successful processing
-            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'completed')
-
-            # Clean up temp XML file
-            os.remove(xml_file_path)
-
-            self.log(f"Processed XML through manual pipeline: {upload_filename}")
-            
-            return {
-                'type': 'xml',
-                'base_name': base_name,
-                'upload_filename': upload_filename,
-                'numero': numero,
-                'emisor': emisor,
-                'valor': valor,
-                'is_data_source': is_data_source,
-                'buyer_tax_id': buyer_tax_id
-            }
-
-        except Exception as e:
-            self.log(f"Error processing XML {filename}: {e}", "ERROR")
-            return None
-
-    def _process_pdf_for_pipeline(self, filename, uploads_dir, pdf_dir, is_data_source=False, matched_xml=None):
-        """Process PDF file for manual pipeline (OCR)"""
-        try:
-            # Parse filename to get document info
-            base_name = os.path.splitext(filename)[0]
-            parts = base_name.split("_", 2)
-            if len(parts) < 2:
-                self.log(f"Skipping invalid PDF filename: {filename}")
-                return None
-
-            numero = parts[0]
-            emisor = parts[1] if len(parts) > 1 else "unknown"
-            valor = parts[2] if len(parts) > 2 else "0"
-            pdf_file_path = os.path.join(pdf_dir, filename)
-
-            # Create standardized filename for manual pipeline
-            safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
-            upload_filename = f"{numero}_{safe_emisor}.pdf"
-            upload_path = os.path.join(uploads_dir, upload_filename)
-
-            # Copy PDF file to uploads directory
-            shutil.copy2(pdf_file_path, upload_path)
-
-            # Mark as processing before triggering manual pipeline
-            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'processing')
-            
-            # Call Node.js endpoint to process the file through manual pipeline
-            success = self.trigger_manual_processing(upload_filename, numero, emisor, valor, 'pdf')
-            
-            if not success:
-                self.log(f"Failed to process PDF {upload_filename} through manual pipeline", "ERROR")
-                self._update_imported_invoice_status({'upload_filename': upload_filename}, 'failed', 'Manual processing failed')
-                return None
-
-            # Update status to completed after successful processing
-            self._update_imported_invoice_status({'upload_filename': upload_filename}, 'completed')
-
-            self.log(f"Processed PDF through manual pipeline: {upload_filename}")
-            
-            return {
-                'type': 'pdf',
-                'base_name': base_name,
-                'upload_filename': upload_filename,
-                'numero': numero,
-                'emisor': emisor,
-                'valor': valor,
-                'is_data_source': is_data_source,
-                'matched_xml': matched_xml
-            }
-
-        except Exception as e:
-            self.log(f"Error processing PDF {filename}: {e}", "ERROR")
-            return None
-
-    def _store_pdf_as_reference_only(self, filename, pdf_dir, base_name, matched_xml=None):
-        """Store PDF as reference file without triggering extraction pipeline"""
-        try:
-            # Parse filename to get basic info (for metadata only)
-            parts = base_name.split("_", 2)
-            if len(parts) < 2:
-                self.log(f"Skipping invalid PDF filename: {filename}")
-                return None
-
-            numero = parts[0]
-            emisor = parts[1] if len(parts) > 1 else "unknown"
-            valor = parts[2] if len(parts) > 2 else "0"
-
-            self.log(f"📎 Storing PDF as reference: {filename} (NO EXTRACTION)")
-            
-            return {
-                'type': 'pdf',
-                'base_name': base_name,
-                'upload_filename': filename,  # Keep original name since not processed through pipeline
-                'numero': numero,
-                'emisor': emisor,
-                'valor': valor,
-                'is_data_source': False,  # This is NOT a data source
-                'matched_xml': matched_xml,
-                'reference_only': True  # Flag to indicate this is reference only
-            }
-
-        except Exception as e:
-            self.log(f"Error storing PDF reference {filename}: {e}", "ERROR")
-            return None
 
     def _store_conditional_files_to_database(self, processed_files):
         """Store processed files to database with conditional logic for matching"""
@@ -2752,7 +2487,7 @@ class InvoiceRPAService:
 
             # Store files with proper linking
             file_id_mapping = {}  # Track XML file IDs for linking PDFs
-            
+
             # First pass: Store XML files and standalone PDFs
             for file_info in processed_files:
                 try:
@@ -2766,10 +2501,10 @@ class InvoiceRPAService:
                     else:
                         # XML files are copied to uploads directory
                         file_path = os.path.join('uploads', file_info['upload_filename'])
-                    
+
                     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
                     base_name = file_info.get('base_file_name', file_info['base_name'])
-                    
+
                     # Insert into imported_invoices table with processing status
                     pg_cursor.execute("""
                         INSERT INTO imported_invoices 
@@ -2795,12 +2530,12 @@ class InvoiceRPAService:
                             'matched_xml': file_info.get('matched_xml')
                         })
                     ))
-                    
+
                     file_id = pg_cursor.fetchone()[0]
                     file_id_mapping[file_info['upload_filename']] = file_id
-                    
+
                     self.log(f"Stored {file_info['type'].upper()} file: {file_info['upload_filename']} (ID: {file_id})")
-                    
+
                 except Exception as e:
                     self.log(f"Failed to store file {file_info['upload_filename']}: {e}", "ERROR")
                     continue
@@ -2811,27 +2546,27 @@ class InvoiceRPAService:
                     try:
                         pdf_filename = file_info['upload_filename']
                         xml_filename = file_info['matched_xml']
-                        
+
                         if pdf_filename in file_id_mapping and xml_filename in file_id_mapping:
                             pdf_id = file_id_mapping[pdf_filename]
                             xml_id = file_id_mapping[xml_filename]
-                            
-                            # Update PDF record to link to XML
+
+                            # Update the PDF record to link to XML
                             pg_cursor.execute("""
                                 UPDATE imported_invoices 
                                 SET matched_file_id = %s 
                                 WHERE id = %s
                             """, (xml_id, pdf_id))
-                            
+
                             self.log(f"Linked PDF {pdf_filename} to XML {xml_filename}")
-                            
+
                     except Exception as e:
                         self.log(f"Failed to link PDF {file_info['upload_filename']}: {e}", "ERROR")
 
             # Commit all changes
             pg_conn.commit()
             pg_conn.close()
-            
+
             self.log(f"✅ Successfully stored {len(processed_files)} files to database with conditional logic")
             return True
 
@@ -2854,20 +2589,20 @@ class InvoiceRPAService:
 
             # Find PDFs that need to be linked to XML-derived invoices
             pdf_files_to_link = [f for f in processed_files if f['type'] == 'pdf' and f.get('link_to_xml_invoice')]
-            
+
             for pdf_info in pdf_files_to_link:
                 try:
                     base_name = pdf_info.get('base_file_name', pdf_info['base_name'])
                     xml_filename = pdf_info.get('xml_filename')
                     pdf_filename = pdf_info['upload_filename']
-                    
+
                     # Extract invoice token from PDF filename for robust matching
                     pdf_token_info = self._extract_invoice_token(pdf_filename)
                     document_number = pdf_token_info['document_number']
                     tax_id = pdf_token_info['tax_id']
-                    
+
                     self.log(f"🔗 Token-based linking: PDF {pdf_filename} (token: {pdf_token_info['token']}) to XML-derived invoice")
-                    
+
                     # Enhanced search: Look for invoice using multiple matching strategies
                     # Strategy 1: Find by extracted data using document number and tax ID
                     pg_cursor.execute("""
@@ -2889,16 +2624,16 @@ class InvoiceRPAService:
                         f"{base_name}.xml",  # Strategy 2b: exact base name
                         f"{xml_filename}" if xml_filename else ""  # Strategy 2c: exact XML filename
                     ))
-                    
+
                     invoice_result = pg_cursor.fetchone()
-                    
+
                     if invoice_result:
                         invoice_id = invoice_result[0]
                         invoice_filename = invoice_result[1]
                         extracted_data = invoice_result[2] if len(invoice_result) > 2 else {}
-                        
+
                         self.log(f"✅ Found matching invoice: ID {invoice_id}, file: {invoice_filename}")
-                        
+
                         # Check if we already have a PDF association for this invoice using token
                         pg_cursor.execute("""
                             SELECT id FROM imported_invoices 
@@ -2910,12 +2645,12 @@ class InvoiceRPAService:
                             AND file_type = 'pdf' 
                             AND log_id = %s
                         """, (base_name, f"{document_number}_{tax_id}%", pdf_token_info['token'], self.log_id))
-                        
+
                         pdf_record = pg_cursor.fetchone()
-                        
+
                         if pdf_record:
                             pdf_record_id = pdf_record[0]
-                            
+
                             # Update the PDF record with enhanced linking metadata
                             linking_metadata = {
                                 'linked_to_main_invoice': True, 
@@ -2926,7 +2661,7 @@ class InvoiceRPAService:
                                 'linking_method': 'token_based',
                                 'linked_at': datetime.now().isoformat()
                             }
-                            
+
                             # Update the PDF record with the enhanced link
                             pg_cursor.execute("""
                                 UPDATE imported_invoices 
@@ -2938,14 +2673,14 @@ class InvoiceRPAService:
                                 json.dumps(linking_metadata),
                                 pdf_record_id
                             ))
-                            
+
                             self.log(f"✅ Successfully linked PDF {pdf_filename} to invoice {invoice_id} via token {pdf_token_info['token']}")
                         else:
                             self.log(f"⚠️ PDF record not found in imported_invoices for: {pdf_filename} (token: {pdf_token_info['token']})")
                     else:
                         self.log(f"⚠️ No matching invoice found for PDF {pdf_filename}")
                         self.log(f"   Search criteria: doc_num={document_number}, tax_id={tax_id}, token={pdf_token_info['token']}")
-                        
+
                         # Optional: Try alternative search by just document number if tax ID search fails
                         pg_cursor.execute("""
                             SELECT id, file_name FROM invoices 
@@ -2958,12 +2693,12 @@ class InvoiceRPAService:
                             ORDER BY created_at DESC 
                             LIMIT 1
                         """, (document_number, document_number, f"{document_number}%"))
-                        
+
                         fallback_result = pg_cursor.fetchone()
                         if fallback_result:
                             self.log(f"🔄 Found fallback match using document number only: {fallback_result[1]}")
                             # Could implement fallback linking here if needed
-                        
+
                 except Exception as e:
                     self.log(f"❌ Failed to link PDF {pdf_info['upload_filename']}: {e}", "ERROR")
                     continue
@@ -2971,10 +2706,10 @@ class InvoiceRPAService:
             # Commit all changes
             pg_conn.commit()
             pg_conn.close()
-            
+
             if pdf_files_to_link:
                 self.log(f"✅ PDF linking completed for {len(pdf_files_to_link)} files")
-            
+
             return True
 
         except Exception as e:
@@ -2985,30 +2720,30 @@ class InvoiceRPAService:
         """Store file matching information for logging"""
         xml_files = [f for f in processed_files if f['type'] == 'xml']
         pdf_files = [f for f in processed_files if f['type'] == 'pdf']
-        
+
         matched_pairs = []
         unmatched_xml = []
         unmatched_pdf = []
-        
+
         for xml_file in xml_files:
             matched_pdf = next((p for p in pdf_files if p['base_name'] == xml_file['base_name']), None)
             if matched_pdf:
                 matched_pairs.append({'xml': xml_file['upload_filename'], 'pdf': matched_pdf['upload_filename']})
             else:
                 unmatched_xml.append(xml_file['upload_filename'])
-        
+
         for pdf_file in pdf_files:
             if not any(p['xml'] for p in matched_pairs if p.get('pdf') == pdf_file['upload_filename']):
                 unmatched_pdf.append(pdf_file['upload_filename'])
-        
+
         if matched_pairs:
             self.log(f"Matched file pairs: {len(matched_pairs)}")
             for pair in matched_pairs:
                 self.log(f"  📎 {pair['xml']} ↔ {pair['pdf']}")
-        
+
         if unmatched_xml:
             self.log(f"XML files without PDF match: {', '.join(unmatched_xml)}")
-        
+
         if unmatched_pdf:
             self.log(f"PDF files without XML match: {', '.join(unmatched_pdf)}")
 
@@ -3026,31 +2761,31 @@ class InvoiceRPAService:
                 global_progress_ratio = self.global_progress['global_index'] / self.global_progress['estimated_total_invoices']
                 download_progress = 30 + int(global_progress_ratio * 60)
                 download_progress = min(download_progress, 90)  # Cap at 90% for download phase
-                
+
                 # Update step description with global context
                 self.stats['current_step'] = f"Processing invoice {self.global_progress['global_index']}/{self.global_progress['estimated_total_invoices']}: {current_step}"
             else:
                 # Fallback to page-based progress if global estimation isn't available
                 download_progress = 30 + int((current_item / total_items) * 60) if total_items > 0 else 30
                 self.stats['current_step'] = f"Page {self.global_progress['pages_processed'] + 1}, item {current_item}/{total_items}: {current_step}"
-            
+
             self.stats['progress'] = download_progress
-            
+
             # Validate metric consistency before reporting
             try:
                 # Relationship constraint 1: total_invoices = skipped_invoices + processed_invoices
                 expected_total = self.stats['skipped_invoices'] + self.stats['processed_invoices']
                 if self.stats['total_invoices'] != expected_total:
                     self.log(f"⚠️ Metrics validation: total_invoices ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']}) = {expected_total}", "WARNING")
-                
+
                 # Relationship constraint 2: processed_invoices = successful_imports + failed_imports  
                 expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
                 if self.stats['processed_invoices'] != expected_processed:
                     self.log(f"⚠️ Metrics validation: processed_invoices ({self.stats['processed_invoices']}) != successful ({self.stats['successful_imports']}) + failed ({self.stats['failed_imports']}) = {expected_processed}", "WARNING")
-                    
+
             except Exception as e:
                 self.log(f"❌ Error validating metrics: {e}", "ERROR")
-            
+
             # Output STATS in JSON format with enhanced metrics
             stats_data = {
                 'total_invoices': self.stats['total_invoices'],
@@ -3061,12 +2796,12 @@ class InvoiceRPAService:
                 'current_step': self.stats['current_step'],
                 'progress': download_progress
             }
-            
+
             # Output with STATS: prefix so Node.js parser can find it
             import json
             print(f"STATS: {json.dumps(stats_data)}")
             sys.stdout.flush()
-            
+
         except Exception as e:
             self.log(f"❌ Error outputting download progress: {e}", "ERROR")
 
@@ -3075,7 +2810,7 @@ class InvoiceRPAService:
         try:
             self.log("📊 FINAL IMPORT METRICS")
             self.log("=" * 50)
-            
+
             # Validate and enforce relationship constraints
             try:
                 # Constraint 1: total_invoices = skipped_invoices + processed_invoices
@@ -3083,22 +2818,22 @@ class InvoiceRPAService:
                 if self.stats['total_invoices'] != expected_total:
                     self.log(f"🔧 Correcting total_invoices: {self.stats['total_invoices']} -> {expected_total}")
                     self.stats['total_invoices'] = expected_total
-                
+
                 # Constraint 2: processed_invoices = successful_imports + failed_imports
                 expected_processed = self.stats['successful_imports'] + self.stats['failed_imports']
                 if self.stats['processed_invoices'] != expected_processed:
                     self.log(f"🔧 Correcting processed_invoices: {self.stats['processed_invoices']} -> {expected_processed}")
                     self.stats['processed_invoices'] = expected_processed
-                    
+
                 # Final validation assertions
                 assert self.stats['total_invoices'] == self.stats['skipped_invoices'] + self.stats['processed_invoices'], f"Constraint violation: total ({self.stats['total_invoices']}) != skipped ({self.stats['skipped_invoices']}) + processed ({self.stats['processed_invoices']})"
                 assert self.stats['processed_invoices'] == self.stats['successful_imports'] + self.stats['failed_imports'], f"Constraint violation: processed ({self.stats['processed_invoices']}) != successful ({self.stats['successful_imports']}) + failed ({self.stats['failed_imports']})"
-                
+
                 self.log("✅ All metric relationship constraints validated successfully")
-                
+
             except Exception as e:
                 self.log(f"❌ Error validating final metrics: {e}", "ERROR")
-            
+
             # Output structured metrics
             final_metrics = {
                 "total_invoices": self.stats['total_invoices'],
@@ -3107,17 +2842,17 @@ class InvoiceRPAService:
                 "successful_imports": self.stats['successful_imports'],
                 "failed_imports": self.stats['failed_imports']
             }
-            
+
             self.log(f"📋 Total invoices discovered: {final_metrics['total_invoices']}")
             self.log(f"⏭️ Skipped invoices (duplicates): {final_metrics['skipped_invoices']}")
             self.log(f"🔄 Processed invoices: {final_metrics['processed_invoices']}")
             self.log(f"✅ Successful imports: {final_metrics['successful_imports']}")
             self.log(f"❌ Failed imports: {final_metrics['failed_imports']}")
-            
+
             # Output in JSON format for parsing
             import json
             self.log(f"JSON METRICS: {json.dumps(final_metrics)}")
-            
+
         except Exception as e:
             self.log(f"❌ Error outputting final metrics: {e}", "ERROR")
 
@@ -3127,7 +2862,7 @@ class InvoiceRPAService:
             # Calculate overall progress based on file processing
             file_progress = min(int((processed_count / total_files) * 100), 100) if total_files > 0 else 0
             overall_progress = 90 + int(file_progress * 0.08)  # Map to 90-98% range
-            
+
             # Output STATS in JSON format that Node.js extractStatsFromOutput can parse
             stats_data = {
                 'total_invoices': total_files,
@@ -3136,14 +2871,14 @@ class InvoiceRPAService:
                 'failed_imports': failed_count,
                 'progress': overall_progress
             }
-            
+
             # Output with STATS: prefix so Node.js parser can find it
             import json
             print(f"STATS: {json.dumps(stats_data)}")
             sys.stdout.flush()
-            
+
             self.log(f"📊 Progress update: Processed={processed_count}/{total_files}, Success={successful_count}, Failed={failed_count}")
-                
+
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
@@ -3205,7 +2940,7 @@ class InvoiceRPAService:
                         error_msg += f": {error_data['error']}"
                 except:
                     pass
-                
+
                 self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
                 # Update status to failed with HTTP error
                 self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
@@ -3274,10 +3009,10 @@ class InvoiceRPAService:
                 }
 
             self.update_progress("Import process completed successfully", 100)
-            
+
             # Output comprehensive final metrics with validation
             self.output_final_metrics()
-            
+
             self.log("Python RPA import process completed successfully")
 
             return {'success': True, 'stats': self.stats}
