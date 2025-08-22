@@ -551,8 +551,6 @@ export default function InvoiceImporter() {
     } catch (error) {
       console.error('❌ Error fetching import logs:', error);
     }
-  };etching import logs:', error);
-    }
   };
 
   const handleViewLogDetails = async (logId: number) => {
