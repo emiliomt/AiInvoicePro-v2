@@ -53,6 +53,9 @@ import {
   type InsertSavedWorkflow,
   type ScheduledTask,
   type InsertScheduledTask,
+  // Import logs related imports from schema
+  importerConfigs,
+  importerLogs,
 } from "@shared/schema";
 import {
   eq,
@@ -239,7 +242,9 @@ export interface IStorage {
   ): Promise<PurchaseOrder>;
 
   // Invoice-PO Matches
-  createInvoicePoMatch(match: InsertInvoicePoMatch): Promise<InvoicePoMatch>;
+  createInvoicePoMatch(
+    match: InsertInvoicePoMatch,
+  ): Promise<InvoicePoMatch>;
   getInvoicePoMatchesByInvoiceId(invoiceId: number): Promise<InvoicePoMatch[]>;
 
   // Invoice-Project Matches
@@ -306,7 +311,9 @@ export interface IStorage {
   deleteErpTask(id: number): Promise<void>;
 
   // Saved Workflows
-  createSavedWorkflow(workflow: InsertSavedWorkflow): Promise<SavedWorkflow>;
+  createSavedWorkflow(
+    workflow: InsertSavedWorkflow,
+  ): Promise<SavedWorkflow>;
   getSavedWorkflow(id: number): Promise<SavedWorkflow | null>;
   getSavedWorkflows(): Promise<SavedWorkflow[]>;
   updateSavedWorkflow(
@@ -921,7 +928,7 @@ class PostgresStorage implements IStorage {
     await db.transaction(async (tx) => {
       try {
         console.log(`🗑️ Starting cascading delete for invoice importer config ${configId}`);
-        
+
         // First, get all logs related to this config to understand the scope
         const logs = await tx
           .select({ id: invoiceImporterLogs.id })
@@ -938,19 +945,19 @@ class PostgresStorage implements IStorage {
             .select({ count: sql<number>`count(*)` })
             .from(importedInvoices)
             .where(eq(importedInvoices.logId, log.id));
-          
+
           const count = invoiceCount[0]?.count || 0;
-          
+
           if (count > 0) {
             await tx
               .delete(importedInvoices)
               .where(eq(importedInvoices.logId, log.id));
-            
+
             totalDeletedInvoices += count;
             console.log(`🗑️ Deleted ${count} imported invoices for log ${log.id}`);
           }
         }
-        
+
         console.log(`📊 Total deleted imported invoices: ${totalDeletedInvoices}`);
 
         // Delete all logs for this config
@@ -1587,21 +1594,21 @@ class PostgresStorage implements IStorage {
         const dbClient = new Client({
           connectionString: process.env.DATABASE_URL,
         });
-        
+
         try {
           await dbClient.connect();
-          
+
           // Delete imported_invoices that are linked to invoices from this company
           const deleteLinkedQuery = `
-            DELETE FROM imported_invoices 
+            DELETE FROM imported_invoices
             WHERE linked_invoice_id IN (
               SELECT id FROM invoices WHERE company_id = $1
             )
           `;
-          
+
           const result = await dbClient.query(deleteLinkedQuery, [companyId]);
           console.log(`🗑️ Deleted ${result.rowCount} linked imported_invoices for company ${companyId}`);
-          
+
         } finally {
           await dbClient.end();
         }
