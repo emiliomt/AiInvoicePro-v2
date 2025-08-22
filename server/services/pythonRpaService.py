@@ -2448,6 +2448,206 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error storing PDF reference {pdf_filename}: {e}", "ERROR")
 
+    def _process_xml_for_pipeline(self, xml_filename: str, uploads_dir: str, is_data_source: bool = True) -> dict:
+        """Process XML file for the manual upload pipeline"""
+        try:
+            self.log(f"🔄 Processing XML for pipeline: {xml_filename}")
+            
+            # Move XML file to uploads directory for processing
+            xml_source = os.path.join(self.xml_dir, xml_filename)
+            xml_dest = os.path.join(uploads_dir, xml_filename)
+            
+            if not os.path.exists(xml_source):
+                self.log(f"❌ XML source file not found: {xml_source}", "ERROR")
+                return None
+                
+            # Copy XML to uploads directory
+            shutil.copy2(xml_source, xml_dest)
+            
+            # Extract invoice information from XML content
+            base_name = os.path.splitext(xml_filename)[0]
+            
+            # Initialize default values
+            invoice_number = base_name
+            emisor = 'Unknown'
+            valor = '0.00'
+            
+            try:
+                # Parse XML content to extract invoice data
+                tree = ET.parse(xml_source)
+                root = tree.getroot()
+                
+                # Extract invoice number from various possible tags
+                invoice_number_tags = [
+                    './/{*}InvoiceNumber',
+                    './/{*}SerieNumber', 
+                    './/{*}SerialNumber',
+                    './/{*}Number',
+                    './/{*}InvoiceID',
+                    './/{*}DocumentID',
+                    './/{*}ID'
+                ]
+                
+                for tag in invoice_number_tags:
+                    element = root.find(tag)
+                    if element is not None and element.text and element.text.strip():
+                        invoice_number = element.text.strip()
+                        break
+                
+                # Extract total amount from various possible tags
+                amount_tags = [
+                    './/{*}PayableAmount',
+                    './/{*}TotalAmount', 
+                    './/{*}LineExtensionAmount',
+                    './/{*}TaxExclusiveAmount',
+                    './/{*}TaxInclusiveAmount'
+                ]
+                
+                for tag in amount_tags:
+                    element = root.find(tag)
+                    if element is not None and element.text and element.text.strip():
+                        try:
+                            amount = float(element.text.strip())
+                            valor = f"{amount:.2f}"
+                            break
+                        except (ValueError, TypeError):
+                            continue
+                
+                # Extract supplier/emisor information
+                supplier_tags = [
+                    './/{*}AccountingSupplierParty//{*}PartyName//{*}Name',
+                    './/{*}AccountingSupplierParty//{*}Party//{*}PartyName//{*}Name',
+                    './/{*}SupplierParty//{*}PartyName//{*}Name',
+                    './/{*}Seller//{*}Name'
+                ]
+                
+                for tag in supplier_tags:
+                    element = root.find(tag)
+                    if element is not None and element.text and element.text.strip():
+                        emisor = element.text.strip()
+                        break
+                
+                self.log(f"📄 Extracted from XML: Invoice #{invoice_number}, Amount: ${valor}, Supplier: {emisor}")
+                
+            except Exception as xml_error:
+                self.log(f"⚠️ Warning: Could not parse XML content for {xml_filename}: {xml_error}")
+                # Fall back to filename-based extraction
+                pass
+            
+            # Create invoice info structure with extracted data
+            xml_info = {
+                'type': 'xml',
+                'upload_filename': xml_filename,
+                'base_name': base_name,
+                'is_data_source': is_data_source,
+                'triggers_extraction': True,
+                'numero': invoice_number,
+                'emisor': emisor,
+                'valor': valor,
+                'matched_xml': None   # No matched XML for standalone XML files
+            }
+            
+            self.log(f"✅ XML processed for pipeline: {xml_filename}")
+            return xml_info
+            
+        except Exception as e:
+            self.log(f"❌ Error processing XML for pipeline {xml_filename}: {e}", "ERROR")
+            return None
+
+    def _process_pdf_for_pipeline(self, pdf_filename: str, uploads_dir: str, pdf_dir: str, is_data_source: bool = True) -> dict:
+        """Process PDF file for the manual upload pipeline"""
+        try:
+            self.log(f"🔄 Processing PDF for pipeline: {pdf_filename}")
+            
+            # Move PDF file to uploads directory for processing
+            pdf_source = os.path.join(pdf_dir, pdf_filename)
+            pdf_dest = os.path.join(uploads_dir, pdf_filename)
+            
+            if not os.path.exists(pdf_source):
+                self.log(f"❌ PDF source file not found: {pdf_source}", "ERROR")
+                return None
+                
+            # Copy PDF to uploads directory
+            shutil.copy2(pdf_source, pdf_dest)
+            
+            # Extract invoice information from filename using existing token extraction logic
+            base_name = os.path.splitext(pdf_filename)[0]
+            
+            # Use existing token extraction to get better invoice information
+            token_info = self._extract_invoice_token(pdf_filename, pdf_source, 'pdf')
+            
+            # Extract basic invoice information from filename
+            invoice_number = token_info.get('document_number', base_name) if token_info else base_name
+            emisor = 'Unknown'  # Would be extracted via OCR in full implementation
+            valor = '0.00'      # Would be extracted via OCR in full implementation
+            
+            # Try to extract amount from filename if it contains amount information
+            if '_' in base_name:
+                parts = base_name.split('_')
+                for part in parts:
+                    # Look for parts that look like currency amounts
+                    if re.match(r'^\d+[.,]\d{2}$', part) or re.match(r'^\d+$', part):
+                        try:
+                            # Clean and parse the amount
+                            clean_amount = part.replace(',', '.')
+                            amount = float(clean_amount)
+                            valor = f"{amount:.2f}"
+                            break
+                        except (ValueError, TypeError):
+                            continue
+            
+            self.log(f"📄 Extracted from PDF filename: Invoice #{invoice_number}, Amount: ${valor}")
+            
+            # Create invoice info structure with extracted data
+            pdf_info = {
+                'type': 'pdf',
+                'upload_filename': pdf_filename,
+                'base_name': base_name,
+                'is_data_source': is_data_source,
+                'triggers_extraction': True,
+                'numero': invoice_number,
+                'emisor': emisor,
+                'valor': valor,
+                'matched_xml': None   # No matched XML for standalone PDF files
+            }
+            
+            self.log(f"✅ PDF processed for pipeline: {pdf_filename}")
+            return pdf_info
+            
+        except Exception as e:
+            self.log(f"❌ Error processing PDF for pipeline {pdf_filename}: {e}", "ERROR")
+            return None
+
+    def _should_process_orphaned_pdf(self, pdf_filename: str, base_name: str) -> bool:
+        """Check if an orphaned PDF should be processed or skipped"""
+        try:
+            # Check if this PDF has already been processed by looking at the database
+            # For now, we'll use a simple approach - check if the file exists in uploads
+            upload_path = os.path.join('uploads', pdf_filename)
+            
+            if os.path.exists(upload_path):
+                self.log(f"⏭️ PDF already exists in uploads: {pdf_filename}")
+                return False
+            
+            # Check if we have a corresponding XML file (which would mean it's not really orphaned)
+            xml_path = os.path.join(self.xml_dir, f"{base_name}.xml")
+            if os.path.exists(xml_path):
+                self.log(f"⏭️ Found corresponding XML file for {pdf_filename}, skipping orphaned processing")
+                return False
+            
+            # Check if this PDF was already processed in this session
+            if pdf_filename in self.session_downloaded_files:
+                self.log(f"⏭️ PDF already processed in this session: {pdf_filename}")
+                return False
+            
+            self.log(f"✅ PDF should be processed: {pdf_filename}")
+            return True
+            
+        except Exception as e:
+            self.log(f"❌ Error checking if PDF should be processed {pdf_filename}: {e}", "ERROR")
+            # Default to processing if we can't determine
+            return True
+
     def _process_unmatched_pdf_invoice(self, pdf_filename: str, pdf_dir: str, uploads_dir: str, base_name: str) -> bool:
         """Process a PDF-only invoice through OCR pipeline"""
         try:
