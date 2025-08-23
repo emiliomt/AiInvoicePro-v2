@@ -2626,18 +2626,28 @@ class InvoiceRPAService:
                     self._store_pdf_as_reference_metadata(pdf_filename, pdf_dir, xml_filename)
                     
                     # Add PDF record to processed_files with explicit link flags for the linker
-                    processed_files.append({
+                    # Use the same metadata as the XML for consistency in the database
+                    pdf_record = {
                         'type': 'pdf',
                         'upload_filename': pdf_filename,
                         'base_file_name': base_name,
                         'xml_filename': xml_filename,
                         'is_data_source': False,
                         'link_to_xml_invoice': True,  # Critical flag for the linker
-                        'matched_xml': xml_filename,
-                        'numero': '',  # Will be populated by linker
-                        'emisor': '',  # Will be populated by linker  
-                        'valor': ''    # Will be populated by linker
-                    })
+                        'matched_xml': xml_filename
+                    }
+                    
+                    # Copy XML metadata to PDF record for database storage
+                    if xml_info:
+                        pdf_record['numero'] = xml_info.get('numero', '')
+                        pdf_record['emisor'] = xml_info.get('emisor', '')
+                        pdf_record['valor'] = xml_info.get('valor', '')
+                    else:
+                        pdf_record['numero'] = ''
+                        pdf_record['emisor'] = ''
+                        pdf_record['valor'] = ''
+                    
+                    processed_files.append(pdf_record)
 
                 elif base_name in unmatched_xmls:
                     # Case: Only XML file present - process as single invoice
@@ -2661,7 +2671,10 @@ class InvoiceRPAService:
                             'type': 'pdf',
                             'base_file_name': base_name,
                             'upload_filename': pdf_filename,
-                            'is_data_source': True
+                            'is_data_source': True,
+                            'numero': base_name,  # Use base name as document number for PDF-only
+                            'emisor': '',         # Unknown for PDF-only
+                            'valor': ''           # Unknown for PDF-only
                         })
 
                 # Update counters based on invoice success/failure (not individual files)
@@ -2686,13 +2699,18 @@ class InvoiceRPAService:
             self.log(f"   - Failed: {failed_count}")
             self.log(f"   - Paired files (XML+PDF): {len(matched_pairs)} invoices")
 
+            # Debug: Show what files we're about to persist and link
+            self.log(f"PDF LINK DEBUG: processed_files={[(f['type'], f.get('upload_filename'), f.get('link_to_xml_invoice')) for f in processed_files]}")
+
             # Persist the processed file info (useful for debugging)
             self._store_file_matches(processed_files)
 
             # Persist conditional records for imported_invoices (maps XML/PDF pairs with IDs)
+            self.log(f"🔄 Storing {len(processed_files)} files to imported_invoices database...")
             self._store_conditional_files_to_database(processed_files)
 
             # NEW: Link PDFs to the main invoices created by the XML manual pipeline
+            self.log(f"🔗 Starting PDF linking process for {len([f for f in processed_files if f.get('link_to_xml_invoice')])} PDFs...")
             self._link_pdfs_to_main_invoices(processed_files)
 
             return True
@@ -2864,6 +2882,10 @@ class InvoiceRPAService:
 
             # Find PDFs that need to be linked to XML-derived invoices
             pdf_files_to_link = [f for f in processed_files if f['type'] == 'pdf' and f.get('link_to_xml_invoice')]
+            
+            self.log(f"🔍 PDF LINK DEBUG: Found {len(pdf_files_to_link)} PDFs to link from {len(processed_files)} total files")
+            for i, pdf in enumerate(pdf_files_to_link):
+                self.log(f"  PDF {i+1}: {pdf.get('upload_filename')} -> XML: {pdf.get('xml_filename')} (base: {pdf.get('base_file_name')})")
 
             for pdf_info in pdf_files_to_link:
                 try:
@@ -2877,6 +2899,7 @@ class InvoiceRPAService:
                     tax_id = pdf_token_info['tax_id']
 
                     self.log(f"🔗 Token-based linking: PDF {pdf_filename} (token: {pdf_token_info['token']}) to XML-derived invoice")
+                    self.log(f"   Search params: doc_num={document_number}, tax_id={tax_id}, base_name={base_name}, xml_file={xml_filename}")
 
                     # Enhanced search: Look for invoice using multiple matching strategies with robust fallbacks
                     invoice_result = None
@@ -2953,6 +2976,8 @@ class InvoiceRPAService:
                         """, (base_name, f"{document_number}_{tax_id}%", pdf_token_info['token'], self.log_id))
 
                         pdf_record = pg_cursor.fetchone()
+                        
+                        self.log(f"   PDF record search result: {'Found' if pdf_record else 'Not found'} in imported_invoices")
 
                         if pdf_record:
                             pdf_record_id = pdf_record[0]
