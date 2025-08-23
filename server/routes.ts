@@ -869,6 +869,185 @@ export function registerRoutes(app: Express): Server {
     },
   );
 
+  // RPA manual processing endpoints for Python service calls
+  apiRouter.post("/rpa/process-xml", async (req, res) => {
+    try {
+      console.log("📋 [RPA_XML] Processing XML file through manual pipeline...");
+      
+      const { filename, fileSize, documentNumber, emisor, totalValue, buyerTaxId, configId } = req.body;
+      
+      if (!filename) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required field: filename"
+        });
+      }
+      
+      // Create invoice record and process it through manual pipeline
+      const result = await storage.createInvoice({
+        userId: 'rpa-system', // Special user for RPA imports
+        fileName: filename,
+        status: 'pending',
+        fileUrl: `uploads/${filename}`,
+        source: 'python_rpa',
+        documentNumber: documentNumber || null,
+        totalAmount: totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null,
+        vendorName: emisor || null
+      });
+      
+      // Process the file using OCR/AI pipeline
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join(process.cwd(), 'uploads', filename);
+      
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = fs.readFileSync(filePath);
+        
+        // Import and use the processing services
+        const { processInvoiceOCR } = await import('./services/ocrService');
+        const { extractInvoiceData } = await import('./services/aiService');
+        
+        try {
+          // Update status to processing
+          await storage.updateInvoice(result.id, { status: 'processing' });
+          
+          // Process OCR
+          const ocrText = await processInvoiceOCR(fileBuffer, result.id);
+          
+          // Extract data with AI
+          const extractedData = await extractInvoiceData(ocrText);
+          
+          // Update invoice with extracted data
+          await storage.updateInvoice(result.id, {
+            status: 'extracted',
+            ocrText,
+            extractedData,
+            vendorName: extractedData.vendorName || emisor || null,
+            invoiceNumber: extractedData.invoiceNumber || documentNumber || null,
+            totalAmount: extractedData.totalAmount || (totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null),
+            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+            currency: extractedData.currency || 'USD'
+          });
+          
+        } catch (processingError) {
+          console.error("Processing error:", processingError);
+          await storage.updateInvoice(result.id, { status: 'failed' });
+        }
+      }
+      
+      console.log("✅ [RPA_XML] XML processing completed:", result.success);
+      
+      res.json({
+        success: result.success,
+        message: result.message || "XML file processed successfully",
+        data: result,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ [RPA_XML] XML processing failed:", errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: "XML processing failed",
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  apiRouter.post("/rpa/process-pdf", async (req, res) => {
+    try {
+      console.log("📋 [RPA_PDF] Processing PDF file through manual pipeline (OCR)...");
+      
+      const { filename, fileSize, documentNumber, emisor, totalValue, configId } = req.body;
+      
+      if (!filename) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required field: filename"
+        });
+      }
+      
+      // Create invoice record and process it through manual pipeline (OCR)
+      const result = await storage.createInvoice({
+        userId: 'rpa-system', // Special user for RPA imports
+        fileName: filename,
+        status: 'pending',
+        fileUrl: `uploads/${filename}`,
+        source: 'python_rpa',
+        documentNumber: documentNumber || null,
+        totalAmount: totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null,
+        vendorName: emisor || null
+      });
+      
+      // Process the PDF file using OCR/AI pipeline (same as manual upload)
+      const fs = await import('fs');
+      const path = await import('path');
+      const filePath = path.join(process.cwd(), 'uploads', filename);
+      
+      if (fs.existsSync(filePath)) {
+        const fileBuffer = fs.readFileSync(filePath);
+        
+        // Import and use the processing services
+        const { processInvoiceOCR } = await import('./services/ocrService');
+        const { extractInvoiceData } = await import('./services/aiService');
+        
+        try {
+          // Update status to processing
+          await storage.updateInvoice(result.id, { status: 'processing' });
+          
+          // Process OCR (critical for PDF files)
+          const ocrText = await processInvoiceOCR(fileBuffer, result.id);
+          
+          if (!ocrText || ocrText.trim().length < 10) {
+            throw new Error("OCR did not extract sufficient text from PDF");
+          }
+          
+          // Extract data with AI
+          const extractedData = await extractInvoiceData(ocrText);
+          
+          // Update invoice with extracted data
+          await storage.updateInvoice(result.id, {
+            status: 'extracted',
+            ocrText,
+            extractedData,
+            vendorName: extractedData.vendorName || emisor || null,
+            invoiceNumber: extractedData.invoiceNumber || documentNumber || null,
+            totalAmount: extractedData.totalAmount || (totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null),
+            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+            currency: extractedData.currency || 'USD'
+          });
+          
+        } catch (processingError) {
+          console.error("PDF processing error:", processingError);
+          await storage.updateInvoice(result.id, { status: 'failed' });
+        }
+      }
+      
+      console.log("✅ [RPA_PDF] PDF processing completed:", result.success);
+      
+      res.json({
+        success: result.success,
+        message: result.message || "PDF file processed successfully", 
+        data: result,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ [RPA_PDF] PDF processing failed:", errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: "PDF processing failed",
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
   // Process selected invoices for line item classification
   apiRouter.post(
     "/process-invoices-line-items",

@@ -1508,6 +1508,255 @@ class InvoiceRPAService:
                 'base_name': base_name
             }
 
+    def _tokens_match(self, xml_token, pdf_token, xml_base, pdf_base):
+        """Enhanced token matching with tolerance for common variations"""
+        try:
+            # Exact match
+            if xml_token == pdf_token:
+                return True
+            
+            # Liberal matching strategies
+            # Extract leading digits/numbers for basic match
+            xml_digits = re.findall(r'\d+', xml_token)
+            pdf_digits = re.findall(r'\d+', pdf_token)
+            
+            # Match by leading invoice number segment
+            if xml_digits and pdf_digits:
+                # Compare the first significant number (often the invoice number)
+                if xml_digits[0] == pdf_digits[0] and len(xml_digits[0]) >= 6:
+                    self.log(f"📎 Token match by leading number: {xml_digits[0]} ({xml_token} <-> {pdf_token})")
+                    return True
+            
+            # Normalized digit-only comparison (remove all non-digits)
+            xml_only_digits = re.sub(r'\D', '', xml_token)
+            pdf_only_digits = re.sub(r'\D', '', pdf_token)
+            
+            if xml_only_digits and pdf_only_digits and len(xml_only_digits) >= 8:
+                # Match if significant overlap in digit sequences
+                if xml_only_digits == pdf_only_digits:
+                    self.log(f"📎 Token match by normalized digits: {xml_only_digits}")
+                    return True
+                
+                # Partial match for cases where one file has additional digits
+                shorter = min(xml_only_digits, pdf_only_digits, key=len)
+                longer = max(xml_only_digits, pdf_only_digits, key=len)
+                if len(shorter) >= 10 and shorter in longer:
+                    self.log(f"📎 Token match by partial digits: {shorter} in {longer}")
+                    return True
+            
+            # Base name similarity for edge cases
+            if xml_base and pdf_base:
+                # Remove common suffixes/prefixes and compare
+                xml_clean = re.sub(r'[_\-\s]+', '', xml_base.lower())
+                pdf_clean = re.sub(r'[_\-\s]+', '', pdf_base.lower())
+                
+                if xml_clean == pdf_clean and len(xml_clean) >= 5:
+                    self.log(f"📎 Token match by base name similarity: {xml_clean}")
+                    return True
+            
+            return False
+            
+        except Exception as e:
+            self.log(f"Error in token matching: {e}", "ERROR")
+            return False
+
+    def _process_xml_for_pipeline(self, xml_filename, uploads_dir, is_data_source=True):
+        """Process XML file through the manual upload pipeline"""
+        try:
+            # Copy XML from xml_dir to uploads_dir so Node process can read it
+            xml_source = os.path.join(self.xml_dir, xml_filename)
+            xml_dest = os.path.join(uploads_dir, xml_filename)
+            
+            if not os.path.exists(xml_source):
+                self.log(f"❌ XML source file not found: {xml_source}", "ERROR")
+                return None
+            
+            # Ensure uploads directory exists
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            # Copy the file
+            shutil.copy2(xml_source, xml_dest)
+            self.log(f"📋 Copied XML for pipeline: {xml_source} -> {xml_dest}")
+            
+            # Parse base name to extract numero, emisor, valor
+            base_name = os.path.splitext(xml_filename)[0]
+            parts = base_name.split('_')
+            
+            # Extract numero (document number) - first part
+            numero = parts[0] if len(parts) > 0 else base_name
+            
+            # Extract emisor (vendor tax ID) - second part
+            emisor = parts[1] if len(parts) > 1 else ''
+            
+            # Extract valor (total value) - third part if present
+            valor = parts[2] if len(parts) > 2 else ''
+            
+            # Clean up valor - remove currency symbols, commas, etc.
+            if valor:
+                valor = re.sub(r'[^\d\.]', '', valor)
+            
+            # Extract buyer tax ID from XML content
+            buyer_tax_id = None
+            try:
+                with open(xml_source, 'r', encoding='utf-8') as f:
+                    xml_content = f.read()
+                    buyer_tax_id = self._extract_buyer_tax_id_from_xml(xml_content)
+            except Exception as e:
+                self.log(f"Warning: Could not extract buyer tax ID from {xml_filename}: {e}")
+            
+            # Call trigger_manual_processing for XML
+            success = self.trigger_manual_processing(
+                filename=xml_filename,
+                numero=numero,
+                emisor=emisor,
+                valor=valor,
+                file_type='xml',
+                buyer_tax_id=buyer_tax_id
+            )
+            
+            if success:
+                return {
+                    'type': 'xml',
+                    'upload_filename': xml_filename,
+                    'base_name': base_name,
+                    'numero': numero,
+                    'emisor': emisor,
+                    'valor': valor,
+                    'is_data_source': is_data_source
+                }
+            else:
+                return None
+                
+        except Exception as e:
+            self.log(f"❌ Error processing XML for pipeline {xml_filename}: {e}", "ERROR")
+            return None
+
+    def _process_pdf_for_pipeline(self, pdf_filename, uploads_dir, pdf_dir, is_data_source=True):
+        """Process PDF file through the manual upload pipeline"""
+        try:
+            # Copy PDF from pdf_dir to uploads_dir so Node process can read it
+            pdf_source = os.path.join(pdf_dir, pdf_filename)
+            pdf_dest = os.path.join(uploads_dir, pdf_filename)
+            
+            if not os.path.exists(pdf_source):
+                self.log(f"❌ PDF source file not found: {pdf_source}", "ERROR")
+                return None
+            
+            # Ensure uploads directory exists
+            os.makedirs(uploads_dir, exist_ok=True)
+            
+            # Copy the file
+            shutil.copy2(pdf_source, pdf_dest)
+            self.log(f"📋 Copied PDF for pipeline: {pdf_source} -> {pdf_dest}")
+            
+            # Parse base name to extract numero, emisor, valor
+            base_name = os.path.splitext(pdf_filename)[0]
+            parts = base_name.split('_')
+            
+            # Extract numero (document number) - first part
+            numero = parts[0] if len(parts) > 0 else base_name
+            
+            # Extract emisor (vendor tax ID) - second part if present
+            emisor = parts[1] if len(parts) > 1 else ''
+            
+            # Extract valor (total value) - third part if present
+            valor = parts[2] if len(parts) > 2 else ''
+            
+            # Clean up valor - remove currency symbols, commas, etc.
+            if valor:
+                valor = re.sub(r'[^\d\.]', '', valor)
+            
+            # For PDF-only invoices, trigger OCR processing only
+            if is_data_source:
+                success = self.trigger_manual_processing(
+                    filename=pdf_filename,
+                    numero=numero,
+                    emisor=emisor,
+                    valor=valor,
+                    file_type='pdf',
+                    buyer_tax_id=None  # PDF-only can't extract buyer tax ID
+                )
+                
+                if success:
+                    return {
+                        'type': 'pdf',
+                        'upload_filename': pdf_filename,
+                        'base_name': base_name,
+                        'numero': numero,
+                        'emisor': emisor,
+                        'valor': valor,
+                        'is_data_source': is_data_source
+                    }
+                else:
+                    return None
+            else:
+                # For reference PDFs (paired with XML), just return metadata without processing
+                return {
+                    'type': 'pdf',
+                    'upload_filename': pdf_filename,
+                    'base_name': base_name,
+                    'numero': numero,
+                    'emisor': emisor,
+                    'valor': valor,
+                    'is_data_source': False
+                }
+                
+        except Exception as e:
+            self.log(f"❌ Error processing PDF for pipeline {pdf_filename}: {e}", "ERROR")
+            return None
+
+    def _should_process_orphaned_pdf(self, pdf_filename, base_name):
+        """Check if orphaned PDF should be processed or skipped (duplicate check)"""
+        try:
+            # Check if an invoice with this token/base name already exists in the database
+            database_url = os.environ.get('DATABASE_URL')
+            if not database_url:
+                self.log("⚠️ DATABASE_URL not found, will process PDF", "WARNING")
+                return True
+            
+            import psycopg2
+            conn = psycopg2.connect(database_url)
+            cursor = conn.cursor()
+            
+            # Extract token from filename for matching
+            token = self._extract_invoice_token_from_filename(base_name)
+            
+            # Check for existing completed invoices with similar identifiers
+            # Look for matches by document number, file name, or similar tokens
+            patterns_to_check = [
+                base_name,
+                pdf_filename,
+                token
+            ]
+            
+            for pattern in patterns_to_check:
+                if pattern:
+                    # Check in main invoices table
+                    cursor.execute("""
+                        SELECT COUNT(*) FROM invoices 
+                        WHERE (document_number LIKE %s OR file_name LIKE %s)
+                        AND processing_status = 'completed'
+                    """, (f"%{pattern}%", f"%{pattern}%"))
+                    
+                    count = cursor.fetchone()[0]
+                    if count > 0:
+                        cursor.close()
+                        conn.close()
+                        self.log(f"⏭️ Skipping orphaned PDF {pdf_filename}: found {count} existing completed invoice(s) with pattern {pattern}")
+                        return False
+            
+            cursor.close()
+            conn.close()
+            
+            # No existing completed invoice found, should process
+            self.log(f"✅ Orphaned PDF {pdf_filename} is new, will process")
+            return True
+            
+        except Exception as e:
+            self.log(f"Error checking orphaned PDF {pdf_filename}: {e}", "ERROR")
+            # If check fails, err on side of caution and process
+            return True
+
     def _match_files_by_token(self, xml_files, pdf_files, temp_dir):
         """Match XML and PDF files by invoice token with enhanced normalized ID matching"""
         matches = {}
@@ -2885,7 +3134,7 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
-    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: str = None):
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: Optional[str] = None):
         """Trigger the manual upload processing pipeline via HTTP request"""
         try:
             import requests
