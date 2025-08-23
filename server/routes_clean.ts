@@ -6114,8 +6114,17 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             ON CONFLICT (log_id, original_file_name) DO NOTHING
           `;
 
+          // Get the correct log_id from the database based on configId
+          let actualLogId = 1; // default fallback
+          if (configId) {
+            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
+            if (logResult.rows.length > 0) {
+              actualLogId = logResult.rows[0].id;
+            }
+          }
+
           const values = [
-            configId || 4, // log_id 
+            actualLogId, // log_id (use actual log ID from invoice_importer_logs)
             filename, // original_file_name
             `uploads/${filename}`, // file_path
             fileSize || 0, // file_size
