@@ -2624,6 +2624,20 @@ class InvoiceRPAService:
 
                     # Store PDF as reference metadata ONLY - NO separate processing count
                     self._store_pdf_as_reference_metadata(pdf_filename, pdf_dir, xml_filename)
+                    
+                    # Add PDF record to processed_files with explicit link flags for the linker
+                    processed_files.append({
+                        'type': 'pdf',
+                        'upload_filename': pdf_filename,
+                        'base_file_name': base_name,
+                        'xml_filename': xml_filename,
+                        'is_data_source': False,
+                        'link_to_xml_invoice': True,  # Critical flag for the linker
+                        'matched_xml': xml_filename,
+                        'numero': '',  # Will be populated by linker
+                        'emisor': '',  # Will be populated by linker  
+                        'valor': ''    # Will be populated by linker
+                    })
 
                 elif base_name in unmatched_xmls:
                     # Case: Only XML file present - process as single invoice
@@ -2671,6 +2685,15 @@ class InvoiceRPAService:
             self.log(f"   - Successfully processed: {successful_count}")
             self.log(f"   - Failed: {failed_count}")
             self.log(f"   - Paired files (XML+PDF): {len(matched_pairs)} invoices")
+
+            # Persist the processed file info (useful for debugging)
+            self._store_file_matches(processed_files)
+
+            # Persist conditional records for imported_invoices (maps XML/PDF pairs with IDs)
+            self._store_conditional_files_to_database(processed_files)
+
+            # NEW: Link PDFs to the main invoices created by the XML manual pipeline
+            self._link_pdfs_to_main_invoices(processed_files)
 
             return True
 
@@ -2855,29 +2878,60 @@ class InvoiceRPAService:
 
                     self.log(f"🔗 Token-based linking: PDF {pdf_filename} (token: {pdf_token_info['token']}) to XML-derived invoice")
 
-                    # Enhanced search: Look for invoice using multiple matching strategies
-                    # Strategy 1: Find by extracted data using document number and tax ID
-                    pg_cursor.execute("""
-                        SELECT id, file_name, extracted_data FROM invoices 
-                        WHERE user_id = 'rpa-system'
-                        AND (
-                            -- Match by extracted vendor and invoice number
-                            (extracted_data->>'documentNumber' = %s AND extracted_data->>'vendorTaxId' = %s) OR
-                            (extracted_data->>'invoiceNumber' = %s AND extracted_data->>'vendorTaxId' = %s) OR
-                            -- Fallback: Match by filename patterns
-                            (file_name ILIKE %s OR file_name ILIKE %s OR file_name ILIKE %s)
-                        )
-                        ORDER BY created_at DESC 
-                        LIMIT 1
-                    """, (
-                        document_number, tax_id,  # Strategy 1a: documentNumber + vendorTaxId
-                        document_number, tax_id,  # Strategy 1b: invoiceNumber + vendorTaxId  
-                        f"{document_number}_{tax_id}%",  # Strategy 2a: filename pattern
-                        f"{base_name}.xml",  # Strategy 2b: exact base name
-                        f"{xml_filename}" if xml_filename else ""  # Strategy 2c: exact XML filename
-                    ))
-
-                    invoice_result = pg_cursor.fetchone()
+                    # Enhanced search: Look for invoice using multiple matching strategies with robust fallbacks
+                    invoice_result = None
+                    
+                    # Strategy 1: Find by extracted data using document number and tax ID (when available)
+                    if tax_id and tax_id != 'unknown':
+                        pg_cursor.execute("""
+                            SELECT id, file_name, extracted_data FROM invoices 
+                            WHERE user_id = 'rpa-system'
+                            AND (
+                                -- Match by extracted vendor and invoice number
+                                (extracted_data->>'documentNumber' = %s AND extracted_data->>'vendorTaxId' = %s) OR
+                                (extracted_data->>'invoiceNumber' = %s AND extracted_data->>'vendorTaxId' = %s)
+                            )
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        """, (document_number, tax_id, document_number, tax_id))
+                        invoice_result = pg_cursor.fetchone()
+                    
+                    # Strategy 2: Fallback when vendorTaxId is missing - search by filename patterns  
+                    if not invoice_result:
+                        pg_cursor.execute("""
+                            SELECT id, file_name, extracted_data FROM invoices 
+                            WHERE user_id = 'rpa-system'
+                            AND (
+                                -- Match by filename prefix using base name
+                                file_name ILIKE %s OR
+                                -- Match by filename prefix using document number
+                                file_name ILIKE %s OR
+                                -- Match by exact XML filename
+                                file_name = %s
+                            )
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        """, (
+                            f"{base_name}.xml",
+                            f"{document_number}%",
+                            xml_filename if xml_filename else ""
+                        ))
+                        invoice_result = pg_cursor.fetchone()
+                    
+                    # Strategy 3: Search imported_invoices by original_file_name and same log_id
+                    if not invoice_result and xml_filename:
+                        pg_cursor.execute("""
+                            SELECT i.id, i.file_name, i.extracted_data 
+                            FROM invoices i
+                            JOIN imported_invoices ii ON ii.base_file_name = %s
+                            WHERE ii.log_id = %s 
+                            AND ii.file_type = 'xml'
+                            AND ii.original_file_name = %s
+                            AND i.user_id = 'rpa-system'
+                            ORDER BY i.created_at DESC
+                            LIMIT 1
+                        """, (base_name, self.log_id, xml_filename))
+                        invoice_result = pg_cursor.fetchone()
 
                     if invoice_result:
                         invoice_id = invoice_result[0]
@@ -2928,7 +2982,45 @@ class InvoiceRPAService:
 
                             self.log(f"✅ Successfully linked PDF {pdf_filename} to invoice {invoice_id} via token {pdf_token_info['token']}")
                         else:
-                            self.log(f"⚠️ PDF record not found in imported_invoices for: {pdf_filename} (token: {pdf_token_info['token']})")
+                            # Create PDF record in imported_invoices if it doesn't exist and link it
+                            self.log(f"⚠️ PDF record not found in imported_invoices, creating it for: {pdf_filename}")
+                            
+                            try:
+                                # Insert PDF record into imported_invoices 
+                                pg_cursor.execute("""
+                                    INSERT INTO imported_invoices 
+                                    (log_id, original_file_name, file_type, file_size, file_path, 
+                                     base_file_name, is_data_source, processing_status, downloaded_at, 
+                                     linked_invoice_id, metadata)
+                                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    RETURNING id
+                                """, (
+                                    self.log_id,
+                                    pdf_filename,
+                                    'pdf',
+                                    0,  # Will be updated later if needed
+                                    f"uploads/pdfs/{pdf_filename}",
+                                    base_name,
+                                    False,  # PDFs are not data sources when linked
+                                    'linked',
+                                    datetime.now(),
+                                    invoice_id,
+                                    json.dumps({
+                                        'linked_to_main_invoice': True,
+                                        'main_invoice_id': invoice_id,
+                                        'invoice_token': pdf_token_info['token'],
+                                        'document_number': document_number,
+                                        'tax_id': tax_id,
+                                        'linking_method': 'created_and_linked',
+                                        'linked_at': datetime.now().isoformat()
+                                    })
+                                ))
+                                
+                                new_pdf_id = pg_cursor.fetchone()[0]
+                                self.log(f"✅ Created and linked PDF record {pdf_filename} to invoice {invoice_id} (new PDF ID: {new_pdf_id})")
+                                
+                            except Exception as create_error:
+                                self.log(f"❌ Failed to create PDF record: {create_error}", "ERROR")
                     else:
                         self.log(f"⚠️ No matching invoice found for PDF {pdf_filename}")
                         self.log(f"   Search criteria: doc_num={document_number}, tax_id={tax_id}, token={pdf_token_info['token']}")
