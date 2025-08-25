@@ -2719,6 +2719,7 @@ class InvoiceRPAService:
         """Process all files through Node.js API endpoints instead of direct PostgreSQL operations"""
         try:
             import requests
+            import json
             
             total_files = len(processed_files)
             successful_api_calls = 0
@@ -2754,11 +2755,15 @@ class InvoiceRPAService:
                     self.log(f"🔄 API call: {endpoint} for {filename}")
                     
                     # Make HTTP request to Node.js API
+                    import requests
                     response = requests.post(
                         f'http://localhost:5000{endpoint}',
                         json=payload,
+                        headers={'Content-Type': 'application/json'},
                         timeout=60  # Extended timeout for processing
                     )
+                    
+                    self.log(f"🌐 API request sent to {endpoint} - Status: {response.status_code}")
                     
                     if response.status_code == 200:
                         try:
