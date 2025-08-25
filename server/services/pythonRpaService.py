@@ -2705,18 +2705,97 @@ class InvoiceRPAService:
             # Persist the processed file info (useful for debugging)
             self._store_file_matches(processed_files)
 
-            # Persist conditional records for imported_invoices (maps XML/PDF pairs with IDs)
-            self.log(f"🔄 Storing {len(processed_files)} files to imported_invoices database...")
-            self._store_conditional_files_to_database(processed_files)
-
-            # NEW: Link PDFs to the main invoices created by the XML manual pipeline
-            self.log(f"🔗 Starting PDF linking process for {len([f for f in processed_files if f.get('link_to_xml_invoice')])} PDFs...")
-            self._link_pdfs_to_main_invoices(processed_files)
+            # Process files through Node.js API endpoints (replaces direct PostgreSQL operations)
+            self.log(f"🔄 Processing {len(processed_files)} files through Node.js API endpoints...")
+            self._process_files_through_nodejs_api(processed_files)
 
             return True
 
         except Exception as e:
             self.log(f"❌ Error in pipeline processing: {e}", "ERROR")
+            return False
+
+    def _process_files_through_nodejs_api(self, processed_files):
+        """Process all files through Node.js API endpoints instead of direct PostgreSQL operations"""
+        try:
+            import requests
+            
+            total_files = len(processed_files)
+            successful_api_calls = 0
+            failed_api_calls = 0
+            
+            self.log(f"🌐 Making API calls to Node.js for {total_files} files...")
+            
+            for file_info in processed_files:
+                try:
+                    file_type = file_info.get('type', 'unknown')
+                    filename = file_info.get('upload_filename', '')
+                    
+                    # Skip if no filename
+                    if not filename:
+                        self.log(f"⚠️ Skipping file with missing filename: {file_info}")
+                        continue
+                    
+                    # Prepare payload for API call
+                    payload = {
+                        'filename': filename,
+                        'fileSize': file_info.get('file_size', 0),
+                        'documentNumber': file_info.get('numero', ''),
+                        'emisor': file_info.get('emisor', ''),
+                        'totalValue': str(file_info.get('valor', '')),
+                        'fileType': file_type,
+                        'source': 'python_rpa',
+                        'configId': self.config_id
+                    }
+                    
+                    # Choose endpoint based on file type
+                    endpoint = '/api/rpa/process-xml' if file_type == 'xml' else '/api/rpa/process-pdf'
+                    
+                    self.log(f"🔄 API call: {endpoint} for {filename}")
+                    
+                    # Make HTTP request to Node.js API
+                    response = requests.post(
+                        f'http://localhost:5000{endpoint}',
+                        json=payload,
+                        timeout=60  # Extended timeout for processing
+                    )
+                    
+                    if response.status_code == 200:
+                        try:
+                            response_data = response.json()
+                            if response_data.get('success', False):
+                                successful_api_calls += 1
+                                self.log(f"✅ Successfully processed {filename} via API")
+                                
+                                # Log invoice ID if available
+                                invoice_id = response_data.get('invoiceId')
+                                if invoice_id:
+                                    self.log(f"   → Invoice ID: {invoice_id}")
+                            else:
+                                failed_api_calls += 1
+                                error_msg = response_data.get('error', 'Unknown API error')
+                                self.log(f"❌ API processing failed for {filename}: {error_msg}", "ERROR")
+                        except Exception as json_error:
+                            failed_api_calls += 1
+                            self.log(f"❌ Could not parse API response for {filename}: {json_error}", "ERROR")
+                    else:
+                        failed_api_calls += 1
+                        self.log(f"❌ HTTP error {response.status_code} for {filename}", "ERROR")
+                        
+                except Exception as file_error:
+                    failed_api_calls += 1
+                    self.log(f"❌ Error processing file {filename}: {file_error}", "ERROR")
+            
+            self.log(f"🏁 API processing completed:")
+            self.log(f"   ✅ Successful API calls: {successful_api_calls}")
+            self.log(f"   ❌ Failed API calls: {failed_api_calls}")
+            self.log(f"   📊 Success rate: {(successful_api_calls/total_files*100):.1f}%" if total_files > 0 else "   📊 No files to process")
+            
+            # Return True if at least some files were processed successfully
+            return successful_api_calls > 0 or total_files == 0
+            
+        except Exception as e:
+            self.log(f"❌ Critical error in API processing: {e}", "ERROR")
             return False
 
     def _store_pdf_as_reference_metadata(self, pdf_filename: str, pdf_dir: str, xml_filename: str):
@@ -2760,7 +2839,7 @@ class InvoiceRPAService:
             self.log(f"❌ Error processing PDF-only invoice {pdf_filename}: {e}", "ERROR")
             return False
 
-    def _store_conditional_files_to_database(self, processed_files):
+    def _store_conditional_files_to_database_DEPRECATED(self, processed_files):
         """Store processed files to database with conditional logic for matching"""
         try:
             # Connect to PostgreSQL
@@ -2867,7 +2946,7 @@ class InvoiceRPAService:
             self.log(f"Error storing conditional files to database: {e}", "ERROR")
             return False
 
-    def _link_pdfs_to_main_invoices(self, processed_files):
+    def _link_pdfs_to_main_invoices_DEPRECATED(self, processed_files):
         """Link PDF files to their corresponding XML-derived invoice records using token-based matching"""
         try:
             # Connect to PostgreSQL
