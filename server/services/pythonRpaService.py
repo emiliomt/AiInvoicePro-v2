@@ -84,7 +84,7 @@ class InvoiceRPAService:
             if self.download_dir.startswith('C:\\'):
                 self.download_dir = 'uploads/pdfs'
             if self.xml_dir.startswith('C:\\'):
-                self.xml_dir = 'uploads/xmls'
+                self.xml_dir = 'uploads/xml'  # Fixed: use 'xml' not 'xmls'
 
         os.makedirs(self.download_dir, exist_ok=True)
         os.makedirs(self.xml_dir, exist_ok=True)
