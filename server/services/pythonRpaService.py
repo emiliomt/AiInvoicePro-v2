@@ -2792,7 +2792,10 @@ class InvoiceRPAService:
             self.log(f"   📊 Success rate: {(successful_api_calls/total_files*100):.1f}%" if total_files > 0 else "   📊 No files to process")
             
             # Return True if at least some files were processed successfully
-            return successful_api_calls > 0 or total_files == 0
+            # Also return True if total_files is 0 (nothing to process)
+            result = successful_api_calls > 0 or total_files == 0
+            self.log(f"🔍 API Processing Result: {result} (success: {successful_api_calls}, total: {total_files})")
+            return result
             
         except Exception as e:
             self.log(f"❌ Critical error in API processing: {e}", "ERROR")
