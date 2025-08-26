@@ -1149,7 +1149,8 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    break  # Exit loop after processing one page for now
+                    if page_count > 2: ## Limit to 2 pages for now
+                        break  # Exit loop after processing one page for now
                 except:
                     self.log("✅ Finished processing all pages")
                     break
@@ -3476,11 +3477,11 @@ class InvoiceRPAService:
                     'stats': self.stats
                 }
 
-            # NEW: Process extracted files through enhanced Node.js API pipeline
-            if not self._process_files_through_manual_pipeline():
+            # NEW: Process extracted files through manual upload pipeline  
+            if not self.process_files_through_manual_pipeline():
                 return {
                     'success': False,
-                    'error': 'Failed to process files through enhanced pipeline',
+                    'error': 'Failed to process files through manual pipeline',
                     'stats': self.stats
                 }
 
