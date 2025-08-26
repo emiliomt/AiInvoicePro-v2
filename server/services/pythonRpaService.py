@@ -3476,11 +3476,11 @@ class InvoiceRPAService:
                     'stats': self.stats
                 }
 
-            # NEW: Process extracted files through manual upload pipeline
-            if not self.process_files_through_manual_pipeline():
+            # NEW: Process extracted files through enhanced Node.js API pipeline
+            if not self._process_files_through_manual_pipeline():
                 return {
                     'success': False,
-                    'error': 'Failed to process files through manual pipeline',
+                    'error': 'Failed to process files through enhanced pipeline',
                     'stats': self.stats
                 }
 
