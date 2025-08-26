@@ -2707,9 +2707,14 @@ class InvoiceRPAService:
 
             # Process files through Node.js API endpoints (replaces direct PostgreSQL operations)
             self.log(f"🔄 Processing {len(processed_files)} files through Node.js API endpoints...")
-            self._process_files_through_nodejs_api(processed_files)
-
-            return True
+            api_result = self._process_files_through_nodejs_api(processed_files)
+            
+            if api_result:
+                self.log(f"✅ API processing succeeded - pipeline completed successfully")
+                return True
+            else:
+                self.log(f"❌ API processing failed - pipeline aborted", "ERROR")
+                return False
 
         except Exception as e:
             self.log(f"❌ Error in pipeline processing: {e}", "ERROR")
@@ -2726,6 +2731,17 @@ class InvoiceRPAService:
             failed_api_calls = 0
             
             self.log(f"🌐 Making API calls to Node.js for {total_files} files...")
+            
+            # First, test API connectivity
+            try:
+                connectivity_test = requests.get('http://localhost:5000/api/rpa/test', timeout=10)
+                if connectivity_test.status_code == 200:
+                    self.log(f"✅ API connectivity confirmed")
+                else:
+                    self.log(f"⚠️ API connectivity test failed: {connectivity_test.status_code}", "WARNING")
+            except Exception as conn_error:
+                self.log(f"❌ API connectivity test failed: {conn_error}", "ERROR")
+                return False
             
             for file_info in processed_files:
                 try:
@@ -2790,6 +2806,8 @@ class InvoiceRPAService:
                 except Exception as file_error:
                     failed_api_calls += 1
                     self.log(f"❌ Error processing file {filename}: {file_error}", "ERROR")
+                    import traceback
+                    self.log(f"   📋 Full error trace: {traceback.format_exc()}", "ERROR")
             
             self.log(f"🏁 API processing completed:")
             self.log(f"   ✅ Successful API calls: {successful_api_calls}")
@@ -2804,6 +2822,8 @@ class InvoiceRPAService:
             
         except Exception as e:
             self.log(f"❌ Critical error in API processing: {e}", "ERROR")
+            import traceback
+            self.log(f"📋 Full error trace: {traceback.format_exc()}", "ERROR")
             return False
 
     def _store_pdf_as_reference_metadata(self, pdf_filename: str, pdf_dir: str, xml_filename: str):

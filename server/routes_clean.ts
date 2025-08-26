@@ -5936,7 +5936,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   // API endpoint to process XML files from Python RPA
-  app.post('/api/rpa/process-xml', async (req: any, res) => {
+  // Test endpoint for Python service connectivity
+app.get('/api/rpa/test', (req, res) => {
+  console.log('🔍 RPA connectivity test request received');
+  res.json({ success: true, message: 'API server is accessible', timestamp: new Date().toISOString() });
+});
+
+app.post('/api/rpa/process-xml', async (req: any, res) => {
     try {
       const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
 
