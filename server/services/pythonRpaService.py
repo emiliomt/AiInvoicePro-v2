@@ -3364,7 +3364,7 @@ class InvoiceRPAService:
 
         matched_pairs = []
         unmatched_xml = []
-        unmatched_pdf = []
+        unmatched_pdfs = []
 
         for xml_file in xml_files:
             matched_pdf = next((p for p in pdf_files if p['base_name'] == xml_file['base_name']), None)
@@ -3375,7 +3375,7 @@ class InvoiceRPAService:
 
         for pdf_file in pdf_files:
             if not any(p['xml'] for p in matched_pairs if p.get('pdf') == pdf_file['upload_filename']):
-                unmatched_pdf.append(pdf_file['upload_filename'])'upload_filename'])
+                unmatched_pdfs.append(pdf_file['upload_filename'])
 
         if matched_pairs:
             self.log(f"Matched file pairs: {len(matched_pairs)}")
@@ -3385,13 +3385,13 @@ class InvoiceRPAService:
         if unmatched_xml:
             self.log(f"XML files without PDF match: {', '.join(unmatched_xml)}")
 
-        if unmatched_pdf:
-            self.log(f"PDF files without XML match: {', '.join(unmatched_pdf)}")
+        if unmatched_pdfs:
+            self.log(f"PDF files without XML match: {', '.join(unmatched_pdfs)}")
 
         # Store in stats for logging
         self.stats['matched_pairs'] = len(matched_pairs)
         self.stats['unmatched_xml'] = len(unmatched_xml)
-        self.stats['unmatched_pdf'] = len(unmatched_pdf)
+        self.stats['unmatched_pdf'] = len(unmatched_pdfs)
 
     def _output_download_progress(self, current_item: int, total_items: int, current_step: str):
         """Output progress statistics with enhanced metrics tracking and validation"""
