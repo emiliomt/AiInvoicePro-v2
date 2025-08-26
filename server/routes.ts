@@ -961,7 +961,7 @@ export function registerRoutes(app: Express): Server {
     try {
       console.log("📋 [RPA_PDF] Processing PDF file through manual pipeline (OCR)...");
       
-      const { filename, fileSize, documentNumber, emisor, totalValue, configId } = req.body;
+      const { filename, fileSize, documentNumber, emisor, totalValue, configId, xmlInvoiceId } = req.body;
       
       if (!filename) {
         return res.status(400).json({
@@ -970,68 +970,112 @@ export function registerRoutes(app: Express): Server {
         });
       }
       
-      // Create invoice record and process it through manual pipeline (OCR)
-      const result = await storage.createInvoice({
-        userId: 'rpa-system', // Special user for RPA imports
+      // First, try to find matching XML invoice if xmlInvoiceId is not provided
+      let linkedXmlInvoiceId = xmlInvoiceId;
+      
+      if (!linkedXmlInvoiceId && documentNumber) {
+        try {
+          // Search for XML invoice with matching document number
+          const xmlInvoices = await storage.getInvoices();
+          const matchingXmlInvoice = xmlInvoices.find(invoice => 
+            invoice.userId === 'rpa-system' &&
+            invoice.source === 'python_rpa' &&
+            (invoice.invoiceNumber === documentNumber || 
+             invoice.extractedData?.documentNumber === documentNumber ||
+             invoice.extractedData?.invoiceNumber === documentNumber)
+          );
+          
+          if (matchingXmlInvoice) {
+            linkedXmlInvoiceId = matchingXmlInvoice.id;
+            console.log(`🔗 Found matching XML invoice ${linkedXmlInvoiceId} for PDF ${filename}`);
+          }
+        } catch (searchError) {
+          console.error("Error searching for matching XML invoice:", searchError);
+        }
+      }
+      
+      // Create invoice record as linked reference if we found XML, otherwise as standalone
+      const invoiceData = {
+        userId: 'rpa-system',
         fileName: filename,
-        status: 'pending',
+        status: linkedXmlInvoiceId ? 'linked_reference' : 'pending',
         fileUrl: `uploads/${filename}`,
-        source: 'python_rpa',
+        source: linkedXmlInvoiceId ? 'python_rpa_pdf_linked' : 'python_rpa_pdf',
         documentNumber: documentNumber || null,
         totalAmount: totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null,
-        vendorName: emisor || null
-      });
+        vendorName: emisor || null,
+        linkedInvoiceId: linkedXmlInvoiceId || null,
+        extractedData: linkedXmlInvoiceId ? {
+          linkedToXmlInvoice: linkedXmlInvoiceId,
+          linkType: 'pdf_reference',
+          documentNumber: documentNumber,
+          emisor: emisor,
+          totalValue: totalValue
+        } : null
+      };
       
-      // Process the PDF file using OCR/AI pipeline (same as manual upload)
-      const fs = await import('fs');
-      const path = await import('path');
-      const filePath = path.join(process.cwd(), 'uploads', filename);
+      const result = await storage.createInvoice(invoiceData);
       
-      if (fs.existsSync(filePath)) {
-        const fileBuffer = fs.readFileSync(filePath);
+      // Only process PDF with OCR if it's not linked to XML (to avoid duplicate processing)
+      if (!linkedXmlInvoiceId) {
+        const fs = await import('fs');
+        const path = await import('path');
+        const filePath = path.join(process.cwd(), 'uploads', filename);
         
-        // Import and use the processing services
-        const { processInvoiceOCR } = await import('./services/ocrService');
-        const { extractInvoiceData } = await import('./services/aiService');
-        
-        try {
-          // Update status to processing
-          await storage.updateInvoice(result.id, { status: 'processing' });
+        if (fs.existsSync(filePath)) {
+          const fileBuffer = fs.readFileSync(filePath);
           
-          // Process OCR (critical for PDF files)
-          const ocrText = await processInvoiceOCR(fileBuffer, result.id);
+          // Import and use the processing services
+          const { processInvoiceOCR } = await import('./services/ocrService');
+          const { extractInvoiceData } = await import('./services/aiService');
           
-          if (!ocrText || ocrText.trim().length < 10) {
-            throw new Error("OCR did not extract sufficient text from PDF");
+          try {
+            // Update status to processing
+            await storage.updateInvoice(result.id, { status: 'processing' });
+            
+            // Process OCR (critical for PDF files)
+            const ocrText = await processInvoiceOCR(fileBuffer, result.id);
+            
+            if (!ocrText || ocrText.trim().length < 10) {
+              throw new Error("OCR did not extract sufficient text from PDF");
+            }
+            
+            // Extract data with AI
+            const extractedData = await extractInvoiceData(ocrText);
+            
+            // Update invoice with extracted data
+            await storage.updateInvoice(result.id, {
+              status: 'extracted',
+              ocrText,
+              extractedData,
+              vendorName: extractedData.vendorName || emisor || null,
+              invoiceNumber: extractedData.invoiceNumber || documentNumber || null,
+              totalAmount: extractedData.totalAmount || (totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null),
+              invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
+              currency: extractedData.currency || 'USD'
+            });
+            
+          } catch (processingError) {
+            console.error("PDF processing error:", processingError);
+            await storage.updateInvoice(result.id, { status: 'failed' });
           }
-          
-          // Extract data with AI
-          const extractedData = await extractInvoiceData(ocrText);
-          
-          // Update invoice with extracted data
-          await storage.updateInvoice(result.id, {
-            status: 'extracted',
-            ocrText,
-            extractedData,
-            vendorName: extractedData.vendorName || emisor || null,
-            invoiceNumber: extractedData.invoiceNumber || documentNumber || null,
-            totalAmount: extractedData.totalAmount || (totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null),
-            invoiceDate: extractedData.invoiceDate ? new Date(extractedData.invoiceDate) : null,
-            currency: extractedData.currency || 'USD'
-          });
-          
-        } catch (processingError) {
-          console.error("PDF processing error:", processingError);
-          await storage.updateInvoice(result.id, { status: 'failed' });
         }
+      } else {
+        console.log(`✅ PDF ${filename} linked to XML invoice ${linkedXmlInvoiceId} - skipping OCR processing`);
       }
       
       console.log("✅ [RPA_PDF] PDF processing completed:", result.success);
       
       res.json({
         success: result.success,
-        message: result.message || "PDF file processed successfully", 
-        data: result,
+        message: linkedXmlInvoiceId ? 
+          `PDF file linked to XML invoice ${linkedXmlInvoiceId}` : 
+          "PDF file processed successfully",
+        data: {
+          ...result,
+          linkedXmlInvoiceId,
+          linkType: linkedXmlInvoiceId ? 'pdf_reference' : 'standalone'
+        },
         timestamp: new Date().toISOString()
       });
       
@@ -1152,6 +1196,83 @@ export function registerRoutes(app: Express): Server {
       try {
         const userId = (req.user as any).claims.sub;
         const invoiceId = parseInt(req.params.id);
+
+
+
+  // Manual PDF linking endpoint for RPA post-processing
+  apiRouter.post("/rpa/link-pdf-to-xml", async (req, res) => {
+    try {
+      console.log("🔗 [RPA_LINK] Linking PDF to XML invoice...");
+      
+      const { pdfInvoiceId, xmlInvoiceId, documentNumber } = req.body;
+      
+      if (!pdfInvoiceId || !xmlInvoiceId) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: pdfInvoiceId and xmlInvoiceId"
+        });
+      }
+      
+      // Get both invoices to validate they exist
+      const pdfInvoice = await storage.getInvoice(pdfInvoiceId);
+      const xmlInvoice = await storage.getInvoice(xmlInvoiceId);
+      
+      if (!pdfInvoice || !xmlInvoice) {
+        return res.status(404).json({
+          success: false,
+          error: "One or both invoices not found"
+        });
+      }
+      
+      // Validate both are RPA invoices
+      if (pdfInvoice.userId !== 'rpa-system' || xmlInvoice.userId !== 'rpa-system') {
+        return res.status(400).json({
+          success: false,
+          error: "Both invoices must be RPA-generated"
+        });
+      }
+      
+      // Update PDF invoice to link to XML invoice
+      const updatedExtractedData = {
+        ...pdfInvoice.extractedData,
+        linkedToXmlInvoice: xmlInvoiceId,
+        linkType: 'pdf_reference_manual',
+        linkedAt: new Date().toISOString(),
+        documentNumber: documentNumber || pdfInvoice.invoiceNumber
+      };
+      
+      await storage.updateInvoice(pdfInvoiceId, {
+        status: 'linked_reference',
+        linkedInvoiceId: xmlInvoiceId,
+        extractedData: updatedExtractedData
+      });
+      
+      console.log(`✅ Successfully linked PDF invoice ${pdfInvoiceId} to XML invoice ${xmlInvoiceId}`);
+      
+      res.json({
+        success: true,
+        message: `PDF invoice ${pdfInvoiceId} successfully linked to XML invoice ${xmlInvoiceId}`,
+        data: {
+          pdfInvoiceId,
+          xmlInvoiceId,
+          linkType: 'pdf_reference_manual',
+          documentNumber: documentNumber || pdfInvoice.invoiceNumber
+        },
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error("❌ [RPA_LINK] PDF linking failed:", errorMessage);
+      
+      res.status(500).json({
+        success: false,
+        error: "PDF linking failed",
+        message: errorMessage,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
 
         console.log(
           `🔄 Starting deduplication for invoice ${invoiceId} by user ${userId}`,

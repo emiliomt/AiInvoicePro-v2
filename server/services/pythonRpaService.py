@@ -3002,6 +3002,125 @@ class InvoiceRPAService:
 
                     # Extract invoice token from PDF filename for robust matching
                     pdf_token_info = self._extract_invoice_token(pdf_filename)
+                    
+                    if not pdf_token_info:
+                        self.log(f"⚠️ Could not extract token from PDF: {pdf_filename}")
+                        continue
+
+                    # Find the corresponding XML invoice in the database
+                    document_number = pdf_token_info.get('document_number')
+                    tax_id = pdf_token_info.get('tax_id')
+                    token = pdf_token_info.get('token')
+
+                    # Search for XML invoice with matching criteria
+                    pg_cursor.execute("""
+                        SELECT id, file_name FROM invoices 
+                        WHERE user_id = 'rpa-system'
+                        AND (
+                            (extracted_data->>'documentNumber' = %s AND extracted_data->>'buyerTaxId' = %s) OR
+                            (extracted_data->>'invoiceNumber' = %s AND extracted_data->>'buyerTaxId' = %s) OR
+                            file_name ILIKE %s
+                        )
+                        ORDER BY created_at DESC 
+                        LIMIT 1
+                    """, (document_number, tax_id, document_number, tax_id, f"{token}%"))
+
+                    xml_invoice_result = pg_cursor.fetchone()
+                    
+                    if xml_invoice_result:
+                        xml_invoice_id, xml_file_name = xml_invoice_result
+                        self.log(f"✅ Found matching XML invoice {xml_invoice_id} for PDF {pdf_filename}")
+                        
+                        # Create PDF record linked to XML invoice
+                        try:
+                            pg_cursor.execute("""
+                                INSERT INTO invoices (
+                                    user_id, file_name, file_url, status, source, 
+                                    vendor_name, total_amount, invoice_number, 
+                                    extracted_data, created_at, linked_invoice_id
+                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                RETURNING id
+                            """, (
+                                'rpa-system',
+                                pdf_filename,
+                                f'uploads/{pdf_filename}',
+                                'linked_reference',
+                                'python_rpa_pdf',
+                                pdf_info.get('vendor_name'),
+                                pdf_info.get('total_amount'),
+                                document_number,
+                                json.dumps({
+                                    'linkedToXmlInvoice': xml_invoice_id,
+                                    'linkType': 'pdf_reference',
+                                    'originalToken': token,
+                                    'documentNumber': document_number,
+                                    'taxId': tax_id
+                                }),
+                                'NOW()',
+                                xml_invoice_id
+                            ))
+                            
+                            pdf_invoice_id = pg_cursor.fetchone()[0]
+                            self.log(f"✅ Created linked PDF invoice {pdf_invoice_id} -> XML {xml_invoice_id}")
+                            
+                        except Exception as create_error:
+                            self.log(f"❌ Failed to create PDF record: {create_error}", "ERROR")
+                    else:
+                        self.log(f"⚠️ No matching XML invoice found for PDF {pdf_filename}")
+                        self.log(f"   Search criteria: doc_num={document_number}, tax_id={tax_id}, token={token}")
+
+                        # Optional: Try alternative search by just document number if tax ID search fails
+                        pg_cursor.execute("""
+                            SELECT id, file_name FROM invoices 
+                            WHERE user_id = 'rpa-system'
+                            AND (
+                                extracted_data->>'documentNumber' = %s OR
+                                extracted_data->>'invoiceNumber' = %s OR
+                                file_name ILIKE %s
+                            )
+                            ORDER BY created_at DESC 
+                            LIMIT 1
+                        """, (document_number, document_number, f"{document_number}%"))
+
+                        fallback_result = pg_cursor.fetchone()
+                        if fallback_result:
+                            xml_invoice_id, xml_file_name = fallback_result
+                            self.log(f"🔄 Found fallback match using document number only: {xml_file_name}")
+                            
+                            # Create PDF record with fallback link
+                            try:
+                                pg_cursor.execute("""
+                                    INSERT INTO invoices (
+                                        user_id, file_name, file_url, status, source, 
+                                        vendor_name, total_amount, invoice_number, 
+                                        extracted_data, created_at, linked_invoice_id
+                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                                    RETURNING id
+                                """, (
+                                    'rpa-system',
+                                    pdf_filename,
+                                    f'uploads/{pdf_filename}',
+                                    'linked_reference',
+                                    'python_rpa_pdf_fallback',
+                                    pdf_info.get('vendor_name'),
+                                    pdf_info.get('total_amount'),
+                                    document_number,
+                                    json.dumps({
+                                        'linkedToXmlInvoice': xml_invoice_id,
+                                        'linkType': 'pdf_reference_fallback',
+                                        'originalToken': token,
+                                        'documentNumber': document_number,
+                                        'matchType': 'document_number_only'
+                                    }),
+                                    'NOW()',
+                                    xml_invoice_id
+                                ))
+                                
+                                pdf_invoice_id = pg_cursor.fetchone()[0]
+                                self.log(f"✅ Created fallback linked PDF invoice {pdf_invoice_id} -> XML {xml_invoice_id}")
+                                
+                            except Exception as create_error:
+                                self.log(f"❌ Failed to create fallback PDF record: {create_error}", "ERROR")
                     document_number = pdf_token_info['document_number']
                     tax_id = pdf_token_info['tax_id']
 
@@ -3192,6 +3311,52 @@ class InvoiceRPAService:
             self.log(f"❌ Error linking PDFs to main invoices: {e}", "ERROR")
             return False
 
+    def _extract_invoice_token(self, filename):
+        """Extract invoice token information from filename for matching"""
+        import re
+        
+        try:
+            # Remove file extension
+            base_name = filename.replace('.pdf', '').replace('.xml', '')
+            
+            # Pattern: DOCUMENT_TAXID_COMPANY or DOCUMENT_TAXID
+            # Examples: ROS16733_901328897_REDOX_SAS, TSM12909_901170791_GRUPO_TSM
+            pattern = r'^([A-Z0-9]+)_(\d+)(?:_(.+))?'
+            match = re.match(pattern, base_name)
+            
+            if match:
+                document_number = match.group(1)
+                tax_id = match.group(2)
+                company_part = match.group(3) or ''
+                
+                return {
+                    'document_number': document_number,
+                    'tax_id': tax_id,
+                    'company': company_part,
+                    'token': f"{document_number}_{tax_id}"
+                }
+            else:
+                # Fallback: try to extract at least document number
+                parts = base_name.split('_')
+                if len(parts) >= 2:
+                    return {
+                        'document_number': parts[0],
+                        'tax_id': parts[1] if parts[1].isdigit() else None,
+                        'company': '_'.join(parts[2:]) if len(parts) > 2 else '',
+                        'token': f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
+                    }
+                
+                return {
+                    'document_number': base_name,
+                    'tax_id': None,
+                    'company': '',
+                    'token': base_name
+                }
+                
+        except Exception as e:
+            self.log(f"❌ Error extracting token from filename {filename}: {e}", "ERROR")
+            return None
+
     def _store_file_matches(self, processed_files):
         """Store file matching information for logging"""
         xml_files = [f for f in processed_files if f['type'] == 'xml']
@@ -3210,7 +3375,7 @@ class InvoiceRPAService:
 
         for pdf_file in pdf_files:
             if not any(p['xml'] for p in matched_pairs if p.get('pdf') == pdf_file['upload_filename']):
-                unmatched_pdf.append(pdf_file['upload_filename'])
+                unmatched_pdf.append(pdf_file['upload_filename'])'upload_filename'])
 
         if matched_pairs:
             self.log(f"Matched file pairs: {len(matched_pairs)}")
