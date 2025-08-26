@@ -25,6 +25,24 @@ import { db } from "./db";
 import { lineItems, lineItemClassifications } from "@shared/schema";
 import { eq } from "drizzle-orm";
 
+// Helper function to check Python availability
+async function checkPythonAvailability(): Promise<boolean> {
+  try {
+    const { spawn } = await import('child_process');
+    return new Promise((resolve) => {
+      const python = spawn('python3', ['--version']);
+      python.on('close', (code) => {
+        resolve(code === 0);
+      });
+      python.on('error', () => {
+        resolve(false);
+      });
+    });
+  } catch {
+    return false;
+  }
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
@@ -868,6 +886,100 @@ export function registerRoutes(app: Express): Server {
       }
     },
   );
+
+  // RPA test endpoint for connectivity
+  apiRouter.get("/rpa/test", async (req, res) => {
+    try {
+      console.log("🧪 [RPA_TEST] RPA test endpoint hit");
+      
+      res.json({
+        success: true,
+        message: "RPA service is accessible",
+        timestamp: new Date().toISOString(),
+        pythonAvailable: await checkPythonAvailability(),
+
+
+  // RPA debugging endpoints
+  apiRouter.get("/rpa/status", isAuthenticated, async (req, res) => {
+    try {
+      const configs = await storage.getInvoiceImporterConfigs();
+      const activeConfigs = configs.filter(c => c.isActive);
+      
+      res.json({
+        success: true,
+        data: {
+          totalConfigurations: configs.length,
+          activeConfigurations: activeConfigs.length,
+          configurations: activeConfigs.map(c => ({
+            id: c.id,
+            taskName: c.taskName,
+            erpUrl: c.erpUrl,
+            hasCredentials: !!(c.erpUsername && c.erpPassword),
+            lastRun: c.lastRun,
+            isActive: c.isActive
+          })),
+          pythonAvailable: await checkPythonAvailability(),
+          databaseConnected: !!process.env.DATABASE_URL
+        },
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("❌ [RPA_STATUS] Status check failed:", error);
+      res.status(500).json({
+        success: false,
+        error: "RPA status check failed",
+        message: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+  // Manual RPA execution for specific configuration
+  apiRouter.post("/rpa/execute/:configId", isAuthenticated, async (req, res) => {
+    try {
+      const configId = parseInt(req.params.configId);
+      
+      if (isNaN(configId)) {
+        return res.status(400).json({
+          success: false,
+          error: "Invalid configuration ID"
+        });
+      }
+      
+      console.log(`🚀 [RPA_EXECUTE] Manual execution for config ${configId}`);
+      
+      const result = await PythonRPAService.processInvoicesAutomatically();
+      
+      res.json({
+        success: result.success,
+        message: result.message || "RPA execution completed",
+        data: result,
+        timestamp: new Date().toISOString()
+      });
+      
+    } catch (error: any) {
+      console.error("❌ [RPA_EXECUTE] Manual execution failed:", error);
+      res.status(500).json({
+        success: false,
+        error: "RPA execution failed",
+        message: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
+
+        databaseConnected: !!process.env.DATABASE_URL
+      });
+    } catch (error: any) {
+      console.error("❌ [RPA_TEST] Test failed:", error);
+      res.status(500).json({
+        success: false,
+        error: "RPA test failed",
+        message: error.message,
+        timestamp: new Date().toISOString()
+      });
+    }
+  });
 
   // RPA manual processing endpoints for Python service calls
   apiRouter.post("/rpa/process-xml", async (req, res) => {
