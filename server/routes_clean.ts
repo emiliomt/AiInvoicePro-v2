@@ -450,7 +450,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.get('/api/dashboard/stats', isAuthenticated, async (req: any, res) => {
     try {
       const userId = (req.user as any).claims.sub;
-      
+
       // Get user's company ID for company-wide stats
       const user = await storage.getUser(userId);
       if (!user) {
@@ -1377,7 +1377,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       // Get all projects and find the one with matching projectId
       const projects = await storage.getProjects();
       const project = projects.find(p => p.projectId === projectId);
-      
+
       if (!project) {
         return res.status(404).json({ message: "Project not found" });
       }
@@ -4259,7 +4259,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json({ message: "Match approved successfully", match: updatedMatch });
     } catch (error) {
       console.error("Error approving invoice-PO match:", error);
-      res.status(500).json({ message: "Failed to approve match" });
+      res.status(500).json({ message: "Failed to approvematch" });
     }
   });
 
@@ -4533,7 +4533,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
         isComplete: false,
         timestamp: new Date().toISOString()
       };
-      
+
       console.log('🧪 Sending test WebSocket broadcast');
       // Broadcast without user ID to send to all clients
       broadcastRpaProgress(testMessage);
@@ -4712,49 +4712,49 @@ export async function registerRoutes(app: Express): Promise<Server> {
     try {
       const fs = await import('fs');
       const path = await import('path');
-      
+
       // Get all PDF files in uploads directory
       const uploadDir = 'uploads';
       if (!fs.existsSync(uploadDir)) {
         console.log('📁 Upload directory does not exist, skipping PDF linking');
         return;
       }
-      
+
       const files = fs.readdirSync(uploadDir);
       const pdfFiles = files.filter(file => file.toLowerCase().endsWith('.pdf'));
-      
+
       console.log(`🔍 Found ${pdfFiles.length} PDF files in uploads directory`);
-      
+
       let linkedCount = 0;
-      
+
       for (const pdfFile of pdfFiles) {
         try {
           // Extract base name from PDF file (remove extension and vendor info)
           const baseFileName = pdfFile.replace(/\.(pdf)$/i, '').split('_').slice(0, 2).join('_');
-          
+
           // Look for existing invoices with matching base name
           const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
-          
+
           if (existingInvoices.length > 0) {
             const invoice = existingInvoices[0];
-            
+
             // Check if PDF is already linked
             const { Client } = await import('pg');
             const dbClient = new Client({
               connectionString: process.env.DATABASE_URL,
             });
-            
+
             try {
               await dbClient.connect();
-              
+
               // Check for existing link
               const existingLinkQuery = `
                 SELECT id FROM imported_invoices 
                 WHERE linked_invoice_id = $1 AND file_type = 'pdf' AND original_file_name = $2
               `;
-              
+
               const existingLinks = await dbClient.query(existingLinkQuery, [invoice.id, pdfFile]);
-              
+
               if (existingLinks.rows.length === 0) {
                 // Link PDF to invoice
                 const insertQuery = `
@@ -4771,10 +4771,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     metadata
                   ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                 `;
-                
+
                 const filePath = path.join(uploadDir, pdfFile);
                 const fileStats = fs.statSync(filePath);
-                
+
                 // Get the actual log ID from the current import session
                 let actualLogId = 2; // fallback
                 try {
@@ -4785,7 +4785,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
                 } catch (logError) {
                   console.error('Could not fetch log ID, using fallback:', logError);
                 }
-                
+
                 const values = [
                   actualLogId, // log_id (use actual log from current import)
                   pdfFile, // original_file_name
@@ -4804,15 +4804,15 @@ export async function registerRoutes(app: Express): Promise<Server> {
                     actualLogId: actualLogId
                   }) // metadata
                 ];
-                
+
                 await dbClient.query(insertQuery, values);
                 linkedCount++;
-                
+
                 console.log(`🔗 Linked PDF ${pdfFile} to invoice ${invoice.id} (${invoice.invoiceNumber})`);
               } else {
                 console.log(`⚠️ PDF ${pdfFile} already linked to invoice ${invoice.id}`);
               }
-              
+
             } finally {
               await dbClient.end();
             }
@@ -4821,9 +4821,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
           console.error(`❌ Error linking PDF ${pdfFile}:`, error);
         }
       }
-      
+
       console.log(`✅ Automatic PDF linking completed: ${linkedCount} PDFs linked`);
-      
+
     } catch (error) {
       console.error('❌ Error in automatic PDF linking:', error);
       throw error;
@@ -5672,7 +5672,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Check if user has access to this configuration (owner or same company)
       const currentUser = await storage.getUser((user as any).claims.sub);
       const configOwner = await storage.getUser(config.userId);
-      
+
       // Allow access if:
       // 1. User is the owner
       // 2. Both users share the same company (when company relationships are set up)
@@ -5681,14 +5681,14 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const hasSameCompany = currentUser?.companyId && configOwner?.companyId && 
                             currentUser.companyId === configOwner.companyId;
       const allowBroadAccess = !currentUser?.companyId && !configOwner?.companyId; // No company structure set up
-      
+
       const hasAccess = isOwner || hasSameCompany || allowBroadAccess;
-      
+
       if (!hasAccess) {
         console.log(`Access denied for user ${(user as any).claims.sub} to config ${configId}. Config owner: ${config.userId}, User company: ${currentUser?.companyId}, Owner company: ${configOwner?.companyId}`);
         return res.status(403).json({ error: 'Access denied to this import configuration' });
       }
-      
+
       console.log(`Access granted for user ${(user as any).claims.sub} to delete config ${configId}. Reason: ${isOwner ? 'owner' : hasSameCompany ? 'same company' : 'broad access (no companies configured)'}`);
 
       // Delete related records first to avoid foreign key constraint issues
@@ -5766,12 +5766,12 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
       console.log(`Starting import process for config ${configId}, log ID: ${log.id}`);
 
-      // Start the import process asynchronously but don't wait for it
+      // Start the import process asynchronously but don't wait for completion
       setImmediate(() => {
         pythonInvoiceImporter.executeImportTaskWithLogId(configId, log.id)
           .then(async () => {
             console.log(`Import task ${configId} completed successfully`);
-            
+
             // Automatic PDF linking after RPA completion
             console.log(`🔗 Starting automatic PDF linking for completed RPA import...`);
             try {
@@ -5934,6 +5934,12 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Test endpoint for Python service connectivity  
+  app.get('/api/rpa/test', (req, res) => {
+    console.log('🔍 RPA connectivity test request received');
+    res.json({ success: true, message: 'API server is accessible', timestamp: new Date().toISOString() });
+  });
+
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   // API endpoint to process XML files from Python RPA
   app.post('/api/rpa/process-xml', async (req: any, res) => {
@@ -6024,7 +6030,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       // Queue for processing using the standard manual processing pipeline (async, don't wait for completion)
       setImmediate(async () => {
         try {
-          console.log(`🔄 Starting XML processing for RPA invoice ${invoice.id} (${filename})`);
+          console.log(`Starting XML processing for RPA invoice ${invoice.id} (${filename})`);
           await processInvoiceAsync(invoice, fileBuffer);
           console.log(`✅ RPA XML invoice ${invoice.id} processed successfully through manual pipeline`);
         } catch (error) {
@@ -6087,16 +6093,16 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
       if (existingInvoices.length > 0) {
         console.log(`🔗 Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
-        
+
         // Link PDF to existing invoice in imported_invoices table
         try {
           const { Client } = await import('pg');
           const dbClient = new Client({
             connectionString: process.env.DATABASE_URL,
           });
-          
+
           await dbClient.connect();
-          
+
           // Insert PDF as linked file to the existing invoice
           const insertQuery = `
             INSERT INTO imported_invoices (
@@ -6113,9 +6119,18 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (log_id, original_file_name) DO NOTHING
           `;
-          
+
+          // Get the correct log_id from the database based on configId
+          let actualLogId = 1; // default fallback
+          if (configId) {
+            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
+            if (logResult.rows.length > 0) {
+              actualLogId = logResult.rows[0].id;
+            }
+          }
+
           const values = [
-            configId || 4, // log_id 
+            actualLogId, // log_id (use actual log ID from invoice_importer_logs)
             filename, // original_file_name
             `uploads/${filename}`, // file_path
             fileSize || 0, // file_size
@@ -6133,16 +6148,16 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
               totalValue
             }) // metadata
           ];
-          
+
           await dbClient.query(insertQuery, values);
           await dbClient.end();
-          
+
           console.log(`✅ PDF file ${filename} successfully linked to invoice ${existingInvoices[0].id}`);
-          
+
         } catch (linkError) {
           console.error(`❌ Failed to link PDF to invoice:`, linkError);
         }
-        
+
         return res.json({ 
           success: true, 
           invoiceId: existingInvoices[0].id,
@@ -6203,21 +6218,21 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     try {
       const invoiceId = parseInt(req.params.id);
       const invoice = await storage.getInvoice(invoiceId);
-      
+
       if (!invoice) {
         return res.status(404).json({ error: 'Invoice not found' });
       }
-      
+
       // Check if file exists
       const fs = await import('fs');
       const filePath = invoice.fileUrl || `uploads/${invoice.fileName}`;
-      
+
       if (!fs.existsSync(filePath)) {
         return res.status(404).json({ error: 'Invoice file not found' });
       }
-      
+
       const fileBuffer = fs.readFileSync(filePath);
-      
+
       // Trigger reprocessing
       setImmediate(async () => {
         try {
@@ -6228,9 +6243,9 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
           console.error(`❌ Invoice ${invoiceId} reprocessing failed:`, error);
         }
       });
-      
+
       res.json({ success: true, message: `Invoice ${invoiceId} queued for reprocessing` });
-      
+
     } catch (error) {
       console.error('Error reprocessing invoice:', error);
       res.status(500).json({ error: 'Failed to reprocess invoice' });
@@ -6520,7 +6535,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
 
     // Update the invoice with new extraction
     await storage.updateInvoice(invoiceId, {
-      extractedData: newExtractedData,
       totalAmount: newExtractedData.totalAmount,
       taxAmount: newExtractedData.taxAmount,
       invoiceDate: newExtractedData.invoiceDate ? new Date(newExtractedData.invoiceDate) : null,

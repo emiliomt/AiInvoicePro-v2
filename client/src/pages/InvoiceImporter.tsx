@@ -530,15 +530,26 @@ export default function InvoiceImporter() {
 
   const fetchImportLogs = async () => {
     try {
+      console.log('🔄 Fetching import logs...');
       const response = await fetch('/api/import-logs');
+      
       if (response.ok) {
         const logsData = await response.json();
+        console.log('✅ Import logs fetched successfully:', logsData.length, 'logs');
         setImportLogs(logsData);
       } else {
-        console.error('Failed to fetch import logs');
+        const errorData = await response.text();
+        console.error('❌ Failed to fetch import logs:', response.status, errorData);
+        
+        // Show user-friendly error message
+        if (response.status === 401) {
+          console.error('Authentication required - please log in again');
+        } else if (response.status === 500) {
+          console.error('Server error - please try again later');
+        }
       }
     } catch (error) {
-      console.error('Error fetching import logs:', error);
+      console.error('❌ Error fetching import logs:', error);
     }
   };
 
