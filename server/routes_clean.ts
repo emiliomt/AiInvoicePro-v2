@@ -6094,7 +6094,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       if (existingInvoices.length > 0) {
         console.log(`🔗 Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
 
-        // Link PDF to existing invoice in imported_invoices table
+        // Link PDF to existing invoice in imported_invoices table (idempotent)
         try {
           const { Client } = await import('pg');
           const dbClient = new Client({
@@ -6103,7 +6103,35 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
           await dbClient.connect();
 
-          // Insert PDF as linked file to the existing invoice
+          // Check if PDF is already linked to this invoice
+          const existingLinkQuery = `
+            SELECT id FROM imported_invoices 
+            WHERE linked_invoice_id = $1 AND original_file_name = $2
+          `;
+          const existingLinkResult = await dbClient.query(existingLinkQuery, [existingInvoices[0].id, filename]);
+          
+          if (existingLinkResult.rows.length > 0) {
+            console.log(`🔗 PDF file ${filename} is already linked to invoice ${existingInvoices[0].id} (existing link ID: ${existingLinkResult.rows[0].id})`);
+            await dbClient.end();
+            return res.json({ 
+              success: true, 
+              invoiceId: existingInvoices[0].id,
+              message: `PDF file ${filename} already linked to existing invoice`,
+              linkedToExisting: true,
+              alreadyLinked: true
+            });
+          }
+
+          // Get the correct log_id from the database based on configId
+          let actualLogId = 1; // default fallback
+          if (configId) {
+            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
+            if (logResult.rows.length > 0) {
+              actualLogId = logResult.rows[0].id;
+            }
+          }
+
+          // Insert PDF as linked file to the existing invoice (with proper conflict handling)
           const insertQuery = `
             INSERT INTO imported_invoices (
               log_id, 
@@ -6117,17 +6145,8 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
               created_at,
               metadata
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            ON CONFLICT (log_id, original_file_name) DO NOTHING
+            RETURNING id
           `;
-
-          // Get the correct log_id from the database based on configId
-          let actualLogId = 1; // default fallback
-          if (configId) {
-            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
-            if (logResult.rows.length > 0) {
-              actualLogId = logResult.rows[0].id;
-            }
-          }
 
           const values = [
             actualLogId, // log_id (use actual log ID from invoice_importer_logs)
@@ -6149,13 +6168,31 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             }) // metadata
           ];
 
-          await dbClient.query(insertQuery, values);
+          const insertResult = await dbClient.query(insertQuery, values);
+          const linkId = insertResult.rows[0].id;
           await dbClient.end();
 
-          console.log(`✅ PDF file ${filename} successfully linked to invoice ${existingInvoices[0].id}`);
+          console.log(`✅ PDF file ${filename} newly linked to invoice ${existingInvoices[0].id} (link ID: ${linkId})`);
 
         } catch (linkError) {
-          console.error(`❌ Failed to link PDF to invoice:`, linkError);
+          // If it's a constraint violation (duplicate), treat as success
+          if (linkError.code === '23505') {
+            console.log(`🔗 PDF file ${filename} already linked to invoice ${existingInvoices[0].id} (caught duplicate constraint)`);
+            // Don't log as error - this is expected behavior for duplicates
+          } else {
+            console.error(`❌ Failed to link PDF to invoice:`, linkError);
+          }
+          
+          if (linkError.code === '23505') {
+            return res.json({ 
+              success: true, 
+              invoiceId: existingInvoices[0].id,
+              message: `PDF file ${filename} already linked to existing invoice`,
+              linkedToExisting: true,
+              alreadyLinked: true
+            });
+          }
+          throw linkError;
         }
 
         return res.json({ 
