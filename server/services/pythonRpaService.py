@@ -1561,6 +1561,95 @@ class InvoiceRPAService:
             self.log(f"Error in token matching: {e}", "ERROR")
             return False
 
+    def trigger_manual_processing(self, filename, numero, emisor, valor, file_type='xml', buyer_tax_id=None):
+        """
+        Trigger manual processing pipeline via HTTP API call to Node.js
+        This is the critical function that transfers RPA files to manual processing
+        """
+        try:
+            import requests
+            import json
+            
+            # Determine the correct API endpoint based on file type
+            if file_type == 'pdf':
+                endpoint = '/api/rpa/process-pdf'
+                payload = {
+                    'filename': filename,
+                    'documentNumber': numero,
+                    'emisor': emisor,
+                    'totalValue': valor,
+                    'configId': self.config_id,
+                    'xmlInvoiceId': None  # Will be determined by API
+                }
+            else:  # XML
+                endpoint = '/api/rpa/process-pdf'  # Use the same endpoint for consistency
+                payload = {
+                    'filename': filename,
+                    'documentNumber': numero,
+                    'emisor': emisor,
+                    'totalValue': valor,
+                    'configId': self.config_id,
+                    'xmlInvoiceId': None,
+                    'fileType': 'xml',
+                    'source': 'python_rpa',
+                    'buyerTaxId': buyer_tax_id
+                }
+            
+            # Make HTTP request to Node.js API
+            self.log(f"🌐 Triggering manual processing for {filename} via {endpoint}")
+            self.log(f"   📋 Payload: {json.dumps(payload, indent=2)}")
+            
+            response = requests.post(
+                f'http://localhost:5000{endpoint}',
+                json=payload,
+                headers={'Content-Type': 'application/json'},
+                timeout=60
+            )
+            
+            self.log(f"🌐 API Response Status: {response.status_code}")
+            
+            if response.status_code == 200:
+                try:
+                    response_data = response.json()
+                    if response_data.get('success', False):
+                        self.log(f"✅ Successfully triggered manual processing for {filename}")
+                        
+                        # Log invoice ID if available
+                        invoice_id = response_data.get('invoiceId')
+                        if invoice_id:
+                            self.log(f"   → Invoice ID: {invoice_id}")
+                            
+                        # Update stats on successful transfer
+                        self.stats['successful_imports'] += 1
+                        
+                        return True
+                    else:
+                        error_msg = response_data.get('error', 'Unknown API error')
+                        self.log(f"❌ Manual processing failed for {filename}: {error_msg}", "ERROR")
+                        self.stats['failed_imports'] += 1
+                        return False
+                except Exception as json_error:
+                    self.log(f"❌ Could not parse API response for {filename}: {json_error}", "ERROR")
+                    self.log(f"   📋 Raw response: {response.text}")
+                    self.stats['failed_imports'] += 1
+                    return False
+            else:
+                self.log(f"❌ HTTP error {response.status_code} for {filename}", "ERROR")
+                try:
+                    error_response = response.json()
+                    self.log(f"   📋 Error details: {error_response}")
+                except:
+                    self.log(f"   📋 Raw error response: {response.text}")
+                self.stats['failed_imports'] += 1
+                return False
+                
+        except Exception as e:
+            self.log(f"❌ Critical error triggering manual processing for {filename}: {e}", "ERROR")
+            import traceback
+            self.log(f"   📋 Full error trace: {traceback.format_exc()}", "ERROR")
+            self.stats['failed_imports'] += 1
+            return False
+
     def _process_xml_for_pipeline(self, xml_filename, uploads_dir, is_data_source=True):
         """Process XML file through the manual upload pipeline"""
         try:
