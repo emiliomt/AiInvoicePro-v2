@@ -164,7 +164,7 @@ export class RPAService {
     for (const doc of documents) {
       try {
         if (doc.type === 'invoice') {
-          await this.processInvoiceDocument(doc, jobExecutionId, userId);
+          await this.processInvoiceDocument(doc, jobExecutionId, userId, doc.companyId || 860527800);
         } else if (doc.type === 'purchase_order') {
           await this.processPurchaseOrderDocument(doc, jobExecutionId, userId);
         }
@@ -477,7 +477,8 @@ export class RPAService {
   private async processInvoiceDocument(
     document: ERPDocument,
     jobExecutionId: number,
-    userId: string
+    userId: string,
+    companyId?: number
   ): Promise<void> {
     try {
       let extractedData: any;
@@ -514,6 +515,7 @@ export class RPAService {
       // Create enhanced invoice record
       const invoiceData = {
         userId,
+        companyId: companyId || 860527800, // Use provided companyId or default to main company
         fileName: document.data.fileName || `invoice_${document.id}`,
         fileUrl: document.data.fileUrl || null,
         status: 'extracted' as const,
@@ -587,7 +589,7 @@ export class RPAService {
         // Create invoice record
         const invoiceData = {
           userId,
-          companyId: 860527800, // Use main company ID for company-wide access
+          companyId: 860527800, // Use correct company ID for RPA imports
           fileName: source.fileName || `xml_invoice_${source.id}`,
           fileUrl: null,
           status: 'extracted' as const,
