@@ -1071,7 +1071,8 @@ export function registerRoutes(app: Express): Server {
 
   apiRouter.post("/rpa/process-pdf", async (req, res) => {
     try {
-      console.log("📋 [RPA_PDF] Processing PDF file through manual pipeline (OCR)...");
+      console.log("🔄 PRIORITY EXTRACTION: Request body:", req.body);
+      console.log(`🔄 PRIORITY EXTRACTION: Processing RPA PDF file: ${req.body.filename} (config: ${req.body.configId})`);
       
       const { filename, fileSize, documentNumber, emisor, totalValue, configId, xmlInvoiceId } = req.body;
       
@@ -1080,6 +1081,29 @@ export function registerRoutes(app: Express): Server {
           success: false,
           error: "Missing required field: filename"
         });
+      }
+
+      // Get proper user and company ID from config (CRITICAL FIX)
+      let actualUserId = '43658475'; // Default fallback
+      let actualCompanyId = 860527800; // Default company ID
+      
+      if (configId) {
+        try {
+          const config = await storage.getInvoiceImporterConfig(configId);
+          if (config) {
+            actualUserId = config.userId;
+            actualCompanyId = config.companyId;
+            console.log(`📋 Retrieved company ID ${actualCompanyId} and user ID ${actualUserId} from config ${configId}`);
+          } else {
+            console.log(`⚠️ Config ${configId} not found, using defaults`);
+          }
+        } catch (configError) {
+          console.error(`❌ Error retrieving config ${configId}:`, configError);
+          console.log(`🔧 Using fallback company ID: ${actualCompanyId}`);
+        }
+      } else {
+        console.log("⚠️ No configId provided for PDF processing");
+        console.log(`🔧 Using fallback company ID: ${actualCompanyId}`);
       }
       
       // First, try to find matching XML invoice if xmlInvoiceId is not provided
@@ -1106,13 +1130,13 @@ export function registerRoutes(app: Express): Server {
         }
       }
       
-      // Create invoice record as linked reference if we found XML, otherwise as standalone
+      // Create invoice record with proper user and company ID (CRITICAL FIX)
       const invoiceData = {
-        userId: 'rpa-system',
+        userId: actualUserId, // Use real user ID instead of 'rpa-system'
+        companyId: actualCompanyId, // Add missing company ID field
         fileName: filename,
         status: linkedXmlInvoiceId ? 'linked_reference' : 'pending',
         fileUrl: `uploads/${filename}`,
-        source: linkedXmlInvoiceId ? 'python_rpa_pdf_linked' : 'python_rpa_pdf',
         documentNumber: documentNumber || null,
         totalAmount: totalValue ? parseFloat(totalValue.replace(/[^\d.-]/g, '')) : null,
         vendorName: emisor || null,
