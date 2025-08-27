@@ -7151,6 +7151,53 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
     res.status(200).send('OK');
   });
 
+  // Emergency recovery endpoint to process unprocessed ZIP files
+  app.post('/api/rpa/process-batch', async (req, res) => {
+    try {
+      console.log('🚨 RECOVERY: Processing unprocessed ZIP files...');
+      
+      // Find ZIP files in uploads directory
+      const uploadsDir = 'uploads/pdfs';
+      if (!fs.existsSync(uploadsDir)) {
+        return res.json({ success: false, error: 'Upload directory not found' });
+      }
+      
+      const zipFiles = fs.readdirSync(uploadsDir).filter(f => f.endsWith('.zip'));
+      console.log(`📦 Found ${zipFiles.length} ZIP files to process`);
+      
+      if (zipFiles.length === 0) {
+        return res.json({ success: true, message: 'No ZIP files to process', processed: 0 });
+      }
+      
+      // Create a recovery log entry  
+      const db = await getDb();
+      const [recoveryLog] = await db.insert(invoiceImporterLogs).values({
+        configId: 5, // Use existing config
+        status: 'running',
+        message: `Recovery processing of ${zipFiles.length} unprocessed ZIP files`
+      }).returning();
+      
+      console.log(`🔄 Created recovery log ID: ${recoveryLog.id}`);
+      
+      // Trigger a standard RPA import which will process existing files
+      const result = await pythonInvoiceImporter.executeImportTaskWithLogId(5, recoveryLog.id);
+      
+      res.json({
+        success: true,
+        message: `Recovery initiated: Check import logs for progress`,
+        zipFiles: zipFiles.length,
+        logId: recoveryLog.id
+      });
+      
+    } catch (error) {
+      console.error('Recovery processing error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: error instanceof Error ? error.message : 'Recovery failed' 
+      });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
