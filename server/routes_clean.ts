@@ -6209,7 +6209,7 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
           const values = [
             actualLogId, // log_id (use actual log ID from invoice_importer_logs)
             filename, // original_file_name
-            `uploads/${filename}`, // file_path
+            `uploads/pdfs/${filename}`, // file_path (PDFs are in uploads/pdfs/)
             fileSize || 0, // file_size
             'pdf', // file_type
             baseFileName, // base_file_name
@@ -6243,13 +6243,19 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
         });
       }
 
-      // Read the PDF file from uploads directory
+      // Read the PDF file from uploads directory - check both uploads/ and uploads/pdfs/
       const fs = await import('fs');
       const path = await import('path');
-      const filePath = path.join('uploads', filename);
-
+      let filePath = path.join('uploads', filename);
+      
+      // Check if PDF is in uploads/pdfs/ directory (common for RPA downloads)
       if (!fs.existsSync(filePath)) {
-        return res.status(404).json({ error: 'PDF file not found' });
+        const pdfDirPath = path.join('uploads', 'pdfs', filename);
+        if (fs.existsSync(pdfDirPath)) {
+          filePath = pdfDirPath;
+        } else {
+          return res.status(404).json({ error: `PDF file not found at ${filePath} or ${pdfDirPath}` });
+        }
       }
 
       const fileBuffer = fs.readFileSync(filePath);
