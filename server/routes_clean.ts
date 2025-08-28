@@ -240,15 +240,15 @@ async function processInvoiceAsync(invoice: any, fileBuffer: Buffer) {
       console.log(`✅ Invoice ${invoice.id} validation completed:`, {
         status: validationResult.status,
         score: validationResult.validationScore,
-        violations: validationResult.violations.length,
+        violations: validationResult.violations?.length || 0,
         finalStatus: status
       });
 
       // Log detailed validation results for debugging
-      if (validationResult.violations.length > 0) {
+      if (validationResult.violations?.length > 0) {
         console.log(`❌ Validation violations for invoice ${invoice.id}:`, validationResult.violations);
       }
-      if (validationResult.warnings.length > 0) {
+      if (validationResult.warnings?.length > 0) {
         console.log(`⚠️ Validation warnings for invoice ${invoice.id}:`, validationResult.warnings);
       }
 
@@ -3398,7 +3398,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       console.log('Validation result:', {
         isValid: validationResult.isValid,
         score: validationResult.validationScore,
-        violations: validationResult.violations.length
+        violations: validationResult.violations?.length || 0
       });
 
       res.json(validationResult);
