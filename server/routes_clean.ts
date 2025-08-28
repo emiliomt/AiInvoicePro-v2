@@ -6034,6 +6034,76 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
       const invoice = await storage.createInvoice(invoiceData);
       console.log(`✅ Created invoice ${invoice.id} for XML file ${filename}`);
 
+      // CRITICAL FIX: Store XML file in imported_invoices table for proper token-based PDF linking
+      try {
+        const { Client } = await import('pg');
+        const dbClient = new Client({
+          connectionString: process.env.DATABASE_URL,
+        });
+
+        await dbClient.connect();
+
+        // Get the correct log_id from the database based on configId
+        let actualLogId = 1; // default fallback
+        if (configId) {
+          const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
+          if (logResult.rows.length > 0) {
+            actualLogId = logResult.rows[0].id;
+          }
+        }
+
+        // Insert XML file into imported_invoices table as data source
+        const insertQuery = `
+          INSERT INTO imported_invoices (
+            log_id, 
+            original_file_name, 
+            file_path, 
+            file_size, 
+            file_type, 
+            base_file_name,
+            is_data_source,
+            linked_invoice_id,
+            created_at,
+            metadata
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+          ON CONFLICT (log_id, original_file_name) DO NOTHING
+        `;
+
+        const values = [
+          actualLogId, // log_id (use actual log ID from invoice_importer_logs)
+          filename, // original_file_name
+          `uploads/${filename}`, // file_path
+          fileSize || fileBuffer.length, // file_size
+          'xml', // file_type
+          baseFileName, // base_file_name (for token-based PDF linking)
+          true, // is_data_source (XML is the data source)
+          invoice.id, // linked_invoice_id
+          new Date(), // created_at
+          JSON.stringify({
+            source: source || 'python_rpa',
+            configId: configId,
+            buyerTaxId: buyerTaxId,
+            documentNumber,
+            emisor,
+            totalValue,
+            extractedData: {
+              documentNumber,
+              emisor,
+              totalValue
+            }
+          }) // metadata
+        ];
+
+        await dbClient.query(insertQuery, values);
+        await dbClient.end();
+
+        console.log(`✅ XML file ${filename} stored in imported_invoices table (log_id: ${actualLogId}, base_name: ${baseFileName})`);
+
+      } catch (importError) {
+        console.error(`❌ Failed to store XML in imported_invoices table:`, importError);
+        // Don't fail the entire request if this fails, but log the issue
+      }
+
       // Queue for processing using the standard manual processing pipeline (async, don't wait for completion)
       setImmediate(async () => {
         try {
@@ -6048,7 +6118,7 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
       res.json({ 
         success: true, 
         invoiceId: invoice.id,
-        message: `XML file ${filename} queued for processing` 
+        message: `XML file ${filename} queued for processing and stored in imported_invoices table` 
       });
 
     } catch (error) {
