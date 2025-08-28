@@ -9,6 +9,7 @@
  *   node server/scripts/clear_rpa_databases.js --dry-run                    # Preview changes
  *   node server/scripts/clear_rpa_databases.js --confirm --mode=soft       # Reset processing flags only
  *   node server/scripts/clear_rpa_databases.js --confirm --mode=hard       # Delete RPA staging data
+ *   node server/scripts/clear_rpa_databases.js --confirm --mode=nuclear    # Complete RPA reset (all data)
  *   node server/scripts/clear_rpa_databases.js --confirm --mode=hard --include-invoices  # Delete RPA invoices too
  */
 
@@ -191,12 +192,14 @@ class RpaDbReset {
     console.log('\n📊 IMPACT SUMMARY:');
     console.log(`   RPA Logs to clear: ${results.invoice_importer_logs.rows[0].count}`);
     console.log(`   RPA Files to ${RESET_MODE === 'soft' ? 'reset flags' : 'delete'}: ${results.imported_invoices_rpa.rows[0].count}`);
-    console.log(`   RPA Invoices to ${INCLUDE_INVOICES ? 'delete' : 'preserve'}: ${results.invoices_rpa.rows[0].count}`);
+    console.log(`   RPA Invoices to ${INCLUDE_INVOICES || RESET_MODE === 'nuclear' ? 'delete' : 'preserve'}: ${results.invoices_rpa.rows[0].count}`);
     console.log(`   Manual Invoices (preserved): ${results.manual_invoices.rows[0].count}`);
     console.log(`   Reset Mode: ${RESET_MODE.toUpperCase()}`);
     
     if (RESET_MODE === 'soft') {
       console.log(`   📝 Soft reset: Only processing flags will be cleared`);
+    } else if (RESET_MODE === 'nuclear') {
+      console.log(`   ☢️  Nuclear reset: ALL RPA data will be completely removed`);
     } else {
       console.log(`   🔥 Hard reset: RPA staging data will be deleted`);
     }
@@ -249,19 +252,19 @@ class RpaDbReset {
         affectedRows += softResetResult.rows.length;
         console.log(`      ✅ Reset processing flags for ${softResetResult.rows.length} files`);
       } else {
-        console.log('   🗑️  Hard reset: Deleting RPA staging files...');
-        const hardResetResult = await this.client.query(`
+        console.log('   🗑️  Deleting RPA staging files...');
+        const deleteFilesResult = await this.client.query(`
           DELETE FROM imported_invoices 
           WHERE metadata->>'source' IN ('python_rpa', 'recovery_manual')
           RETURNING id
         `);
         
-        affectedRows += hardResetResult.rows.length;
-        console.log(`      ✅ Deleted ${hardResetResult.rows.length} RPA staging files`);
+        affectedRows += deleteFilesResult.rows.length;
+        console.log(`      ✅ Deleted ${deleteFilesResult.rows.length} RPA staging files`);
       }
 
       // 2. Handle RPA importer logs based on mode
-      if (RESET_MODE === 'hard') {
+      if (RESET_MODE === 'hard' || RESET_MODE === 'nuclear') {
         console.log('   🧹 Clearing RPA importer logs...');
         const logsResult = await this.client.query('DELETE FROM invoice_importer_logs RETURNING id');
         affectedRows += logsResult.rows.length;
@@ -271,8 +274,8 @@ class RpaDbReset {
         // In soft mode, we keep the logs for audit trail
       }
 
-      // 3. Handle RPA invoices if requested
-      if (INCLUDE_INVOICES) {
+      // 3. Handle RPA invoices if requested or in nuclear mode
+      if (INCLUDE_INVOICES || RESET_MODE === 'nuclear') {
         console.log('   🗑️  Deleting RPA invoices...');
         const invoicesResult = await this.client.query(`
           DELETE FROM invoices 
@@ -282,6 +285,44 @@ class RpaDbReset {
         
         affectedRows += invoicesResult.rows.length;
         console.log(`      ✅ Deleted ${invoicesResult.rows.length} RPA invoices`);
+      }
+
+      // 4. Nuclear mode: Clear RPA configurations and reset state completely
+      if (RESET_MODE === 'nuclear') {
+        console.log('   ☢️  Nuclear mode: Clearing RPA configurations...');
+        
+        // Reset all RPA configurations to initial state
+        const configResetResult = await this.client.query(`
+          UPDATE invoice_importer_configs 
+          SET 
+            last_run = NULL,
+            next_run = NULL,
+            status = 'idle',
+            current_step = NULL,
+            progress = 0,
+            stats = NULL,
+            is_paused = false
+          WHERE user_id = $1
+          RETURNING id
+        `, [CONFIG.RPA_USER_ID]);
+        
+        affectedRows += configResetResult.rows.length;
+        console.log(`      ✅ Reset ${configResetResult.rows.length} RPA configurations to initial state`);
+
+        // Clear any RPA-related cache or temporary files
+        console.log('   🧹 Nuclear mode: Clearing any RPA temp data...');
+        
+        // Clear any processing locks or session data
+        const sessionClearResult = await this.client.query(`
+          DELETE FROM processing_sessions 
+          WHERE session_type = 'rpa' OR session_id LIKE 'rpa-%'
+          RETURNING id
+        `).catch(() => ({ rows: [] })); // Table might not exist
+        
+        if (sessionClearResult.rows.length > 0) {
+          affectedRows += sessionClearResult.rows.length;
+          console.log(`      ✅ Cleared ${sessionClearResult.rows.length} RPA processing sessions`);
+        }
       }
 
       this.stats.recordsAffected = affectedRows;
@@ -416,14 +457,14 @@ function validateArgs() {
     console.log('\nUsage:');
     console.log('  --dry-run              Preview changes without making them');
     console.log('  --confirm              Confirm destructive operations');
-    console.log('  --mode=soft|hard       soft=reset flags, hard=delete staging (default: soft)');
+    console.log('  --mode=soft|hard|nuclear  soft=reset flags, hard=delete staging, nuclear=complete reset (default: soft)');
     console.log('  --include-invoices     Also delete RPA invoice records');
     console.log('  --force                Skip some safety checks');
     process.exit(1);
   }
 
-  if (!['soft', 'hard'].includes(RESET_MODE)) {
-    console.log('❌ Error: --mode must be either "soft" or "hard"');
+  if (!['soft', 'hard', 'nuclear'].includes(RESET_MODE)) {
+    console.log('❌ Error: --mode must be either "soft", "hard", or "nuclear"');
     process.exit(1);
   }
 
