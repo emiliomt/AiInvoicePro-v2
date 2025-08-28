@@ -3841,75 +3841,8 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
-    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: Optional[str] = None):
-        """Trigger the manual upload processing pipeline via HTTP request"""
-        try:
-            import requests
-
-            # Create the invoice record first (simulating manual upload)
-            file_path = f"uploads/{filename}"
-            file_size = os.path.getsize(file_path)
-
-            # Call the RPA integration endpoint instead of duplicating logic
-            payload = {
-                'filename': filename,
-                'fileSize': file_size,
-                'documentNumber': numero,
-                'emisor': emisor,
-                'totalValue': valor,
-                'fileType': file_type,
-                'source': 'python_rpa',
-                'configId': self.config_id,  # Add config ID for company association
-                'buyerTaxId': buyer_tax_id  # Pass the extracted buyer tax ID
-            }
-
-            # Make request to Node.js server to process through manual pipeline
-            endpoint = '/api/rpa/process-xml' if file_type == 'xml' else '/api/rpa/process-pdf'
-            response = requests.post(
-                f'http://localhost:5000{endpoint}',
-                json=payload,
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                # Check the actual response content for success/failure
-                try:
-                    response_data = response.json()
-                    if response_data.get('success', False):
-                        self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
-                        # Update status to completed on successful processing
-                        self._update_imported_invoice_status({'original_file_name': filename}, 'completed')
-                        return True
-                    else:
-                        error_msg = response_data.get('error', 'Unknown processing error')
-                        self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
-                        # Update status to failed with error message
-                        self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
-                        return False
-                except Exception as json_error:
-                    self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
-                    # Update status to failed with parsing error
-                    self._update_imported_invoice_status({'original_file_name': filename}, 'failed', f"Response parsing error: {json_error}")
-                    return False
-            else:
-                error_msg = f"HTTP error {response.status_code}"
-                try:
-                    error_data = response.json()
-                    if error_data.get('error'):
-                        error_msg += f": {error_data['error']}"
-                except:
-                    pass
-
-                self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
-                # Update status to failed with HTTP error
-                self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
-                return False
-
-        except Exception as e:
-            self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
-            # Update status to failed with exception error
-            self._update_imported_invoice_status({'original_file_name': filename}, 'failed', str(e))
-            return False
+    # REMOVED: Duplicate trigger_manual_processing function that was overriding the correct one
+    # The correct function is defined at line 1564 with proper API endpoint calls
 
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
