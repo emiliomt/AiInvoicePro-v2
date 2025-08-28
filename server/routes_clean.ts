@@ -5934,15 +5934,15 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
-  // Test endpoint for Python service connectivity  
-  app.get('/api/rpa/test', (req, res) => {
-    console.log('🔍 RPA connectivity test request received');
-    res.json({ success: true, message: 'API server is accessible', timestamp: new Date().toISOString() });
-  });
-
   // RPA PDF processing endpoint - integrates RPA with manual upload pipeline for PDFs
   // API endpoint to process XML files from Python RPA
-  app.post('/api/rpa/process-xml', async (req: any, res) => {
+  // Test endpoint for Python service connectivity
+app.get('/api/rpa/test', (req, res) => {
+  console.log('🔍 RPA connectivity test request received');
+  res.json({ success: true, message: 'API server is accessible', timestamp: new Date().toISOString() });
+});
+
+app.post('/api/rpa/process-xml', async (req: any, res) => {
     try {
       const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
 
@@ -6094,7 +6094,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
       if (existingInvoices.length > 0) {
         console.log(`🔗 Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
 
-        // Link PDF to existing invoice in imported_invoices table (idempotent)
+        // Link PDF to existing invoice in imported_invoices table
         try {
           const { Client } = await import('pg');
           const dbClient = new Client({
@@ -6103,35 +6103,7 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
 
           await dbClient.connect();
 
-          // Check if PDF is already linked to this invoice
-          const existingLinkQuery = `
-            SELECT id FROM imported_invoices 
-            WHERE linked_invoice_id = $1 AND original_file_name = $2
-          `;
-          const existingLinkResult = await dbClient.query(existingLinkQuery, [existingInvoices[0].id, filename]);
-          
-          if (existingLinkResult.rows.length > 0) {
-            console.log(`🔗 PDF file ${filename} is already linked to invoice ${existingInvoices[0].id} (existing link ID: ${existingLinkResult.rows[0].id})`);
-            await dbClient.end();
-            return res.json({ 
-              success: true, 
-              invoiceId: existingInvoices[0].id,
-              message: `PDF file ${filename} already linked to existing invoice`,
-              linkedToExisting: true,
-              alreadyLinked: true
-            });
-          }
-
-          // Get the correct log_id from the database based on configId
-          let actualLogId = 1; // default fallback
-          if (configId) {
-            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
-            if (logResult.rows.length > 0) {
-              actualLogId = logResult.rows[0].id;
-            }
-          }
-
-          // Insert PDF as linked file to the existing invoice (with proper conflict handling)
+          // Insert PDF as linked file to the existing invoice
           const insertQuery = `
             INSERT INTO imported_invoices (
               log_id, 
@@ -6145,8 +6117,17 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
               created_at,
               metadata
             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-            RETURNING id
+            ON CONFLICT (log_id, original_file_name) DO NOTHING
           `;
+
+          // Get the correct log_id from the database based on configId
+          let actualLogId = 1; // default fallback
+          if (configId) {
+            const logResult = await dbClient.query('SELECT id FROM invoice_importer_logs WHERE config_id = $1 ORDER BY created_at DESC LIMIT 1', [configId]);
+            if (logResult.rows.length > 0) {
+              actualLogId = logResult.rows[0].id;
+            }
+          }
 
           const values = [
             actualLogId, // log_id (use actual log ID from invoice_importer_logs)
@@ -6168,31 +6149,13 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
             }) // metadata
           ];
 
-          const insertResult = await dbClient.query(insertQuery, values);
-          const linkId = insertResult.rows[0].id;
+          await dbClient.query(insertQuery, values);
           await dbClient.end();
 
-          console.log(`✅ PDF file ${filename} newly linked to invoice ${existingInvoices[0].id} (link ID: ${linkId})`);
+          console.log(`✅ PDF file ${filename} successfully linked to invoice ${existingInvoices[0].id}`);
 
         } catch (linkError) {
-          // If it's a constraint violation (duplicate), treat as success
-          if (linkError.code === '23505') {
-            console.log(`🔗 PDF file ${filename} already linked to invoice ${existingInvoices[0].id} (caught duplicate constraint)`);
-            // Don't log as error - this is expected behavior for duplicates
-          } else {
-            console.error(`❌ Failed to link PDF to invoice:`, linkError);
-          }
-          
-          if (linkError.code === '23505') {
-            return res.json({ 
-              success: true, 
-              invoiceId: existingInvoices[0].id,
-              message: `PDF file ${filename} already linked to existing invoice`,
-              linkedToExisting: true,
-              alreadyLinked: true
-            });
-          }
-          throw linkError;
+          console.error(`❌ Failed to link PDF to invoice:`, linkError);
         }
 
         return res.json({ 
@@ -7186,53 +7149,6 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
   // Simple health check for load balancers
   app.get('/health', (req, res) => {
     res.status(200).send('OK');
-  });
-
-  // Emergency recovery endpoint to process unprocessed ZIP files
-  app.post('/api/rpa/process-batch', async (req, res) => {
-    try {
-      console.log('🚨 RECOVERY: Processing unprocessed ZIP files...');
-      
-      // Find ZIP files in uploads directory
-      const uploadsDir = 'uploads/pdfs';
-      if (!fs.existsSync(uploadsDir)) {
-        return res.json({ success: false, error: 'Upload directory not found' });
-      }
-      
-      const zipFiles = fs.readdirSync(uploadsDir).filter(f => f.endsWith('.zip'));
-      console.log(`📦 Found ${zipFiles.length} ZIP files to process`);
-      
-      if (zipFiles.length === 0) {
-        return res.json({ success: true, message: 'No ZIP files to process', processed: 0 });
-      }
-      
-      // Create a recovery log entry  
-      const db = await getDb();
-      const [recoveryLog] = await db.insert(invoiceImporterLogs).values({
-        configId: 5, // Use existing config
-        status: 'running',
-        message: `Recovery processing of ${zipFiles.length} unprocessed ZIP files`
-      }).returning();
-      
-      console.log(`🔄 Created recovery log ID: ${recoveryLog.id}`);
-      
-      // Trigger a standard RPA import which will process existing files
-      const result = await pythonInvoiceImporter.executeImportTaskWithLogId(5, recoveryLog.id);
-      
-      res.json({
-        success: true,
-        message: `Recovery initiated: Check import logs for progress`,
-        zipFiles: zipFiles.length,
-        logId: recoveryLog.id
-      });
-      
-    } catch (error) {
-      console.error('Recovery processing error:', error);
-      res.status(500).json({ 
-        success: false, 
-        error: error instanceof Error ? error.message : 'Recovery failed' 
-      });
-    }
   });
 
   const httpServer = createServer(app);

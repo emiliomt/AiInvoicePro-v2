@@ -1,8 +1,6 @@
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import * as storage from './storage'; // Assuming storage module exists for config
-import { pythonInvoiceImporter } from './pythonInvoiceImporter'; // Assuming this module exists
 
 // TypeScript wrapper for the Python RPA service
 export class PythonRPAService {
@@ -11,36 +9,14 @@ export class PythonRPAService {
   constructor() {
     const __filename = fileURLToPath(import.meta.url);
     const __dirname = path.dirname(__filename);
-    // Correctly resolve the path to the Python script
-    this.pythonScriptPath = path.join(__dirname, '..', 'rpa', 'pythonRpaService.py'); // Adjusted path assuming pythonRpaService.py is in an 'rpa' directory
-  }
-
-  // Check if Python environment is set up and dependencies are installed
-  private async checkPythonEnvironment(): Promise<boolean> {
-    return new Promise((resolve, reject) => {
-      const checkProcess = spawn('python3', ['-c', 'import sys; import requests; import pandas; print("Python environment OK")']);
-      let errorOutput = '';
-
-      checkProcess.stderr.on('data', (data) => {
-        errorOutput += data.toString();
-      });
-
-      checkProcess.on('close', (code) => {
-        if (code === 0) {
-          resolve(true);
-        } else {
-          console.error('Python environment check failed:', errorOutput);
-          resolve(false);
-        }
-      });
-    });
+    this.pythonScriptPath = path.join(__dirname, 'pythonRpaService.py');
   }
 
   // Execute Python RPA automation
   async executeRPA(config: any): Promise<any> {
     return new Promise((resolve, reject) => {
       const pythonProcess = spawn('python3', [this.pythonScriptPath, JSON.stringify(config)]);
-
+      
       let output = '';
       let errorOutput = '';
 
@@ -58,12 +34,10 @@ export class PythonRPAService {
             const result = JSON.parse(output);
             resolve(result);
           } catch (error) {
-            // If parsing fails, assume raw output is the result
             resolve({ success: true, output: output.trim() });
           }
         } else {
-          // Provide more context in rejection
-          reject(new Error(`Python RPA process failed with code ${code}. Stderr: ${errorOutput}. Stdout: ${output}`));
+          reject(new Error(`Python RPA process failed with code ${code}: ${errorOutput}`));
         }
       });
     });
@@ -106,8 +80,7 @@ export class PythonRPAService {
       return result;
     } catch (error) {
       console.error('Error getting RPA status:', error);
-      // Provide a more informative fallback status
-      return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error occurred while fetching RPA status' };
+      return { status: 'error', message: error instanceof Error ? error.message : 'Unknown error' };
     }
   }
 }

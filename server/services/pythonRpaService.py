@@ -1149,7 +1149,7 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    if page_count >= 2: 
+                    if page_count > 2: ## Limit to 2 pages for now
                         break  # Exit loop after processing one page for now
                 except:
                     self.log("✅ Finished processing all pages")
@@ -1561,114 +1561,11 @@ class InvoiceRPAService:
             self.log(f"Error in token matching: {e}", "ERROR")
             return False
 
-    def trigger_manual_processing(self, filename, numero, emisor, valor, file_type='xml', buyer_tax_id=None):
-        """
-        Trigger manual processing pipeline via HTTP API call to Node.js
-        This is the critical function that transfers RPA files to manual processing
-        """
-        try:
-            import requests
-            import json
-            
-            # Determine the correct API endpoint based on file type
-            if file_type == 'pdf':
-                endpoint = '/api/rpa/process-pdf'
-                payload = {
-                    'filename': filename,
-                    'documentNumber': numero,
-                    'emisor': emisor,
-                    'totalValue': valor,
-                    'configId': self.config_id,
-                    'xmlInvoiceId': None  # Will be determined by API
-                }
-            else:  # XML
-                endpoint = '/api/rpa/process-pdf'  # Use the same endpoint for consistency
-                payload = {
-                    'filename': filename,
-                    'documentNumber': numero,
-                    'emisor': emisor,
-                    'totalValue': valor,
-                    'configId': self.config_id,
-                    'xmlInvoiceId': None,
-                    'fileType': 'xml',
-                    'source': 'python_rpa',
-                    'buyerTaxId': buyer_tax_id
-                }
-            
-            # Make HTTP request to Node.js API
-            self.log(f"🌐 Triggering manual processing for {filename} via {endpoint}")
-            self.log(f"   📋 Payload: {json.dumps(payload, indent=2)}")
-            
-            response = requests.post(
-                f'http://localhost:5000{endpoint}',
-                json=payload,
-                headers={'Content-Type': 'application/json'},
-                timeout=60
-            )
-            
-            self.log(f"🌐 API Response Status: {response.status_code}")
-            
-            if response.status_code == 200:
-                try:
-                    response_data = response.json()
-                    if response_data.get('success', False):
-                        self.log(f"✅ Successfully triggered manual processing for {filename}")
-                        
-                        # Log invoice ID if available
-                        invoice_id = response_data.get('invoiceId')
-                        if invoice_id:
-                            self.log(f"   → Invoice ID: {invoice_id}")
-                            
-                        # Update stats on successful transfer
-                        self.stats['successful_imports'] += 1
-                        
-                        return True
-                    else:
-                        error_msg = response_data.get('error', 'Unknown API error')
-                        self.log(f"❌ Manual processing failed for {filename}: {error_msg}", "ERROR")
-                        self.stats['failed_imports'] += 1
-                        return False
-                except Exception as json_error:
-                    self.log(f"❌ Could not parse API response for {filename}: {json_error}", "ERROR")
-                    self.log(f"   📋 Raw response: {response.text}")
-                    self.stats['failed_imports'] += 1
-                    return False
-            else:
-                self.log(f"❌ HTTP error {response.status_code} for {filename}", "ERROR")
-                try:
-                    error_response = response.json()
-                    self.log(f"   📋 Error details: {error_response}")
-                except:
-                    self.log(f"   📋 Raw error response: {response.text}")
-                self.stats['failed_imports'] += 1
-                return False
-                
-        except Exception as e:
-            self.log(f"❌ Critical error triggering manual processing for {filename}: {e}", "ERROR")
-            import traceback
-            self.log(f"   📋 Full error trace: {traceback.format_exc()}", "ERROR")
-            self.stats['failed_imports'] += 1
-            return False
-
     def _process_xml_for_pipeline(self, xml_filename, uploads_dir, is_data_source=True):
         """Process XML file through the manual upload pipeline"""
         try:
-            # CRITICAL FIX: Look for XML file in temp extract directory first, then xml_dir
-            temp_extract_dir = os.path.join(self.download_dir, "__temp_extract__")
-            xml_temp_source = os.path.join(temp_extract_dir, xml_filename)
-            xml_xml_dir_source = os.path.join(self.xml_dir, xml_filename)
-            
-            # Try temp extract directory first (for RPA extracted files)
-            if os.path.exists(xml_temp_source):
-                xml_source = xml_temp_source
-                self.log(f"📋 Using XML from temp extract: {xml_source}")
-            elif os.path.exists(xml_xml_dir_source):
-                xml_source = xml_xml_dir_source
-                self.log(f"📋 Using XML from xml_dir: {xml_source}")
-            else:
-                self.log(f"❌ XML file not found in temp extract or xml_dir: {xml_filename}", "ERROR")
-                return None
-            
+            # Copy XML from xml_dir to uploads_dir so Node process can read it
+            xml_source = os.path.join(self.xml_dir, xml_filename)
             xml_dest = os.path.join(uploads_dir, xml_filename)
             
             if not os.path.exists(xml_source):
@@ -1738,22 +1635,8 @@ class InvoiceRPAService:
     def _process_pdf_for_pipeline(self, pdf_filename, uploads_dir, pdf_dir, is_data_source=True):
         """Process PDF file through the manual upload pipeline"""
         try:
-            # CRITICAL FIX: Look for PDF file in temp extract directory first, then pdf_dir
-            temp_extract_dir = os.path.join(self.download_dir, "__temp_extract__")
-            pdf_temp_source = os.path.join(temp_extract_dir, pdf_filename)
-            pdf_pdf_dir_source = os.path.join(pdf_dir, pdf_filename)
-            
-            # Try temp extract directory first (for RPA extracted files)
-            if os.path.exists(pdf_temp_source):
-                pdf_source = pdf_temp_source
-                self.log(f"📋 Using PDF from temp extract: {pdf_source}")
-            elif os.path.exists(pdf_pdf_dir_source):
-                pdf_source = pdf_pdf_dir_source
-                self.log(f"📋 Using PDF from pdf_dir: {pdf_source}")
-            else:
-                self.log(f"❌ PDF file not found in temp extract or pdf_dir: {pdf_filename}", "ERROR")
-                return None
-            
+            # Copy PDF from pdf_dir to uploads_dir so Node process can read it
+            pdf_source = os.path.join(pdf_dir, pdf_filename)
             pdf_dest = os.path.join(uploads_dir, pdf_filename)
             
             if not os.path.exists(pdf_source):
@@ -3320,125 +3203,6 @@ class InvoiceRPAService:
 
                     # Extract invoice token from PDF filename for robust matching
                     pdf_token_info = self._extract_invoice_token(pdf_filename)
-                    
-                    if not pdf_token_info:
-                        self.log(f"⚠️ Could not extract token from PDF: {pdf_filename}")
-                        continue
-
-                    # Find the corresponding XML invoice in the database
-                    document_number = pdf_token_info.get('document_number')
-                    tax_id = pdf_token_info.get('tax_id')
-                    token = pdf_token_info.get('token')
-
-                    # Search for XML invoice with matching criteria
-                    pg_cursor.execute("""
-                        SELECT id, file_name FROM invoices 
-                        WHERE user_id = 'rpa-system'
-                        AND (
-                            (extracted_data->>'documentNumber' = %s AND extracted_data->>'buyerTaxId' = %s) OR
-                            (extracted_data->>'invoiceNumber' = %s AND extracted_data->>'buyerTaxId' = %s) OR
-                            file_name ILIKE %s
-                        )
-                        ORDER BY created_at DESC 
-                        LIMIT 1
-                    """, (document_number, tax_id, document_number, tax_id, f"{token}%"))
-
-                    xml_invoice_result = pg_cursor.fetchone()
-                    
-                    if xml_invoice_result:
-                        xml_invoice_id, xml_file_name = xml_invoice_result
-                        self.log(f"✅ Found matching XML invoice {xml_invoice_id} for PDF {pdf_filename}")
-                        
-                        # Create PDF record linked to XML invoice
-                        try:
-                            pg_cursor.execute("""
-                                INSERT INTO invoices (
-                                    user_id, file_name, file_url, status, source, 
-                                    vendor_name, total_amount, invoice_number, 
-                                    extracted_data, created_at, linked_invoice_id
-                                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                RETURNING id
-                            """, (
-                                'rpa-system',
-                                pdf_filename,
-                                f'uploads/{pdf_filename}',
-                                'linked_reference',
-                                'python_rpa_pdf',
-                                pdf_info.get('vendor_name'),
-                                pdf_info.get('total_amount'),
-                                document_number,
-                                json.dumps({
-                                    'linkedToXmlInvoice': xml_invoice_id,
-                                    'linkType': 'pdf_reference',
-                                    'originalToken': token,
-                                    'documentNumber': document_number,
-                                    'taxId': tax_id
-                                }),
-                                'NOW()',
-                                xml_invoice_id
-                            ))
-                            
-                            pdf_invoice_id = pg_cursor.fetchone()[0]
-                            self.log(f"✅ Created linked PDF invoice {pdf_invoice_id} -> XML {xml_invoice_id}")
-                            
-                        except Exception as create_error:
-                            self.log(f"❌ Failed to create PDF record: {create_error}", "ERROR")
-                    else:
-                        self.log(f"⚠️ No matching XML invoice found for PDF {pdf_filename}")
-                        self.log(f"   Search criteria: doc_num={document_number}, tax_id={tax_id}, token={token}")
-
-                        # Optional: Try alternative search by just document number if tax ID search fails
-                        pg_cursor.execute("""
-                            SELECT id, file_name FROM invoices 
-                            WHERE user_id = 'rpa-system'
-                            AND (
-                                extracted_data->>'documentNumber' = %s OR
-                                extracted_data->>'invoiceNumber' = %s OR
-                                file_name ILIKE %s
-                            )
-                            ORDER BY created_at DESC 
-                            LIMIT 1
-                        """, (document_number, document_number, f"{document_number}%"))
-
-                        fallback_result = pg_cursor.fetchone()
-                        if fallback_result:
-                            xml_invoice_id, xml_file_name = fallback_result
-                            self.log(f"🔄 Found fallback match using document number only: {xml_file_name}")
-                            
-                            # Create PDF record with fallback link
-                            try:
-                                pg_cursor.execute("""
-                                    INSERT INTO invoices (
-                                        user_id, file_name, file_url, status, source, 
-                                        vendor_name, total_amount, invoice_number, 
-                                        extracted_data, created_at, linked_invoice_id
-                                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                                    RETURNING id
-                                """, (
-                                    'rpa-system',
-                                    pdf_filename,
-                                    f'uploads/{pdf_filename}',
-                                    'linked_reference',
-                                    'python_rpa_pdf_fallback',
-                                    pdf_info.get('vendor_name'),
-                                    pdf_info.get('total_amount'),
-                                    document_number,
-                                    json.dumps({
-                                        'linkedToXmlInvoice': xml_invoice_id,
-                                        'linkType': 'pdf_reference_fallback',
-                                        'originalToken': token,
-                                        'documentNumber': document_number,
-                                        'matchType': 'document_number_only'
-                                    }),
-                                    'NOW()',
-                                    xml_invoice_id
-                                ))
-                                
-                                pdf_invoice_id = pg_cursor.fetchone()[0]
-                                self.log(f"✅ Created fallback linked PDF invoice {pdf_invoice_id} -> XML {xml_invoice_id}")
-                                
-                            except Exception as create_error:
-                                self.log(f"❌ Failed to create fallback PDF record: {create_error}", "ERROR")
                     document_number = pdf_token_info['document_number']
                     tax_id = pdf_token_info['tax_id']
 
@@ -3629,52 +3393,6 @@ class InvoiceRPAService:
             self.log(f"❌ Error linking PDFs to main invoices: {e}", "ERROR")
             return False
 
-    def _extract_invoice_token(self, filename):
-        """Extract invoice token information from filename for matching"""
-        import re
-        
-        try:
-            # Remove file extension
-            base_name = filename.replace('.pdf', '').replace('.xml', '')
-            
-            # Pattern: DOCUMENT_TAXID_COMPANY or DOCUMENT_TAXID
-            # Examples: ROS16733_901328897_REDOX_SAS, TSM12909_901170791_GRUPO_TSM
-            pattern = r'^([A-Z0-9]+)_(\d+)(?:_(.+))?'
-            match = re.match(pattern, base_name)
-            
-            if match:
-                document_number = match.group(1)
-                tax_id = match.group(2)
-                company_part = match.group(3) or ''
-                
-                return {
-                    'document_number': document_number,
-                    'tax_id': tax_id,
-                    'company': company_part,
-                    'token': f"{document_number}_{tax_id}"
-                }
-            else:
-                # Fallback: try to extract at least document number
-                parts = base_name.split('_')
-                if len(parts) >= 2:
-                    return {
-                        'document_number': parts[0],
-                        'tax_id': parts[1] if parts[1].isdigit() else None,
-                        'company': '_'.join(parts[2:]) if len(parts) > 2 else '',
-                        'token': f"{parts[0]}_{parts[1]}" if len(parts) >= 2 else parts[0]
-                    }
-                
-                return {
-                    'document_number': base_name,
-                    'tax_id': None,
-                    'company': '',
-                    'token': base_name
-                }
-                
-        except Exception as e:
-            self.log(f"❌ Error extracting token from filename {filename}: {e}", "ERROR")
-            return None
-
     def _store_file_matches(self, processed_files):
         """Store file matching information for logging"""
         xml_files = [f for f in processed_files if f['type'] == 'xml']
@@ -3682,7 +3400,7 @@ class InvoiceRPAService:
 
         matched_pairs = []
         unmatched_xml = []
-        unmatched_pdfs = []
+        unmatched_pdf = []
 
         for xml_file in xml_files:
             matched_pdf = next((p for p in pdf_files if p['base_name'] == xml_file['base_name']), None)
@@ -3693,7 +3411,7 @@ class InvoiceRPAService:
 
         for pdf_file in pdf_files:
             if not any(p['xml'] for p in matched_pairs if p.get('pdf') == pdf_file['upload_filename']):
-                unmatched_pdfs.append(pdf_file['upload_filename'])
+                unmatched_pdf.append(pdf_file['upload_filename'])
 
         if matched_pairs:
             self.log(f"Matched file pairs: {len(matched_pairs)}")
@@ -3703,13 +3421,13 @@ class InvoiceRPAService:
         if unmatched_xml:
             self.log(f"XML files without PDF match: {', '.join(unmatched_xml)}")
 
-        if unmatched_pdfs:
-            self.log(f"PDF files without XML match: {', '.join(unmatched_pdfs)}")
+        if unmatched_pdf:
+            self.log(f"PDF files without XML match: {', '.join(unmatched_pdf)}")
 
         # Store in stats for logging
         self.stats['matched_pairs'] = len(matched_pairs)
         self.stats['unmatched_xml'] = len(unmatched_xml)
-        self.stats['unmatched_pdf'] = len(unmatched_pdfs)
+        self.stats['unmatched_pdf'] = len(unmatched_pdf)
 
     def _output_download_progress(self, current_item: int, total_items: int, current_step: str):
         """Output progress statistics with enhanced metrics tracking and validation"""
@@ -3841,8 +3559,75 @@ class InvoiceRPAService:
         except Exception as e:
             self.log(f"❌ Error outputting progress stats: {e}", "ERROR")
 
-    # REMOVED: Duplicate trigger_manual_processing function that was overriding the correct one
-    # The correct function is defined at line 1564 with proper API endpoint calls
+    def trigger_manual_processing(self, filename: str, numero: str, emisor: str, valor: str, file_type: str = 'xml', buyer_tax_id: Optional[str] = None):
+        """Trigger the manual upload processing pipeline via HTTP request"""
+        try:
+            import requests
+
+            # Create the invoice record first (simulating manual upload)
+            file_path = f"uploads/{filename}"
+            file_size = os.path.getsize(file_path)
+
+            # Call the RPA integration endpoint instead of duplicating logic
+            payload = {
+                'filename': filename,
+                'fileSize': file_size,
+                'documentNumber': numero,
+                'emisor': emisor,
+                'totalValue': valor,
+                'fileType': file_type,
+                'source': 'python_rpa',
+                'configId': self.config_id,  # Add config ID for company association
+                'buyerTaxId': buyer_tax_id  # Pass the extracted buyer tax ID
+            }
+
+            # Make request to Node.js server to process through manual pipeline
+            endpoint = '/api/rpa/process-xml' if file_type == 'xml' else '/api/rpa/process-pdf'
+            response = requests.post(
+                f'http://localhost:5000{endpoint}',
+                json=payload,
+                timeout=30
+            )
+
+            if response.status_code == 200:
+                # Check the actual response content for success/failure
+                try:
+                    response_data = response.json()
+                    if response_data.get('success', False):
+                        self.log(f"Successfully processed {filename} ({file_type}) through manual pipeline")
+                        # Update status to completed on successful processing
+                        self._update_imported_invoice_status({'original_file_name': filename}, 'completed')
+                        return True
+                    else:
+                        error_msg = response_data.get('error', 'Unknown processing error')
+                        self.log(f"Failed to process {filename} ({file_type}): {error_msg}", "ERROR")
+                        # Update status to failed with error message
+                        self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
+                        return False
+                except Exception as json_error:
+                    self.log(f"Could not parse response for {filename}: {json_error}", "ERROR")
+                    # Update status to failed with parsing error
+                    self._update_imported_invoice_status({'original_file_name': filename}, 'failed', f"Response parsing error: {json_error}")
+                    return False
+            else:
+                error_msg = f"HTTP error {response.status_code}"
+                try:
+                    error_data = response.json()
+                    if error_data.get('error'):
+                        error_msg += f": {error_data['error']}"
+                except:
+                    pass
+
+                self.log(f"HTTP error processing {filename} ({file_type}): {response.status_code}", "ERROR")
+                # Update status to failed with HTTP error
+                self._update_imported_invoice_status({'original_file_name': filename}, 'failed', error_msg)
+                return False
+
+        except Exception as e:
+            self.log(f"Error triggering manual processing for {filename}: {e}", "ERROR")
+            # Update status to failed with exception error
+            self._update_imported_invoice_status({'original_file_name': filename}, 'failed', str(e))
+            return False
 
     def run_import_process(self) -> Dict[str, Any]:
         """Run the complete import process"""
@@ -3892,7 +3677,7 @@ class InvoiceRPAService:
                     'stats': self.stats
                 }
 
-            # NEW: Process extracted files through manual upload pipeline
+            # NEW: Process extracted files through manual upload pipeline  
             if not self.process_files_through_manual_pipeline():
                 return {
                     'success': False,
