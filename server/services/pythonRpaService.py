@@ -1653,8 +1653,22 @@ class InvoiceRPAService:
     def _process_xml_for_pipeline(self, xml_filename, uploads_dir, is_data_source=True):
         """Process XML file through the manual upload pipeline"""
         try:
-            # Copy XML from xml_dir to uploads_dir so Node process can read it
-            xml_source = os.path.join(self.xml_dir, xml_filename)
+            # CRITICAL FIX: Look for XML file in temp extract directory first, then xml_dir
+            temp_extract_dir = os.path.join(self.download_dir, "__temp_extract__")
+            xml_temp_source = os.path.join(temp_extract_dir, xml_filename)
+            xml_xml_dir_source = os.path.join(self.xml_dir, xml_filename)
+            
+            # Try temp extract directory first (for RPA extracted files)
+            if os.path.exists(xml_temp_source):
+                xml_source = xml_temp_source
+                self.log(f"📋 Using XML from temp extract: {xml_source}")
+            elif os.path.exists(xml_xml_dir_source):
+                xml_source = xml_xml_dir_source
+                self.log(f"📋 Using XML from xml_dir: {xml_source}")
+            else:
+                self.log(f"❌ XML file not found in temp extract or xml_dir: {xml_filename}", "ERROR")
+                return None
+            
             xml_dest = os.path.join(uploads_dir, xml_filename)
             
             if not os.path.exists(xml_source):
@@ -1724,8 +1738,22 @@ class InvoiceRPAService:
     def _process_pdf_for_pipeline(self, pdf_filename, uploads_dir, pdf_dir, is_data_source=True):
         """Process PDF file through the manual upload pipeline"""
         try:
-            # Copy PDF from pdf_dir to uploads_dir so Node process can read it
-            pdf_source = os.path.join(pdf_dir, pdf_filename)
+            # CRITICAL FIX: Look for PDF file in temp extract directory first, then pdf_dir
+            temp_extract_dir = os.path.join(self.download_dir, "__temp_extract__")
+            pdf_temp_source = os.path.join(temp_extract_dir, pdf_filename)
+            pdf_pdf_dir_source = os.path.join(pdf_dir, pdf_filename)
+            
+            # Try temp extract directory first (for RPA extracted files)
+            if os.path.exists(pdf_temp_source):
+                pdf_source = pdf_temp_source
+                self.log(f"📋 Using PDF from temp extract: {pdf_source}")
+            elif os.path.exists(pdf_pdf_dir_source):
+                pdf_source = pdf_pdf_dir_source
+                self.log(f"📋 Using PDF from pdf_dir: {pdf_source}")
+            else:
+                self.log(f"❌ PDF file not found in temp extract or pdf_dir: {pdf_filename}", "ERROR")
+                return None
+            
             pdf_dest = os.path.join(uploads_dir, pdf_filename)
             
             if not os.path.exists(pdf_source):
