@@ -1149,7 +1149,7 @@ class InvoiceRPAService:
                     self.log("➡️ Moving to next page")
                     time.sleep(3)
                     page_count += 1
-                    if page_count > 2: ## Limit to 2 pages for now
+                    if page_count > 0: ## Limit to 2 pages for now
                         break  # Exit loop after processing one page for now
                 except:
                     self.log("✅ Finished processing all pages")
