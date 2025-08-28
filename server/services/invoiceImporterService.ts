@@ -457,7 +457,10 @@ class InvoiceImporterService {
       await this.simulateDelay(200);
       await this.updateStepStatus(logId, progress, 13, 'completed');
 
-      // Step 14: Trigger automatic processing if enabled
+      // Step 14: Link any unlinked PDFs after import completion
+      await this.linkPdfsAfterImport(logId);
+
+      // Step 15: Trigger automatic processing if enabled
       if (config.automaticProcessing) {
         await this.triggerAutomaticProcessing(logId, config.userId);
       }
@@ -858,6 +861,25 @@ class InvoiceImporterService {
     } catch (error: any) {
       console.error('Error triggering automatic processing:', error);
       await this.logStep(logId, 'Error initiating automatic processing', 'failed', error.message);
+    }
+  }
+
+  private async linkPdfsAfterImport(logId: number): Promise<void> {
+    try {
+      console.log(`🔗 Running post-import PDF linking for log ${logId}`);
+      
+      const { postImportPdfLinker } = await import('./postImportPdfLinker');
+      const result = await postImportPdfLinker.linkPdfsAfterImport(logId);
+      
+      await this.logStep(logId, `PDF linking completed: ${result.linkedCount} files linked`, 'completed');
+      
+      if (result.errors.length > 0) {
+        console.warn(`⚠️ PDF linking had ${result.errors.length} errors:`, result.errors);
+      }
+      
+    } catch (error: any) {
+      console.error(`❌ Post-import PDF linking failed for log ${logId}:`, error);
+      await this.logStep(logId, 'PDF linking failed', 'failed', error.message);
     }
   }
 

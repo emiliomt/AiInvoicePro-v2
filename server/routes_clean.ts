@@ -5492,6 +5492,54 @@ app.post('/api/erp/tasks', isAuthenticated, async (req, res) => {
     }
   });
 
+  // Post-import PDF linking endpoint
+  app.post('/api/invoice-importer/link-pdfs/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      if (!logId) {
+        return res.status(400).json({ error: 'Valid log ID is required' });
+      }
+
+      console.log(`🔗 Starting post-import PDF linking for log ${logId}`);
+
+      const { postImportPdfLinker } = await import('./services/postImportPdfLinker');
+      const result = await postImportPdfLinker.linkPdfsAfterImport(logId);
+
+      res.json({
+        success: true,
+        message: `PDF linking completed: ${result.linkedCount} files linked`,
+        ...result
+      });
+
+    } catch (error) {
+      console.error('Post-import PDF linking error:', error);
+      res.status(500).json({ error: 'Failed to link PDFs after import' });
+    }
+  });
+
+  // Check PDF linking status
+  app.get('/api/invoice-importer/link-status/:logId', isAuthenticated, async (req: any, res) => {
+    try {
+      const logId = parseInt(req.params.logId);
+      if (!logId) {
+        return res.status(400).json({ error: 'Valid log ID is required' });
+      }
+
+      const { postImportPdfLinker } = await import('./services/postImportPdfLinker');
+      const status = await postImportPdfLinker.checkLinkingStatus(logId);
+
+      res.json({
+        success: true,
+        logId,
+        ...status
+      });
+
+    } catch (error) {
+      console.error('Error checking PDF link status:', error);
+      res.status(500).json({ error: 'Failed to check PDF linking status' });
+    }
+  });
+
   // Invoice Importer routes
   app.post('/api/invoice-importer/configs', isAuthenticated, async (req: any, res) => {
     try {
