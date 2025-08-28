@@ -6169,10 +6169,14 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
         return res.status(400).json({ error: 'Filename is required' });
       }
 
-      const baseFileName = filename.replace(/\.(xml|pdf)$/i, '');
-      const existingInvoices = await storage.getInvoicesByFileName(baseFileName);
+      // CRITICAL: Use baseFileName from RPA token matching if available, otherwise extract from filename
+      const finalBaseFileName = baseFileName || filename.replace(/\.(xml|pdf)$/i, '');
+      const existingInvoices = await storage.getInvoicesByFileName(finalBaseFileName);
+      
+      console.log(`🔍 PDF Token Linking: received baseFileName='${baseFileName}', filename='${filename}', using='${finalBaseFileName}'`);
+      
       if (existingInvoices.length > 0) {
-        console.log(`🔗 Invoice with base name '${baseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
+        console.log(`🔗 Invoice with base name '${finalBaseFileName}' already exists (${existingInvoices[0].id}), linking PDF as reference`);
 
         // Link PDF to existing invoice in imported_invoices table
         try {
@@ -6215,7 +6219,7 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
             `uploads/pdfs/${filename}`, // file_path (PDFs are in uploads/pdfs/)
             fileSize || 0, // file_size
             'pdf', // file_type
-            baseFileName, // base_file_name
+            finalBaseFileName, // base_file_name (use token-based matching)
             false, // is_data_source (PDF is reference only)
             existingInvoices[0].id, // linked_invoice_id
             new Date(), // created_at
