@@ -291,13 +291,12 @@ class RpaDbReset {
       if (RESET_MODE === 'nuclear') {
         console.log('   ☢️  Nuclear mode: Clearing RPA configurations...');
         
-        // Reset all RPA configurations to initial state
+        // Reset all RPA configurations to initial state (only reset existing columns)
         const configResetResult = await this.client.query(`
           UPDATE invoice_importer_configs 
           SET 
             last_run = NULL,
             next_run = NULL,
-            status = 'idle',
             current_step = NULL,
             progress = 0,
             stats = NULL,
