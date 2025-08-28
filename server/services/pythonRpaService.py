@@ -2083,95 +2083,196 @@ class InvoiceRPAService:
             pg_conn = psycopg2.connect(database_url)
             pg_cursor = pg_conn.cursor()
 
-            # Connect to local XML SQLite database
-            xml_conn = sqlite3.connect(self.xml_db_path)
-            xml_cursor = xml_conn.cursor()
-
             # Get log_id from config (passed from Node.js)
             log_id = self.log_id
             if not log_id:
                 self.log("No log_id provided for PostgreSQL transfer", "ERROR")
                 return False
 
-            # Query all imported invoices from SQLite
-            xml_cursor.execute("""
-                SELECT numero_documento, emisor, valor_total, xml_content 
-                FROM downloaded_invoices 
-                WHERE xml_content IS NOT NULL
-            """)
-            sqlite_invoices = xml_cursor.fetchall()
-
             transferred_count = 0
-            for invoice in sqlite_invoices:
-                numero_documento, emisor, valor_total, xml_content = invoice
+            
+            # ================ PART 1: Handle XML files ================
+            if os.path.exists(self.xml_db_path):
+                # Connect to local XML SQLite database
+                xml_conn = sqlite3.connect(self.xml_db_path)
+                xml_cursor = xml_conn.cursor()
 
-                try:
-                    # Create filename same as RPA processing logic
-                    safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
-                    original_filename = f"{numero_documento}_{safe_emisor}.xml"
-                    # Create a unique identifier based on filename and log_id
-                    unique_identifier = f"{log_id}_{original_filename}"
+                # Query all imported XML invoices from SQLite
+                xml_cursor.execute("""
+                    SELECT numero_documento, emisor, valor_total, xml_content 
+                    FROM downloaded_invoices 
+                    WHERE xml_content IS NOT NULL
+                """)
+                sqlite_xml_invoices = xml_cursor.fetchall()
 
-                    # Store XML file in the uploads directory to match manual upload pipeline
-                    uploads_dir = 'uploads'
-                    os.makedirs(uploads_dir, exist_ok=True)
-                    xml_file_path = os.path.join(uploads_dir, original_filename)
-                    with open(xml_file_path, 'w', encoding='utf-8') as f:
-                        f.write(xml_content)
+                self.log(f"Found {len(sqlite_xml_invoices)} XML files to transfer")
 
-                    # Calculate file size
-                    file_size = len(xml_content.encode('utf-8'))
+                for invoice in sqlite_xml_invoices:
+                    numero_documento, emisor, valor_total, xml_content = invoice
 
-                    # Check if record already exists to prevent duplicates
-                    pg_cursor.execute("""
-                        SELECT id FROM imported_invoices 
-                        WHERE log_id = %s AND original_file_name = %s
-                    """, (log_id, original_filename))
+                    try:
+                        # Create filename same as RPA processing logic
+                        safe_emisor = re.sub(r'[^a-zA-Z0-9_]', '_', emisor)
+                        original_filename = f"{numero_documento}_{safe_emisor}.xml"
 
-                    existing_record = pg_cursor.fetchone()
+                        # Store XML file in the uploads directory to match manual upload pipeline
+                        uploads_dir = 'uploads'
+                        os.makedirs(uploads_dir, exist_ok=True)
+                        xml_file_path = os.path.join(uploads_dir, original_filename)
+                        with open(xml_file_path, 'w', encoding='utf-8') as f:
+                            f.write(xml_content)
 
-                    if not existing_record:
-                        # Insert into PostgreSQL imported_invoices table
+                        # Calculate file size
+                        file_size = len(xml_content.encode('utf-8'))
+
+                        # Check if record already exists to prevent duplicates
                         pg_cursor.execute("""
-                            INSERT INTO imported_invoices 
-                            (log_id, original_file_name, file_type, file_size, file_path, 
-                             erp_document_id, downloaded_at, metadata)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (
-                            log_id,
-                            original_filename,
-                            'xml',
-                            file_size,
-                            xml_file_path,
-                            numero_documento,
-                            datetime.now(),
-                            json.dumps({
-                                'emisor': emisor,
-                                'valor_total': valor_total,
-                                'source': 'python_rpa',
-                                'processing_status': 'ready_for_upload_pipeline',
-                                'buyerTaxId': self._extract_buyer_tax_id_from_xml(xml_content)
-                            })
-                        ))
+                            SELECT id FROM imported_invoices 
+                            WHERE log_id = %s AND original_file_name = %s
+                        """, (log_id, original_filename))
 
-                        transferred_count += 1
-                        self.log(f"Transferred to PostgreSQL: {original_filename}")
-                    else:
-                        self.log(f"Record already exists, skipping: {original_filename}")
+                        existing_record = pg_cursor.fetchone()
 
-                except Exception as e:
-                    self.log(f"Failed to transfer {numero_documento}: {e}", "ERROR")
-                    # Continue with next invoice instead of failing the whole batch
+                        if not existing_record:
+                            # Insert into PostgreSQL imported_invoices table
+                            pg_cursor.execute("""
+                                INSERT INTO imported_invoices 
+                                (log_id, original_file_name, file_type, file_size, file_path, 
+                                 erp_document_id, downloaded_at, metadata)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                log_id,
+                                original_filename,
+                                'xml',
+                                file_size,
+                                xml_file_path,
+                                numero_documento,
+                                datetime.now(),
+                                json.dumps({
+                                    'emisor': emisor,
+                                    'valor_total': valor_total,
+                                    'source': 'python_rpa',
+                                    'processing_status': 'ready_for_upload_pipeline',
+                                    'buyerTaxId': self._extract_buyer_tax_id_from_xml(xml_content),
+                                    'is_data_source': True
+                                })
+                            ))
 
-            # Commit PostgreSQL changes
+                            transferred_count += 1
+                            self.log(f"Transferred XML to PostgreSQL: {original_filename}")
+                        else:
+                            self.log(f"XML record already exists, skipping: {original_filename}")
+
+                    except Exception as e:
+                        self.log(f"Failed to transfer XML {numero_documento}: {e}", "ERROR")
+                        # Continue with next invoice instead of failing the whole batch
+
+                # Close XML connection
+                xml_conn.close()
+            else:
+                self.log("No XML database found, skipping XML transfer")
+
+            # ================ PART 2: Handle PDF files ================
+            if os.path.exists(self.db_path):
+                # Connect to local downloads SQLite database (for PDFs)
+                pdf_conn = sqlite3.connect(self.db_path)
+                pdf_cursor = pdf_conn.cursor()
+
+                # Query all downloaded PDF invoices from SQLite
+                pdf_cursor.execute("""
+                    SELECT numero_documento, emisor, valor_total, filename, downloaded_at 
+                    FROM downloaded_invoices
+                """)
+                sqlite_pdf_invoices = pdf_cursor.fetchall()
+
+                self.log(f"Found {len(sqlite_pdf_invoices)} PDF files to transfer")
+
+                for invoice in sqlite_pdf_invoices:
+                    numero_documento, emisor, valor_total, filename, downloaded_at = invoice
+
+                    try:
+                        # Use the actual filename from downloads
+                        original_filename = filename
+                        
+                        # Create file path - PDFs should be in downloads directory
+                        pdf_source_path = os.path.join(self.download_dir, filename)
+                        uploads_dir = 'uploads'
+                        pdf_dest_path = os.path.join(uploads_dir, filename)
+                        
+                        # Ensure uploads directory exists
+                        os.makedirs(uploads_dir, exist_ok=True)
+                        
+                        # Copy PDF file to uploads directory if it exists
+                        file_size = 0
+                        if os.path.exists(pdf_source_path):
+                            shutil.copy2(pdf_source_path, pdf_dest_path)
+                            file_size = os.path.getsize(pdf_dest_path)
+                            self.log(f"Copied PDF for transfer: {pdf_source_path} -> {pdf_dest_path}")
+                        elif os.path.exists(pdf_dest_path):
+                            # File might already be in uploads directory
+                            file_size = os.path.getsize(pdf_dest_path)
+                            self.log(f"PDF already in uploads: {pdf_dest_path}")
+                        else:
+                            # Create placeholder file if PDF doesn't exist
+                            with open(pdf_dest_path, 'w') as f:
+                                f.write("PDF file not found")
+                            file_size = os.path.getsize(pdf_dest_path)
+                            self.log(f"⚠️ PDF file not found, created placeholder: {pdf_dest_path}")
+
+                        # Check if record already exists to prevent duplicates
+                        pg_cursor.execute("""
+                            SELECT id FROM imported_invoices 
+                            WHERE log_id = %s AND original_file_name = %s
+                        """, (log_id, original_filename))
+
+                        existing_record = pg_cursor.fetchone()
+
+                        if not existing_record:
+                            # Insert into PostgreSQL imported_invoices table
+                            pg_cursor.execute("""
+                                INSERT INTO imported_invoices 
+                                (log_id, original_file_name, file_type, file_size, file_path, 
+                                 erp_document_id, downloaded_at, metadata)
+                                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                            """, (
+                                log_id,
+                                original_filename,
+                                'pdf',
+                                file_size,
+                                pdf_dest_path,
+                                numero_documento,
+                                datetime.now(),
+                                json.dumps({
+                                    'emisor': emisor,
+                                    'valor_total': valor_total,
+                                    'source': 'python_rpa',
+                                    'processing_status': 'ready_for_linking',
+                                    'is_data_source': False  # PDFs are references, not data sources
+                                })
+                            ))
+
+                            transferred_count += 1
+                            self.log(f"Transferred PDF to PostgreSQL: {original_filename}")
+                        else:
+                            self.log(f"PDF record already exists, skipping: {original_filename}")
+
+                    except Exception as e:
+                        self.log(f"Failed to transfer PDF {filename}: {e}", "ERROR")
+                        # Continue with next invoice instead of failing the whole batch
+
+                # Close PDF connection
+                pdf_conn.close()
+            else:
+                self.log("No PDF database found, skipping PDF transfer")
+
+            # Commit all PostgreSQL changes
             pg_conn.commit()
 
-            # Close connections
-            xml_conn.close()
+            # Close PostgreSQL connection
             pg_conn.close()
 
             self.log(
-                f"Successfully transferred {transferred_count} invoices to PostgreSQL"
+                f"Successfully transferred {transferred_count} files to PostgreSQL (XML + PDF)"
             )
             return True
 
