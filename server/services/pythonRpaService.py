@@ -2864,7 +2864,13 @@ class InvoiceRPAService:
                         'totalValue': str(file_info.get('valor', '')),
                         'fileType': file_type,
                         'source': 'python_rpa',
-                        'configId': self.config_id
+                        'configId': self.config_id,
+                        # CRITICAL: Add linking metadata for proper PDF-to-XML linking
+                        'baseFileName': file_info.get('base_file_name', ''),
+                        'isDataSource': file_info.get('is_data_source', True),
+                        'linkToXmlInvoice': file_info.get('link_to_xml_invoice', False),
+                        'matchedXmlFile': file_info.get('matched_xml', ''),
+                        'xmlFilename': file_info.get('xml_filename', '')
                     }
                     
                     # Choose endpoint based on file type

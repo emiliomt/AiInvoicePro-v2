@@ -6129,7 +6129,10 @@ app.post('/api/rpa/process-xml', async (req: any, res) => {
 
   app.post('/api/rpa/process-pdf', async (req: any, res) => {
     try {
-      const { filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId } = req.body;
+      const { 
+        filename, fileSize, documentNumber, emisor, totalValue, source, configId, buyerTaxId,
+        baseFileName, isDataSource, linkToXmlInvoice, matchedXmlFile, xmlFilename
+      } = req.body;
 
       console.log(`🔄 PRIORITY EXTRACTION: Request body:`, req.body);
       console.log(`🔄 PRIORITY EXTRACTION: Processing RPA PDF file: ${filename} (config: ${configId})`);
