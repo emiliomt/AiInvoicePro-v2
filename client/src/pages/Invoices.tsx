@@ -2,7 +2,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { FileText, Eye, Download, Calendar, DollarSign, Trash2, FileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw, Filter } from "lucide-react";
+import { FileText as FileIcon, Eye, Download, Calendar, DollarSign, Trash2, FileIcon as OriginalFileIcon, AlertTriangle, ThumbsUp, Upload, Play, Loader2, CheckSquare, Square, Package, Link, X, CheckCircle, XCircle, RotateCcw, Filter, FileText } from "lucide-react";
 import { useState, useCallback, useRef, useMemo, useEffect } from "react";
 import {
   AlertDialog,
@@ -13,7 +13,6 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-  AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import {
   Dialog,
@@ -912,14 +911,14 @@ export default function Invoices() {
                   try {
                     // Clear local state first
                     setLinkedFilesMap({});
-                    
+
                     // Clear and refetch data
                     queryClient.invalidateQueries({ queryKey: ["/api/invoices"] });
                     queryClient.invalidateQueries({ queryKey: ["/api/dashboard/stats"] });
-                    
+
                     // Force a fresh refetch
                     const result = await refetch();
-                    
+
                     // If we have RPA invoices, refetch their linked files
                     if (result.data) {
                       const rpaInvoices = result.data.filter((inv: Invoice) => inv.userId === 'rpa-system');
@@ -927,7 +926,7 @@ export default function Invoices() {
                         await fetchLinkedFilesForInvoices(rpaInvoices);
                       }
                     }
-                    
+
                     toast({
                       title: "Refreshed",
                       description: "Invoice data has been updated",
@@ -1135,7 +1134,7 @@ export default function Invoices() {
           {!error && filteredInvoices.length === 0 && !isLoading ? (
             <Card>
               <CardContent className="py-12 text-center">
-                <FileText className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+                <FileIcon className="mx-auto h-12 w-12 text-gray-400 mb-4" />
                 <h3 className="text-lg font-medium text-gray-900 mb-2">No invoices found</h3>
                 <p className="text-gray-600">Upload your first invoice to get started.</p>
                 <Button
@@ -1198,6 +1197,8 @@ export default function Invoices() {
                   return null;
                 }
 
+                const linkedFiles = linkedFilesMap[invoice.id]?.linkedFiles || [];
+
                 return (
                   <Card key={invoice.id} className="hover:shadow-md transition-shadow">
                     <CardHeader>
@@ -1217,7 +1218,7 @@ export default function Invoices() {
                           </Button>
                           <div className="space-y-2">
                             <CardTitle className="flex items-center space-x-2">
-                              <FileText className="text-blue-600" size={20} />
+                              <FileIcon className="text-blue-600" size={20} />
                               <span>Invoice #{invoice.invoiceNumber || "N/A"}</span>
                             </CardTitle>
                             <div className="flex items-center space-x-4 text-sm text-gray-600">
@@ -1342,29 +1343,29 @@ export default function Invoices() {
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
                                   const currency = invoice.currency || 'USD';
-                                  
+
                                   // Calculate petty cash status using configurable threshold and proper currency handling
                                   const calculatePettyCashStatus = () => {
                                     if (!amount || amount <= 0) return false;
-                                    
+
                                     // For COP invoices, use the configurable threshold directly
                                     if (currency === 'COP') {
                                       return amount <= pettyCashThreshold;
                                     }
-                                    
+
                                     // For USD invoices, convert threshold to USD equivalent (rough conversion)
                                     // 400,000 COP ≈ $100 USD
                                     const usdThreshold = currency === 'USD' ? 100 : pettyCashThreshold;
                                     return amount <= usdThreshold;
                                   };
-                                  
+
                                   const isPettyCash = calculatePettyCashStatus();
                                   const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
-                                  
-                                  const thresholdDisplay = currency === 'COP' 
+
+                                  const thresholdDisplay = currency === 'COP'
                                     ? `≤${pettyCashThreshold.toLocaleString()} COP`
                                     : `≤$${currency === 'USD' ? '100' : '100'} USD`;
-                                  
+
                                   return (
                                     <Badge
                                       variant={isPettyCash ? "default" : "outline"}
@@ -1391,22 +1392,22 @@ export default function Invoices() {
                                 {(() => {
                                   const amount = parseFloat(invoice.totalAmount || '0');
                                   const currency = invoice.currency || 'USD';
-                                  
+
                                   // Calculate petty cash status using configurable threshold and proper currency handling
                                   const calculatePettyCashStatus = () => {
                                     if (!amount || amount <= 0) return false;
-                                    
+
                                     // For COP invoices, use the configurable threshold directly
                                     if (currency === 'COP') {
                                       return amount <= pettyCashThreshold;
                                     }
-                                    
+
                                     // For USD invoices, convert threshold to USD equivalent (rough conversion)
                                     // 400,000 COP ≈ $100 USD
                                     const usdThreshold = currency === 'USD' ? 100 : pettyCashThreshold;
                                     return amount <= usdThreshold;
                                   };
-                                  
+
                                   const isPettyCash = calculatePettyCashStatus();
                                   const isAutoProcessed = invoice.status === 'approved' && invoice.userId === 'rpa-system';
 
@@ -1561,7 +1562,7 @@ export default function Invoices() {
                               onClick={() => handlePreviewClick(invoice)}
                               className={linkedFilesMap[invoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                             >
-                              <FileIcon size={16} className="mr-2" />
+                              <FileIcon className="w-4 h-4 mr-1" />
                               {linkedFilesMap[invoice.id]?.hasLinkedFiles ? "Preview PDF" : "Preview"}
                             </Button>
                           </>
@@ -1866,7 +1867,7 @@ export default function Invoices() {
                         }}
                         className={linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "text-purple-600 border-purple-300" : ""}
                       >
-                        <FileIcon size={16} className="mr-2" />
+                        <FileIcon className="w-4 h-4 mr-1" />
                         {linkedFilesMap[selectedInvoice.id]?.hasLinkedFiles ? "Preview Linked PDF" : "Preview PDF"}
                       </Button>
                     </>
