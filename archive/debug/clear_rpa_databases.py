@@ -38,7 +38,8 @@ def clear_sqlite_database(db_path, db_type):
                         print(f"⚠️  Skipping unexpected table: {table_name}")
                         continue
                     # Use proper SQLite identifier quoting for table names
-                    cursor.execute(f'DELETE FROM "{table_name}"')
+                    escaped_table_name = table_name.replace('"', '""')
+                    cursor.execute('DELETE FROM "' + escaped_table_name + '"')
                     print(f"Cleared SQLite table: {table_name}")
 
                 conn.commit()
