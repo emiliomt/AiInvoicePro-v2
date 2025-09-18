@@ -40,7 +40,7 @@ def clear_sqlite_database(db_path, db_type):
                     # Use proper SQLite identifier quoting for table names (SQLite-safe identifier escaping)
                     # Note: SQLite doesn't support parameterized identifiers, so we use validated identifier quoting
                     escaped_table_name = table_name.replace('"', '""')
-                    sql_query = f'DELETE FROM "{escaped_table_name}"'
+                    sql_query = 'DELETE FROM "{}"'.format(escaped_table_name)
                     cursor.execute(sql_query)
                     print(f"Cleared SQLite table: {table_name}")
 
