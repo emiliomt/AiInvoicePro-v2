@@ -19,6 +19,10 @@ externalPort = 80
 localPort = 24678
 externalPort = 3000
 
+[[ports]]
+localPort = 43717
+externalPort = 3001
+
 [workflows]
 runButton = "Restart Server"
 

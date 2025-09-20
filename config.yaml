@@ -1,0 +1,179 @@
+# Orchestrator Configuration
+# Full-stack invoice processing pipeline configuration
+
+# Pipeline stages in execution order
+stages:
+  - import_invoices
+  - ocr_process
+  - ai_extract
+  - xml_parse
+  - validate
+  - erp_post
+  - reconcile
+  - notify
+
+# Concurrency settings
+concurrency:
+  # Maximum number of invoices to process in parallel
+  defaultMaxWorkers: 4
+  
+  # Serialize ERP operations per tenant to avoid conflicts
+  erpSerializationPerTenant: true
+  
+  # Document-level parallelism strategy
+  documentLevel: "Process invoices in parallel up to a configurable max workers; serialize ERP posting per tenant to avoid state conflicts."
+
+# Retry configuration with exponential backoff and jitter
+retries:
+  strategy: exponential_backoff_jitter
+  maxAttempts: 5
+  initialDelaySeconds: 2
+  maxDelaySeconds: 60
+  
+  # Error types that should trigger retries
+  retryOn:
+    - NetworkError
+    - RateLimitError
+    - TransientError
+    - TimeoutError
+
+# Stage timeouts in milliseconds
+timeouts:
+  import_invoices: 120000  # 2 minutes
+  ocr_process: 180000      # 3 minutes
+  ai_extract: 180000       # 3 minutes
+  xml_parse: 120000        # 2 minutes
+  validate: 90000          # 1.5 minutes
+  erp_post: 180000         # 3 minutes
+  reconcile: 120000        # 2 minutes
+  notify: 60000            # 1 minute
+
+# Idempotency configuration
+idempotency: "Use invoice fingerprint (e.g., hash of file + tenantId) and stage name as keys; skip completed stages when resume flag is set."
+
+# Circuit breaker configuration for fault tolerance
+circuitBreaker:
+  window: 20              # Number of requests to consider
+  errorThreshold: 0.5     # Failure rate threshold (50%)
+  cooldownSeconds: 120    # Cooldown period before retrying
+
+# Feature flags to enable/disable pipeline stages
+featureFlags:
+  enable_import: true
+  enable_ocr: true
+  enable_ai_extract: true
+  enable_xml_parse: true
+  enable_validate: true
+  enable_erp_post: true
+  enable_reconcile: true
+  enable_notify: true
+
+# Tenant-specific configurations
+tenants:
+  - tenant_id: default
+    erp_system: SINCO
+    use_sandbox: true
+    rpa_profile: headless
+  
+  - tenant_id: production
+    erp_system: SINCO
+    use_sandbox: false
+    rpa_profile: headless
+
+# Logging configuration
+logging:
+  level: info
+  format: json
+  auditTrail: true
+  metricsEnabled: true
+
+# Monitoring and metrics
+metrics:
+  enabled: true
+  
+  # Stage-specific metrics to track
+  stageMetrics:
+    - stage_duration_seconds
+    - stage_success_total
+    - stage_failure_total
+    - retry_attempts_total
+  
+  # Pipeline-level metrics
+  pipelineMetrics:
+    - pipeline_throughput_invoices_per_min
+    - pipeline_completion_rate
+    - pipeline_error_rate
+
+# ERP-specific settings
+erp:
+  default_system: SINCO
+  connection_timeout: 30000    # 30 seconds
+  operation_timeout: 180000    # 3 minutes
+  
+  # Sandbox mode settings
+  sandbox:
+    enabled: true
+    mock_responses: true
+    validation_only: true
+
+# AI/ML service settings
+ai:
+  provider: openai
+  model: gpt-4
+  max_tokens: 4096
+  temperature: 0.1
+  
+  # Colombian invoice specific settings
+  colombian_rules: true
+  enhanced_extraction: true
+
+# OCR settings
+ocr:
+  provider: tesseract
+  languages:
+    - eng
+    - spa
+  
+  # Image preprocessing
+  preprocessing:
+    denoise: true
+    contrast_enhancement: true
+    resolution_scaling: true
+
+# File processing settings
+files:
+  supported_formats:
+    - pdf
+    - xml
+    - png
+    - jpg
+    - jpeg
+  
+  max_file_size: 50MB
+  temp_directory: /tmp/orchestrator
+
+# Notification settings
+notifications:
+  enabled: true
+  channels:
+    - websocket
+    - log
+  
+  # WebSocket configuration
+  websocket:
+    enabled: true
+    path: /ws/progress
+
+# Development and debugging
+development:
+  debug_mode: false
+  verbose_logging: false
+  save_intermediate_results: true
+  debug_screenshots: true
+
+# Production settings
+production:
+  performance_monitoring: true
+  error_tracking: true
+  audit_logging: true
+  backup_idempotency_store: true
