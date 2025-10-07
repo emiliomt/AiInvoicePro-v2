@@ -1,5 +1,9 @@
 import OpenAI from "openai";
-import { Invoice, Project, InsertInvoiceProjectMatch } from "../shared/schema.js";
+import {
+  Invoice,
+  Project,
+  InsertInvoiceProjectMatch,
+} from "../shared/schema.js";
 
 // the newest OpenAI model is "gpt-4o" which was released May 13, 2024. do not change this unless explicitly requested by the user
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
@@ -34,22 +38,24 @@ export class ProjectMatcherService {
    */
   private calculateStringSimilarity(str1: string, str2: string): number {
     if (!str1 || !str2) return 0;
-    
+
     const s1 = str1.toLowerCase().trim();
     const s2 = str2.toLowerCase().trim();
-    
+
     if (s1 === s2) return 100;
-    
+
     const distance = this.levenshteinDistance(s1, s2);
     const maxLength = Math.max(s1.length, s2.length);
-    
+
     if (maxLength === 0) return 100;
-    
+
     return Math.round(((maxLength - distance) / maxLength) * 100);
   }
 
   private levenshteinDistance(str1: string, str2: string): number {
-    const matrix = Array(str2.length + 1).fill(null).map(() => Array(str1.length + 1).fill(null));
+    const matrix = Array(str2.length + 1)
+      .fill(null)
+      .map(() => Array(str1.length + 1).fill(null));
 
     for (let i = 0; i <= str1.length; i++) matrix[0][i] = i;
     for (let j = 0; j <= str2.length; j++) matrix[j][0] = j;
@@ -60,7 +66,7 @@ export class ProjectMatcherService {
         matrix[j][i] = Math.min(
           matrix[j][i - 1] + 1,
           matrix[j - 1][i] + 1,
-          matrix[j - 1][i - 1] + indicator
+          matrix[j - 1][i - 1] + indicator,
         );
       }
     }
@@ -74,25 +80,25 @@ export class ProjectMatcherService {
   private async enhanceMatchingWithAI(
     invoiceData: InvoiceData,
     project: Project,
-    basicMatch: ProjectMatchResult
+    basicMatch: ProjectMatchResult,
   ): Promise<ProjectMatchResult> {
     try {
       const prompt = `
         Analyze the similarity between this invoice data and project information for better matching:
 
         Invoice Data:
-        - Project Name: ${invoiceData.extractedData?.projectName || invoiceData.projectName || 'N/A'}
-        - Project Address: ${invoiceData.extractedData?.projectAddress || 'N/A'}
-        - Address: ${invoiceData.extractedData?.address || 'N/A'}
-        - Project City: ${invoiceData.extractedData?.projectCity || 'N/A'}
-        - City: ${invoiceData.extractedData?.city || 'N/A'}
-        - Vendor Address: ${invoiceData.extractedData?.vendorAddress || 'N/A'}
-        - Vendor: ${invoiceData.extractedData?.vendorName || invoiceData.vendorName || 'N/A'}
+        - Project Name: ${invoiceData.extractedData?.projectName || invoiceData.projectName || "N/A"}
+        - Project Address: ${invoiceData.extractedData?.projectAddress || "N/A"}
+        - Address: ${invoiceData.extractedData?.address || "N/A"}
+        - Project City: ${invoiceData.extractedData?.projectCity || "N/A"}
+        - City: ${invoiceData.extractedData?.city || "N/A"}
+        - Vendor Address: ${invoiceData.extractedData?.vendorAddress || "N/A"}
+        - Vendor: ${invoiceData.extractedData?.vendorName || invoiceData.vendorName || "N/A"}
 
         Project Information:
         - Project Name: ${project.name}
-        - Address: ${project.address || 'N/A'}
-        - City: ${project.city || 'N/A'}
+        - Address: ${project.address || "N/A"}
+        - City: ${project.city || "N/A"}
         - Project ID: ${project.projectId}
 
         Current Basic Match Score: ${basicMatch.matchScore}%
@@ -117,7 +123,8 @@ export class ProjectMatcherService {
         messages: [
           {
             role: "system",
-            content: "You are an expert at matching invoice data with project information. Analyze semantic similarity and provide accurate matching scores."
+            content:
+              "You are an expert at matching invoice data with project information. Analyze semantic similarity and provide accurate matching scores.",
           },
           {
             role: "user",
@@ -128,22 +135,33 @@ export class ProjectMatcherService {
         max_tokens: 500,
       });
 
-      const aiResult = JSON.parse(response.choices[0].message.content || '{}');
-      
+      const aiResult = JSON.parse(response.choices[0].message.content || "{}");
+
       // Combine AI results with basic matching
       const enhancedMatchDetails = {
         ...basicMatch.matchDetails,
-        overallConfidence: Math.max(basicMatch.matchScore, aiResult.enhancedScore || basicMatch.matchScore),
-        reasons: [...basicMatch.matchDetails.reasons, ...(aiResult.reasons || [])],
-        matchedFields: [...basicMatch.matchDetails.matchedFields, ...(aiResult.semanticMatches || [])]
+        overallConfidence: Math.max(
+          basicMatch.matchScore,
+          aiResult.enhancedScore || basicMatch.matchScore,
+        ),
+        reasons: [
+          ...basicMatch.matchDetails.reasons,
+          ...(aiResult.reasons || []),
+        ],
+        matchedFields: [
+          ...basicMatch.matchDetails.matchedFields,
+          ...(aiResult.semanticMatches || []),
+        ],
       };
 
       return {
         ...basicMatch,
-        matchScore: Math.max(basicMatch.matchScore, aiResult.enhancedScore || basicMatch.matchScore),
-        matchDetails: enhancedMatchDetails
+        matchScore: Math.max(
+          basicMatch.matchScore,
+          aiResult.enhancedScore || basicMatch.matchScore,
+        ),
+        matchDetails: enhancedMatchDetails,
       };
-
     } catch (error) {
       console.error("AI matching enhancement failed:", error);
       // Return basic match if AI fails
@@ -156,7 +174,7 @@ export class ProjectMatcherService {
    */
   async matchInvoiceWithProjects(
     invoice: Invoice,
-    projects: Project[]
+    projects: Project[],
   ): Promise<ProjectMatchResult[]> {
     const invoiceData: InvoiceData = {
       extractedData: invoice.extractedData as any,
@@ -169,11 +187,15 @@ export class ProjectMatcherService {
     for (const project of projects) {
       // Basic fuzzy matching
       const basicMatch = await this.performBasicMatching(invoiceData, project);
-      
+
       // Enhance with AI if basic score is promising (>30%) or if we have good data
       let finalMatch = basicMatch;
       if (basicMatch.matchScore > 30 || this.hasGoodMatchingData(invoiceData)) {
-        finalMatch = await this.enhanceMatchingWithAI(invoiceData, project, basicMatch);
+        finalMatch = await this.enhanceMatchingWithAI(
+          invoiceData,
+          project,
+          basicMatch,
+        );
       }
 
       if (finalMatch.matchScore > 0) {
@@ -186,16 +208,18 @@ export class ProjectMatcherService {
   }
 
   private hasGoodMatchingData(invoiceData: InvoiceData): boolean {
-    const hasProjectName = !!(invoiceData.extractedData?.projectName || invoiceData.projectName);
+    const hasProjectName = !!(
+      invoiceData.extractedData?.projectName || invoiceData.projectName
+    );
     const hasAddress = !!invoiceData.extractedData?.address;
     const hasCity = !!invoiceData.extractedData?.city;
-    
+
     return hasProjectName || (hasAddress && hasCity);
   }
 
   private async performBasicMatching(
     invoiceData: InvoiceData,
-    project: Project
+    project: Project,
   ): Promise<ProjectMatchResult> {
     const matchDetails = {
       addressSimilarity: 0,
@@ -203,55 +227,74 @@ export class ProjectMatcherService {
       projectNameSimilarity: 0,
       overallConfidence: 0,
       matchedFields: [] as string[],
-      reasons: [] as string[]
+      reasons: [] as string[],
     };
 
     // Project name matching
-    const invoiceProjectName = invoiceData.extractedData?.projectName || invoiceData.projectName;
+    const invoiceProjectName =
+      invoiceData.extractedData?.projectName || invoiceData.projectName;
     if (invoiceProjectName && project.name) {
-      matchDetails.projectNameSimilarity = this.calculateStringSimilarity(invoiceProjectName, project.name);
+      matchDetails.projectNameSimilarity = this.calculateStringSimilarity(
+        invoiceProjectName,
+        project.name,
+      );
       if (matchDetails.projectNameSimilarity > 70) {
-        matchDetails.matchedFields.push('projectName');
-        matchDetails.reasons.push(`Project name similarity: ${matchDetails.projectNameSimilarity}%`);
+        matchDetails.matchedFields.push("projectName");
+        matchDetails.reasons.push(
+          `Project name similarity: ${matchDetails.projectNameSimilarity}%`,
+        );
       }
     }
 
     // Address matching - use projectAddress if available, otherwise fall back to address
-    const invoiceAddress = invoiceData.extractedData?.projectAddress || invoiceData.extractedData?.address;
+    const invoiceAddress =
+      invoiceData.extractedData?.projectAddress ||
+      invoiceData.extractedData?.address;
     if (invoiceAddress && project.address) {
-      matchDetails.addressSimilarity = this.calculateStringSimilarity(invoiceAddress, project.address);
+      matchDetails.addressSimilarity = this.calculateStringSimilarity(
+        invoiceAddress,
+        project.address,
+      );
       if (matchDetails.addressSimilarity > 60) {
-        matchDetails.matchedFields.push('address');
-        matchDetails.reasons.push(`Address similarity: ${matchDetails.addressSimilarity}%`);
+        matchDetails.matchedFields.push("address");
+        matchDetails.reasons.push(
+          `Address similarity: ${matchDetails.addressSimilarity}%`,
+        );
       }
     }
 
     // City matching - use projectCity if available, otherwise derive from vendor address
-    let invoiceCity = invoiceData.extractedData?.projectCity || invoiceData.extractedData?.city;
-    
+    let invoiceCity =
+      invoiceData.extractedData?.projectCity || invoiceData.extractedData?.city;
+
     // If no explicit project city, try to extract from vendor address
     if (!invoiceCity && invoiceData.extractedData?.vendorAddress) {
       const vendorAddress = invoiceData.extractedData.vendorAddress;
       // Extract city from vendor address (e.g., "CRA 64 N79 117, BARRANQUILLA, ATLANTICO, COLOMBIA")
-      const addressParts = vendorAddress.split(',').map(part => part.trim());
+      const addressParts = vendorAddress.split(",").map((part) => part.trim());
       if (addressParts.length >= 2) {
-        invoiceCity = addressParts.slice(1).join(', '); // Take everything after the first comma
+        invoiceCity = addressParts.slice(1).join(", "); // Take everything after the first comma
       }
     }
-    
+
     if (invoiceCity && project.city) {
-      matchDetails.citySimilarity = this.calculateStringSimilarity(invoiceCity, project.city);
+      matchDetails.citySimilarity = this.calculateStringSimilarity(
+        invoiceCity,
+        project.city,
+      );
       if (matchDetails.citySimilarity > 80) {
-        matchDetails.matchedFields.push('city');
-        matchDetails.reasons.push(`City match: ${matchDetails.citySimilarity}%`);
+        matchDetails.matchedFields.push("city");
+        matchDetails.reasons.push(
+          `City match: ${matchDetails.citySimilarity}%`,
+        );
       }
     }
 
     // Calculate overall match score with weighted importance
     const weights = {
-      projectName: 0.5,  // 50% weight
-      address: 0.3,      // 30% weight
-      city: 0.2          // 20% weight
+      projectName: 0.5, // 50% weight
+      address: 0.3, // 30% weight
+      city: 0.2, // 20% weight
     };
 
     let weightedScore = 0;
@@ -270,13 +313,14 @@ export class ProjectMatcherService {
       totalWeight += weights.city;
     }
 
-    const matchScore = totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 0;
+    const matchScore =
+      totalWeight > 0 ? Math.round(weightedScore / totalWeight) : 0;
     matchDetails.overallConfidence = matchScore;
 
     return {
       project,
       matchScore,
-      matchDetails
+      matchDetails,
     };
   }
 
@@ -286,7 +330,7 @@ export class ProjectMatcherService {
   async createInvoiceProjectMatch(
     invoiceId: number,
     projectMatch: ProjectMatchResult,
-    status: 'auto' | 'manual' | 'unresolved' = 'auto'
+    status: "auto" | "manual" | "unresolved" = "auto",
   ): Promise<InsertInvoiceProjectMatch> {
     return {
       invoiceId,
@@ -294,7 +338,7 @@ export class ProjectMatcherService {
       matchScore: projectMatch.matchScore.toString(),
       status,
       matchDetails: projectMatch.matchDetails,
-      isActive: true
+      isActive: true,
     };
   }
 }

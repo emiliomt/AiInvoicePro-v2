@@ -96,7 +96,7 @@ app.use((req, res, next) => {
   process.on("unhandledRejection", (reason, promise) => {
     console.error("Unhandled Rejection at:", promise, "reason:", reason);
     // Don't exit the process in production, just log the error
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       console.warn("Unhandled rejection occurred but continuing...");
     }
   });
@@ -104,7 +104,7 @@ app.use((req, res, next) => {
   process.on("uncaughtException", (error) => {
     console.error("Uncaught Exception:", error);
     // For uncaught exceptions, we should exit gracefully
-    if (process.env.NODE_ENV === 'production') {
+    if (process.env.NODE_ENV === "production") {
       console.error("Production error logged, attempting to continue...");
       return; // Don't exit in production for better stability
     }
@@ -113,14 +113,21 @@ app.use((req, res, next) => {
   });
 
   // Validate essential environment variables
-  const requiredEnvVars = ['DATABASE_URL'];
-  const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
-  
+  const requiredEnvVars = ["DATABASE_URL"];
+  const missingEnvVars = requiredEnvVars.filter(
+    (varName) => !process.env[varName],
+  );
+
   if (missingEnvVars.length > 0) {
-    console.error("Missing required environment variables:", missingEnvVars.join(', '));
+    console.error(
+      "Missing required environment variables:",
+      missingEnvVars.join(", "),
+    );
     console.error("Please ensure all required environment variables are set");
-    if (process.env.NODE_ENV === 'production') {
-      console.error("Deployment failure: Required environment variables not configured");
+    if (process.env.NODE_ENV === "production") {
+      console.error(
+        "Deployment failure: Required environment variables not configured",
+      );
     }
     process.exit(1);
   }
@@ -129,7 +136,7 @@ app.use((req, res, next) => {
 
   // Add timeout for server operations (only in development)
   let serverTimeout: NodeJS.Timeout | null = null;
-  if (process.env.NODE_ENV !== 'production') {
+  if (process.env.NODE_ENV !== "production") {
     serverTimeout = setTimeout(() => {
       console.error("Server startup timeout after 30 seconds");
       process.exit(1);
@@ -140,18 +147,18 @@ app.use((req, res, next) => {
 
   try {
     // Add basic health check before attempting complex initialization
-    app.get('/health', (req, res) => {
-      res.status(200).send('OK');
+    app.get("/health", (req, res) => {
+      res.status(200).send("OK");
     });
 
-    app.get('/api/health', (req, res) => {
+    app.get("/api/health", (req, res) => {
       const healthData = {
-        status: 'ok',
+        status: "ok",
         timestamp: new Date().toISOString(),
-        environment: process.env.NODE_ENV || 'development',
+        environment: process.env.NODE_ENV || "development",
         uptime: process.uptime(),
         memory: process.memoryUsage(),
-        pid: process.pid
+        pid: process.pid,
       };
       res.status(200).json(healthData);
     });
@@ -164,7 +171,7 @@ app.use((req, res, next) => {
     console.log("Progress tracker initialized");
 
     // Initialize the proper WebSocket server for progress tracking
-    const { setupWebSocketServer } = await import('./websocketServer');
+    const { setupWebSocketServer } = await import("./websocketServer");
     setupWebSocketServer(server);
     console.log("WebSocket server for progress tracking initialized");
 
@@ -204,7 +211,9 @@ app.use((req, res, next) => {
       }
       log(`serving on ${host}:${port}`);
       console.log(`✅ Server started successfully`);
-      console.log(`✅ Health check available at: http://${host}:${port}/health`);
+      console.log(
+        `✅ Health check available at: http://${host}:${port}/health`,
+      );
 
       // Log accessible URLs
       if (host === "0.0.0.0") {
@@ -218,9 +227,9 @@ app.use((req, res, next) => {
     });
 
     // Handle server startup errors
-    server.on('error', (error: any) => {
-      console.error('Server startup error:', error);
-      if (error.code === 'EADDRINUSE') {
+    server.on("error", (error: any) => {
+      console.error("Server startup error:", error);
+      if (error.code === "EADDRINUSE") {
         console.error(`Port ${port} is already in use`);
       }
       process.exit(1);
