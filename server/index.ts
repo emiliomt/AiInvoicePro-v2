@@ -6,7 +6,7 @@ import { progressTracker } from "./services/progressTracker";
 
 const app = express();
 app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ extended: false }))
 
 // CORS middleware to allow cross-origin requests
 app.use((req, res, next) => {
