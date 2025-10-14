@@ -1811,7 +1811,7 @@ class InvoiceRPAService:
                 xml_data = xml_by_normalized_id[normalized_id]
                 pdf_data = pdf_by_normalized_id[normalized_id]
 
-                base_name = xml_data['token_info']['base_name']
+                base_name = xml_data['token_info'].get('base_name', os.path.splitext(xml_data['filename'])[0])
                 matches[base_name] = {
                     'xml': xml_data['filename'],
                     'pdf': pdf_data['filename'],
@@ -1827,7 +1827,7 @@ class InvoiceRPAService:
         # Secondary matching: Exact token match for remaining files
         for token in xml_tokens:
             if token not in matched_tokens and token in pdf_tokens:
-                base_name = xml_tokens[token]['token_info']['base_name']
+                base_name = xml_tokens[token]['token_info'].get('base_name', os.path.splitext(xml_tokens[token]['filename'])[0])
                 matches[base_name] = {
                     'xml': xml_tokens[token]['filename'],
                     'pdf': pdf_tokens[token]['filename'],
@@ -1848,7 +1848,7 @@ class InvoiceRPAService:
                 pdf_doc_tax = f"{pdf_data['token_info']['document_number']}_{pdf_data['token_info']['tax_id']}"
 
                 if xml_doc_tax == pdf_doc_tax and pdf_token not in matched_tokens:
-                    base_name = xml_data['token_info']['base_name']
+                    base_name = xml_data['token_info'].get('base_name', os.path.splitext(xml_data['filename'])[0])
                     matches[base_name] = {
                         'xml': xml_data['filename'],
                         'pdf': pdf_data['filename'],
@@ -1862,7 +1862,7 @@ class InvoiceRPAService:
         # Handle unmatched files (XML-only or PDF-only)
         for xml_token, xml_data in xml_tokens.items():
             if xml_token not in matched_tokens:
-                base_name = xml_data['token_info']['base_name']
+                base_name = xml_data['token_info'].get('base_name', os.path.splitext(xml_data['filename'])[0])
                 matches[base_name] = {
                     'xml': xml_data['filename'],
                     'pdf': None,
@@ -1873,7 +1873,7 @@ class InvoiceRPAService:
 
         for pdf_token, pdf_data in pdf_tokens.items():
             if pdf_token not in matched_tokens:
-                base_name = pdf_data['token_info']['base_name']
+                base_name = pdf_data['token_info'].get('base_name', os.path.splitext(pdf_data['filename'])[0])
                 if base_name not in matches:  # Don't override XML-only matches
                     matches[base_name] = {
                         'xml': None,
