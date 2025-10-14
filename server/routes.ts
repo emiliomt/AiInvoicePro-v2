@@ -20,6 +20,7 @@ import { schedulerService } from "./services/schedulerService";
 import { PythonRPAService } from "./services/pythonRpaService";
 import { xmlProcessingService } from "./services/xmlProcessingService";
 import { ClassificationService } from "./services/classificationService";
+import { createInvoiceProcessingAgent, DEFAULT_AGENT_CONFIG } from "./services/invoiceProcessingAgent";
 import { getUser } from "./replitAuth";
 import { db } from "./db";
 import { lineItems, lineItemClassifications } from "@shared/schema";
@@ -1394,6 +1395,102 @@ export function registerRoutes(app: Express): Server {
       origin: req.headers.origin || "unknown",
       note: "This is a test endpoint - no authentication required",
     });
+  });
+
+  // Autonomous Invoice Processing Agent endpoint
+  apiRouter.post("/agent/process-invoice", isAuthenticated, async (req: any, res) => {
+    try {
+      console.log("🤖 Autonomous Invoice Processing Agent endpoint hit");
+      const userId = req.user?.id;
+      const { file, fileName, config, additionalContext } = req.body;
+
+      if (!file || !fileName) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: file and fileName"
+        });
+      }
+
+      // Convert base64 file to buffer if needed
+      let fileBuffer: Buffer;
+      if (typeof file === 'string') {
+        // Assume base64 encoded
+        fileBuffer = Buffer.from(file, 'base64');
+      } else {
+        fileBuffer = file;
+      }
+
+      // Create agent context
+      const context = {
+        user_id: userId,
+        company_id: req.body.company_id,
+        timezone: req.body.timezone || 'UTC',
+        language: req.body.language || 'en',
+        session_id: req.body.session_id
+      };
+
+      // Merge configuration with defaults
+      const agentConfig = {
+        ...DEFAULT_AGENT_CONFIG,
+        ...config
+      };
+
+      // Create and execute agent
+      const agent = createInvoiceProcessingAgent(agentConfig, context);
+      const result = await agent.executeWorkflow(fileBuffer, fileName, additionalContext);
+
+      console.log("✅ Autonomous agent workflow completed:", {
+        success: result.success,
+        processing_time: result.processing_time_ms,
+        final_status: result.final_status
+      });
+
+      res.json({
+        success: result.success,
+        result: result,
+        agent: {
+          name: "Invoice Processing Agent",
+          version: "1.0.0",
+          capabilities: [
+            "ocr_extraction",
+            "ai_data_extraction", 
+            "line_item_classification",
+            "validation",
+            "po_matching",
+            "project_assignment"
+          ]
+        }
+      });
+
+    } catch (error) {
+      console.error("❌ Autonomous agent error:", error);
+      res.status(500).json({
+        success: false,
+        error: "Autonomous agent processing failed",
+        message: error instanceof Error ? error.message : "Unknown error"
+      });
+    }
+  });
+
+  // Get agent configuration endpoint
+  apiRouter.get("/agent/config", isAuthenticated, async (req: any, res) => {
+    try {
+      res.json({
+        success: true,
+        config: DEFAULT_AGENT_CONFIG,
+        agent: {
+          name: "Invoice Processing Agent",
+          version: "1.0.0",
+          description: "Autonomous agent for processing, classifying, and validating invoices"
+        }
+      });
+    } catch (error) {
+      console.error("❌ Error getting agent config:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to get agent configuration"
+      });
+    }
   });
 
   // OPTIONS handler for deduplication (CORS preflight)
