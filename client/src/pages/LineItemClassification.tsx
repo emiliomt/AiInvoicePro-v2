@@ -1120,8 +1120,8 @@ export default function LineItemClassification() {
                           <span>Invoice {classificationProgress.invoiceId}</span>
                           <span>{classificationProgress.processed} of {classificationProgress.total} items</span>
                         </div>
-                        <Progress 
-                          value={classificationProgress.percentage} 
+                        <Progress
+                          value={classificationProgress.percentage}
                           className="w-full h-3"
                         />
                         {classificationProgress.currentItem && (
