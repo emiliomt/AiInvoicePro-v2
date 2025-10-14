@@ -24,12 +24,13 @@ interface ClassificationError {
   invoiceId?: number;
 }
 
-export const useClassificationProgress = () => {
+export const useClassificationProgress = (sessionId?: string) => {
   const [progress, setProgress] = useState<ClassificationProgress | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const subscribedSessionId = useRef<string | undefined>(sessionId);
 
   const connect = () => {
     try {
@@ -51,6 +52,15 @@ export const useClassificationProgress = () => {
         console.log('✅ Classification WebSocket connected successfully');
         setIsConnected(true);
         setError(null);
+        
+        // Subscribe to progress updates for the specific session if provided
+        if (subscribedSessionId.current) {
+          console.log(`📡 Subscribing to progress session: ${subscribedSessionId.current}`);
+          ws.send(JSON.stringify({
+            type: 'subscribe_progress',
+            sessionId: subscribedSessionId.current
+          }));
+        }
       };
 
       ws.onmessage = (event) => {
@@ -69,6 +79,52 @@ export const useClassificationProgress = () => {
                 percentage: data.percentage,
                 currentItem: data.currentItem
               });
+              break;
+            case 'progress_update':
+              console.log('📊 ProgressTracker update:', data);
+              // Handle ProgressTracker messages
+              if (data.data) {
+                setProgress({
+                  invoiceId: data.data.currentInvoice || 0,
+                  processed: data.data.processedItems || data.data.processedInvoices || 0,
+                  total: data.data.totalItems || data.data.totalInvoices || 0,
+                  percentage: data.data.percentage || 0,
+                  currentItem: data.data.message || data.data.title || 'Processing...'
+                });
+              }
+              break;
+            case 'step_progress':
+              console.log('📋 Step progress:', data);
+              // Handle step-based progress updates
+              if (data.data) {
+                setProgress({
+                  invoiceId: data.data.currentInvoice || 0,
+                  processed: data.data.processedInvoices || 0,
+                  total: data.data.totalInvoices || 0,
+                  percentage: Math.round((data.data.currentStep / data.data.totalSteps) * 100),
+                  currentItem: data.data.steps?.[data.data.currentStep]?.step || 'Processing...'
+                });
+              }
+              break;
+            case 'classification_started':
+              console.log('🚀 Classification started:', data);
+              // Initialize progress when classification starts
+              if (data.data) {
+                setProgress({
+                  invoiceId: 0,
+                  processed: 0,
+                  total: data.data.totalInvoices || 0,
+                  percentage: 0,
+                  currentItem: 'Starting classification...'
+                });
+              }
+              break;
+            case 'classification_finished':
+              console.log('✅ Classification finished:', data);
+              // Keep progress visible for a moment before clearing
+              setTimeout(() => {
+                setProgress(null);
+              }, 2000);
               break;
             case 'line_item_classified':
               console.log('📋 Line item classified:', data);
@@ -144,6 +200,18 @@ export const useClassificationProgress = () => {
       disconnect();
     };
   }, []);
+
+  // Subscribe to new session when sessionId changes
+  useEffect(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN && sessionId) {
+      subscribedSessionId.current = sessionId;
+      console.log(`📡 Subscribing to new progress session: ${sessionId}`);
+      wsRef.current.send(JSON.stringify({
+        type: 'subscribe_progress',
+        sessionId: sessionId
+      }));
+    }
+  }, [sessionId]);
 
   return {
     progress,

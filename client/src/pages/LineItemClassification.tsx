@@ -233,7 +233,7 @@ export default function LineItemClassification() {
   // Progress tracking state
   const [showProgressTracker, setShowProgressTracker] = useState(false);
   const [progressSessionId, setProgressSessionId] = useState<string>("");
-  const { progress: classificationProgress, isConnected: wsConnected, error: wsError } = useClassificationProgress();
+  const { progress: classificationProgress, isConnected: wsConnected, error: wsError } = useClassificationProgress(progressSessionId);
 
   // Fetch categories
   const { data: categories, isLoading: categoriesLoading } = useQuery({
