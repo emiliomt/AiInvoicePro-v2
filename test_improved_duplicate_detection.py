@@ -26,29 +26,39 @@ class TestInvoiceRPAService:
     def is_duplicate_invoice(self, conn, invoice_number: str, emisor_id: str, total_amount: str = None) -> bool:
         """
         Robust helper function to check if an invoice already exists in the database
-        Using simplified filename-based matching with enhanced normalization
+        Checks the imported_invoices table using normalized inputs for:
+        - invoice_number (normalized and trimmed, converted to uppercase)
+        - emisor_id (normalized and trimmed) - MUST match the vendor
+        - total_amount (optional, with tolerance threshold for rounding differences)
+
+        Returns True if duplicate found (should skip), False if new invoice (should process)
         """
         try:
             cursor = conn.cursor()
-            
+
             # Normalize inputs as requested
-            normalized_invoice_number = invoice_number.strip().upper()
-            normalized_emisor_id = emisor_id.strip()
-            
-            # Build the base SQL query using actual data structure (simpler and more reliable)
+            normalized_invoice_number = (invoice_number or "").strip().upper()
+            normalized_emisor_id = (emisor_id or "").strip().upper()
+
+            # Build the base SQL query checking ALL THREE key fields:
+            # 1. Invoice number (erp_document_id)
+            # 2. Emisor/Vendor (metadata->>'emisor')
+            # 3. Total amount (metadata->>'valor_total' or metadata->>'totalAmount')
             # Skip invoices unless they are marked as 'failed' or need retry
             base_query = """
                 SELECT 1 FROM imported_invoices 
                 WHERE 
-                    UPPER(TRIM(original_file_name)) LIKE %s
+                    UPPER(TRIM(erp_document_id)) = %s
+                    AND UPPER(TRIM(COALESCE(metadata->>'emisor', ''))) = %s
                     AND processing_status NOT IN ('failed')
             """
-            
+
             params = [
-                f"{normalized_invoice_number}%"  # filename pattern match
+                normalized_invoice_number,  # Exact match on invoice number
+                normalized_emisor_id         # Exact match on emisor
             ]
-            
-            # Add total_amount validation if provided
+
+            # Add total_amount validation if provided (with tolerance for rounding)
             if total_amount and total_amount.strip() and total_amount != 'N/A':
                 try:
                     # Enhanced normalization: handle newlines, currency codes, and special characters
@@ -57,29 +67,38 @@ class TestInvoiceRPAService:
                     clean_amount = ''.join(filter(str.isdigit, clean_amount))
                     if clean_amount:
                         normalized_total = float(clean_amount)
-                        self.log(f"   🔍 Checking duplicate with total_amount validation (normalized: {normalized_total})")
+                        # Check both valor_total and totalAmount fields with tolerance
+                        base_query += """
+                            AND (
+                                ABS(CAST(REGEXP_REPLACE(COALESCE(metadata->>'valor_total', '0'), '[^0-9]', '', 'g') AS NUMERIC) - %s) <= 100
+                                OR
+                                ABS(CAST(REGEXP_REPLACE(COALESCE(metadata->>'totalAmount', '0'), '[^0-9]', '', 'g') AS NUMERIC) - %s) <= 100
+                            )
+                        """
+                        params.extend([str(normalized_total), str(normalized_total)])
+                        self.log(f"   🔍 Checking duplicate: Invoice={normalized_invoice_number}, Emisor={normalized_emisor_id}, Amount={normalized_total}")
                     else:
-                        self.log(f"   ⚠️ Could not extract numeric value from '{total_amount}', skipping amount validation")
+                        self.log(f"   ⚠️ Could not extract numeric value from '{total_amount}', checking without amount validation")
                 except (ValueError, TypeError) as e:
-                    self.log(f"   ⚠️ Could not normalize total_amount '{total_amount}': {e}, skipping amount validation")
+                    self.log(f"   ⚠️ Could not normalize total_amount '{total_amount}': {e}, checking without amount validation")
             else:
-                self.log("   🔍 Checking duplicate without total_amount validation (not provided or empty)")
-            
+                self.log(f"   🔍 Checking duplicate: Invoice={normalized_invoice_number}, Emisor={normalized_emisor_id} (no amount provided)")
+
             base_query += " LIMIT 1;"
-            
+
             # Execute the query
             cursor.execute(base_query, params)
             result = cursor.fetchone()
-            
+
             if result:
-                amount_msg = f" with total_amount validation" if (total_amount and total_amount.strip() and total_amount != 'N/A') else ""
+                amount_msg = f" Amount={total_amount}" if (total_amount and total_amount.strip() and total_amount != 'N/A') else ""
                 self.log(f"   ✅ Duplicate found: Invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
                 return True
             else:
-                amount_msg = f" (total_amount: {total_amount})" if total_amount else ""
-                self.log(f"   🆕 No duplicate found for invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
+                amount_msg = f" Amount={total_amount}" if total_amount else ""
+                self.log(f"   🆕 No duplicate found for: Invoice {normalized_invoice_number} from {normalized_emisor_id}{amount_msg}")
                 return False
-                
+
         except Exception as e:
             self.log(f"   ❌ Error in is_duplicate_invoice: {e}", "ERROR")
             # On error, return False to be safe and allow processing
