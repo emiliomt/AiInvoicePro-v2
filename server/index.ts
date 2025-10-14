@@ -166,6 +166,16 @@ app.use((req, res, next) => {
     const server = await registerRoutes(app);
     console.log("Routes registered successfully");
 
+    // Initialize classification keywords
+    try {
+      const { ClassificationService } = await import("./services/classificationService");
+      await ClassificationService.initializeDefaultKeywords();
+      console.log("✅ Classification keywords initialized");
+    } catch (error) {
+      console.error("⚠️ Failed to initialize classification keywords:", error);
+      // Don't fail server startup if keywords can't be initialized
+    }
+
     // Initialize progress tracker WebSocket
     progressTracker.initialize(server);
     console.log("Progress tracker initialized");

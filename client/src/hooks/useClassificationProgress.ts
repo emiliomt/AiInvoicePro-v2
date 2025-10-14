@@ -60,23 +60,30 @@ export const useClassificationProgress = () => {
 
           switch (data.type) {
             case 'classification_progress':
-              console.log('📊 Progress update:', data.data);
-              setProgress(data.data);
+              console.log('📊 Progress update:', data);
+              // Extract progress data directly from the message
+              setProgress({
+                invoiceId: data.invoiceId,
+                processed: data.processed,
+                total: data.total,
+                percentage: data.percentage,
+                currentItem: data.currentItem
+              });
               break;
             case 'line_item_classified':
-              console.log('📋 Line item classified:', data.data);
+              console.log('📋 Line item classified:', data);
               // Could update UI to show individual items being classified
               break;
             case 'classification_complete':
-              console.log('✅ Classification complete for invoice:', data.data.invoiceId);
+              console.log('✅ Classification complete for invoice:', data.invoiceId);
               // Keep progress visible for a moment before clearing
               setTimeout(() => {
                 setProgress(null);
               }, 2000);
               break;
             case 'classification_error':
-              console.error('❌ Classification error:', data.data.message);
-              setError(data.data.message);
+              console.error('❌ Classification error:', data.error);
+              setError(data.error || 'Classification error occurred');
               break;
             default:
               console.log('📨 Unknown classification message type:', data.type);

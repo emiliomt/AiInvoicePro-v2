@@ -5,7 +5,7 @@ import express, {
   type NextFunction,
 } from "express";
 import { createServer, type Server } from "http";
-import { storage } from "./storage";
+import { storage, getDb } from "./storage";
 import { setupAuth, isAuthenticated } from "./replitAuth";
 import { invoiceImporterService } from "./services/invoiceImporterService";
 import passport from "passport";
@@ -24,6 +24,83 @@ import { getUser } from "./replitAuth";
 import { db } from "./db";
 import { lineItems, lineItemClassifications } from "@shared/schema";
 import { eq } from "drizzle-orm";
+
+// Helper function to process line items for invoices
+async function processInvoiceLineItems(invoices: any[], userId: string): Promise<void> {
+  for (const invoice of invoices) {
+    try {
+      console.log(`🏷️ Processing line items for invoice ${invoice.id}`);
+      const db = getDb();
+
+      // Get existing line items from database
+      const existingLineItems = await db
+        .select()
+        .from(lineItems)
+        .where(eq(lineItems.invoiceId, invoice.id));
+      
+      console.log(`Found ${existingLineItems.length} existing line items in database`);
+
+      let itemsToClassify: any[] = [];
+
+      if (existingLineItems.length > 0) {
+        // Use existing line items
+        itemsToClassify = existingLineItems;
+        console.log(`Using existing ${existingLineItems.length} line items for classification`);
+      } else {
+        // Extract line items from invoice data or create default ones
+        let lineItemsData: any[] = [];
+
+        if (invoice.extractedData?.lineItems && invoice.extractedData.lineItems.length > 0) {
+          lineItemsData = invoice.extractedData.lineItems;
+          console.log(`Found ${lineItemsData.length} line items in extracted data`);
+        } else {
+          // Create default line item
+          const description = invoice.extractedData?.descriptionSummary || 
+                            invoice.extractedData?.concept || 
+                            `Service from ${invoice.vendorName || 'Unknown Vendor'}`;
+
+          lineItemsData = [{
+            description: description,
+            quantity: '1',
+            unitPrice: invoice.totalAmount || '0.00',
+            totalPrice: invoice.totalAmount || '0.00',
+            unit: 'service'
+          }];
+          console.log(`Created 1 default line item for invoice ${invoice.id}`);
+        }
+
+        // Insert line items into database
+        for (let i = 0; i < lineItemsData.length; i++) {
+          const item = lineItemsData[i];
+          const [newLineItem] = await db.insert(lineItems).values({
+            invoiceId: invoice.id,
+            description: item.description || 'Unknown item',
+            quantity: item.quantity?.toString() || '1',
+            unitPrice: item.unitPrice?.toString() || item.price?.toString() || '0.00',
+            totalPrice: item.totalPrice?.toString() || item.total?.toString() || '0.00',
+            unit: item.unit || null,
+            rawText: item.rawText || item.description,
+            lineNumber: i + 1,
+          }).returning();
+
+          itemsToClassify.push(newLineItem);
+        }
+      }
+
+      console.log(`📋 Processing ${itemsToClassify.length} line items for classification`);
+
+      // Use ClassificationService to classify all line items for this invoice
+      // This will handle WebSocket broadcasting internally
+      await ClassificationService.classifyInvoiceLineItems(invoice.id, userId);
+
+      console.log(`✅ Successfully processed invoice ${invoice.id}: ${itemsToClassify.length} items classified`);
+
+    } catch (error) {
+      console.error(`❌ Failed to process invoice ${invoice.id}:`, error);
+      throw error;
+    }
+  }
+}
 
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
@@ -1115,12 +1192,16 @@ export function registerRoutes(app: Express): Server {
           `📊 Processing ${processableInvoices.length} invoices for line item classification`,
         );
 
+        // Generate a session ID for progress tracking
+        const sessionId = `classification-${userId}-${Date.now()}`;
+
         // Send immediate response
         res.json({
           message: `Started line item processing for ${processableInvoices.length} invoices`,
           totalInvoices: processableInvoices.length,
           invoiceIds: processableInvoices.map((inv) => inv.id),
           status: "started",
+          sessionId: sessionId,
         });
 
         // Process invoices in background using the helper function
