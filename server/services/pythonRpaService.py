@@ -3207,7 +3207,7 @@ class InvoiceRPAService:
                     # Use correct file path based on file type
                     if file_info['type'] == 'pdf':
                         # PDFs are stored in download/pdfs directory, use original filename
-                        original_filename = file_info.get('upload_filename', file_info['base_name'] + '.pdf')
+                        original_filename = file_info.get('upload_filename', file_info.get('base_name', os.path.splitext(file_info.get('upload_filename', 'unknown'))[0]) + '.pdf')
                         if not original_filename.endswith('.pdf'):
                             original_filename += '.pdf'
                         file_path = os.path.join('uploads/pdfs', original_filename)
@@ -3216,7 +3216,7 @@ class InvoiceRPAService:
                         file_path = os.path.join('uploads', file_info['upload_filename'])
 
                     file_size = os.path.getsize(file_path) if os.path.exists(file_path) else 0
-                    base_name = file_info.get('base_file_name', file_info['base_name'])
+                    base_name = file_info.get('base_file_name', file_info.get('base_name', os.path.splitext(file_info['upload_filename'])[0]))
 
                     # Insert into imported_invoices table with processing status
                     pg_cursor.execute("""
@@ -3309,7 +3309,7 @@ class InvoiceRPAService:
 
             for pdf_info in pdf_files_to_link:
                 try:
-                    base_name = pdf_info.get('base_file_name', pdf_info['base_name'])
+                    base_name = pdf_info.get('base_file_name', pdf_info.get('base_name', os.path.splitext(pdf_info['upload_filename'])[0]))
                     xml_filename = pdf_info.get('xml_filename')
                     pdf_filename = pdf_info['upload_filename']
 
@@ -3515,7 +3515,7 @@ class InvoiceRPAService:
         unmatched_pdf = []
 
         for xml_file in xml_files:
-            matched_pdf = next((p for p in pdf_files if p['base_name'] == xml_file['base_name']), None)
+            matched_pdf = next((p for p in pdf_files if p.get('base_name') == xml_file.get('base_name')), None)
             if matched_pdf:
                 matched_pairs.append({'xml': xml_file['upload_filename'], 'pdf': matched_pdf['upload_filename']})
             else:
