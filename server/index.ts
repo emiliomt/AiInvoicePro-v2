@@ -193,8 +193,14 @@ app.use((req, res, next) => {
       res.status(status).json({ message });
     });
 
-    await setupVite(app, server);
-    console.log("Vite setup complete");
+    // Use Vite dev server in development, serve static files in production
+    if (process.env.NODE_ENV === "production") {
+      serveStatic(app);
+      console.log("Serving static files from production build");
+    } else {
+      await setupVite(app, server);
+      console.log("Vite development server ready");
+    }
 
     // Configure port and host based on environment
     const port = parseInt(process.env.PORT || "5000", 10);
