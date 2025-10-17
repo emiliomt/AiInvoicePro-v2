@@ -15,10 +15,12 @@ export function useAuth() {
     queryFn: getQueryFn({ on401: "returnNull" }),
     retry: false,
     refetchOnWindowFocus: false,
+    staleTime: Infinity,
+    gcTime: Infinity,
   });
 
   return {
-    user,
+    user: user ?? null,
     isLoading,
     isAuthenticated: !!user && !error,
   };
