@@ -386,6 +386,26 @@ export const erpTaskStatusEnum = pgEnum("erp_task_status", [
   "cancelled"
 ]);
 
+// Universal ERP Adapter enums
+export const integrationMethodEnum = pgEnum("integration_method", [
+  "api",
+  "xml_polling",
+  "email",
+  "sftp",
+  "web_portal",
+  "rpa"
+]);
+
+export const erpSystemEnum = pgEnum("erp_system", [
+  "sinco",
+  "sap_b1",
+  "sap_hana",
+  "oracle_ebs",
+  "dynamics",
+  "odoo",
+  "generic"
+]);
+
 // ERP connections table
 export const erpConnections = pgTable("erp_connections", {
   id: serial("id").primaryKey(),
@@ -398,6 +418,13 @@ export const erpConnections = pgTable("erp_connections", {
   description: text("description"),
   downloadPath: varchar("download_path", { length: 500 }), // For Python RPA downloads
   xmlPath: varchar("xml_path", { length: 500 }), // For Python RPA XML storage
+  
+  // Universal ERP Adapter fields
+  integrationMethod: integrationMethodEnum("integration_method").default("rpa"),
+  erpSystem: erpSystemEnum("erp_system").default("generic"),
+  capabilities: jsonb("capabilities"), // Adapter capabilities (bulkDownload, realTimeSync, etc.)
+  adapterConfig: jsonb("adapter_config"), // Adapter-specific configuration
+  
   isActive: boolean("is_active").default(true),
   lastUsed: timestamp("last_used"),
   createdAt: timestamp("created_at").defaultNow(),
@@ -500,6 +527,10 @@ export const invoiceImporterConfigs = pgTable("invoice_importer_configs", {
   isManualConfig: boolean("is_manual_config").default(false),
   headless: boolean('headless').default(true),
   zipDownloadTimeout: integer("zip_download_timeout").default(60), // ZIP file download timeout in seconds
+  
+  // Universal ERP Adapter integration
+  adapterInstanceId: varchar("adapter_instance_id", { length: 255 }), // Reference to adapter instance
+  
   isActive: boolean("is_active").default(true),
   isPaused: boolean("is_paused").default(false), // Allow pausing schedules
   lastRun: timestamp("last_run"),
