@@ -45,6 +45,7 @@ import { AILineItemClassifier } from './services/aiLineItemClassifier.js';
 import { AISuggestionService } from './services/aiSuggestionService';
 import { LearningTracker } from './services/learningTracker';
 import { postImportPdfLinker } from './services/postImportPdfLinker';
+import { adapterRegistry } from './services/erpIntegration/adapterService';
 
 
 // PostgreSQL database configuration
@@ -5139,6 +5140,163 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       res.status(500).json({ error: errorMessage });
+    }
+  });
+
+  // ========================================================================
+  // Universal ERP Adapter Routes
+  // ========================================================================
+  
+  /**
+   * List all registered adapters with their capabilities and metrics
+   */
+  app.get("/api/erp/adapters", isAuthenticated, async (req: any, res) => {
+    try {
+      const adapters = adapterRegistry.listAdapters();
+      
+      res.json({
+        success: true,
+        adapters,
+        total: adapters.length
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error listing adapters:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to list adapters",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Test connection for a specific adapter
+   */
+  app.post("/api/erp/adapters/test-connection", isAuthenticated, async (req: any, res) => {
+    try {
+      const { adapterId } = req.body;
+      
+      if (!adapterId) {
+        return res.status(400).json({
+          success: false,
+          error: "Adapter ID is required"
+        });
+      }
+      
+      const adapter = adapterRegistry.getAdapter(adapterId);
+      if (!adapter) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      const testResult = await adapter.testConnection();
+      
+      res.json({
+        success: true,
+        result: testResult
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error testing connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Connection test failed",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Sync invoices using a specific adapter
+   */
+  app.post("/api/erp/adapters/:id/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id: adapterId } = req.params;
+      const { dateFrom, dateTo, invoiceIds } = req.body;
+      
+      const adapter = adapterRegistry.getAdapter(adapterId);
+      if (!adapter) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      const syncResult = await adapter.syncInvoices({
+        dateFrom: dateFrom ? new Date(dateFrom) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        dateTo: dateTo ? new Date(dateTo) : new Date(),
+        invoiceIds
+      });
+      
+      res.json({
+        success: syncResult.success,
+        result: syncResult
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error syncing invoices:", error);
+      res.status(500).json({
+        success: false,
+        error: "Invoice sync failed",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Get adapter metrics
+   */
+  app.get("/api/erp/adapters/:id/metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id: adapterId } = req.params;
+      
+      const metrics = adapterRegistry.getMetrics(adapterId);
+      if (!metrics) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      res.json({
+        success: true,
+        metrics
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error fetching metrics:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch metrics",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Perform health checks on all adapters
+   */
+  app.post("/api/erp/adapters/health-check", isAuthenticated, async (req: any, res) => {
+    try {
+      const results = await adapterRegistry.performHealthChecks();
+      
+      const healthStatus = Array.from(results.entries()).map(([adapterId, isHealthy]) => ({
+        adapterId,
+        isHealthy,
+        adapter: adapterRegistry.listAdapters().find(a => a.adapterId === adapterId)
+      }));
+      
+      res.json({
+        success: true,
+        results: healthStatus,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error performing health checks:", error);
+      res.status(500).json({
+        success: false,
+        error: "Health check failed",
+        message: error.message
+      });
     }
   });
 

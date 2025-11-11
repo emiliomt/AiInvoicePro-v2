@@ -122,64 +122,75 @@ export async function initializeAdapters(): Promise<void> {
     
     console.log('[AdapterService] ✓ Registered XML Polling Adapter (stub - disabled)');
     
-    // Register Email Polling Adapter (stub)
-    const emailAdapter = new EmailPollingAdapter(
-      'email-polling',
-      {
+    // Register Email Polling Adapter (only if configured)
+    // Requires: EMAIL_HOST, EMAIL_ADDRESS, EMAIL_PASSWORD
+    if (process.env.EMAIL_HOST && process.env.EMAIL_ADDRESS && process.env.EMAIL_PASSWORD) {
+      const emailAdapter = new EmailPollingAdapter(
+        'email-polling',
+        {
+          method: IntegrationMethod.EMAIL,
+          erpSystem: ERPSystem.GENERIC,
+          host: process.env.EMAIL_HOST,
+          port: parseInt(process.env.EMAIL_PORT || '993'),
+          email: process.env.EMAIL_ADDRESS,
+          password: process.env.EMAIL_PASSWORD,
+          pollInterval: 15
+        }
+      );
+      
+      adapterRegistry.register(emailAdapter, {
         method: IntegrationMethod.EMAIL,
         erpSystem: ERPSystem.GENERIC,
-        host: process.env.EMAIL_HOST || 'imap.gmail.com',
-        port: parseInt(process.env.EMAIL_PORT || '993'),
-        email: process.env.EMAIL_ADDRESS || 'invoices@example.com',
-        password: process.env.EMAIL_PASSWORD || '',
-        pollInterval: 15
-      }
-    );
+        supportedFeatures: ['xmlSupport', 'pdfSupport'],
+        reliabilityScore: 0, // Set to 0 until configured
+        averageResponseTime: 0,
+        isHealthy: false
+      });
+      
+      console.log('[AdapterService] ✓ Registered Email Polling Adapter (stub - disabled)');
+    } else {
+      console.log('[AdapterService] ⊘ Skipped Email Polling Adapter (missing env: EMAIL_HOST, EMAIL_ADDRESS, EMAIL_PASSWORD)');
+    }
     
-    adapterRegistry.register(emailAdapter, {
-      method: IntegrationMethod.EMAIL,
-      erpSystem: ERPSystem.GENERIC,
-      supportedFeatures: ['xmlSupport', 'pdfSupport'],
-      reliabilityScore: 0, // Set to 0 until configured
-      averageResponseTime: 0,
-      isHealthy: false
-    });
-    
-    console.log('[AdapterService] ✓ Registered Email Polling Adapter (stub - disabled)');
-    
-    // Register SFTP Adapter (stub)
-    const sftpAdapter = new SFTPAdapter(
-      'sftp-adapter',
-      {
+    // Register SFTP Adapter (only if configured)
+    // Requires: SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD
+    if (process.env.SFTP_HOST && process.env.SFTP_USERNAME && process.env.SFTP_PASSWORD) {
+      const sftpAdapter = new SFTPAdapter(
+        'sftp-adapter',
+        {
+          method: IntegrationMethod.SFTP,
+          erpSystem: ERPSystem.GENERIC,
+          host: process.env.SFTP_HOST,
+          port: parseInt(process.env.SFTP_PORT || '22'),
+          username: process.env.SFTP_USERNAME,
+          password: process.env.SFTP_PASSWORD,
+          ftpPath: '/invoices'
+        }
+      );
+      
+      adapterRegistry.register(sftpAdapter, {
         method: IntegrationMethod.SFTP,
         erpSystem: ERPSystem.GENERIC,
-        host: process.env.SFTP_HOST || 'sftp.example.com',
-        port: parseInt(process.env.SFTP_PORT || '22'),
-        username: process.env.SFTP_USERNAME || 'user',
-        password: process.env.SFTP_PASSWORD || '',
-        ftpPath: '/invoices'
-      }
-    );
-    
-    adapterRegistry.register(sftpAdapter, {
-      method: IntegrationMethod.SFTP,
-      erpSystem: ERPSystem.GENERIC,
-      supportedFeatures: ['bulkDownload', 'xmlSupport', 'pdfSupport'],
-      reliabilityScore: 0, // Set to 0 until configured
-      averageResponseTime: 0,
-      isHealthy: false
-    });
-    
-    console.log('[AdapterService] ✓ Registered SFTP Adapter (stub - disabled)');
+        supportedFeatures: ['bulkDownload', 'xmlSupport', 'pdfSupport'],
+        reliabilityScore: 0, // Set to 0 until configured
+        averageResponseTime: 0,
+        isHealthy: false
+      });
+      
+      console.log('[AdapterService] ✓ Registered SFTP Adapter (stub - disabled)');
+    } else {
+      console.log('[AdapterService] ⊘ Skipped SFTP Adapter (missing env: SFTP_HOST, SFTP_USERNAME, SFTP_PASSWORD)');
+    }
     
     const count = adapterRegistry.count();
+    const healthyCount = adapterRegistry.listAdapters().filter(a => a.capability.isHealthy).length;
     
     // Mark as initialized only after ALL adapters successfully registered
     isInitialized = true;
     
-    console.log(`[AdapterService] ✅ Successfully initialized ${count} adapters`);
+    console.log(`[AdapterService] ✅ Successfully initialized ${count} adapters (${healthyCount} healthy)`);
     console.log('[AdapterService] Adapter priority order: API (100) > XML (80) > Email (60) > SFTP (40) > RPA (10)');
-    console.log('[AdapterService] Note: Only RPA adapter is currently enabled and healthy');
+    console.log('[AdapterService] Note: Stub adapters are registered but disabled until configured');
     
   } catch (error: any) {
     isInitialized = false;
