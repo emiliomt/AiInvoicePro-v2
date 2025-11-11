@@ -4464,6 +4464,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // ERP Automation Routes
+  // Get available ERP connectors
+  app.get('/api/connectors/available', isAuthenticated, async (req: any, res) => {
+    try {
+      const { getAvailableConnectors } = await import('./connectors/connectorService');
+      const connectors = getAvailableConnectors();
+      res.json(connectors);
+    } catch (error) {
+      console.error('Error fetching available connectors:', error);
+      res.status(500).json({ error: 'Failed to fetch available connectors' });
+    }
+  });
+
   // Create ERP connection
   app.post('/api/erp/connections', isAuthenticated, async (req: any, res) => {
     try {

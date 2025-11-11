@@ -19,6 +19,7 @@ import Header from "@/components/Header";
 // Form schema for ERP connection
 const erpConnectionSchema = z.object({
   name: z.string().min(1, 'Connection name is required'),
+  erpType: z.string().min(1, 'ERP type is required'),
   baseUrl: z.string().url('Please enter a valid URL'),
   username: z.string().min(1, 'Username is required'),
   password: z.string().min(1, 'Password is required'),
@@ -26,6 +27,13 @@ const erpConnectionSchema = z.object({
 });
 
 type ERPConnectionForm = z.infer<typeof erpConnectionSchema>;
+
+interface AvailableConnector {
+  name: string;
+  displayName: string;
+  supportsIncrementalSync: boolean;
+  requiresRPA: boolean;
+}
 
 interface ERPConnection {
   id: number;
@@ -61,11 +69,17 @@ export default function ERPConnect() {
     resolver: zodResolver(erpConnectionSchema),
     defaultValues: {
       name: '',
+      erpType: 'SINCO',
       baseUrl: '',
       username: '',
       password: '',
       description: '',
     },
+  });
+
+  // Fetch available connectors
+  const { data: availableConnectors = [] } = useQuery<AvailableConnector[]>({
+    queryKey: ['/api/connectors/available'],
   });
 
   // Fetch ERP connections
@@ -186,6 +200,7 @@ export default function ERPConnect() {
     setEditingConnection(connection);
     form.reset({
       name: connection.name,
+      erpType: 'SINCO', // Default to SINCO for now
       baseUrl: connection.baseUrl,
       username: connection.username,
       password: '', // Don't populate password for security
@@ -260,6 +275,33 @@ export default function ERPConnect() {
                       <FormLabel>Connection Name</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., Production SAP" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="erpType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>ERP System Type</FormLabel>
+                      <FormControl>
+                        <select
+                          {...field}
+                          className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        >
+                          {availableConnectors.length > 0 ? (
+                            availableConnectors.map((connector) => (
+                              <option key={connector.name} value={connector.name}>
+                                {connector.displayName}
+                                {connector.requiresRPA && ' (RPA)'}
+                              </option>
+                            ))
+                          ) : (
+                            <option value="SINCO">SINCO ERP System (RPA)</option>
+                          )}
+                        </select>
                       </FormControl>
                       <FormMessage />
                     </FormItem>
