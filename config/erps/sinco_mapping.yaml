@@ -1,0 +1,138 @@
+# SINCO Invoice Field Mapping Configuration
+# Maps SINCO-specific field names to canonical invoice schema
+
+erp: "SINCO"
+version: "1.0"
+
+# Field mappings for XML data
+xml_mappings:
+  invoice:
+    # Core identifiers
+    invoiceId:
+      - "/{*}Invoice/{*}ID"
+      - "/{*}Invoice/{*}InvoiceNumber"
+      - "@UUID"
+    
+    series:
+      - "/{*}Invoice/{*}Series"
+      - "@Serie"
+    
+    number:
+      - "/{*}Invoice/{*}Number"
+      - "@Folio"
+    
+    # Supplier information
+    supplierName:
+      - "/{*}Invoice/{*}AccountingSupplierParty/{*}Party/{*}PartyName/{*}Name"
+      - "/{*}Emisor/@Nombre"
+      - "/{*}Emisor/@nombre"
+    
+    supplierTaxId:
+      - "/{*}Invoice/{*}AccountingSupplierParty/{*}Party/{*}PartyTaxScheme/{*}CompanyID"
+      - "/{*}Emisor/@Rfc"
+      - "/{*}Emisor/@RFC"
+    
+    # Buyer information
+    buyerName:
+      - "/{*}Invoice/{*}AccountingCustomerParty/{*}Party/{*}PartyName/{*}Name"
+      - "/{*}Receptor/@Nombre"
+      - "/{*}Receptor/@nombre"
+    
+    buyerTaxId:
+      - "/{*}Invoice/{*}AccountingCustomerParty/{*}Party/{*}PartyTaxScheme/{*}CompanyID"
+      - "/{*}Receptor/@Rfc"
+      - "/{*}Receptor/@RFC"
+    
+    # Dates
+    issueDate:
+      - "/{*}Invoice/{*}IssueDate"
+      - "@Fecha"
+      - "@fecha"
+    
+    dueDate:
+      - "/{*}Invoice/{*}DueDate"
+      - "/{*}PaymentMeans/{*}PaymentDueDate"
+    
+    # Financial details
+    currency:
+      - "/{*}Invoice/{*}DocumentCurrencyCode"
+      - "@Moneda"
+      - "@moneda"
+    
+    totalGross:
+      - "/{*}Invoice/{*}LegalMonetaryTotal/{*}PayableAmount"
+      - "/{*}Invoice/{*}LegalMonetaryTotal/{*}TaxInclusiveAmount"
+      - "@Total"
+      - "@total"
+    
+    totalNet:
+      - "/{*}Invoice/{*}LegalMonetaryTotal/{*}TaxExclusiveAmount"
+      - "@SubTotal"
+      - "@subtotal"
+    
+    vatTotal:
+      - "/{*}Invoice/{*}TaxTotal/{*}TaxAmount"
+      - "/{*}Impuestos/@TotalImpuestosTrasladados"
+
+# Field mappings for CSV/Excel exports (if SINCO provides them)
+csv_mappings:
+  invoice:
+    invoiceId: "Folio"
+    series: "Serie"
+    number: "Numero"
+    supplierName: "Proveedor"
+    supplierTaxId: "RFC"
+    issueDate: "FechaEmision"
+    dueDate: "FechaVencimiento"
+    totalGross: "Total"
+    totalNet: "Subtotal"
+    vatTotal: "IVA"
+    currency: "Moneda"
+
+# Field mappings for filename-based extraction
+filename_patterns:
+  # Pattern: {number}_{taxId}_{supplierName}
+  pattern: "^([^_]+)_([^_]+)_(.+)\\.(xml|pdf)$"
+  groups:
+    number: 1
+    supplierTaxId: 2
+    supplierName: 3
+    fileType: 4
+
+# Data transformations
+transformations:
+  # Date format conversion
+  dates:
+    input_format: "%Y-%m-%d"
+    output_format: "iso8601"
+  
+  # Currency normalization
+  currency:
+    default: "COP"
+    mappings:
+      "MXN": "MXN"
+      "USD": "USD"
+      "PESO": "COP"
+  
+  # Number formatting
+  amounts:
+    decimal_separator: "."
+    thousand_separator: ","
+    precision: 2
+
+# Validation rules
+validation:
+  required_fields:
+    - "invoiceId"
+    - "supplierName"
+    - "issueDate"
+    - "totalGross"
+    - "currency"
+  
+  field_constraints:
+    totalGross:
+      min: 0
+      max: 999999999
+    
+    currency:
+      allowed_values: ["COP", "USD", "MXN"]

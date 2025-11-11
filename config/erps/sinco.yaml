@@ -1,0 +1,106 @@
+# SINCO ERP RPA Configuration
+# This config drives the browser automation for invoice downloading
+
+erp: "SINCO"
+displayName: "SINCO ERP System"
+version: "1.0"
+
+# Login configuration
+login:
+  url: "{{erpUrl}}"
+  steps:
+    - type: "fill"
+      selector: "#txtUsuario"
+      field: "username"
+      description: "Enter username"
+    
+    - type: "fill"
+      selector: "#txtContrasena"
+      field: "password"
+      description: "Enter password"
+    
+    - type: "click"
+      selector: "#btnSiguiente"
+      description: "Click 'Siguiente' button"
+      wait_after: 2000
+    
+    - type: "click"
+      selector: "#btnIngresar"
+      description: "Click 'Ingresar' button"
+    
+    - type: "wait_for_navigation"
+      description: "Wait for login to complete"
+      timeout: 15000
+      # Wait until URL no longer contains "login"
+      condition: "url_not_contains"
+      value: "login"
+
+# Main workflow for downloading invoices
+flows:
+  download_invoices:
+    description: "Download invoice files from SINCO ERP"
+    start_url: "{{erpUrl}}"
+    
+    steps:
+      # Navigate to invoice section
+      - type: "click"
+        selector: "#mod-FE"
+        description: "Click FE module"
+        wait_after: 2000
+      
+      - type: "click_optional"
+        selector: "//button[contains(text(), 'Recepción')]"
+        xpath: true
+        description: "Click Recepción button if available"
+        continue_on_error: true
+      
+      - type: "click"
+        selector: "//button[text()='Documentos recibidos']"
+        xpath: true
+        description: "Navigate to 'Documentos recibidos'"
+      
+      # Switch to iframe for invoice table
+      - type: "switch_to_iframe"
+        selector: "#pagina1"
+        description: "Switch to invoice table iframe"
+      
+      # Wait for invoice rows to load
+      - type: "wait_for_selector"
+        selector: "div.rt-tr-group"
+        description: "Wait for invoice rows to populate"
+        timeout: 20000
+      
+      # Process invoice rows (custom step)
+      - type: "custom_processing"
+        handler: "process_invoice_rows"
+        description: "Process invoice rows with custom logic"
+        params:
+          row_selector: "div.rt-tr-group"
+          button_index: 3
+          download_class: "descargar"
+          max_pages: 2
+          file_pattern: "*.zip"
+
+# Configuration for browser behavior
+browser:
+  headless: "{{headless}}"
+  download_path: "{{downloadPath}}"
+  timeout: 120000
+  window_size:
+    width: 1920
+    height: 1080
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+
+# Retry and error handling
+error_handling:
+  max_retries: 3
+  retry_delay: 5000
+  screenshot_on_error: true
+  capture_console_logs: true
+
+# File processing configuration
+file_processing:
+  supported_formats: ["xml", "pdf"]
+  extract_from_zip: true
+  zip_timeout: "{{zipDownloadTimeout}}"
+  temp_extract_dir: "__temp_extract__"
