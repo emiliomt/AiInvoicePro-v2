@@ -5213,7 +5213,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
   app.post("/api/erp/adapters/:id/sync", isAuthenticated, async (req: any, res) => {
     try {
       const { id: adapterId } = req.params;
-      const { dateFrom, dateTo, invoiceIds } = req.body;
+      const { dateFrom, dateTo, invoiceIds, status, limit } = req.body;
       
       const adapter = adapterRegistry.getAdapter(adapterId);
       if (!adapter) {
@@ -5226,7 +5226,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const syncResult = await adapter.syncInvoices({
         dateFrom: dateFrom ? new Date(dateFrom) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
         dateTo: dateTo ? new Date(dateTo) : new Date(),
-        invoiceIds
+        ...(status && { status }),
+        ...(limit && { limit }),
+        ...(invoiceIds && { filters: { invoiceIds } })
       });
       
       res.json({
