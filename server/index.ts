@@ -166,6 +166,17 @@ app.use((req, res, next) => {
     const server = await registerRoutes(app);
     console.log("Routes registered successfully");
 
+    // Initialize ERP adapters BEFORE server starts listening
+    try {
+      const { initializeAdapters } = await import("./services/erpIntegration/adapterService");
+      await initializeAdapters();
+      console.log("✅ ERP adapters initialized successfully");
+    } catch (error) {
+      console.error("❌ CRITICAL: Failed to initialize ERP adapters:", error);
+      console.error("Server startup aborted - ERP adapter endpoints will not function");
+      process.exit(1); // Exit if adapters can't initialize - this is critical infrastructure
+    }
+
     // Initialize classification keywords
     try {
       const { ClassificationService } = await import("./services/classificationService");

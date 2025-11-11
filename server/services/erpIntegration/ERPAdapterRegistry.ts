@@ -42,9 +42,17 @@ export class ERPAdapterRegistry {
   
   /**
    * Register a new adapter in the registry
+   * Prevents duplicate registrations by checking if adapter ID already exists
    */
   register(adapter: UniversalERPAdapter, capability: AdapterCapability): void {
     const adapterId = adapter.getAdapterId();
+    
+    // Prevent duplicate registrations
+    if (this.adapters.has(adapterId)) {
+      console.warn(`[Registry] Adapter ${adapterId} is already registered. Skipping duplicate registration.`);
+      return;
+    }
+    
     const method = adapter.getIntegrationMethod();
     const erpSystem = adapter.getERPSystem() as ERPSystem;
     const priority = ERPAdapterRegistry.PRIORITY_ORDER[method] || 0;

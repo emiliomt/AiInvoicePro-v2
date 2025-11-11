@@ -23,8 +23,9 @@ import { ClassificationService } from "./services/classificationService";
 import { createInvoiceProcessingAgent, DEFAULT_AGENT_CONFIG } from "./services/invoiceProcessingAgent";
 import { getUser } from "./replitAuth";
 import { db } from "./db";
-import { lineItems, lineItemClassifications } from "@shared/schema";
+import { lineItems, lineItemClassifications, erpConnections } from "@shared/schema";
 import { eq } from "drizzle-orm";
+import { adapterRegistry, initializeAdapters } from "./services/erpIntegration/adapterService";
 
 // Helper function to process line items for invoices
 async function processInvoiceLineItems(invoices: any[], userId: string): Promise<void> {
@@ -1500,6 +1501,427 @@ export function registerRoutes(app: Express): Server {
     res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
     res.header("Access-Control-Allow-Credentials", "true");
     res.status(200).end();
+  });
+
+  // ========================================================================
+  // Universal ERP Adapter Routes
+  // ========================================================================
+  
+  // NOTE: Adapter initialization is handled in server/index.ts during server bootstrap
+  // The adapters are initialized and awaited BEFORE the server starts listening
+  // This ensures all adapter endpoints have a populated registry when requests arrive
+  
+  /**
+   * List all registered adapters with their capabilities and metrics
+   */
+  apiRouter.get("/erp/adapters", isAuthenticated, async (req: any, res) => {
+    try {
+      const adapters = adapterRegistry.listAdapters();
+      
+      res.json({
+        success: true,
+        adapters,
+        total: adapters.length
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error listing adapters:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to list adapters",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Test connection for a specific adapter
+   */
+  apiRouter.post("/erp/adapters/test-connection", isAuthenticated, async (req: any, res) => {
+    try {
+      const { adapterId } = req.body;
+      
+      if (!adapterId) {
+        return res.status(400).json({
+          success: false,
+          error: "Adapter ID is required"
+        });
+      }
+      
+      const adapter = adapterRegistry.getAdapter(adapterId);
+      if (!adapter) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      const testResult = await adapter.testConnection();
+      
+      res.json({
+        success: true,
+        result: testResult
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error testing connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Connection test failed",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Sync invoices using a specific adapter
+   */
+  apiRouter.post("/erp/adapters/:id/sync", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id: adapterId } = req.params;
+      const { dateFrom, dateTo, invoiceIds } = req.body;
+      
+      const adapter = adapterRegistry.getAdapter(adapterId);
+      if (!adapter) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      const syncResult = await adapter.syncInvoices({
+        dateFrom: dateFrom ? new Date(dateFrom) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000),
+        dateTo: dateTo ? new Date(dateTo) : new Date(),
+        invoiceIds
+      });
+      
+      res.json({
+        success: syncResult.success,
+        result: syncResult
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error syncing invoices:", error);
+      res.status(500).json({
+        success: false,
+        error: "Invoice sync failed",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Get adapter metrics
+   */
+  apiRouter.get("/erp/adapters/:id/metrics", isAuthenticated, async (req: any, res) => {
+    try {
+      const { id: adapterId } = req.params;
+      
+      const metrics = adapterRegistry.getMetrics(adapterId);
+      if (!metrics) {
+        return res.status(404).json({
+          success: false,
+          error: "Adapter not found"
+        });
+      }
+      
+      res.json({
+        success: true,
+        metrics
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error fetching metrics:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch metrics",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Get all ERP connections with adapter metadata
+   */
+  apiRouter.get("/erp/connections", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated"
+        });
+      }
+      
+      const connections = await db
+        .select()
+        .from(erpConnections)
+        .where(eq(erpConnections.userId, userId));
+      
+      res.json({
+        success: true,
+        connections
+      });
+    } catch (error: any) {
+      console.error("[ERP Connections] Error fetching connections:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch connections",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Create new ERP connection
+   */
+  apiRouter.post("/erp/connections", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated"
+        });
+      }
+      
+      const {
+        name,
+        baseUrl,
+        username,
+        password,
+        description,
+        integrationMethod,
+        erpSystem,
+        capabilities,
+        adapterConfig
+      } = req.body;
+      
+      // Validate required fields
+      if (!name || !baseUrl || !username || !password) {
+        return res.status(400).json({
+          success: false,
+          error: "Missing required fields: name, baseUrl, username, password"
+        });
+      }
+      
+      const [connection] = await db.insert(erpConnections).values({
+        userId,
+        name,
+        baseUrl,
+        username,
+        password,
+        description: description || null,
+        integrationMethod: integrationMethod || 'rpa',
+        erpSystem: erpSystem || 'generic',
+        capabilities: capabilities || {
+          method: integrationMethod || 'rpa',
+          erpSystem: erpSystem || 'generic',
+          supportedFeatures: ['bulkDownload'],
+          reliabilityScore: 70,
+          averageResponseTime: 5000,
+          isHealthy: true
+        },
+        adapterConfig: adapterConfig || {},
+        isActive: true
+      }).returning();
+      
+      res.json({
+        success: true,
+        connection
+      });
+    } catch (error: any) {
+      console.error("[ERP Connections] Error creating connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to create connection",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Get specific ERP connection
+   */
+  apiRouter.get("/erp/connections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated"
+        });
+      }
+      
+      const connectionId = parseInt(req.params.id);
+      
+      const [connection] = await db
+        .select()
+        .from(erpConnections)
+        .where(eq(erpConnections.id, connectionId));
+      
+      if (!connection || connection.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          error: "Connection not found"
+        });
+      }
+      
+      res.json({
+        success: true,
+        connection
+      });
+    } catch (error: any) {
+      console.error("[ERP Connections] Error fetching connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to fetch connection",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Update ERP connection
+   */
+  apiRouter.put("/erp/connections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated"
+        });
+      }
+      
+      const connectionId = parseInt(req.params.id);
+      
+      // Verify ownership
+      const [existing] = await db
+        .select()
+        .from(erpConnections)
+        .where(eq(erpConnections.id, connectionId));
+      
+      if (!existing || existing.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          error: "Connection not found"
+        });
+      }
+      
+      const {
+        name,
+        baseUrl,
+        username,
+        password,
+        description,
+        integrationMethod,
+        erpSystem,
+        capabilities,
+        adapterConfig,
+        isActive
+      } = req.body;
+      
+      const [updated] = await db
+        .update(erpConnections)
+        .set({
+          name: name || existing.name,
+          baseUrl: baseUrl || existing.baseUrl,
+          username: username || existing.username,
+          password: password || existing.password,
+          description: description !== undefined ? description : existing.description,
+          integrationMethod: integrationMethod || existing.integrationMethod,
+          erpSystem: erpSystem || existing.erpSystem,
+          capabilities: capabilities || existing.capabilities,
+          adapterConfig: adapterConfig || existing.adapterConfig,
+          isActive: isActive !== undefined ? isActive : existing.isActive,
+          updatedAt: new Date()
+        })
+        .where(eq(erpConnections.id, connectionId))
+        .returning();
+      
+      res.json({
+        success: true,
+        connection: updated
+      });
+    } catch (error: any) {
+      console.error("[ERP Connections] Error updating connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to update connection",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Delete ERP connection
+   */
+  apiRouter.delete("/erp/connections/:id", isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.user?.claims?.sub;
+      if (!userId) {
+        return res.status(401).json({
+          success: false,
+          error: "User not authenticated"
+        });
+      }
+      
+      const connectionId = parseInt(req.params.id);
+      
+      // Verify ownership
+      const [existing] = await db
+        .select()
+        .from(erpConnections)
+        .where(eq(erpConnections.id, connectionId));
+      
+      if (!existing || existing.userId !== userId) {
+        return res.status(404).json({
+          success: false,
+          error: "Connection not found"
+        });
+      }
+      
+      await db
+        .delete(erpConnections)
+        .where(eq(erpConnections.id, connectionId));
+      
+      res.json({
+        success: true,
+        message: "Connection deleted successfully"
+      });
+    } catch (error: any) {
+      console.error("[ERP Connections] Error deleting connection:", error);
+      res.status(500).json({
+        success: false,
+        error: "Failed to delete connection",
+        message: error.message
+      });
+    }
+  });
+  
+  /**
+   * Perform health checks on all adapters
+   */
+  apiRouter.post("/erp/adapters/health-check", isAuthenticated, async (req: any, res) => {
+    try {
+      const results = await adapterRegistry.performHealthChecks();
+      
+      const healthStatus = Array.from(results.entries()).map(([adapterId, isHealthy]) => ({
+        adapterId,
+        isHealthy,
+        metrics: adapterRegistry.getMetrics(adapterId)
+      }));
+      
+      res.json({
+        success: true,
+        healthStatus,
+        timestamp: new Date().toISOString()
+      });
+    } catch (error: any) {
+      console.error("[ERP Adapters] Error performing health checks:", error);
+      res.status(500).json({
+        success: false,
+        error: "Health check failed",
+        message: error.message
+      });
+    }
   });
 
   return httpServer;
