@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 import { Bot, Zap, Shield, BarChart3, Clock, Users } from "lucide-react";
 

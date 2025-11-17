@@ -1,4 +1,4 @@
-import { motion } from 'motion/react';
+import { motion } from 'framer-motion';
 
 import { TrendingUp, Users, Clock, DollarSign } from "lucide-react";
 
