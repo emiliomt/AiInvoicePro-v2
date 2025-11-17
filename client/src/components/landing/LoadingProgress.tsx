@@ -1,22 +1,74 @@
-interface LoadingProgressProps {
-  progress: number;
-  label?: string;
-}
+import { motion } from 'motion/react';
 
-export function LoadingProgress({ progress, label = "Loading..." }: LoadingProgressProps) {
+import { useState, useEffect } from 'react';
+
+
+
+export function LoadingProgress() {
+
+  const [progress, setProgress] = useState(0);
+
+
+
+  useEffect(() => {
+
+    const timer = setInterval(() => {
+
+      setProgress(prev => {
+
+        if (prev >= 100) return 0; // Reset for demo purposes
+
+        return prev + Math.random() * 15;
+
+      });
+
+    }, 300);
+
+
+
+    return () => clearInterval(timer);
+
+  }, []);
+
+
+
+  const clampedProgress = Math.min(progress, 100);
+
+
+
   return (
-    <div className="w-full">
+
+    <div className="w-full max-w-md">
+
       <div className="flex justify-between items-center mb-2">
-        <span className="text-sm text-muted-foreground">{label}</span>
-        <span className="text-sm text-muted-foreground">{Math.round(progress)}%</span>
+
+        <span className="text-sm text-muted-foreground">Loading AI Engine</span>
+
+        <span className="text-sm font-medium text-primary">{Math.round(clampedProgress)}%</span>
+
       </div>
+
+      
+
       <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-        <div
-          className="h-full bg-primary transition-all duration-300 ease-out"
-          style={{ width: `${progress}%` }}
+
+        <motion.div
+
+          className="h-full bg-gradient-to-r from-primary to-secondary rounded-full"
+
+          initial={{ width: 0 }}
+
+          animate={{ width: `${clampedProgress}%` }}
+
+          transition={{ duration: 0.3, ease: "easeOut" }}
+
         />
+
       </div>
+
     </div>
+
   );
+
 }
 
