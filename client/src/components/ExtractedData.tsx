@@ -144,10 +144,9 @@ export default function ExtractedData({
 
   // Get the latest extracted invoice
   const latestExtractedInvoice = invoices?.find(inv => inv.status === 'extracted');
-  // Use the invoiceToShow prop if provided, otherwise fall back to calculated logic
-  const invoiceToShowForDisplay = invoiceToShow ?? (selectedInvoiceId
+  const invoiceToShowForDisplay = selectedInvoiceId
     ? invoices?.find(inv => inv.id === selectedInvoiceId)
-    : latestExtractedInvoice);
+    : latestExtractedInvoice;
 
   // Get detailed invoice data
   const { data: invoiceDetailsData } = useQuery<Invoice>({
