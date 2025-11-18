@@ -9,7 +9,7 @@ export function Header() {
           {/* Logo */}
           <div className="flex items-center gap-3">
             <LogoIcon />
-            <span className="font-semibold text-foreground">Anzu Dynamics</span>
+            <span className="font-semibold text-2xl text-foreground">Anzu Dynamics</span>
           </div>
 
           {/* Navigation */}
