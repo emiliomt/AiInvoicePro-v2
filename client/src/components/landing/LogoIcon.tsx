@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 
-import anzuLogo from '@/assets/anzu-logo.svg';
+import anzuLogo from '@assets/Anzu phoenix Logo_1763477795536.png';
 
 
 
@@ -28,7 +28,7 @@ export function LogoIcon() {
 
         alt="Anzu Dynamics"
 
-        className="w-full h-full object-cover object-left"
+        className="w-full h-full object-contain"
 
         animate={{ 
 
