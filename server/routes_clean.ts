@@ -18,6 +18,7 @@ import {
   insertSavedWorkflowSchema, 
   insertScheduledTaskSchema, 
   insertInvoiceImporterConfigSchema,
+  insertReceiptSchema,
   classifyLineItemSchema, 
   batchClassifySchema, 
   bulkClassifyInvoicesSchema,
@@ -7440,6 +7441,201 @@ app.post('/api/invoices/:id/reextract-colombian', isAuthenticated, async (req: a
       console.error(`Import task ${configId} failed:`, error);
     }
   }
+
+  // Receipt submission routes
+  app.post('/api/receipts', isAuthenticated, (req: any, res) => {
+    upload.single('receiptImage')(req, res, async (err) => {
+      if (err) {
+        console.error("Multer error:", err);
+        return res.status(400).json({ message: err.message });
+      }
+
+      try {
+        const userId = (req.user as any).claims.sub;
+        
+        // Prepare data for validation
+        const inputData = {
+          userId,
+          vendor: req.body.vendor,
+          date: req.body.date ? new Date(req.body.date) : undefined,
+          total: req.body.total,
+          currency: req.body.currency || 'USD',
+          jobCode: req.body.jobCode || null,
+          costCode: req.body.costCode || null,
+          memo: req.body.memo || null,
+          submissionMethod: req.body.submissionMethod || 'app',
+          status: 'submitted',
+          receiptImageUrl: null,
+        };
+
+        // Validate using Zod schema
+        const validatedData = insertReceiptSchema.parse(inputData);
+
+        // If there's an uploaded image, save it
+        let receiptImageUrl = null;
+        if (req.file) {
+          const file = req.file;
+          const fileName = `receipt_${Date.now()}_${file.originalname}`;
+          const filePath = path.join(process.cwd(), 'uploads', fileName);
+
+          // Ensure uploads directory exists
+          if (!fs.existsSync(path.join(process.cwd(), 'uploads'))) {
+            fs.mkdirSync(path.join(process.cwd(), 'uploads'), { recursive: true });
+          }
+
+          // Save file
+          fs.writeFileSync(filePath, file.buffer);
+          receiptImageUrl = `/uploads/${fileName}`;
+        }
+
+        const receiptData = {
+          ...validatedData,
+          receiptImageUrl,
+        };
+
+        const receipt = await storage.createReceipt(receiptData);
+        console.log('Receipt created:', receipt.id);
+
+        res.status(201).json({ 
+          message: "Receipt submitted successfully", 
+          receipt 
+        });
+      } catch (error: any) {
+        console.error("Error creating receipt:", error);
+        
+        // Check if it's a Zod validation error
+        if (error.name === 'ZodError') {
+          return res.status(400).json({ 
+            message: "Validation error",
+            errors: error.errors 
+          });
+        }
+        
+        res.status(500).json({ 
+          message: "Failed to submit receipt",
+          error: error.message 
+        });
+      }
+    });
+  });
+
+  app.get('/api/receipts', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const receipts = await storage.getReceipts(userId);
+      res.json(receipts);
+    } catch (error: any) {
+      console.error("Error fetching receipts:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch receipts",
+        error: error.message 
+      });
+    }
+  });
+
+  app.get('/api/receipts/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const receiptId = parseInt(req.params.id);
+      const receipt = await storage.getReceipt(receiptId);
+
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+
+      // Verify ownership
+      if (receipt.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      res.json(receipt);
+    } catch (error: any) {
+      console.error("Error fetching receipt:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch receipt",
+        error: error.message 
+      });
+    }
+  });
+
+  app.patch('/api/receipts/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const receiptId = parseInt(req.params.id);
+      const receipt = await storage.getReceipt(receiptId);
+
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+
+      // Verify ownership
+      if (receipt.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      // Only allow specific fields to be updated (exclude protected fields like userId, status, submissionMethod)
+      const updateSchema = insertReceiptSchema.partial().pick({
+        vendor: true,
+        date: true,
+        total: true,
+        currency: true,
+        jobCode: true,
+        costCode: true,
+        memo: true,
+      });
+
+      const validatedUpdates = updateSchema.parse(req.body);
+
+      await storage.updateReceipt(receiptId, validatedUpdates);
+
+      const updatedReceipt = await storage.getReceipt(receiptId);
+      res.json({ 
+        message: "Receipt updated successfully",
+        receipt: updatedReceipt 
+      });
+    } catch (error: any) {
+      console.error("Error updating receipt:", error);
+      
+      // Check if it's a Zod validation error
+      if (error.name === 'ZodError') {
+        return res.status(400).json({ 
+          message: "Validation error",
+          errors: error.errors 
+        });
+      }
+      
+      res.status(500).json({ 
+        message: "Failed to update receipt",
+        error: error.message 
+      });
+    }
+  });
+
+  app.delete('/api/receipts/:id', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = (req.user as any).claims.sub;
+      const receiptId = parseInt(req.params.id);
+      const receipt = await storage.getReceipt(receiptId);
+
+      if (!receipt) {
+        return res.status(404).json({ message: "Receipt not found" });
+      }
+
+      // Verify ownership
+      if (receipt.userId !== userId) {
+        return res.status(403).json({ message: "Access denied" });
+      }
+
+      await storage.deleteReceipt(receiptId);
+      res.json({ message: "Receipt deleted successfully" });
+    } catch (error: any) {
+      console.error("Error deleting receipt:", error);
+      res.status(500).json({ 
+        message: "Failed to delete receipt",
+        error: error.message 
+      });
+    }
+  });
 
   // Add health check endpoint for deployment monitoring
   app.get('/api/health', (req, res) => {

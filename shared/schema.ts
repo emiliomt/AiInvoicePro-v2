@@ -1174,6 +1174,48 @@ export const batchClassifySchema = z.object({
 export type ClassifyLineItemRequest = z.infer<typeof classifyLineItemSchema>;
 export type BatchClassifyRequest = z.infer<typeof batchClassifySchema>;
 
+// Receipt status enum
+export const receiptStatusEnum = pgEnum("receipt_status", [
+  "pending",
+  "submitted",
+  "approved",
+  "rejected"
+]);
+
+// Receipts table for field team expense submission
+export const receipts = pgTable("receipts", {
+  id: serial("id").primaryKey(),
+  userId: varchar("user_id").notNull(),
+  companyId: integer("company_id").references(() => companies.id),
+  vendor: varchar("vendor", { length: 255 }).notNull(),
+  date: timestamp("date").notNull(),
+  total: decimal("total", { precision: 10, scale: 2 }).notNull(),
+  currency: varchar("currency", { length: 3 }).default("USD"),
+  jobCode: varchar("job_code", { length: 100 }),
+  costCode: varchar("cost_code", { length: 100 }),
+  memo: text("memo"),
+  receiptImageUrl: varchar("receipt_image_url", { length: 500 }),
+  status: receiptStatusEnum("status").default("pending"),
+  submissionMethod: varchar("submission_method", { length: 50 }).default("app"), // 'app', 'sms', 'email'
+  approvedBy: varchar("approved_by"),
+  approvedAt: timestamp("approved_at"),
+  rejectionReason: text("rejection_reason"),
+  createdAt: timestamp("created_at").defaultNow(),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Receipt types
+export type Receipt = typeof receipts.$inferSelect;
+export type InsertReceipt = typeof receipts.$inferInsert;
+
+// Receipt Zod schema
+export const insertReceiptSchema = createInsertSchema(receipts).omit({
+  id: true,
+  createdAt: true,
+  updatedAt: true,
+  approvedAt: true,
+});
+
 // Validation rules schemas
 export const validationRulesSchema = createInsertSchema(validationRules);
 export const validationRulesSelectSchema = createSelectSchema(validationRules);

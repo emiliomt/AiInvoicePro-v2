@@ -31,6 +31,9 @@ import AiWorkflow from "@/pages/AiWorkflow";
 import InvoiceImporter from "@/pages/InvoiceImporter";
 import InvoicePreview from "@/pages/InvoicePreview";
 import InvoiceRejectionDebugger from "@/pages/InvoiceRejectionDebugger";
+import Receipts from "@/pages/Receipts";
+import SubmitReceipt from "@/pages/SubmitReceipt";
+import ReceiptDetail from "@/pages/ReceiptDetail";
 import NotFound from "@/pages/not-found";
 
 // Import the existing query client from lib
@@ -127,6 +130,15 @@ const AppContent = React.memo(() => {
         </Route>
         <Route path="/rpa">
           {user ? <InvoiceImporter /> : <Landing />}
+        </Route>
+        <Route path="/receipts">
+          {user ? <Receipts /> : <Landing />}
+        </Route>
+        <Route path="/receipts/:id">
+          {user ? <ReceiptDetail /> : <Landing />}
+        </Route>
+        <Route path="/submit-receipt">
+          {user ? <SubmitReceipt /> : <Landing />}
         </Route>
         <Route>
           <NotFound />

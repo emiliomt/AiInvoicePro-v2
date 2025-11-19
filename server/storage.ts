@@ -20,6 +20,7 @@ import {
   validationRules,
   lineItemClassifications,
   pettyCashLog,
+  receipts,
   // Types
   type Invoice,
   type InsertInvoice,
@@ -53,6 +54,8 @@ import {
   type InsertSavedWorkflow,
   type ScheduledTask,
   type InsertScheduledTask,
+  type Receipt,
+  type InsertReceipt,
   // Import logs related imports from schema
   importerConfigs,
   importerLogs,
@@ -331,6 +334,14 @@ export interface IStorage {
     updates: Partial<InsertScheduledTask>,
   ): Promise<void>;
   deleteScheduledTask(id: number): Promise<void>;
+
+  // Receipts
+  createReceipt(receipt: any): Promise<any>;
+  getReceipt(id: number): Promise<any | null>;
+  getReceipts(userId?: string): Promise<any[]>;
+  getReceiptsByCompanyId(companyId: number): Promise<any[]>;
+  updateReceipt(id: number, updates: any): Promise<void>;
+  deleteReceipt(id: number): Promise<void>;
 }
 
 class PostgresStorage implements IStorage {
@@ -1209,6 +1220,47 @@ class PostgresStorage implements IStorage {
 
   async deleteScheduledTask(id: number): Promise<void> {
     await db.delete(scheduledTasks).where(eq(scheduledTasks.id, id));
+  }
+
+  // Receipts
+  async createReceipt(receipt: any): Promise<any> {
+    const [result] = await db.insert(receipts).values(receipt).returning();
+    return result;
+  }
+
+  async getReceipt(id: number): Promise<any | null> {
+    const [result] = await db
+      .select()
+      .from(receipts)
+      .where(eq(receipts.id, id));
+    return result || null;
+  }
+
+  async getReceipts(userId?: string): Promise<any[]> {
+    if (userId) {
+      return await db
+        .select()
+        .from(receipts)
+        .where(eq(receipts.userId, userId))
+        .orderBy(desc(receipts.createdAt));
+    }
+    return await db.select().from(receipts).orderBy(desc(receipts.createdAt));
+  }
+
+  async getReceiptsByCompanyId(companyId: number): Promise<any[]> {
+    return await db
+      .select()
+      .from(receipts)
+      .where(eq(receipts.companyId, companyId))
+      .orderBy(desc(receipts.createdAt));
+  }
+
+  async updateReceipt(id: number, updates: any): Promise<void> {
+    await db.update(receipts).set(updates).where(eq(receipts.id, id));
+  }
+
+  async deleteReceipt(id: number): Promise<void> {
+    await db.delete(receipts).where(eq(receipts.id, id));
   }
 
   // Dashboard and utility methods
