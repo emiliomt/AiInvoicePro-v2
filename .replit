@@ -1,4 +1,4 @@
-modules = ["nodejs-20", "postgresql-16", "python-3.11", "web", "python3"]
+modules = ["nodejs-20", "python-3.11", "web", "python3", "postgresql-16"]
 run = "npm run dev"
 hidden = [".config", ".git", "generated-icon.png", "node_modules", "dist"]
 
@@ -18,10 +18,6 @@ externalPort = 80
 [[ports]]
 localPort = 24678
 externalPort = 3000
-
-[[ports]]
-localPort = 37883
-externalPort = 3001
 
 [workflows]
 runButton = "Restart Server"
